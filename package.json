@@ -3,17 +3,27 @@
   "version": "0.1.0",
   "description": "OminiNote — a local-first, block-based note-taking desktop app",
   "license": "Apache-2.0",
+  "author": "djkeshawa",
+  "homepage": "https://github.com/djkeshawa/omini-note#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/djkeshawa/omini-note.git"
+  },
   "main": "main.js",
   "scripts": {
     "check:main": "node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js",
     "test:editor": "node tests/editor-ops.test.js",
     "smoke:electron": "electron --no-sandbox scripts/smoke-electron.js",
+    "build": "electron-builder --publish never",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:linux": "electron-builder --linux --publish never",
+    "build:win": "electron-builder --win --publish never",
     "start": "electron .",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-builder install-app-deps"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.4",
-    "electron": "^41.3.0"
+    "electron": "^41.3.0",
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "@babel/standalone": "^7.29.0",

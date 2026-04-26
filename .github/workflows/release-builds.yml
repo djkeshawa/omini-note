@@ -1,0 +1,149 @@
+name: Release Builds
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publish a GitHub Release with the built artifacts"
+        required: true
+        default: false
+        type: boolean
+      release_tag:
+        description: "Release tag for manual publishing, for example v0.1.0"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-builds-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run editor tests
+        run: npm run test:editor
+
+      - name: Check main process scripts
+        run: npm run check:main
+
+      - name: Run Electron smoke test
+        run: xvfb-run -a npm run smoke:electron
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-x64
+            os: macos-13
+            args: --mac --x64
+          - name: macos-arm64
+            os: macos-14
+            args: --mac --arm64
+          - name: linux-x64
+            os: ubuntu-22.04
+            args: --linux --x64
+          - name: windows-x64
+            os: windows-2022
+            args: --win --x64
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build installers
+        run: npm run build -- ${{ matrix.args }}
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: OminiNote-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest*.yml
+            dist/*.yaml
+            dist/*.json
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish_release == true
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [[ -n "${{ inputs.release_tag }}" ]]; then
+            tag="${{ inputs.release_tag }}"
+          else
+            tag="v$(node -p "require('./package.json').version")-build.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update release
+        shell: bash
+        run: |
+          tag="${{ steps.release.outputs.tag }}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" release-artifacts/* --clobber
+          else
+            gh release create "${tag}" release-artifacts/* \
+              --title "OminiNote ${tag}" \
+              --notes "Automated OminiNote desktop release for macOS, Debian-compatible Linux, and Windows."
+          fi

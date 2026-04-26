@@ -1,0 +1,85 @@
+appId: com.omininote.app
+productName: OminiNote
+copyright: Copyright © 2026 djkeshawa
+
+directories:
+  output: dist
+
+files:
+  - OminiNote.html
+  - main.js
+  - preload.js
+  - package.json
+  - lib/**/*
+  - src/**/*
+  - node_modules/**/*
+  - "!**/*.map"
+  - "!tests/**/*"
+  - "!scripts/**/*"
+  - "!dist/**/*"
+  - "!release/**/*"
+  - "!coverage/**/*"
+  - "!*.log"
+
+asar: true
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+  - node_modules/sqlite-vec-*/**/*
+
+npmRebuild: true
+buildDependenciesFromSource: false
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+linux:
+  category: Office
+  maintainer: djkeshawa
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: OminiNote
