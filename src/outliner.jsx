@@ -1,6 +1,6 @@
 // OminiNote outliner — typed-block editor.
 //
-// Block kinds: paragraph (default), heading, bullet, todo, quote, code, divider.
+// Block kinds: paragraph (default), heading, bullet, todo, quote, code, table, divider.
 // - Enter behavior depends on kind (see handleEnter).
 // - Tab/Shift+Tab: indent/outdent (only for bullet/todo).
 // - Disclosure triangle: separate from bullet, only shown when block has children.
@@ -17,8 +17,14 @@ const {
   replaceTextRange: mnReplaceTextRange,
   updateBlockContent: mnUpdateBlockContent,
   splitBlock: mnSplitBlock,
+  splitAnnotations: mnSplitAnnotations,
   mergeBlockContent: mnMergeBlockContent,
 } = window.MN_EDITOR_OPS;
+const {
+  clipboardEventToMarkdownTable: mnClipboardEventToMarkdownTable,
+  markdownTableToRows: mnMarkdownTableToRows,
+  markdownTableToHtml: mnMarkdownTableToHtml,
+} = window.MN_TABLE_OPS || {};
 
 const MN_AI_ACTIONS = [
   {
@@ -190,6 +196,7 @@ const MN_SLASH_CMDS = [
   { id: 'todo',   label: 'To-do',      hint: 'Task with checkbox',   kbd: '[ ]', icon: '☐',  kind: 'todo', checked: false },
   { id: 'quote',  label: 'Quote',      hint: 'Blockquote',           kbd: '>',   icon: '❝',  kind: 'quote' },
   { id: 'code',   label: 'Code block', hint: 'Monospaced fenced',    kbd: '```', icon: '{}', kind: 'code' },
+  { id: 'table',  label: 'Table',      hint: 'Markdown table',       kbd: '|',   icon: '▦',  kind: 'table', content: '| Column 1 | Column 2 |\n| --- | --- |\n|  |  |' },
   { id: 'div',    label: 'Divider',    hint: 'Horizontal rule',      kbd: '---', icon: '—',  kind: 'divider' },
   { id: 'link',   label: 'Link to note', hint: 'Wiki-link to a note', kbd: '[[', icon: '⇉', insert: '[[' },
   { id: 'tag',    label: 'Tag',        hint: 'Categorize',           kbd: '#tag', icon: '#', insert: '#' },
@@ -379,6 +386,7 @@ function MnSelectionToolbar({ rect, selectionKind, onApply, onOpenAiMenu, onDele
 function MnBlockRow({
   block, depth, focusId, T, allNotes,
   onChange, onChangeKind, onIndent, onOutdent, onSplit, onMergePrev,
+  onInsertBlocksAt,
   onToggleCollapse, onToggleCheck, onSetAnnotation, onClearAnnotation,
   onFocusNext, onFocusPrev, onDelete, onOpen, onTagClick,
   onSelectionChange, setFocusId,
@@ -579,6 +587,46 @@ function MnBlockRow({
     }
   };
 
+  const handlePaste = (e) => {
+    const markdown = mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable(e);
+    if (!markdown) return;
+    const ta = inputRef.current;
+    if (!ta) return;
+    e.preventDefault();
+    setAutoQ(null);
+    setSlashQ(null);
+    const start = ta.selectionStart ?? 0;
+    const end = ta.selectionEnd ?? start;
+    const fullSelection = start === 0 && end === String(block.content || '').length;
+    if (!String(block.content || '').trim() || fullSelection) {
+      onChangeKind(block.id, {
+        kind: 'table',
+        level: 0,
+        checked: null,
+        content: markdown,
+      });
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.setSelectionRange(markdown.length, markdown.length);
+        }
+      }, 0);
+      return;
+    }
+    const tableBlock = mkBlock({ kind: 'table', content: markdown });
+    onInsertBlocksAt && onInsertBlocksAt(block.id, start, end, [tableBlock]);
+    setFocusId && setFocusId(tableBlock.id);
+  };
+
+  const handleCopy = (e) => {
+    if (block.kind !== 'table' || !mnMarkdownTableToHtml) return;
+    const html = mnMarkdownTableToHtml(block.content || '');
+    if (!html || !e.clipboardData) return;
+    e.preventDefault();
+    e.clipboardData.setData('text/plain', block.content || '');
+    e.clipboardData.setData('text/html', html);
+  };
+
   const handleSelect = (e) => {
     const ta = e.target;
     const start = ta.selectionStart;
@@ -651,7 +699,7 @@ function MnBlockRow({
         kind: cmd.kind,
         level: cmd.level || 0,
         checked: cmd.checked != null ? cmd.checked : null,
-        content: cleanContent,
+        content: cleanContent || cmd.content || '',
       });
     } else if (cmd.workflow !== undefined) {
       // Set workflow marker and strip the slash text atomically.
@@ -894,6 +942,8 @@ function MnBlockRow({
               ref={inputRef}
               value={block.content}
               onChange={handleInput}
+              onPaste={handlePaste}
+              onCopy={handleCopy}
               onSelect={handleSelect}
               onMouseUp={handleSelect}
               onKeyUp={handleSelect}
@@ -980,6 +1030,7 @@ function MnBlockRow({
         ) : (
           <div
             onClick={startEdit}
+            onCopy={handleCopy}
             style={{
               ...fontStyle,
               lineHeight: fontStyle.lineHeight || 1.55,
@@ -1016,6 +1067,9 @@ function MnBlockRow({
                 const blockEmbed = content.match(/^\{\{embed\s+\(\(([^)]+)\)\)\}\}$/);
                 if (blockEmbed) {
                   return <MnBlockEmbed refId={blockEmbed[1]} allNotes={allNotes} T={T} onOpenBlock={(noteId, blockId) => onOpen && onOpen(null, noteId, blockId)} />;
+                }
+                if (block.kind === 'table') {
+                  return <MnMarkdownTable markdown={content} T={T} />;
                 }
                 if (content) {
                   return mnRenderAnnotated(content, block.annotations, T, onOpen, onTagClick, allNotes);
@@ -1092,6 +1146,66 @@ function MnInlineAiButton({ block, T, onAiAction }) {
   );
 }
 
+function MnMarkdownTable({ markdown, T }) {
+  const rows = mnMarkdownTableToRows ? mnMarkdownTableToRows(markdown || '') : [];
+  if (!rows.length) {
+    return <span style={{ color: T.inkDim, fontStyle: 'italic' }}>Empty table</span>;
+  }
+  const cellBase = {
+    padding: '6px 9px',
+    border: `1px solid ${T.lineSub}`,
+    textAlign: 'left',
+    verticalAlign: 'top',
+    whiteSpace: 'pre-wrap',
+  };
+  return (
+    <div style={{
+      overflowX: 'auto',
+      maxWidth: '100%',
+      padding: '2px 0',
+    }}>
+      <table style={{
+        borderCollapse: 'collapse',
+        minWidth: 280,
+        maxWidth: '100%',
+        fontFamily: 'var(--mn-ui)',
+        fontSize: 12.5,
+        lineHeight: 1.45,
+        color: T.ink,
+        background: T.bg,
+      }}>
+        <thead>
+          <tr>
+            {rows[0].map((cell, i) => (
+              <th key={i} style={{
+                ...cellBase,
+                background: T.bgSub,
+                fontWeight: 650,
+                color: T.ink,
+              }}>{cell || '\u00a0'}</th>
+            ))}
+          </tr>
+        </thead>
+        {rows.length > 1 && (
+          <tbody>
+            {rows.slice(1).map((row, r) => (
+              <tr key={r}>
+                {row.map((cell, c) => (
+                  <td key={c} style={{
+                    ...cellBase,
+                    background: r % 2 ? T.bgSub : T.bg,
+                    color: T.inkMed,
+                  }}>{cell || '\u00a0'}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        )}
+      </table>
+    </div>
+  );
+}
+
 // ── Style helpers ──────────────────────────────────────────────────────
 function mnEditorFontScale(size) {
   if (size === 'small') return 0.9;
@@ -1112,6 +1226,11 @@ function mnGetFontStyle(block, T, editorFontSize) {
   if (block.kind === 'code') {
     return {
       fontFamily: 'var(--mn-mono)', fontSize: 13 * scale, color: T.ink, lineHeight: 1.5,
+    };
+  }
+  if (block.kind === 'table') {
+    return {
+      fontFamily: 'var(--mn-mono)', fontSize: 12.5 * scale, color: T.ink, lineHeight: 1.45,
     };
   }
   if (block.kind === 'quote') {
@@ -1146,6 +1265,7 @@ function mnGripPadTop(block) {
   }
   if (block.kind === 'quote') return 5;
   if (block.kind === 'code') return 8;
+  if (block.kind === 'table') return 6;
   return 5;
 }
 function mnPlaceholder(block) {
@@ -1154,6 +1274,7 @@ function mnPlaceholder(block) {
   if (block.kind === 'todo')   return 'Task';
   if (block.kind === 'quote')  return 'Quote';
   if (block.kind === 'code')   return 'Code';
+  if (block.kind === 'table')  return '| Column 1 | Column 2 |';
   return 'Type / for commands';
 }
 
@@ -1644,6 +1765,40 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
     setFocusId(nb.id);
   };
 
+  const onInsertBlocksAt = (id, start, end, insertedBlocks) => {
+    const firstInserted = insertedBlocks && insertedBlocks[0];
+    mutate(bs => {
+      const loc = mnLocate(bs, id);
+      if (!loc || !insertedBlocks?.length) return;
+      const text = String(loc.block.content || '');
+      const safeStart = Math.max(0, Math.min(text.length, Number(start) || 0));
+      const safeEnd = Math.max(safeStart, Math.min(text.length, Number(end) || safeStart));
+      const beforeSplit = mnSplitAnnotations(loc.block.annotations || [], safeStart, text.length);
+      const afterSplit = mnSplitAnnotations(loc.block.annotations || [], safeEnd, text.length);
+      const tailText = text.slice(safeEnd);
+      const blocksToInsert = mnCloneBlocks(insertedBlocks);
+      const tailBlocks = tailText
+        ? [mkBlock({
+            kind: loc.block.kind,
+            level: loc.block.level || 0,
+            checked: loc.block.checked,
+            content: tailText,
+            annotations: afterSplit.after,
+            workflow: loc.block.workflow || null,
+            children: safeStart === 0 ? (loc.block.children || []) : [],
+          })]
+        : [];
+      if (safeStart === 0) {
+        loc.arr.splice(loc.idx, 1, ...blocksToInsert, ...tailBlocks);
+        return;
+      }
+      loc.block.content = text.slice(0, safeStart);
+      loc.block.annotations = beforeSplit.before;
+      loc.arr.splice(loc.idx + 1, 0, ...blocksToInsert, ...tailBlocks);
+    });
+    if (firstInserted) setFocusId(firstInserted.id);
+  };
+
   const onMergePrev = (id) => mutate(bs => {
     const loc = mnLocate(bs, id);
     if (!loc || loc.idx === 0) return;
@@ -2112,7 +2267,7 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
 
   const handlers = {
     onChange, onChangeKind, onToggleCollapse, onToggleCheck,
-    onIndent, onOutdent, onSplit, onMergePrev, onDelete,
+    onIndent, onOutdent, onSplit, onInsertBlocksAt, onMergePrev, onDelete,
     onFocusNext, onFocusPrev, onOpen, onTagClick,
     onMove,
     onContextMenu, onZoom,

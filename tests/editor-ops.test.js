@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ops = require('../src/editorOps.js');
+const tableOps = require('../src/tableOps.js');
 
 function block(content, annotations = []) {
   return { id: Math.random().toString(36).slice(2), content, annotations, children: [] };
@@ -129,6 +130,31 @@ test('Functional block updates compose in one event', () => {
   ]);
 });
 
+test('Clipboard tables convert to normalized markdown tables', () => {
+  assert.equal(
+    tableOps.clipboardToMarkdownTable({ text: 'Name\tRole\nAda\tEngineer\nLinus\tMaintainer' }),
+    '| Name | Role |\n| --- | --- |\n| Ada | Engineer |\n| Linus | Maintainer |'
+  );
+
+  assert.equal(
+    tableOps.clipboardToMarkdownTable({
+      html: '<table><tr><th>Item</th><th>Count</th></tr><tr><td>Pipes | escaped</td><td>2</td></tr></table>',
+    }),
+    '| Item | Count |\n| --- | --- |\n| Pipes \\| escaped | 2 |'
+  );
+});
+
+test('Markdown table rows round-trip through table helpers', () => {
+  const markdown = '| Name | Notes |\n| --- | --- |\n| Ada | Pipes \\| stay |\n| Grace | Compiler |';
+
+  assert.deepEqual(tableOps.markdownTableToRows(markdown), [
+    ['Name', 'Notes'],
+    ['Ada', 'Pipes | stay'],
+    ['Grace', 'Compiler'],
+  ]);
+  assert.match(tableOps.markdownTableToHtml(markdown), /<table><thead><tr><th>Name<\/th><th>Notes<\/th><\/tr><\/thead>/);
+});
+
 test('AI menu buttons open option menus instead of running Improve directly', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
 
@@ -224,6 +250,26 @@ test('Visible block context menu options are wired to real operations', () => {
   assert.match(outliner, /position === 'up'/);
   assert.match(outliner, /position === 'down'/);
   assert.match(outliner, /loc\.arr\.splice\(loc\.idx \+ 1, 0, clone\)/);
+});
+
+test('Table blocks are parsed, rendered, copied, and pasted as formatted markdown', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+
+  assert.match(html, /src="src\/tableOps\.js"/);
+  assert.match(outline, /readMarkdownTable\(lines, i\)/);
+  assert.match(outline, /kind: 'table'/);
+  assert.match(outline, /b\.kind === 'table'/);
+  assert.match(outliner, /id: 'table'/);
+  assert.match(outliner, /const handlePaste = \(e\) =>/);
+  assert.match(outliner, /mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable\(e\)/);
+  assert.match(outliner, /const handleCopy = \(e\) =>/);
+  assert.match(outliner, /mnMarkdownTableToHtml\(block\.content \|\| ''\)/);
+  assert.match(outliner, /function MnMarkdownTable/);
+  assert.match(outliner, /onPaste=\{handlePaste\}/);
+  assert.match(outliner, /onCopy=\{handleCopy\}/);
+  assert.match(outliner, /onInsertBlocksAt/);
 });
 
 test('Selection toolbar closes on outside click and keeps overflow actions in More', () => {
