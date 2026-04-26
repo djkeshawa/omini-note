@@ -244,6 +244,30 @@ test('Note tag picker can create new tags from the editor', () => {
   assert.match(sidebar, /top: 42/);
 });
 
+test('Vaults can be created and deleted from settings with backend cleanup', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+
+  assert.match(store, /async function deleteVault\(id\)/);
+  assert.match(store, /Create another vault before deleting this one/);
+  assert.match(store, /fsp\.rm\(vaultDir\(v\.slug\), \{ recursive: true, force: true \}\)/);
+  assert.match(store, /deleteVault, setActiveVault/);
+  assert.match(main, /ipcMain\.handle\('mn:deleteVault'/);
+  assert.match(main, /idx\.removeVault\(vaultId\)/);
+  assert.match(preload, /deleteVault: \(id\) => ipcRenderer\.invoke\('mn:deleteVault', id\)/);
+  assert.match(app, /const deleteVault = useCallbackA\(async \(id\) =>/);
+  assert.match(app, /onCreateVault=\{createVault\}/);
+  assert.match(app, /onDeleteVault=\{deleteVault\}/);
+  assert.match(settings, /label="Create vault"/);
+  assert.match(settings, /label="Delete current vault"/);
+  assert.match(settings, /Type \$\{currentVault\.name\}/);
+  assert.match(settings, /Delete permanently/);
+  assert.match(settings, /This cannot be undone/);
+});
+
 test('Visible block context menu options are wired to real operations', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
 

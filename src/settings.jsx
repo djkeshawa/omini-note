@@ -1,7 +1,7 @@
 // Standardized settings modal with tabbed sections.
 const { useState: useStateS, useEffect: useEffectS } = React;
 
-function MnSettingsModal({ tweaks, setTweak, T, onClose, stats }) {
+function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault, onCreateVault, onDeleteVault }) {
   const [section, setSection] = useStateS('appearance');
 
   const sections = [
@@ -75,7 +75,19 @@ function MnSettingsModal({ tweaks, setTweak, T, onClose, stats }) {
             {section === 'notes' && <SectionNotes tweaks={tweaks} setTweak={setTweak} T={T} stats={stats} />}
             {section === 'reminders' && <SectionReminders tweaks={tweaks} setTweak={setTweak} T={T} />}
             {section === 'ai' && <SectionAI T={T} />}
-            {section === 'data' && <SectionData tweaks={tweaks} setTweak={setTweak} T={T} stats={stats} />}
+            {section === 'data' && (
+              <SectionData
+                tweaks={tweaks}
+                setTweak={setTweak}
+                T={T}
+                stats={stats}
+                vaults={vaults || []}
+                activeVaultId={activeVaultId}
+                activeVault={activeVault}
+                onCreateVault={onCreateVault}
+                onDeleteVault={onDeleteVault}
+              />
+            )}
             {section === 'shortcuts' && <SectionShortcuts T={T} />}
             {section === 'about' && <SectionAbout T={T} stats={stats} />}
           </div>
@@ -501,16 +513,79 @@ function uniqueOptions(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-function SectionData({ tweaks, setTweak, T, stats }) {
+function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault, onCreateVault, onDeleteVault }) {
+  const [newVaultName, setNewVaultName] = useStateS('');
+  const [confirmingDelete, setConfirmingDelete] = useStateS(false);
+  const [confirmText, setConfirmText] = useStateS('');
+  const [busy, setBusy] = useStateS(false);
+  const [error, setError] = useStateS('');
+  const currentVault = activeVault || vaults.find(v => v.id === activeVaultId) || null;
+  const canDeleteVault = !!currentVault && vaults.length > 1;
+  const deleteReady = canDeleteVault && confirmText.trim() === currentVault.name;
+  const submitCreateVault = async () => {
+    const name = newVaultName.trim();
+    if (!name || !onCreateVault) return;
+    setError('');
+    setBusy(true);
+    try {
+      await onCreateVault(name);
+      setNewVaultName('');
+      setConfirmingDelete(false);
+      setConfirmText('');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const submitDeleteVault = async () => {
+    if (!deleteReady || !onDeleteVault) return;
+    setError('');
+    setBusy(true);
+    try {
+      const result = await onDeleteVault(currentVault.id);
+      if (result && result.ok === false) {
+        setError(result.error || 'Could not delete vault.');
+        return;
+      }
+      setConfirmingDelete(false);
+      setConfirmText('');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div>
       <H T={T} label="Data & Sync" sub="Where OminiNote keeps your markdown files." />
-      <Row T={T} label="Vault location" sub="Folder on disk where .md files are stored.">
+      <Row T={T} label="Current vault" sub="Folder on disk where this vault's markdown files are stored.">
         <div style={{
           fontFamily: 'var(--mn-mono)', fontSize: 11.5, color: T.inkMed,
           padding: '5px 10px', border: `1px solid ${T.line}`, borderRadius: 5,
           background: T.bgSub,
-        }}>~/OminiNote/vault</div>
+          maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }} title={currentVault?.path || ''}>{currentVault?.path || '~/OminiNote/vault'}</div>
+      </Row>
+      <Row T={T} label="Create vault" sub="Start a separate local workspace with its own notes and tags.">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            value={newVaultName}
+            onChange={e => setNewVaultName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') submitCreateVault();
+            }}
+            placeholder="Vault name"
+            style={{
+              width: 170,
+              padding: '6px 9px',
+              borderRadius: 5,
+              border: `1px solid ${T.line}`,
+              background: T.bg,
+              color: T.ink,
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 12,
+              outline: 'none',
+            }}
+          />
+          <BtnOutline T={T} disabled={busy || !newVaultName.trim()} onClick={submitCreateVault}>Create</BtnOutline>
+        </div>
       </Row>
       <Row T={T} label="Auto-save" sub="Persist changes to disk as you type.">
         <Toggle T={T} checked={tweaks.autoSave !== false} onChange={v => setTweak('autoSave', v)} />
@@ -525,6 +600,60 @@ function SectionData({ tweaks, setTweak, T, stats }) {
           onChange={v => setTweak('sync', v)}
           options={[{ value: 'local', label: 'Local only' }, { value: 'icloud', label: 'iCloud' }, { value: 'custom', label: 'Custom' }]} />
       </Row>
+      <Row T={T} label="Delete current vault" sub={canDeleteVault ? "Permanently remove this vault and every note file inside it." : "Create another vault before deleting this one."}>
+        <BtnOutline
+          T={T}
+          danger
+          disabled={busy || !canDeleteVault}
+          onClick={() => {
+            setError('');
+            setConfirmingDelete(v => !v);
+            setConfirmText('');
+          }}
+        >Delete vault...</BtnOutline>
+      </Row>
+      {confirmingDelete && currentVault && (
+        <div style={{
+          marginTop: 12,
+          padding: '12px 14px',
+          borderRadius: 6,
+          border: `1px solid color-mix(in oklab, ${T.danger} 35%, ${T.lineSub})`,
+          background: `color-mix(in oklab, ${T.danger} 8%, ${T.bg})`,
+        }}>
+          <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 650, color: T.danger }}>
+            Delete "{currentVault.name}" permanently
+          </div>
+          <div style={{ marginTop: 4, fontFamily: 'var(--mn-body)', fontSize: 12.5, lineHeight: 1.45, color: T.inkMed }}>
+            This removes the vault folder, its markdown files, tags, and search index entries. This cannot be undone.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+            <input
+              value={confirmText}
+              onChange={e => setConfirmText(e.target.value)}
+              placeholder={`Type ${currentVault.name}`}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: '6px 9px',
+                borderRadius: 5,
+                border: `1px solid ${deleteReady ? T.danger : T.line}`,
+                background: T.bg,
+                color: T.ink,
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12,
+                outline: 'none',
+              }}
+            />
+            <BtnOutline T={T} danger disabled={busy || !deleteReady} onClick={submitDeleteVault}>Delete permanently</BtnOutline>
+          </div>
+          {error && <div style={{
+            marginTop: 8,
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 12,
+            color: T.danger,
+          }}>{error}</div>}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
         <BtnOutline T={T}>Export vault…</BtnOutline>
         <BtnOutline T={T}>Import notes…</BtnOutline>
@@ -537,13 +666,14 @@ function SectionData({ tweaks, setTweak, T, stats }) {
   );
 }
 
-function BtnOutline({ T, children, danger, onClick }) {
+function BtnOutline({ T, children, danger, disabled, onClick }) {
   return (
-    <button onClick={onClick} style={{
-      padding: '6px 12px', borderRadius: 5, cursor: 'pointer',
+    <button disabled={disabled} onClick={onClick} style={{
+      padding: '6px 12px', borderRadius: 5, cursor: disabled ? 'default' : 'pointer',
       background: T.bg, border: `1px solid ${danger ? T.danger : T.line}`,
-      color: danger ? T.danger : T.inkMed,
+      color: disabled ? T.inkDim : danger ? T.danger : T.inkMed,
       fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500,
+      opacity: disabled ? 0.62 : 1,
     }}>{children}</button>
   );
 }
