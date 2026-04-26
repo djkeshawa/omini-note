@@ -84,86 +84,39 @@ function collectWorkflowBlocks(notes, states, mnWalk) {
   };
 }
 
-const MN_LAUNCH_NEURAL_PATHS = [
-  { color: '#7fa2ff', d: 'M500 350 C420 285 320 260 195 210 S58 142 0 80', main: true },
-  { color: '#7fa2ff', d: 'M318 258 C292 212 268 182 218 145' },
-  { color: '#7fa2ff', d: 'M178 203 C138 238 93 258 38 258' },
-  { color: '#72d7bd', d: 'M500 350 C590 276 710 236 850 150 S965 58 1000 30', main: true },
-  { color: '#72d7bd', d: 'M705 238 C758 302 834 326 922 300' },
-  { color: '#72d7bd', d: 'M850 150 C890 184 940 198 1000 190' },
-  { color: '#eaa2c6', d: 'M500 350 C470 430 392 524 320 700', main: true },
-  { color: '#eaa2c6', d: 'M404 506 C330 500 265 526 205 588' },
-  { color: '#eaa2c6', d: 'M352 622 C410 650 472 678 548 700' },
-  { color: '#efc96f', d: 'M500 350 C565 430 680 536 1000 654', main: true },
-  { color: '#efc96f', d: 'M686 536 C728 490 788 468 865 472' },
-  { color: '#efc96f', d: 'M828 596 C870 642 912 672 970 700' },
-  { color: '#a998ef', d: 'M500 350 C500 252 520 142 520 0', main: true },
-  { color: '#a998ef', d: 'M510 212 C456 170 418 112 395 32' },
-  { color: '#a998ef', d: 'M516 112 C584 88 635 52 678 0' },
-  { color: '#7bcde8', d: 'M500 350 C500 456 505 578 500 700', main: true },
-  { color: '#7bcde8', d: 'M502 486 C560 522 608 574 645 650' },
-  { color: '#7bcde8', d: 'M500 560 C438 592 394 638 365 700' },
-  { color: '#9ddb88', d: 'M500 350 C360 360 212 426 0 500', main: true },
-  { color: '#9ddb88', d: 'M254 414 C206 374 142 350 58 344' },
-  { color: '#9ddb88', d: 'M148 448 C118 512 76 558 0 600' },
-  { color: '#eba696', d: 'M500 350 C650 365 812 430 1000 508', main: true },
-  { color: '#eba696', d: 'M760 410 C818 374 890 352 1000 344' },
-  { color: '#eba696', d: 'M880 458 C918 520 955 566 1000 600' },
-];
-
-const MN_LAUNCH_NEURAL_NODES = [
-  ['#7fa2ff', 500, 350, 9],
-  ['#72d7bd', 318, 258, 5],
-  ['#72d7bd', 705, 238, 5],
-  ['#eaa2c6', 404, 506, 5],
-  ['#efc96f', 686, 536, 5],
-  ['#a998ef', 510, 212, 5],
-  ['#7bcde8', 502, 486, 5],
+const MN_LAUNCH_FLOATS = [
+  { left: '14%', top: '18%', size: '132px', color: '#f3bfd8', x: '34px', y: '-24px', duration: '8.5s', delay: '-1.2s' },
+  { left: '72%', top: '13%', size: '164px', color: '#a9c2ff', x: '-42px', y: '30px', duration: '9.4s', delay: '-2.4s' },
+  { left: '78%', top: '62%', size: '118px', color: '#9fe2c9', x: '28px', y: '-38px', duration: '8.8s', delay: '-3s' },
+  { left: '18%', top: '68%', size: '156px', color: '#f5d58e', x: '46px', y: '28px', duration: '10.2s', delay: '-.6s' },
+  { left: '46%', top: '20%', size: '92px', color: '#c8b6ff', x: '-22px', y: '36px', duration: '7.6s', delay: '-4.1s' },
+  { left: '55%', top: '72%', size: '108px', color: '#9fd9f0', x: '-34px', y: '-28px', duration: '9s', delay: '-1.8s' },
 ];
 
 function MnLaunchScreen({ state, error, T }) {
   const loading = state === 'loading';
-  const mainPaths = MN_LAUNCH_NEURAL_PATHS.filter(p => p.main).slice(0, 6);
   return (
     <div className="mn-boot-splash" style={{ position: 'relative', zIndex: 'auto', width: '100vw', height: '100vh' }}>
       <div className="mn-boot-grid" />
-      <svg className="mn-boot-neural-field" viewBox="0 0 1000 700" preserveAspectRatio="none" aria-hidden="true">
-        {MN_LAUNCH_NEURAL_PATHS.map((path, i) => (
-          <path
-            key={`${path.d}-${i}`}
-            className={`mn-neuron-axon${path.main ? '' : ' mn-neuron-branch'}`}
+      <div className="mn-boot-pastel-field" aria-hidden="true">
+        {MN_LAUNCH_FLOATS.map((item, i) => (
+          <span
+            key={`${item.left}-${item.top}-${i}`}
+            className="mn-pastel-float"
             style={{
-              '--axon-color': path.color,
+              '--float-left': item.left,
+              '--float-top': item.top,
+              '--float-size': item.size,
+              '--float-color': item.color,
+              '--float-x': item.x,
+              '--float-y': item.y,
+              '--float-duration': item.duration,
+              '--float-delay': item.delay,
               animationPlayState: loading ? 'running' : 'paused',
             }}
-            d={path.d}
           />
         ))}
-        {MN_LAUNCH_NEURAL_NODES.map(([color, cx, cy, r]) => (
-          <circle
-            key={`${cx}-${cy}`}
-            className="mn-neuron-node"
-            style={{ '--axon-color': color }}
-            cx={cx}
-            cy={cy}
-            r={r}
-          />
-        ))}
-        {mainPaths.map((path, i) => (
-          <circle
-            key={`fire-${path.d}`}
-            className="mn-neuron-fire"
-            style={{ '--axon-color': path.color, opacity: loading ? 0.58 : 0 }}
-            r="4.5">
-            <animateMotion
-              dur={`${2.7 + (i % 3) * 0.12}s`}
-              begin={`${i * 0.18}s`}
-              repeatCount="indefinite"
-              path={path.d}
-            />
-          </circle>
-        ))}
-      </svg>
+      </div>
       <div className="mn-boot-core">
         <div className="mn-boot-title">OminiNote</div>
         <div className="mn-boot-subtitle" style={{ color: loading ? '#667187' : '#b84b42' }}>

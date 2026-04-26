@@ -250,24 +250,25 @@ test('Note delete confirmation uses themed in-app dialog', () => {
   assert.doesNotMatch(app, /confirm\(/);
 });
 
-test('Launch screen uses OminiNote pastel neuron signal design', () => {
+test('Launch screen uses OminiNote pastel floating design', () => {
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
 
   assert.match(html, /<title>OminiNote<\/title>/);
-  assert.match(html, /@keyframes mnNeuronFlow/);
-  assert.match(html, /mn-boot-neural-field/);
-  assert.match(html, /mn-neuron-axon/);
-  assert.match(html, /mn-neuron-branch/);
-  assert.match(html, /animateMotion/);
-  assert.match(html, /width: 104vw/);
-  assert.match(html, /height: 104vh/);
+  assert.match(html, /@keyframes mnPastelFloat/);
+  assert.match(html, /mn-boot-pastel-field/);
+  assert.match(html, /mn-pastel-float/);
+  assert.match(html, /--float-color:#f3bfd8/);
+  assert.match(html, /--float-color:#a9c2ff/);
+  assert.doesNotMatch(html, /mn-boot-neural-field/);
+  assert.doesNotMatch(html, /animateMotion/);
   assert.match(html, /mn-boot-title">OminiNote/);
   assert.match(html, /Connecting your workspace/);
   assert.match(app, /<div className="mn-boot-title">OminiNote<\/div>/);
-  assert.match(app, /MN_LAUNCH_NEURAL_PATHS/);
-  assert.match(app, /className="mn-boot-neural-field"/);
-  assert.match(app, /<animateMotion/);
+  assert.match(app, /MN_LAUNCH_FLOATS/);
+  assert.match(app, /className="mn-boot-pastel-field"/);
+  assert.match(app, /className="mn-pastel-float"/);
+  assert.doesNotMatch(app, /MN_LAUNCH_NEURAL_PATHS/);
 });
 
 test('App and editor font size settings use stepper controls', () => {
