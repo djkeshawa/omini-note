@@ -231,9 +231,16 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
   const tagHue = useMemoP(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
+  const countFor = (id) => (workflowItems?.[id] || []).length;
   const total = (workflowStates || []).reduce((sum, state) => {
-    return sum + ((workflowItems?.[state.id] || []).length);
+    return sum + countFor(state.id);
   }, 0);
+  const activeCount = countFor('NOW') + countFor('DOING');
+  const waitingCount = countFor('WAIT') + countFor('LATER');
+  const closedCount = countFor('DONE') + countFor('CANCELLED');
+  const openCount = Math.max(0, total - closedCount);
+  const stateCount = Math.max(1, (workflowStates || []).length);
+  const kanbanMinWidth = Math.max(760, stateCount * 172);
 
   const moveItem = (item, stateId) => {
     if (!item || item.workflow === stateId) return;
@@ -242,15 +249,47 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
 
   const ModeButton = ({ id, label }) => (
     <button onClick={() => setMode(id)} style={{
-      padding: '4px 10px',
+      padding: '5px 10px',
       borderRadius: 5,
-      border: `1px solid ${mode === id ? T.ink : T.line}`,
-      background: mode === id ? T.ink : T.bg,
-      color: mode === id ? T.bg : T.inkMed,
+      border: 'none',
+      background: mode === id ? T.bg : 'transparent',
+      color: mode === id ? T.ink : T.inkMed,
       fontFamily: 'var(--mn-ui)',
       fontSize: 12,
+      fontWeight: mode === id ? 600 : 500,
       cursor: 'pointer',
+      boxShadow: mode === id ? `0 1px 3px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
     }}>{label}</button>
+  );
+
+  const SummaryStat = ({ label, value, accent }) => (
+    <div style={{
+      minWidth: 92,
+      padding: '8px 10px',
+      borderRadius: 7,
+      border: `1px solid ${T.lineSub}`,
+      background: `color-mix(in oklab, ${accent || T.bgSub} 12%, ${T.bg})`,
+      display: 'flex',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      gap: 10,
+    }}>
+      <span style={{
+        fontFamily: 'var(--mn-mono)',
+        fontSize: 10,
+        color: T.inkDim,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
+      }}>{label}</span>
+      <span style={{
+        fontFamily: 'var(--mn-ui)',
+        fontSize: 16,
+        fontWeight: 650,
+        color: accent || T.ink,
+        lineHeight: 1,
+      }}>{value}</span>
+    </div>
   );
 
   const StatePill = ({ state }) => (
@@ -274,7 +313,7 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
     return (
       <div style={{
         display: 'flex', gap: 5, alignItems: 'center',
-        flexWrap: 'wrap', minWidth: 0, maxHeight: 54,
+        flexWrap: 'wrap', minWidth: 0, maxHeight: 50,
         overflow: 'hidden',
       }}>
         {current.slice(0, 3).map(t => (
@@ -287,7 +326,7 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
               setTagsForNote(current.filter(x => x !== t));
             }}
             style={{
-              maxWidth: 86,
+              maxWidth: 92,
               padding: '2px 6px',
               borderRadius: 999,
               border: `1px solid ${T.lineSub}`,
@@ -315,7 +354,7 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
             e.target.value = '';
           }}
           style={{
-            maxWidth: 88,
+            maxWidth: 92,
             border: `1px dashed ${T.line}`,
             borderRadius: 999,
             background: T.bg,
@@ -343,8 +382,8 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
       onDragEnd={() => setDragItem(null)}
       onClick={() => onOpen(item.noteId)}
       style={{
-        height: 126,
-        padding: '11px 12px',
+        height: 116,
+        padding: '10px 11px',
         borderRadius: 6,
         background: T.bg,
         border: `1px solid ${T.lineSub}`,
@@ -352,9 +391,12 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
         cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
+        gap: 7,
         overflow: 'hidden',
         opacity: dragItem?.id === item.id ? 0.5 : 1,
+        boxShadow: dragItem?.id === item.id
+          ? 'none'
+          : `0 1px 2px color-mix(in oklab, ${T.ink} 5%, transparent)`,
       }}
       onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
       onMouseLeave={e => e.currentTarget.style.background = T.bg}>
@@ -380,7 +422,7 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
       <div style={{ flex: 1 }} />
       <div style={{
         display: 'flex', gap: 5, alignItems: 'center',
-        overflow: 'hidden', minHeight: 20,
+        overflow: 'hidden', minHeight: 19,
       }}>
         {item.noteTags.slice(0, 3).map(t => (
           <span key={t} style={{
@@ -425,26 +467,41 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
         background: dragItem && dragItem.workflow !== state.id ? T.bgHover : T.bgSub,
         border: `1px solid ${T.lineSub}`,
         borderRadius: 8,
-        padding: 10,
-        minHeight: mode === 'kanban' ? 420 : 0,
+        padding: 9,
+        minHeight: mode === 'kanban' ? 'min(470px, calc(100vh - 230px))' : 0,
         transition: 'background 100ms',
+        minWidth: 0,
       }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        margin: '0 2px 10px',
+        margin: '0 1px 9px',
+        position: 'sticky',
+        top: 0,
+        zIndex: 1,
+        background: dragItem && dragItem.workflow !== state.id ? T.bgHover : T.bgSub,
+        paddingBottom: 1,
       }}>
         <StatePill state={state} />
-        <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{(workflowItems?.[state.id] || []).length}</span>
+        <span style={{
+          fontFamily: 'var(--mn-mono)',
+          fontSize: 10.5,
+          color: T.inkDim,
+          background: T.bg,
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 999,
+          padding: '1px 6px',
+        }}>{countFor(state.id)}</span>
       </div>
       {children}
       {empty && (
         <div style={{
-          padding: 14, textAlign: 'center',
+          padding: '18px 10px', textAlign: 'center',
           fontFamily: 'var(--mn-body)', fontSize: 12.5,
           color: T.inkDim, fontStyle: 'italic',
           border: `1px dashed ${T.lineSub}`,
           borderRadius: 6,
-        }}>drop here</div>
+          background: `color-mix(in oklab, ${T.bg} 70%, transparent)`,
+        }}>Drop here</div>
       )}
     </div>
   );
@@ -456,45 +513,78 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
   return (
     <div style={{
       flex: 1, height: '100%', background: T.bg,
-      padding: '40px 28px 28px', overflow: 'auto',
+      padding: '30px clamp(14px, 2vw, 28px) 24px',
+      overflow: 'auto',
+      minWidth: 0,
     }}>
-      <div style={{ maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ width: '100%', maxWidth: 1480, margin: '0 auto', minWidth: 0 }}>
         <div style={{
-          fontFamily: 'var(--mn-ui)', fontSize: 26, fontWeight: 600,
-          color: T.ink, marginBottom: 3, letterSpacing: '-0.02em',
-        }}>Workflow</div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          marginBottom: 24,
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 14,
+          flexWrap: 'wrap',
+          marginBottom: 14,
         }}>
+          <div style={{ minWidth: 180 }}>
+            <div style={{
+              fontFamily: 'var(--mn-ui)', fontSize: 25, fontWeight: 650,
+              color: T.ink, marginBottom: 4, letterSpacing: '-0.01em',
+            }}>Workflow</div>
+            <div style={{
+              fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
+              letterSpacing: '0.06em',
+            }}>{total} workflow block{total === 1 ? '' : 's'} across this vault</div>
+          </div>
           <div style={{
-            fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-            letterSpacing: '0.06em',
-          }}>{total} workflow block{total === 1 ? '' : 's'} across this vault</div>
-          <div style={{ flex: 1 }} />
-          <ModeButton id="kanban" label="Kanban" />
-          <ModeButton id="table" label="Table" />
-          <ModeButton id="list" label="List" />
+            display: 'flex',
+            gap: 2,
+            padding: 3,
+            border: `1px solid ${T.lineSub}`,
+            borderRadius: 7,
+            background: T.bgSub,
+            flexShrink: 0,
+          }}>
+            <ModeButton id="kanban" label="Kanban" />
+            <ModeButton id="table" label="Table" />
+            <ModeButton id="list" label="List" />
+          </div>
+        </div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+          gap: 8,
+          marginBottom: 16,
+        }}>
+          <SummaryStat label="Open" value={openCount} accent={T.accent} />
+          <SummaryStat label="Active" value={activeCount} accent={T.warn} />
+          <SummaryStat label="Waiting" value={waitingCount} accent={T.inkMed} />
+          <SummaryStat label="Closed" value={closedCount} accent={T.success} />
         </div>
 
         {mode === 'kanban' && (
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(7, minmax(180px, 1fr))',
-            gap: 12,
             overflowX: 'auto',
-            paddingBottom: 8,
+            overflowY: 'visible',
+            paddingBottom: 10,
           }}>
-            {(workflowStates || []).map(state => {
-              const items = workflowItems?.[state.id] || [];
-              return (
-                <DropColumn key={state.id} state={state} empty={!items.length}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {items.map(item => <Card key={item.id} item={item} state={state} />)}
-                  </div>
-                </DropColumn>
-              );
-            })}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${stateCount}, minmax(172px, 1fr))`,
+              gap: 10,
+              minWidth: kanbanMinWidth,
+            }}>
+              {(workflowStates || []).map(state => {
+                const items = workflowItems?.[state.id] || [];
+                return (
+                  <DropColumn key={state.id} state={state} empty={!items.length}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {items.map(item => <Card key={item.id} item={item} state={state} />)}
+                    </div>
+                  </DropColumn>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -503,37 +593,42 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
             border: `1px solid ${T.lineSub}`,
             borderRadius: 8,
             overflowX: 'auto',
-            overflowY: 'hidden',
+            overflowY: 'auto',
+            maxHeight: 'calc(100vh - 205px)',
           }}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '118px minmax(180px, 1.2fr) minmax(150px, 0.8fr) minmax(190px, 1fr) 132px',
+              gridTemplateColumns: '108px minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(180px, 1fr) 126px',
               gap: 0,
               padding: '8px 12px',
               background: T.bgSub,
               borderBottom: `1px solid ${T.lineSub}`,
+              position: 'sticky',
+              top: 0,
+              zIndex: 1,
               fontFamily: 'var(--mn-mono)',
               fontSize: 10,
               color: T.inkDim,
               letterSpacing: '0.1em',
               textTransform: 'uppercase',
-              minWidth: 840,
+              minWidth: 880,
               boxSizing: 'border-box',
             }}>
-              <span>Status</span><span>Heading</span><span>Note</span><span>Tags</span><span>Change</span>
+              <span>Status</span><span>Block</span><span>Note</span><span>Tags</span><span>Change</span>
             </div>
             {allItems.map(({ state, ...item }) => (
               <div key={item.id} style={{
                 display: 'grid',
-                gridTemplateColumns: '118px minmax(180px, 1.2fr) minmax(150px, 0.8fr) minmax(190px, 1fr) 132px',
+                gridTemplateColumns: '108px minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(180px, 1fr) 126px',
                 gap: 0,
-                padding: '9px 12px',
+                padding: '10px 12px',
                 borderBottom: `1px solid ${T.lineSub}`,
                 alignItems: 'start',
                 fontFamily: 'var(--mn-ui)',
                 fontSize: 13,
-                minWidth: 840,
+                minWidth: 880,
                 boxSizing: 'border-box',
+                background: T.bg,
               }}>
                 <div style={{ minWidth: 0, paddingTop: 3, overflow: 'hidden' }}>
                   <StatePill state={state} />
@@ -543,7 +638,8 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
                   textDecoration: state.id === 'DONE' || state.id === 'CANCELLED' ? 'line-through' : 'none',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  whiteSpace: 'normal',
+                  lineHeight: 1.35,
                   paddingTop: 3,
                   minWidth: 0,
                 }}>{item.text || 'Empty block'}</span>
@@ -573,7 +669,7 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
               </div>
             ))}
             {!allItems.length && (
-              <div style={{ padding: 18, textAlign: 'center', color: T.inkDim, fontFamily: 'var(--mn-body)', fontStyle: 'italic' }}>nothing here</div>
+              <div style={{ padding: 22, textAlign: 'center', color: T.inkDim, fontFamily: 'var(--mn-body)', fontStyle: 'italic' }}>No workflow blocks yet</div>
             )}
           </div>
         )}
@@ -581,10 +677,14 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
         {mode === 'list' && (workflowStates || []).map(state => {
           const items = workflowItems?.[state.id] || [];
           return (
-            <div key={state.id} style={{ marginBottom: 28 }}>
+            <div key={state.id} style={{ marginBottom: 20 }}>
               <SectionHead T={T} label={state.id} count={items.length} />
               {items.length ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))',
+                  gap: 8,
+                }}>
                   {items.map(item => <Card key={item.id} item={item} state={state} />)}
                 </div>
               ) : (
@@ -594,7 +694,7 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
                   color: T.inkDim, fontStyle: 'italic',
                   background: T.bgSub, border: `1px solid ${T.lineSub}`,
                   borderRadius: 6,
-                }}>nothing here</div>
+                }}>No workflow blocks</div>
               )}
             </div>
           );
