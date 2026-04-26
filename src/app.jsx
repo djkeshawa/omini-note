@@ -671,10 +671,91 @@ function MnApp() {
     }
   }, []);
 
+  const deleteVault = useCallbackA(async (id) => {
+    const target = vaults.find(v => v.id === id);
+    if (!target) return { ok: false, error: 'Vault not found.' };
+    if (vaults.length <= 1) {
+      return { ok: false, error: 'Create another vault before deleting this one.' };
+    }
+
+    const deletingActive = id === activeVaultId;
+    const pendingToSave = [...dirtyNotes.entries()].filter(([, vaultId]) => vaultId !== id);
+    await saveDirtyNotesNow(pendingToSave, notes, vaults);
+    if (!deletingActive) await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
+
+    const localRemaining = vaults.filter(v => v.id !== id);
+    let nextVaults = localRemaining;
+    let nextActiveId = deletingActive ? localRemaining[0]?.id : activeVaultId;
+
+    if (HAS_DISK) {
+      try {
+        const res = await window.mn.deleteVault(id);
+        if (!res.ok) throw new Error(res.error);
+        nextVaults = (res.value?.vaults || localRemaining).map(meta => {
+          const cached = localRemaining.find(v => v.id === meta.id) || {};
+          return { ...meta, notes: cached.notes || null, tags: cached.tags || null, lastSelectedId: cached.lastSelectedId || null };
+        });
+        nextActiveId = deletingActive ? (res.value?.activeVaultId || nextVaults[0]?.id) : activeVaultId;
+      } catch (e) {
+        console.error('deleteVault failed', e);
+        return { ok: false, error: e.message || String(e) };
+      }
+    }
+
+    setDirtyNotes(cur => {
+      const next = new Map();
+      cur.forEach((vaultId, noteId) => {
+        if (vaultId !== id) next.set(noteId, vaultId);
+      });
+      return next;
+    });
+
+    if (!deletingActive) {
+      setVaults(nextVaults);
+      return { ok: true };
+    }
+
+    const nextMeta = nextVaults.find(v => v.id === nextActiveId) || nextVaults[0];
+    if (!nextMeta) return { ok: false, error: 'No vault available after delete.' };
+
+    let nextNotes = nextMeta.notes || [];
+    let nextTags = nextMeta.tags || [];
+    let nextSelectedId = nextMeta.lastSelectedId || null;
+    if (HAS_DISK) {
+      try {
+        const loadRes = await window.mn.loadVault(nextMeta.id);
+        if (!loadRes.ok) throw new Error(loadRes.error);
+        const loaded = loadRes.value;
+        nextNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
+        nextTags = loaded.tags || [];
+        nextSelectedId = loaded.lastSelectedId || nextNotes[0]?.id || null;
+      } catch (e) {
+        console.error('loadVault after delete failed', e);
+        return { ok: false, error: e.message || String(e) };
+      }
+    }
+
+    setVaults(nextVaults.map(v => v.id === nextMeta.id
+      ? { ...v, notes: nextNotes, tags: nextTags, lastSelectedId: nextSelectedId }
+      : v));
+    setNotes(nextNotes);
+    setTags(nextTags);
+    setSelectedId(nextSelectedId || nextNotes[0]?.id || null);
+    setActiveVaultId(nextMeta.id);
+    setSelectedTag(null);
+    setSelectedWorkflow(null);
+    setQuery('');
+    tagsDirty.current = false;
+    navigateView('notes');
+    if (HAS_DISK) window.mn.setPrefs({ activeVaultId: nextMeta.id });
+    return { ok: true };
+  }, [activeVaultId, vaults, notes, tags, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks]);
+
   const vaultsForSidebar = useMemoA(() => vaults.map(v => ({
     ...v,
     noteCount: v.id === activeVaultId ? notes.length : (v.notes?.length ?? 0),
   })), [vaults, activeVaultId, notes]);
+  const activeVault = useMemoA(() => vaults.find(v => v.id === activeVaultId) || null, [vaults, activeVaultId]);
 
   const sidebarHidden = tweaks.showSidebar === false;
   const setSidebarHidden = (v) => {
@@ -1124,6 +1205,11 @@ function MnApp() {
         {settingsOpen && (
           <MnSettingsModal tweaks={tweaks} setTweak={setTweak} T={T}
             stats={appStats}
+            vaults={vaultsForSidebar}
+            activeVaultId={activeVaultId}
+            activeVault={activeVault}
+            onCreateVault={createVault}
+            onDeleteVault={deleteVault}
             onClose={() => setSettingsOpen(false)} />
         )}
         {deleteTargetNote && (

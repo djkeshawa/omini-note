@@ -118,6 +118,11 @@ ipcMain.handle('mn:createVault',    wrap(async (name) => {
   return v;
 }));
 ipcMain.handle('mn:renameVault',    wrap(store.renameVault));
+ipcMain.handle('mn:deleteVault',    wrap(async (vaultId) => {
+  const result = await store.deleteVault(vaultId);
+  idx.removeVault(vaultId);
+  return result;
+}));
 ipcMain.handle('mn:setActiveVault', wrap(store.setActiveVault));
 
 // Notes
