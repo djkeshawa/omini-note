@@ -50,19 +50,19 @@
     45% { transform: translateX(-10%) scaleX(0.72); }
     100% { transform: translateX(100%) scaleX(0.35); }
   }
-  @keyframes mnPastelFloat {
+  @keyframes mnLightBloom {
     0%, 100% {
-      opacity: 0.34;
-      transform: translate3d(0, 0, 0) scale(0.98);
+      opacity: 0.18;
+      transform: translate(-50%, -50%) scale(0.42);
     }
     50% {
-      opacity: 0.62;
-      transform: translate3d(var(--float-x), var(--float-y), 0) scale(1.04);
+      opacity: 0.72;
+      transform: translate(-50%, -50%) scale(1.2);
     }
   }
-  @keyframes mnPastelTurn {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+  @keyframes mnLightWash {
+    0%, 100% { opacity: 0.32; transform: translate3d(-2%, -1%, 0) scale(1); }
+    50% { opacity: 0.58; transform: translate3d(2%, 1%, 0) scale(1.04); }
   }
   .mn-boot-splash {
     position: fixed;
@@ -88,35 +88,37 @@
     -webkit-mask-image: radial-gradient(circle at center, black 0%, transparent 70%);
     mask-image: radial-gradient(circle at center, black 0%, transparent 70%);
   }
-  .mn-boot-pastel-field {
+  .mn-boot-light-field {
     position: absolute;
     inset: 0;
     pointer-events: none;
     overflow: hidden;
   }
-  .mn-pastel-float {
+  .mn-boot-light-field::before {
+    content: '';
     position: absolute;
-    left: var(--float-left);
-    top: var(--float-top);
-    width: var(--float-size);
+    inset: -18%;
+    background:
+      radial-gradient(circle at 18% 24%, rgba(243,191,216,0.48), transparent 26%),
+      radial-gradient(circle at 78% 18%, rgba(169,194,255,0.46), transparent 28%),
+      radial-gradient(circle at 76% 76%, rgba(159,226,201,0.44), transparent 30%),
+      radial-gradient(circle at 20% 78%, rgba(245,213,142,0.40), transparent 28%);
+    filter: blur(8px);
+    animation: mnLightWash 9s ease-in-out infinite;
+  }
+  .mn-light-bloom {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--bloom-size);
     aspect-ratio: 1;
     border-radius: 999px;
     background:
-      radial-gradient(circle at 34% 30%, rgba(255,255,255,0.82), color-mix(in oklab, var(--float-color) 60%, white) 34%, var(--float-color) 72%, transparent 100%);
-    box-shadow:
-      inset 0 0 0 1px rgba(255,255,255,0.68),
-      0 18px 46px color-mix(in oklab, var(--float-color) 18%, transparent);
-    animation: mnPastelFloat var(--float-duration) ease-in-out infinite;
-    animation-delay: var(--float-delay);
-    mix-blend-mode: multiply;
-  }
-  .mn-pastel-float::after {
-    content: '';
-    position: absolute;
-    inset: 18%;
-    border-radius: inherit;
-    border: 1px solid rgba(255,255,255,0.54);
-    animation: mnPastelTurn 12s linear infinite;
+      radial-gradient(circle, rgba(255,255,255,0.94) 0%, color-mix(in oklab, var(--bloom-color) 26%, white) 22%, color-mix(in oklab, var(--bloom-color) 54%, transparent) 48%, transparent 72%);
+    filter: blur(var(--bloom-blur));
+    mix-blend-mode: screen;
+    animation: mnLightBloom var(--bloom-duration) ease-in-out infinite;
+    animation-delay: var(--bloom-delay);
   }
   .mn-boot-title {
     position: relative;
@@ -173,13 +175,10 @@
 <div id="root"></div>
 <div id="mn-boot-splash" class="mn-boot-splash">
   <div class="mn-boot-grid"></div>
-  <div class="mn-boot-pastel-field" aria-hidden="true">
-    <span class="mn-pastel-float" style="--float-left:14%; --float-top:18%; --float-size:132px; --float-color:#f3bfd8; --float-x:34px; --float-y:-24px; --float-duration:8.5s; --float-delay:-1.2s;"></span>
-    <span class="mn-pastel-float" style="--float-left:72%; --float-top:13%; --float-size:164px; --float-color:#a9c2ff; --float-x:-42px; --float-y:30px; --float-duration:9.4s; --float-delay:-2.4s;"></span>
-    <span class="mn-pastel-float" style="--float-left:78%; --float-top:62%; --float-size:118px; --float-color:#9fe2c9; --float-x:28px; --float-y:-38px; --float-duration:8.8s; --float-delay:-3s;"></span>
-    <span class="mn-pastel-float" style="--float-left:18%; --float-top:68%; --float-size:156px; --float-color:#f5d58e; --float-x:46px; --float-y:28px; --float-duration:10.2s; --float-delay:-.6s;"></span>
-    <span class="mn-pastel-float" style="--float-left:46%; --float-top:20%; --float-size:92px; --float-color:#c8b6ff; --float-x:-22px; --float-y:36px; --float-duration:7.6s; --float-delay:-4.1s;"></span>
-    <span class="mn-pastel-float" style="--float-left:55%; --float-top:72%; --float-size:108px; --float-color:#9fd9f0; --float-x:-34px; --float-y:-28px; --float-duration:9s; --float-delay:-1.8s;"></span>
+  <div class="mn-boot-light-field" aria-hidden="true">
+    <span class="mn-light-bloom" style="--bloom-size:92vmax; --bloom-color:#f3bfd8; --bloom-blur:26px; --bloom-duration:7.6s; --bloom-delay:-1.2s;"></span>
+    <span class="mn-light-bloom" style="--bloom-size:112vmax; --bloom-color:#a9c2ff; --bloom-blur:34px; --bloom-duration:8.8s; --bloom-delay:-3.4s;"></span>
+    <span class="mn-light-bloom" style="--bloom-size:102vmax; --bloom-color:#9fe2c9; --bloom-blur:30px; --bloom-duration:9.6s; --bloom-delay:-5.1s;"></span>
   </div>
   <div class="mn-boot-core">
     <div class="mn-boot-title">OminiNote</div>

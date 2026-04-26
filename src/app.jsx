@@ -84,13 +84,10 @@ function collectWorkflowBlocks(notes, states, mnWalk) {
   };
 }
 
-const MN_LAUNCH_FLOATS = [
-  { left: '14%', top: '18%', size: '132px', color: '#f3bfd8', x: '34px', y: '-24px', duration: '8.5s', delay: '-1.2s' },
-  { left: '72%', top: '13%', size: '164px', color: '#a9c2ff', x: '-42px', y: '30px', duration: '9.4s', delay: '-2.4s' },
-  { left: '78%', top: '62%', size: '118px', color: '#9fe2c9', x: '28px', y: '-38px', duration: '8.8s', delay: '-3s' },
-  { left: '18%', top: '68%', size: '156px', color: '#f5d58e', x: '46px', y: '28px', duration: '10.2s', delay: '-.6s' },
-  { left: '46%', top: '20%', size: '92px', color: '#c8b6ff', x: '-22px', y: '36px', duration: '7.6s', delay: '-4.1s' },
-  { left: '55%', top: '72%', size: '108px', color: '#9fd9f0', x: '-34px', y: '-28px', duration: '9s', delay: '-1.8s' },
+const MN_LAUNCH_BLOOMS = [
+  { size: '92vmax', color: '#f3bfd8', blur: '26px', duration: '7.6s', delay: '-1.2s' },
+  { size: '112vmax', color: '#a9c2ff', blur: '34px', duration: '8.8s', delay: '-3.4s' },
+  { size: '102vmax', color: '#9fe2c9', blur: '30px', duration: '9.6s', delay: '-5.1s' },
 ];
 
 function MnLaunchScreen({ state, error, T }) {
@@ -98,20 +95,17 @@ function MnLaunchScreen({ state, error, T }) {
   return (
     <div className="mn-boot-splash" style={{ position: 'relative', zIndex: 'auto', width: '100vw', height: '100vh' }}>
       <div className="mn-boot-grid" />
-      <div className="mn-boot-pastel-field" aria-hidden="true">
-        {MN_LAUNCH_FLOATS.map((item, i) => (
+      <div className="mn-boot-light-field" aria-hidden="true">
+        {MN_LAUNCH_BLOOMS.map((item, i) => (
           <span
-            key={`${item.left}-${item.top}-${i}`}
-            className="mn-pastel-float"
+            key={`${item.color}-${i}`}
+            className="mn-light-bloom"
             style={{
-              '--float-left': item.left,
-              '--float-top': item.top,
-              '--float-size': item.size,
-              '--float-color': item.color,
-              '--float-x': item.x,
-              '--float-y': item.y,
-              '--float-duration': item.duration,
-              '--float-delay': item.delay,
+              '--bloom-size': item.size,
+              '--bloom-color': item.color,
+              '--bloom-blur': item.blur,
+              '--bloom-duration': item.duration,
+              '--bloom-delay': item.delay,
               animationPlayState: loading ? 'running' : 'paused',
             }}
           />

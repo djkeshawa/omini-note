@@ -250,24 +250,27 @@ test('Note delete confirmation uses themed in-app dialog', () => {
   assert.doesNotMatch(app, /confirm\(/);
 });
 
-test('Launch screen uses OminiNote pastel floating design', () => {
+test('Launch screen uses OminiNote pastel blooming light design', () => {
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
 
   assert.match(html, /<title>OminiNote<\/title>/);
-  assert.match(html, /@keyframes mnPastelFloat/);
-  assert.match(html, /mn-boot-pastel-field/);
-  assert.match(html, /mn-pastel-float/);
-  assert.match(html, /--float-color:#f3bfd8/);
-  assert.match(html, /--float-color:#a9c2ff/);
+  assert.match(html, /@keyframes mnLightBloom/);
+  assert.match(html, /@keyframes mnLightWash/);
+  assert.match(html, /mn-boot-light-field/);
+  assert.match(html, /mn-light-bloom/);
+  assert.match(html, /--bloom-size:92vmax/);
+  assert.match(html, /--bloom-size:112vmax/);
+  assert.doesNotMatch(html, /mn-pastel-float/);
   assert.doesNotMatch(html, /mn-boot-neural-field/);
   assert.doesNotMatch(html, /animateMotion/);
   assert.match(html, /mn-boot-title">OminiNote/);
   assert.match(html, /Connecting your workspace/);
   assert.match(app, /<div className="mn-boot-title">OminiNote<\/div>/);
-  assert.match(app, /MN_LAUNCH_FLOATS/);
-  assert.match(app, /className="mn-boot-pastel-field"/);
-  assert.match(app, /className="mn-pastel-float"/);
+  assert.match(app, /MN_LAUNCH_BLOOMS/);
+  assert.match(app, /className="mn-boot-light-field"/);
+  assert.match(app, /className="mn-light-bloom"/);
+  assert.doesNotMatch(app, /MN_LAUNCH_FLOATS/);
   assert.doesNotMatch(app, /MN_LAUNCH_NEURAL_PATHS/);
 });
 
