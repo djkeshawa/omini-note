@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>OminiNote</title>
+<meta name="viewport" content="width=1400" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=JetBrains+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500;600&family=IBM+Plex+Mono:wght@400&family=Instrument+Serif:ital@0;1&display=swap" />
+<style>
+  html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+  body { background: var(--mn-bg, #f6f7f9); }
+  * { box-sizing: border-box; }
+  button { font: inherit; }
+  input, textarea { font: inherit; color: inherit; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: oklch(0.85 0.01 250 / 0.5); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: oklch(0.7 0.01 250 / 0.6); }
+
+  @keyframes mnFadeIn { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes mnSlideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes mnSlideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes mnLaunchFloat {
+    0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+    50% { transform: translate3d(0, -10px, 0) rotate(0.7deg); }
+  }
+  @keyframes mnLaunchScan {
+    0% { transform: translateX(-120%); opacity: 0; }
+    18% { opacity: 1; }
+    82% { opacity: 1; }
+    100% { transform: translateX(120%); opacity: 0; }
+  }
+  @keyframes mnLaunchPulse {
+    0%, 100% { opacity: 0.42; transform: scale(0.94); }
+    50% { opacity: 0.9; transform: scale(1); }
+  }
+  @keyframes mnLaunchDraw {
+    from { stroke-dashoffset: 72; }
+    to { stroke-dashoffset: 0; }
+  }
+  @keyframes mnLaunchBar {
+    0% { transform: translateX(-85%) scaleX(0.25); }
+    45% { transform: translateX(-10%) scaleX(0.72); }
+    100% { transform: translateX(100%) scaleX(0.35); }
+  }
+  @keyframes mnSignalGlow {
+    0%, 100% { opacity: 0.38; transform: scale(0.99); }
+    50% { opacity: 0.72; transform: scale(1.01); }
+  }
+  @keyframes mnSignalTravel {
+    0% { transform: translateX(0) scale(0.55); opacity: 0; }
+    14% { opacity: 0.95; }
+    72% { opacity: 0.65; }
+    100% { transform: translateX(var(--mn-signal-length, 210px)) scale(0.95); opacity: 0; }
+  }
+  @keyframes mnSignalLine {
+    0%, 100% { opacity: 0.34; }
+    50% { opacity: 0.68; }
+  }
+  @keyframes mnNeuronFlow {
+    from { stroke-dashoffset: 0; }
+    to { stroke-dashoffset: -72; }
+  }
+  @keyframes mnNeuronBreathe {
+    0%, 100% { opacity: 0.46; transform: scale(0.994); }
+    50% { opacity: 0.66; transform: scale(1.004); }
+  }
+  .mn-boot-splash {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      linear-gradient(135deg, rgba(248, 238, 247, 0.62), rgba(237, 245, 255, 0.68) 44%, rgba(241, 250, 245, 0.66));
+    color: #253044;
+    font-family: 'Inter Tight', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    transition: opacity 220ms ease;
+  }
+  .mn-boot-grid {
+    position: absolute;
+    inset: 0;
+    opacity: 0.24;
+    background-image:
+      linear-gradient(rgba(86,99,124,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(86,99,124,0.08) 1px, transparent 1px);
+    background-size: 38px 38px;
+    -webkit-mask-image: radial-gradient(circle at center, black 0%, transparent 70%);
+    mask-image: radial-gradient(circle at center, black 0%, transparent 70%);
+  }
+  .mn-boot-signal-field {
+    position: absolute;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    animation: mnSignalGlow 4.8s ease-in-out infinite;
+  }
+  .mn-boot-signal {
+    --mn-signal-length: 78vmax;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--mn-signal-length);
+    height: 2px;
+    transform-origin: 0 50%;
+    background: linear-gradient(90deg, var(--mn-signal-color), rgba(255,255,255,0));
+    opacity: 0.44;
+    animation: mnSignalLine 3.6s ease-in-out infinite;
+  }
+  .mn-boot-signal::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: -4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--mn-signal-color);
+    box-shadow: 0 0 0 5px color-mix(in oklab, var(--mn-signal-color) 22%, transparent);
+    animation: mnSignalTravel 1.95s cubic-bezier(.22,.7,.18,1) infinite;
+    animation-delay: var(--mn-signal-delay, 0s);
+  }
+  .mn-boot-node {
+    position: absolute;
+    right: -5px;
+    top: -4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--mn-signal-color) 72%, white);
+    border: 1px solid rgba(255,255,255,0.88);
+  }
+  .mn-boot-neural-field {
+    position: absolute;
+    inset: -2vh -2vw;
+    width: 104vw;
+    height: 104vh;
+    pointer-events: none;
+    overflow: visible;
+    opacity: 0.72;
+    animation: mnNeuronBreathe 4.8s ease-in-out infinite;
+  }
+  .mn-neuron-axon {
+    fill: none;
+    stroke: var(--axon-color);
+    stroke-width: 2.15;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 18 22;
+    stroke-dashoffset: 0;
+    opacity: 0.42;
+    animation: mnNeuronFlow 2.8s linear infinite;
+    filter: drop-shadow(0 0 2.5px color-mix(in oklab, var(--axon-color) 58%, transparent));
+  }
+  .mn-neuron-branch {
+    stroke-width: 1.45;
+    stroke-dasharray: 12 20;
+    opacity: 0.34;
+  }
+  .mn-neuron-node {
+    fill: color-mix(in oklab, var(--axon-color) 72%, white);
+    stroke: rgba(255,255,255,0.88);
+    stroke-width: 1.4;
+    filter: drop-shadow(0 0 3px color-mix(in oklab, var(--axon-color) 58%, transparent));
+  }
+  .mn-neuron-fire {
+    fill: var(--axon-color);
+    opacity: 0.58;
+    filter: drop-shadow(0 0 4px color-mix(in oklab, var(--axon-color) 58%, transparent));
+  }
+  .mn-boot-title {
+    position: relative;
+    z-index: 1;
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 44px;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1;
+    color: #253044;
+  }
+  .mn-boot-subtitle {
+    position: relative;
+    z-index: 1;
+    margin-top: 12px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #667187;
+  }
+  .mn-boot-progress {
+    position: relative;
+    z-index: 1;
+    margin: 26px auto 0;
+    width: 210px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(85,98,124,0.14);
+    overflow: hidden;
+  }
+  .mn-boot-progress div {
+    width: 70%;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, #8aa8ff, #91dec3, transparent);
+    transform-origin: left center;
+    animation: mnLaunchBar 1.55s cubic-bezier(.65,0,.35,1) infinite;
+  }
+  .mn-boot-core {
+    position: relative;
+    width: min(520px, calc(100vw - 48px));
+    min-height: 260px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    animation: mnSlideUp 420ms cubic-bezier(.2,.8,.2,1);
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="mn-boot-splash" class="mn-boot-splash">
+  <div class="mn-boot-grid"></div>
+  <svg class="mn-boot-neural-field" viewBox="0 0 1000 700" preserveAspectRatio="none" aria-hidden="true">
+    <path class="mn-neuron-axon" style="--axon-color:#7fa2ff" d="M500 350 C420 285 320 260 195 210 S58 142 0 80"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#7fa2ff" d="M318 258 C292 212 268 182 218 145"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#7fa2ff" d="M178 203 C138 238 93 258 38 258"></path>
+
+    <path class="mn-neuron-axon" style="--axon-color:#72d7bd" d="M500 350 C590 276 710 236 850 150 S965 58 1000 30"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#72d7bd" d="M705 238 C758 302 834 326 922 300"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#72d7bd" d="M850 150 C890 184 940 198 1000 190"></path>
+
+    <path class="mn-neuron-axon" style="--axon-color:#eaa2c6" d="M500 350 C470 430 392 524 320 700"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#eaa2c6" d="M404 506 C330 500 265 526 205 588"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#eaa2c6" d="M352 622 C410 650 472 678 548 700"></path>
+
+    <path class="mn-neuron-axon" style="--axon-color:#efc96f" d="M500 350 C565 430 680 536 1000 654"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#efc96f" d="M686 536 C728 490 788 468 865 472"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#efc96f" d="M828 596 C870 642 912 672 970 700"></path>
+
+    <path class="mn-neuron-axon" style="--axon-color:#a998ef" d="M500 350 C500 252 520 142 520 0"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#a998ef" d="M510 212 C456 170 418 112 395 32"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#a998ef" d="M516 112 C584 88 635 52 678 0"></path>
+
+    <path class="mn-neuron-axon" style="--axon-color:#7bcde8" d="M500 350 C500 456 505 578 500 700"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#7bcde8" d="M502 486 C560 522 608 574 645 650"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#7bcde8" d="M500 560 C438 592 394 638 365 700"></path>
+
+    <path class="mn-neuron-axon" style="--axon-color:#9ddb88" d="M500 350 C360 360 212 426 0 500"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#9ddb88" d="M254 414 C206 374 142 350 58 344"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#9ddb88" d="M148 448 C118 512 76 558 0 600"></path>
+
+    <path class="mn-neuron-axon" style="--axon-color:#eba696" d="M500 350 C650 365 812 430 1000 508"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#eba696" d="M760 410 C818 374 890 352 1000 344"></path>
+    <path class="mn-neuron-axon mn-neuron-branch" style="--axon-color:#eba696" d="M880 458 C918 520 955 566 1000 600"></path>
+
+    <circle class="mn-neuron-node" style="--axon-color:#7fa2ff" cx="500" cy="350" r="9"></circle>
+    <circle class="mn-neuron-node" style="--axon-color:#72d7bd" cx="318" cy="258" r="5"></circle>
+    <circle class="mn-neuron-node" style="--axon-color:#72d7bd" cx="705" cy="238" r="5"></circle>
+    <circle class="mn-neuron-node" style="--axon-color:#eaa2c6" cx="404" cy="506" r="5"></circle>
+    <circle class="mn-neuron-node" style="--axon-color:#efc96f" cx="686" cy="536" r="5"></circle>
+    <circle class="mn-neuron-node" style="--axon-color:#a998ef" cx="510" cy="212" r="5"></circle>
+    <circle class="mn-neuron-node" style="--axon-color:#7bcde8" cx="502" cy="486" r="5"></circle>
+
+    <circle class="mn-neuron-fire" style="--axon-color:#7fa2ff" r="6"><animateMotion dur="2.7s" repeatCount="indefinite" path="M500 350 C420 285 320 260 195 210 S58 142 0 80"></animateMotion></circle>
+    <circle class="mn-neuron-fire" style="--axon-color:#72d7bd" r="6"><animateMotion dur="2.9s" begin=".18s" repeatCount="indefinite" path="M500 350 C590 276 710 236 850 150 S965 58 1000 30"></animateMotion></circle>
+    <circle class="mn-neuron-fire" style="--axon-color:#eaa2c6" r="6"><animateMotion dur="3s" begin=".36s" repeatCount="indefinite" path="M500 350 C470 430 392 524 320 700"></animateMotion></circle>
+    <circle class="mn-neuron-fire" style="--axon-color:#efc96f" r="6"><animateMotion dur="2.8s" begin=".54s" repeatCount="indefinite" path="M500 350 C565 430 680 536 1000 654"></animateMotion></circle>
+    <circle class="mn-neuron-fire" style="--axon-color:#a998ef" r="6"><animateMotion dur="2.75s" begin=".72s" repeatCount="indefinite" path="M500 350 C500 252 520 142 520 0"></animateMotion></circle>
+    <circle class="mn-neuron-fire" style="--axon-color:#7bcde8" r="6"><animateMotion dur="2.95s" begin=".9s" repeatCount="indefinite" path="M500 350 C500 456 505 578 500 700"></animateMotion></circle>
+  </svg>
+  <div class="mn-boot-core">
+    <div class="mn-boot-title">OminiNote</div>
+    <div class="mn-boot-subtitle">Connecting your workspace</div>
+    <div class="mn-boot-progress"><div></div></div>
+  </div>
+</div>
+
+<script src="node_modules/react/umd/react.development.js"></script>
+<script src="node_modules/react-dom/umd/react-dom.development.js"></script>
+<script src="node_modules/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" src="src/theme.jsx"></script>
+<script type="text/babel" src="src/data.jsx"></script>
+<script type="text/babel" src="src/markdown.jsx"></script>
+<script type="text/babel" src="src/blockFeatures.jsx"></script>
+<script type="text/babel" src="src/outline.jsx"></script>
+<script src="src/editorOps.js"></script>
+<script type="text/babel" src="src/outliner.jsx"></script>
+<script type="text/babel" src="src/graph.jsx"></script>
+<script type="text/babel" src="src/sidebar.jsx"></script>
+<script type="text/babel" src="src/notelist.jsx"></script>
+<script type="text/babel" src="src/editor.jsx"></script>
+<script type="text/babel" src="src/panels.jsx"></script>
+<script type="text/babel" src="src/settings.jsx"></script>
+<script type="text/babel" src="src/ai.jsx"></script>
+<script type="text/babel" src="src/app.jsx"></script>
+
+<script type="text/babel">
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<MnApp />);
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "omini-note",
+  "version": "0.1.0",
+  "description": "OminiNote — a local-first, block-based note-taking desktop app",
+  "license": "Apache-2.0",
+  "main": "main.js",
+  "scripts": {
+    "check:main": "node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js",
+    "test:editor": "node tests/editor-ops.test.js",
+    "smoke:electron": "electron --no-sandbox scripts/smoke-electron.js",
+    "start": "electron .",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "electron": "^41.3.0"
+  },
+  "dependencies": {
+    "@babel/standalone": "^7.29.0",
+    "better-sqlite3": "^12.9.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sqlite-vec": "^0.1.9"
+  }
+}
