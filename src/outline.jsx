@@ -7,6 +7,7 @@
 //   - 'todo'       — checkbox + text, Enter creates next todo, empty Enter exits
 //   - 'quote'      — blockquote, Enter creates next paragraph
 //   - 'code'       — fenced code, Enter inserts \n inside (escape with empty line)
+//   - 'table'      — markdown table, rendered as a formatted table
 //   - 'divider'    — horizontal rule, no content
 //
 // Blocks can have children (nested only for bullet/todo, not paragraph/heading).
@@ -16,6 +17,7 @@
 // kind ∈ 'bold','italic','code','strike','hi-yellow','hi-green','hi-pink','hi-blue','color-red','color-blue','color-purple'.
 
 const { useState: useStateO, useEffect: useEffectO, useRef: useRefO, useCallback: useCallbackO, useMemo: useMemoO } = React;
+const MN_TABLE_OPS_OUTLINE = window.MN_TABLE_OPS || {};
 
 let _bid = 0;
 function mkBlock(opts = {}) {
@@ -95,6 +97,13 @@ function mnMdToBlocks(md) {
       currentParentList().push(mkBlock({ kind: 'divider' }));
       continue;
     }
+    const table = MN_TABLE_OPS_OUTLINE.readMarkdownTable && MN_TABLE_OPS_OUTLINE.readMarkdownTable(lines, i);
+    if (table) {
+      flushPara(); bulletStack = [];
+      currentParentList().push(mkBlock({ kind: 'table', content: table.markdown }));
+      i = table.endIndex;
+      continue;
+    }
     // Property line: key:: value — flush as standalone paragraph block (renderer detects and special-cases)
     if (/^[a-zA-Z][a-zA-Z0-9_-]*::\s/.test(line)) {
       flushPara(); bulletStack = [];
@@ -144,6 +153,8 @@ function mnBlocksToMd(blocks, depth = 0) {
       out.push('---');
     } else if (b.kind === 'code') {
       out.push('```\n' + b.content + '\n```');
+    } else if (b.kind === 'table') {
+      out.push(b.content);
     } else if (b.kind === 'bullet' || b.kind === 'todo') {
       const pad = '  '.repeat(depth);
       const chk = b.kind === 'todo' ? (b.checked ? '[x] ' : '[ ] ') : '';
