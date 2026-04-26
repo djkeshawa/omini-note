@@ -259,8 +259,9 @@ test('Launch screen uses OminiNote pastel blooming light design', () => {
   assert.match(html, /@keyframes mnLightWash/);
   assert.match(html, /mn-boot-light-field/);
   assert.match(html, /mn-light-bloom/);
-  assert.match(html, /--bloom-size:92vmax/);
-  assert.match(html, /--bloom-size:112vmax/);
+  assert.match(html, /radial-gradient\(circle at center/);
+  assert.doesNotMatch(html, /filter: blur/);
+  assert.doesNotMatch(html, /vmax/);
   assert.doesNotMatch(html, /mn-pastel-float/);
   assert.doesNotMatch(html, /mn-boot-neural-field/);
   assert.doesNotMatch(html, /animateMotion/);

@@ -85,9 +85,9 @@ function collectWorkflowBlocks(notes, states, mnWalk) {
 }
 
 const MN_LAUNCH_BLOOMS = [
-  { size: '92vmax', color: '#f3bfd8', blur: '26px', duration: '7.6s', delay: '-1.2s' },
-  { size: '112vmax', color: '#a9c2ff', blur: '34px', duration: '8.8s', delay: '-3.4s' },
-  { size: '102vmax', color: '#9fe2c9', blur: '30px', duration: '9.6s', delay: '-5.1s' },
+  { color: '#f3bfd8', duration: '7.6s', delay: '-1.2s' },
+  { color: '#a9c2ff', duration: '8.8s', delay: '-3.4s' },
+  { color: '#9fe2c9', duration: '9.6s', delay: '-5.1s' },
 ];
 
 function MnLaunchScreen({ state, error, T }) {
@@ -101,9 +101,7 @@ function MnLaunchScreen({ state, error, T }) {
             key={`${item.color}-${i}`}
             className="mn-light-bloom"
             style={{
-              '--bloom-size': item.size,
               '--bloom-color': item.color,
-              '--bloom-blur': item.blur,
               '--bloom-duration': item.duration,
               '--bloom-delay': item.delay,
               animationPlayState: loading ? 'running' : 'paused',

@@ -52,17 +52,17 @@
   }
   @keyframes mnLightBloom {
     0%, 100% {
-      opacity: 0.18;
-      transform: translate(-50%, -50%) scale(0.42);
+      opacity: 0.28;
+      transform: scale(0.78);
     }
     50% {
-      opacity: 0.72;
-      transform: translate(-50%, -50%) scale(1.2);
+      opacity: 0.86;
+      transform: scale(1.04);
     }
   }
   @keyframes mnLightWash {
-    0%, 100% { opacity: 0.32; transform: translate3d(-2%, -1%, 0) scale(1); }
-    50% { opacity: 0.58; transform: translate3d(2%, 1%, 0) scale(1.04); }
+    0%, 100% { opacity: 0.34; transform: translate3d(-1%, -1%, 0); }
+    50% { opacity: 0.7; transform: translate3d(1%, 1%, 0); }
   }
   .mn-boot-splash {
     position: fixed;
@@ -97,26 +97,20 @@
   .mn-boot-light-field::before {
     content: '';
     position: absolute;
-    inset: -18%;
+    inset: 0;
     background:
-      radial-gradient(circle at 18% 24%, rgba(243,191,216,0.48), transparent 26%),
-      radial-gradient(circle at 78% 18%, rgba(169,194,255,0.46), transparent 28%),
-      radial-gradient(circle at 76% 76%, rgba(159,226,201,0.44), transparent 30%),
-      radial-gradient(circle at 20% 78%, rgba(245,213,142,0.40), transparent 28%);
-    filter: blur(8px);
+      radial-gradient(circle at 18% 24%, rgba(243,191,216,0.58), transparent 34%),
+      radial-gradient(circle at 78% 18%, rgba(169,194,255,0.56), transparent 36%),
+      radial-gradient(circle at 76% 76%, rgba(159,226,201,0.54), transparent 38%),
+      radial-gradient(circle at 20% 78%, rgba(245,213,142,0.46), transparent 36%);
     animation: mnLightWash 9s ease-in-out infinite;
   }
   .mn-light-bloom {
     position: absolute;
-    left: 50%;
-    top: 50%;
-    width: var(--bloom-size);
-    aspect-ratio: 1;
-    border-radius: 999px;
+    inset: 0;
     background:
-      radial-gradient(circle, rgba(255,255,255,0.94) 0%, color-mix(in oklab, var(--bloom-color) 26%, white) 22%, color-mix(in oklab, var(--bloom-color) 54%, transparent) 48%, transparent 72%);
-    filter: blur(var(--bloom-blur));
-    mix-blend-mode: screen;
+      radial-gradient(circle at center, rgba(255,255,255,0.96) 0%, color-mix(in oklab, var(--bloom-color) 22%, white) 22%, color-mix(in oklab, var(--bloom-color) 44%, transparent) 46%, transparent 68%);
+    transform-origin: center;
     animation: mnLightBloom var(--bloom-duration) ease-in-out infinite;
     animation-delay: var(--bloom-delay);
   }
@@ -176,9 +170,9 @@
 <div id="mn-boot-splash" class="mn-boot-splash">
   <div class="mn-boot-grid"></div>
   <div class="mn-boot-light-field" aria-hidden="true">
-    <span class="mn-light-bloom" style="--bloom-size:92vmax; --bloom-color:#f3bfd8; --bloom-blur:26px; --bloom-duration:7.6s; --bloom-delay:-1.2s;"></span>
-    <span class="mn-light-bloom" style="--bloom-size:112vmax; --bloom-color:#a9c2ff; --bloom-blur:34px; --bloom-duration:8.8s; --bloom-delay:-3.4s;"></span>
-    <span class="mn-light-bloom" style="--bloom-size:102vmax; --bloom-color:#9fe2c9; --bloom-blur:30px; --bloom-duration:9.6s; --bloom-delay:-5.1s;"></span>
+    <span class="mn-light-bloom" style="--bloom-color:#f3bfd8; --bloom-duration:7.6s; --bloom-delay:-1.2s;"></span>
+    <span class="mn-light-bloom" style="--bloom-color:#a9c2ff; --bloom-duration:8.8s; --bloom-delay:-3.4s;"></span>
+    <span class="mn-light-bloom" style="--bloom-color:#9fe2c9; --bloom-duration:9.6s; --bloom-delay:-5.1s;"></span>
   </div>
   <div class="mn-boot-core">
     <div class="mn-boot-title">OminiNote</div>
