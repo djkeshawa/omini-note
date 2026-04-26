@@ -90,6 +90,12 @@ const MN_LAUNCH_BLOOMS = [
   { color: '#9fe2c9', duration: '9.6s', delay: '-5.1s' },
 ];
 
+const MN_LAUNCH_RIPPLES = [
+  { color: '#f3bfd8', duration: '4.8s', delay: '0s' },
+  { color: '#a9c2ff', duration: '4.8s', delay: '-1.6s' },
+  { color: '#9fe2c9', duration: '4.8s', delay: '-3.2s' },
+];
+
 function MnLaunchScreen({ state, error, T }) {
   const loading = state === 'loading';
   return (
@@ -104,6 +110,18 @@ function MnLaunchScreen({ state, error, T }) {
               '--bloom-color': item.color,
               '--bloom-duration': item.duration,
               '--bloom-delay': item.delay,
+              animationPlayState: loading ? 'running' : 'paused',
+            }}
+          />
+        ))}
+        {MN_LAUNCH_RIPPLES.map((item, i) => (
+          <span
+            key={`ripple-${item.color}-${i}`}
+            className="mn-light-ripple"
+            style={{
+              '--ripple-color': item.color,
+              '--ripple-duration': item.duration,
+              '--ripple-delay': item.delay,
               animationPlayState: loading ? 'running' : 'paused',
             }}
           />

@@ -257,8 +257,11 @@ test('Launch screen uses OminiNote pastel blooming light design', () => {
   assert.match(html, /<title>OminiNote<\/title>/);
   assert.match(html, /@keyframes mnLightBloom/);
   assert.match(html, /@keyframes mnLightWash/);
+  assert.match(html, /@keyframes mnPastelRipple/);
   assert.match(html, /mn-boot-light-field/);
   assert.match(html, /mn-light-bloom/);
+  assert.match(html, /mn-light-ripple/);
+  assert.match(html, /width: min\(76vw, 76vh\)/);
   assert.match(html, /radial-gradient\(circle at center/);
   assert.doesNotMatch(html, /filter: blur/);
   assert.doesNotMatch(html, /vmax/);
@@ -269,8 +272,10 @@ test('Launch screen uses OminiNote pastel blooming light design', () => {
   assert.match(html, /Connecting your workspace/);
   assert.match(app, /<div className="mn-boot-title">OminiNote<\/div>/);
   assert.match(app, /MN_LAUNCH_BLOOMS/);
+  assert.match(app, /MN_LAUNCH_RIPPLES/);
   assert.match(app, /className="mn-boot-light-field"/);
   assert.match(app, /className="mn-light-bloom"/);
+  assert.match(app, /className="mn-light-ripple"/);
   assert.doesNotMatch(app, /MN_LAUNCH_FLOATS/);
   assert.doesNotMatch(app, /MN_LAUNCH_NEURAL_PATHS/);
 });
