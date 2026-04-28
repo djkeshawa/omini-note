@@ -10,6 +10,10 @@
     "url": "https://github.com/djkeshawa/omini-note.git"
   },
   "main": "main.js",
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "npm": ">=11"
+  },
   "scripts": {
     "check:main": "node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js",
     "test:editor": "node tests/editor-ops.test.js",
@@ -23,7 +27,7 @@
   },
   "devDependencies": {
     "electron": "^41.3.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^26.8.1"
   },
   "dependencies": {
     "@babel/standalone": "^7.29.0",
