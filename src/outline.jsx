@@ -32,7 +32,27 @@ function mkBlock(opts = {}) {
     collapsed: !!opts.collapsed,
     annotations: opts.annotations || [],
     workflow: opts.workflow || null,
+    language: opts.language || '',
   };
+}
+
+function mnCleanCodeLanguage(value) {
+  const raw = String(value || '').trim().toLowerCase().replace(/[^a-z0-9_+#.-]/g, '');
+  const aliases = {
+    js: 'javascript',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    ts: 'typescript',
+    md: 'markdown',
+    py: 'python',
+    sh: 'bash',
+    shell: 'bash',
+    zsh: 'bash',
+    plain: '',
+    text: '',
+    txt: '',
+  };
+  return aliases.hasOwnProperty(raw) ? aliases[raw] : raw;
 }
 
 // Convert legacy markdown into typed blocks.
@@ -78,6 +98,19 @@ function mnMdToBlocks(md) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const codeFence = line.match(/^```\s*([A-Za-z0-9_+#.-]*)\s*$/);
+    if (codeFence) {
+      flushPara(); bulletStack = [];
+      const language = mnCleanCodeLanguage(codeFence[1]);
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
+        buf.push(lines[i]);
+        i++;
+      }
+      currentParentList().push(mkBlock({ kind: 'code', content: buf.join('\n'), language }));
+      continue;
+    }
     const h = line.match(/^(#{1,3})\s+(.*)$/);
     if (h) {
       flushPara(); bulletStack = [];
@@ -157,7 +190,8 @@ function mnBlocksToMd(blocks, depth = 0) {
     } else if (b.kind === 'divider') {
       out.push('---');
     } else if (b.kind === 'code') {
-      out.push('```\n' + b.content + '\n```');
+      const language = mnCleanCodeLanguage(b.language);
+      out.push('```' + language + '\n' + b.content + '\n```');
     } else if (b.kind === 'table') {
       out.push(b.content);
     } else if (b.kind === 'bullet' || b.kind === 'todo') {

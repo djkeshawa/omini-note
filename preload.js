@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('mn', {
   // Prefs
   getPrefs: () => ipcRenderer.invoke('mn:getPrefs'),
   setPrefs: (patch) => ipcRenderer.invoke('mn:setPrefs', patch),
+  spellcheck: (words) => ipcRenderer.invoke('mn:spellcheck', words),
 
   // Search / backlinks / tags (SQLite-backed)
   search:      (vaultId, query, limit) => ipcRenderer.invoke('mn:search', vaultId, query, limit),

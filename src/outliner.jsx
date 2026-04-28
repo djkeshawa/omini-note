@@ -154,6 +154,244 @@ function mnRenderAnnotated(text, annotations, T, onOpen, onTagClick, allNotes) {
   );
 }
 
+const MN_CODE_LANGUAGES = [
+  { value: '', label: 'Plain text' },
+  { value: 'javascript', label: 'JavaScript', aliases: ['js', 'mjs', 'cjs'] },
+  { value: 'typescript', label: 'TypeScript', aliases: ['ts'] },
+  { value: 'jsx', label: 'JSX' },
+  { value: 'tsx', label: 'TSX' },
+  { value: 'html', label: 'HTML' },
+  { value: 'css', label: 'CSS' },
+  { value: 'json', label: 'JSON' },
+  { value: 'markdown', label: 'Markdown', aliases: ['md'] },
+  { value: 'bash', label: 'Bash', aliases: ['sh', 'shell', 'zsh'] },
+  { value: 'python', label: 'Python', aliases: ['py'] },
+  { value: 'sql', label: 'SQL' },
+];
+
+function mnNormalizeCodeLanguage(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || raw === 'plain' || raw === 'text' || raw === 'txt') return '';
+  for (const lang of MN_CODE_LANGUAGES) {
+    if (lang.value === raw || (lang.aliases || []).includes(raw)) return lang.value;
+  }
+  return raw.replace(/[^a-z0-9_+#.-]/g, '');
+}
+
+function mnCodeLanguageLabel(value) {
+  const normalized = mnNormalizeCodeLanguage(value);
+  return MN_CODE_LANGUAGES.find(lang => lang.value === normalized)?.label || normalized || 'Plain text';
+}
+
+function mnCodeKeywords(language) {
+  const lang = mnNormalizeCodeLanguage(language);
+  if (['javascript', 'typescript', 'jsx', 'tsx'].includes(lang)) {
+    return 'abstract|async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|enum|export|extends|false|finally|for|from|function|if|implements|import|in|instanceof|interface|let|new|null|of|private|protected|public|return|static|super|switch|this|throw|true|try|type|typeof|undefined|var|void|while|yield';
+  }
+  if (lang === 'python') {
+    return 'and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield';
+  }
+  if (lang === 'bash') {
+    return 'case|do|done|elif|else|esac|fi|for|function|if|in|select|then|until|while|export|local|readonly|return';
+  }
+  if (lang === 'sql') {
+    return 'ALTER|AND|AS|ASC|BETWEEN|BY|CREATE|DELETE|DESC|DISTINCT|DROP|FROM|GROUP|HAVING|IN|INSERT|INTO|IS|JOIN|LEFT|LIKE|LIMIT|NOT|NULL|ON|OR|ORDER|RIGHT|SELECT|SET|TABLE|UPDATE|VALUES|WHERE';
+  }
+  return '';
+}
+
+function mnCodeTokenStyle(token, language, T) {
+  const lang = mnNormalizeCodeLanguage(language);
+  if (lang === 'markdown' && /^(#{1,6}|[-*+]|\*\*|__|`|\[|\])/.test(token)) return { color: T.accent, fontWeight: 600 };
+  if (/^(\/\/|\/\*|#|--|<!--)/.test(token)) return { color: T.inkDim, fontStyle: 'italic' };
+  if (/^(['"`])/.test(token) || (/^".*"$/.test(token) && lang !== 'html')) return { color: 'oklch(0.48 0.12 150)' };
+  if (/^\d/.test(token)) return { color: T.warn };
+  if (lang === 'html' && /^<\/?/.test(token)) return { color: T.accent };
+  if (lang === 'html' && /^[A-Za-z:-]+$/.test(token)) return { color: 'oklch(0.50 0.16 240)' };
+  if (lang === 'css' && /^[@.#]?[A-Za-z_-][\w-]*/.test(token)) return { color: 'oklch(0.50 0.16 240)' };
+  const keywords = mnCodeKeywords(lang);
+  if (keywords && new RegExp(`^(${keywords})$`, lang === 'sql' ? 'i' : '').test(token)) {
+    return { color: T.accent, fontWeight: 600 };
+  }
+  return null;
+}
+
+function mnCodeRegex(language) {
+  const lang = mnNormalizeCodeLanguage(language);
+  if (['javascript', 'typescript', 'jsx', 'tsx'].includes(lang)) {
+    return /(\/\/.*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_$][\w$]*\b)/g;
+  }
+  if (lang === 'python') {
+    return /(#.*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
+  }
+  if (lang === 'bash') {
+    return /(#.*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\$[A-Za-z_]\w*|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
+  }
+  if (lang === 'sql') {
+    return /(--.*|"(?:\\.|[^"\\])*"|'(?:''|[^'])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
+  }
+  if (lang === 'html') {
+    return /(<!--[\s\S]*?-->|<\/?[A-Za-z][\w:-]*|\/?>|[A-Za-z_:][\w:.-]*(?=\=)|"(?:\\.|[^"\\])*")/g;
+  }
+  if (lang === 'css') {
+    return /(\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#[A-Fa-f0-9]{3,8}\b|[@.#]?[A-Za-z_-][\w-]*|\b\d+(?:\.\d+)?(?:px|rem|em|%|vh|vw)?\b)/g;
+  }
+  if (lang === 'json') {
+    return /("(?:\\.|[^"\\])*"(?=\s*:)|"(?:\\.|[^"\\])*"|\btrue\b|\bfalse\b|\bnull\b|-?\b\d+(?:\.\d+)?\b)/g;
+  }
+  if (lang === 'markdown') {
+    return /(#{1,6}|[-*+](?=\s)|\*\*|__|`{1,3}|\[[^\]]*\]|\([^)]+\))/g;
+  }
+  return null;
+}
+
+function mnRenderCode(text, language, T) {
+  const regex = mnCodeRegex(language);
+  const value = String(text || '');
+  if (!regex) return value;
+  const parts = [];
+  let last = 0, match, key = 0;
+  while ((match = regex.exec(value))) {
+    if (match.index > last) parts.push(<span key={key++}>{value.slice(last, match.index)}</span>);
+    const token = match[0];
+    parts.push(<span key={key++} style={mnCodeTokenStyle(token, language, T) || undefined}>{token}</span>);
+    last = match.index + token.length;
+  }
+  if (last < value.length) parts.push(<span key={key++}>{value.slice(last)}</span>);
+  return parts;
+}
+
+window.MN_CODE_LANGUAGES = MN_CODE_LANGUAGES;
+window.mnNormalizeCodeLanguage = mnNormalizeCodeLanguage;
+window.mnRenderCode = mnRenderCode;
+
+function mnSpellWords(text) {
+  return Array.from(new Set(String(text || '')
+    .match(/[A-Za-z][A-Za-z']{2,}/g) || []))
+    .filter(word => !/[A-Z][a-z]+[A-Z]/.test(word))
+    .slice(0, 120);
+}
+
+function mnRenderSpellCheckedText(text, issues, T, onOpenMenu) {
+  const value = String(text || '');
+  const issueMap = issues || {};
+  const out = [];
+  const re = /[A-Za-z][A-Za-z']{2,}/g;
+  let last = 0, match, key = 0;
+  while ((match = re.exec(value))) {
+    if (match.index > last) out.push(<span key={key++}>{value.slice(last, match.index)}</span>);
+    const word = match[0];
+    const normalized = word.toLowerCase();
+    const start = match.index;
+    const end = start + word.length;
+    if (issueMap[normalized]) {
+      out.push(
+        <span
+          key={key++}
+          title="Spelling suggestion"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onOpenMenu && onOpenMenu({
+              word,
+              normalized,
+              start,
+              end,
+              suggestions: issueMap[normalized] || [],
+              x: e.clientX,
+              y: e.clientY,
+            });
+          }}
+          style={{
+            textDecorationLine: 'underline',
+            textDecorationStyle: 'wavy',
+            textDecorationColor: T.danger || '#d94841',
+            textDecorationThickness: '1.2px',
+            textUnderlineOffset: 3,
+          }}>{word}</span>
+      );
+    } else {
+      out.push(<span key={key++}>{word}</span>);
+    }
+    last = end;
+  }
+  if (last < value.length) out.push(<span key={key++}>{value.slice(last)}</span>);
+  return out;
+}
+
+function MnSpellSuggestionMenu({ menu, onPick, onAdd, onClose, T }) {
+  if (!menu) return null;
+  const suggestions = menu.suggestions || [];
+  return (
+    <div
+      className="mn-spell-menu"
+      onMouseDown={(e) => e.preventDefault()}
+      style={{
+        position: 'fixed',
+        top: menu.y,
+        left: menu.x,
+        zIndex: 12000,
+        width: 190,
+        background: T.bg,
+        border: `1px solid ${T.line}`,
+        borderRadius: 7,
+        boxShadow: `0 12px 34px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+        padding: 5,
+      }}>
+      {suggestions.length ? suggestions.map(suggestion => (
+        <button
+          key={suggestion}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onPick && onPick(suggestion);
+          }}
+          style={mnSpellMenuButton(T, true)}>
+          {suggestion}
+        </button>
+      )) : (
+        <div style={{
+          padding: '7px 8px',
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 12,
+          color: T.inkDim,
+        }}>No suggestions</div>
+      )}
+      <div style={{ height: 1, background: T.lineSub, margin: '4px 3px' }} />
+      <button
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onAdd && onAdd(menu.normalized);
+        }}
+        style={mnSpellMenuButton(T, false)}>
+        Ignore word
+      </button>
+      <button
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onClose && onClose();
+        }}
+        style={mnSpellMenuButton(T, false)}>
+        Close
+      </button>
+    </div>
+  );
+}
+
+function mnSpellMenuButton(T, strong) {
+  return {
+    width: '100%',
+    border: 'none',
+    background: 'transparent',
+    color: strong ? T.ink : T.inkMed,
+    borderRadius: 5,
+    padding: '6px 8px',
+    textAlign: 'left',
+    cursor: 'pointer',
+    fontFamily: strong ? 'var(--mn-mono)' : 'var(--mn-ui)',
+    fontSize: strong ? 12 : 12.5,
+  };
+}
+
 // ── Disclosure triangle ────────────────────────────────────────────────
 function MnDisclosure({ open, hasChildren, onClick, T, padTop }) {
   return (
@@ -444,6 +682,9 @@ function MnBlockRow({
   const [slashQ, setSlashQ] = useStateOE(null); // slash menu query
   const [slashIdx, setSlashIdx] = useStateOE(0);
   const [dropPos, setDropPos] = useStateOE(null); // 'before' | 'after' | 'child' | null
+  const [spellIssues, setSpellIssues] = useStateOE({});
+  const [spellMenu, setSpellMenu] = useStateOE(null);
+  const [ignoredSpellWords, setIgnoredSpellWords] = useStateOE(() => new Set());
   const inputRef = useRefOE(null);
   const displayTextRef = useRefOE(null);
   const pendingCaretRef = useRefOE(null);
@@ -470,6 +711,32 @@ function MnBlockRow({
       inputRef.current.style.height = inputRef.current.scrollHeight + 'px';
     }
   }, [block.content, editing]);
+
+  useEffectOE(() => {
+    if (!spellCheck || editing || block.kind === 'code' || block.kind === 'table' || !window.mn?.spellcheck) {
+      setSpellIssues({});
+      setSpellMenu(null);
+      return;
+    }
+    const words = mnSpellWords(block.content).filter(word => !ignoredSpellWords.has(word.toLowerCase()));
+    if (!words.length) {
+      setSpellIssues({});
+      return;
+    }
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        const res = await window.mn.spellcheck(words);
+        if (!cancelled) setSpellIssues(res?.ok ? (res.value || {}) : {});
+      } catch (e) {
+        if (!cancelled) setSpellIssues({});
+      }
+    }, 160);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [block.content, block.kind, editing, spellCheck, ignoredSpellWords]);
 
   const hasChildren = block.children && block.children.length > 0;
   const isList = mnIsListLike(block.kind);
@@ -567,7 +834,7 @@ function MnBlockRow({
         // At start of block — convert formatted block back to paragraph, or merge with previous
         if (block.kind !== 'paragraph') {
           e.preventDefault();
-          onChangeKind(block.id, { kind: 'paragraph', level: 0, checked: null });
+          onChangeKind(block.id, { kind: 'paragraph', level: 0, checked: null, language: '' });
           return;
         }
         if (ta.value === '') {
@@ -648,6 +915,7 @@ function MnBlockRow({
           level: 0,
           checked: null,
           content: markdown,
+          language: '',
         });
         setTimeout(() => {
           if (inputRef.current) {
@@ -746,6 +1014,33 @@ function MnBlockRow({
     }, 0);
   };
 
+  const applySpellSuggestion = (suggestion) => {
+    if (!spellMenu) return;
+    const value = String(block.content || '');
+    const replacement = /^[A-Z]/.test(spellMenu.word || '')
+      ? suggestion.charAt(0).toUpperCase() + suggestion.slice(1)
+      : suggestion;
+    const next = value.slice(0, spellMenu.start) + replacement + value.slice(spellMenu.end);
+    onChange(block.id, next);
+    setSpellMenu(null);
+  };
+
+  const ignoreSpellWord = (word) => {
+    const normalized = String(word || '').toLowerCase();
+    if (!normalized) return;
+    setIgnoredSpellWords(prev => {
+      const next = new Set(prev);
+      next.add(normalized);
+      return next;
+    });
+    setSpellIssues(prev => {
+      const next = { ...(prev || {}) };
+      delete next[normalized];
+      return next;
+    });
+    setSpellMenu(null);
+  };
+
   const applySlashCmd = (cmd) => {
     const ta = inputRef.current;
     if (!ta) return;
@@ -775,6 +1070,7 @@ function MnBlockRow({
         level: cmd.level || 0,
         checked: cmd.checked != null ? cmd.checked : null,
         content: cleanContent || cmd.content || '',
+        language: '',
         collapsed: collapseByDefault && cmd.kind === 'heading',
       });
     } else if (cmd.workflow !== undefined) {
@@ -1012,6 +1308,41 @@ function MnBlockRow({
           borderRadius: 6, padding: '8px 12px',
         } : {}),
       }}>
+        {block.kind === 'code' && (
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              marginBottom: 8, paddingBottom: 7,
+              borderBottom: `1px solid ${T.lineSub}`,
+            }}>
+            <select
+              value={mnNormalizeCodeLanguage(block.language)}
+              onChange={(e) => onChangeKind(block.id, { language: e.target.value })}
+              title="Code language"
+              spellCheck={false}
+              style={{
+                maxWidth: 170,
+                border: `1px solid ${T.lineSub}`,
+                background: T.bg,
+                color: T.inkMed,
+                borderRadius: 5,
+                padding: '3px 24px 3px 7px',
+                fontFamily: 'var(--mn-mono)',
+                fontSize: 10.5,
+                outline: 'none',
+              }}>
+              {MN_CODE_LANGUAGES.map(lang => (
+                <option key={lang.value || 'plain'} value={lang.value}>{lang.label}</option>
+              ))}
+            </select>
+            <span style={{
+              fontFamily: 'var(--mn-mono)', fontSize: 10,
+              color: T.inkDim,
+            }}>{mnCodeLanguageLabel(block.language)}</span>
+          </div>
+        )}
         {editing ? (
           <>
             <textarea
@@ -1031,7 +1362,7 @@ function MnBlockRow({
                 }, 100);
               }}
               onKeyDown={handleKey}
-              spellCheck={spellCheck}
+              spellCheck={block.kind === 'code' ? false : spellCheck}
               rows={1}
               placeholder={mnPlaceholder(block)}
               style={{
@@ -1149,12 +1480,27 @@ function MnBlockRow({
                 if (block.kind === 'table') {
                   return <MnMarkdownTable markdown={content} T={T} />;
                 }
+                if (block.kind === 'code') {
+                  return content
+                    ? mnRenderCode(content, block.language, T)
+                    : <span style={{ color: T.inkDim, fontStyle: 'italic' }}>{mnPlaceholder(block)}</span>;
+                }
+                if (spellCheck && Object.keys(spellIssues || {}).length) {
+                  return mnRenderSpellCheckedText(content, spellIssues, T, setSpellMenu);
+                }
                 if (content) {
                   return mnRenderAnnotated(content, block.annotations, T, onOpen, onTagClick, allNotes);
                 }
                 return <span style={{ color: T.inkDim, fontStyle: 'italic' }}>{mnPlaceholder(block)}</span>;
               })()}
             </span>
+            <MnSpellSuggestionMenu
+              menu={spellMenu}
+              onPick={applySpellSuggestion}
+              onAdd={ignoreSpellWord}
+              onClose={() => setSpellMenu(null)}
+              T={T}
+            />
             {block.collapsed && hasChildren && (
               <span style={{
                 marginLeft: 8, fontFamily: 'var(--mn-mono)',
@@ -1880,6 +2226,7 @@ function MnOutliner({
             content: tailText,
             annotations: afterSplit.after,
             workflow: loc.block.workflow || null,
+            language: loc.block.language || '',
             children: safeStart === 0 ? (loc.block.children || []) : [],
           })]
         : [];

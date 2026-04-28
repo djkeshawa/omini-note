@@ -189,6 +189,23 @@ function mnPlayReminderSound() {
   } catch (e) {}
 }
 
+function mnReminderDisplayDate(item) {
+  const at = item?.remindAt?.at;
+  if (!at) return '';
+  return at.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function mnReminderStatusLabel(status) {
+  if (status === 'due') return 'Due';
+  if (status === 'snoozed') return 'Snoozed';
+  return 'Upcoming';
+}
+
 const MN_LAUNCH_BLOOMS = [
   { color: '#f3bfd8', duration: '7.6s', delay: '-1.2s' },
   { color: '#a9c2ff', duration: '8.8s', delay: '-3.4s' },
@@ -463,6 +480,193 @@ function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
   );
 }
 
+function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote, T }) {
+  const visibleItems = items;
+  return (
+    <div
+      className="mn-reminder-center"
+      style={{
+        position: 'absolute',
+        top: 13,
+        right: 18,
+        zIndex: 45,
+      }}>
+      <button
+        onClick={onToggle}
+        title="Reminder notifications"
+        aria-label="Reminder notifications"
+        style={{
+          position: 'relative',
+          zIndex: 2,
+          width: 30,
+          height: 30,
+          borderRadius: 6,
+          border: `1px solid ${open ? T.accent : T.lineSub}`,
+          background: open ? T.accentSoft : T.bg,
+          color: open ? T.accent : T.inkMed,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: `0 8px 20px color-mix(in oklab, ${T.ink} 8%, transparent)`,
+        }}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+          <path d="M4.2 7.2C4.2 4.8 5.6 3.2 8 3.2C10.4 3.2 11.8 4.8 11.8 7.2V9.8L13 11H3L4.2 9.8V7.2Z" strokeLinejoin="round"/>
+          <path d="M6.6 12.1C6.9 12.8 7.4 13.2 8 13.2C8.6 13.2 9.1 12.8 9.4 12.1" strokeLinecap="round"/>
+          <path d="M8 1.8V3.1" strokeLinecap="round"/>
+        </svg>
+        {dueCount > 0 && (
+          <span style={{
+            position: 'absolute',
+            top: -5,
+            right: -6,
+            minWidth: 16,
+            height: 16,
+            padding: '0 4px',
+            borderRadius: 999,
+            background: T.warn,
+            color: T.bg,
+            border: `1px solid ${T.bg}`,
+            fontFamily: 'var(--mn-mono)',
+            fontSize: 9,
+            fontWeight: 600,
+            lineHeight: '15px',
+            textAlign: 'center',
+          }}>{dueCount > 9 ? '9+' : dueCount}</span>
+        )}
+      </button>
+      {open && (
+        <>
+          <button
+            aria-label="Close reminder notifications"
+            onClick={onClose}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'default',
+            }}
+          />
+          <div
+            role="dialog"
+            aria-label="Reminder notifications"
+            style={{
+              position: 'absolute',
+              zIndex: 3,
+              top: 38,
+              right: 0,
+              width: 340,
+              maxHeight: 'min(520px, calc(100vh - 72px))',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              background: T.bg,
+              border: `1px solid ${T.line}`,
+              borderRadius: 8,
+              boxShadow: `0 18px 50px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+            }}>
+            <div style={{
+              padding: '12px 13px',
+              borderBottom: `1px solid ${T.lineSub}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <div style={{
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 13,
+                fontWeight: 600,
+                color: T.ink,
+              }}>Reminders</div>
+              <div style={{ flex: 1 }} />
+              <div style={{
+                fontFamily: 'var(--mn-mono)',
+                fontSize: 10,
+                color: dueCount ? T.warn : T.inkDim,
+              }}>{dueCount} due</div>
+            </div>
+            <div style={{ overflow: 'auto', padding: 6 }}>
+              {visibleItems.length === 0 ? (
+                <div style={{
+                  padding: '26px 16px',
+                  textAlign: 'center',
+                  color: T.inkDim,
+                  fontFamily: 'var(--mn-ui)',
+                  fontSize: 12.5,
+                }}>No reminders in this vault</div>
+              ) : visibleItems.map(item => (
+                <button
+                  key={item.key}
+                  onClick={() => onOpenNote(item)}
+                  style={{
+                    width: '100%',
+                    display: 'block',
+                    textAlign: 'left',
+                    border: 'none',
+                    background: item.status === 'due'
+                      ? `color-mix(in oklab, ${T.warn} 9%, transparent)`
+                      : 'transparent',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    padding: '8px 9px',
+                    color: T.ink,
+                    fontFamily: 'var(--mn-ui)',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = item.status === 'due'
+                    ? `color-mix(in oklab, ${T.warn} 14%, transparent)`
+                    : T.bgHover}
+                  onMouseLeave={e => e.currentTarget.style.background = item.status === 'due'
+                    ? `color-mix(in oklab, ${T.warn} 9%, transparent)`
+                    : 'transparent'}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginBottom: 3,
+                  }}>
+                    <span style={{
+                      fontFamily: 'var(--mn-mono)',
+                      fontSize: 9.5,
+                      color: item.status === 'due' ? T.warn : T.inkDim,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      fontWeight: 600,
+                    }}>{mnReminderStatusLabel(item.status)}</span>
+                    <span style={{
+                      fontFamily: 'var(--mn-mono)',
+                      fontSize: 10,
+                      color: T.inkDim,
+                    }}>{mnReminderDisplayDate(item)}</span>
+                  </div>
+                  <div style={{
+                    fontSize: 12.5,
+                    lineHeight: 1.35,
+                    color: T.ink,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}>{item.text || 'Reminder'}</div>
+                  <div style={{
+                    marginTop: 2,
+                    fontFamily: 'var(--mn-mono)',
+                    fontSize: 10,
+                    color: T.inkDim,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}>from {item.noteTitle}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function MnApp() {
   const { SEED_TAGS, SEED_NOTES, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
@@ -493,6 +697,7 @@ function MnApp() {
   const [captureOpen, setCaptureOpen] = useStateA(false);
   const [deleteTargetId, setDeleteTargetId] = useStateA(null);
   const [toast, setToast] = useStateA(null);
+  const [reminderCenterOpen, setReminderCenterOpen] = useStateA(false);
   const dismissedReminderKeys = useRefA(new Set());
   const [query, setQuery] = useStateA('');
 
@@ -1003,6 +1208,31 @@ function MnApp() {
   const selectedNote = notes.find(n => n.id === selectedId);
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
 
+  const reminderCenterItems = useMemoA(() => {
+    const now = Date.now();
+    const snoozed = mnReadSnoozedReminders();
+    return mnCollectReminderItems(notesWithBody)
+      .map(item => {
+        const dueTime = item.remindAt?.at?.getTime?.() || 0;
+        const snoozedUntil = Number(snoozed[item.key]) || 0;
+        return {
+          ...item,
+          snoozedUntil,
+          status: snoozedUntil > now ? 'snoozed' : dueTime <= now ? 'due' : 'upcoming',
+        };
+      })
+      .sort((a, b) => {
+        const rank = { due: 0, upcoming: 1, snoozed: 2 };
+        const byRank = (rank[a.status] ?? 9) - (rank[b.status] ?? 9);
+        if (byRank) return byRank;
+        return (a.remindAt?.at || 0) - (b.remindAt?.at || 0);
+      });
+  }, [notesWithBody, toast]);
+
+  const reminderDueCount = reminderCenterItems.filter(item =>
+    item.status === 'due' && !dismissedReminderKeys.current.has(item.key)
+  ).length;
+
   const createNote = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [] } = {}) => {
     const id = 'n_' + Date.now().toString(36);
     const defaults = mnParseDefaultTags(tweaks.defaultTags);
@@ -1156,7 +1386,7 @@ function MnApp() {
       } else if (isMod && isBackslashKey && !e.shiftKey) {
         e.preventDefault(); setSidebarHidden(v => !v);
       } else if (e.key === 'Escape') {
-        setSettingsOpen(false); setAskAiOpen(false);
+        setSettingsOpen(false); setAskAiOpen(false); setReminderCenterOpen(false);
       }
     };
     window.addEventListener('keydown', h);
@@ -1401,6 +1631,22 @@ function MnApp() {
             setSelectedId(id); navigateView('notes'); setToast(null);
           }}
           T={T} variant={tweaks.toastVariant}
+        />
+
+        <MnReminderCenter
+          open={reminderCenterOpen}
+          items={reminderCenterItems}
+          dueCount={reminderDueCount}
+          onToggle={() => setReminderCenterOpen(v => !v)}
+          onClose={() => setReminderCenterOpen(false)}
+          onOpenNote={(item) => {
+            if (item?.key && item.status === 'due') dismissedReminderKeys.current.add(item.key);
+            setSelectedId(item.noteId);
+            navigateView('notes');
+            setReminderCenterOpen(false);
+            if (toast?.key === item?.key) setToast(null);
+          }}
+          T={T}
         />
 
         {/* FAB */}
