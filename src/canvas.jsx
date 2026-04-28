@@ -114,6 +114,24 @@ function mnCanvasBounds(element) {
   return { x: element.x || 0, y: element.y || 0, w: element.w || 0, h: element.h || 0 };
 }
 
+function mnCanvasSelectionBounds(elements) {
+  const bounds = (elements || []).map(mnCanvasBounds).filter(b => Number.isFinite(b.x) && Number.isFinite(b.y));
+  if (!bounds.length) return null;
+  const left = Math.min(...bounds.map(b => b.x));
+  const top = Math.min(...bounds.map(b => b.y));
+  const right = Math.max(...bounds.map(b => b.x + b.w));
+  const bottom = Math.max(...bounds.map(b => b.y + b.h));
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+function mnCanvasMoveElement(element, dx, dy) {
+  const next = { ...element, x: (element.x || 0) + dx, y: (element.y || 0) + dy };
+  if (element.x2 != null) next.x2 = element.x2 + dx;
+  if (element.y2 != null) next.y2 = element.y2 + dy;
+  if (Array.isArray(element.points)) next.points = element.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+  return next;
+}
+
 function MnCanvasPanel({ canvases, activeCanvas, onCreate, onOpen, onBack, onSave, onDelete, T }) {
   if (activeCanvas) {
     return (
@@ -263,17 +281,28 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, T }) {
 function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const [draft, setDraft] = useStateC(canvas);
   const [tool, setTool] = useStateC('select');
-  const [selectedId, setSelectedId] = useStateC(null);
+  const [selectedIds, setSelectedIds] = useStateC([]);
   const [style, setStyle] = useStateC(MN_CANVAS_DEFAULT_STYLE);
   const [contextMenu, setContextMenu] = useStateC(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useStateC(false);
+  const [editingTextId, setEditingTextId] = useStateC(null);
+  const [spaceDown, setSpaceDown] = useStateC(false);
+  const [marquee, setMarquee] = useStateC(null);
+  const [historyVersion, setHistoryVersion] = useStateC(0);
   const draftRef = useRefC(canvas);
   const actionRef = useRefC(null);
   const clipboardRef = useRefC([]);
+  const undoRef = useRefC([]);
+  const redoRef = useRefC([]);
   const svgRef = useRefC(null);
   const rootRef = useRefC(null);
 
-  const selectedElement = (draft.elements || []).find(el => el.id === selectedId) || null;
+  const selectedElement = (draft.elements || []).find(el => el.id === selectedIds[0]) || null;
+  const selectedElements = (draft.elements || []).filter(el => selectedIds.includes(el.id));
+  const editingElement = (draft.elements || []).find(el => el.id === editingTextId) || null;
+  const selectionBounds = mnCanvasSelectionBounds(selectedElements);
+  const canUndo = historyVersion >= 0 && undoRef.current.length > 0;
+  const canRedo = historyVersion >= 0 && redoRef.current.length > 0;
 
   const setDraftLocal = (next) => {
     draftRef.current = next;
@@ -283,13 +312,26 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   useEffectC(() => {
     draftRef.current = canvas;
     setDraft(canvas);
-    setSelectedId(null);
+    setSelectedIds([]);
     setTool('select');
     setContextMenu(null);
     setDeleteDialogOpen(false);
+    setEditingTextId(null);
+    setMarquee(null);
+    undoRef.current = [];
+    redoRef.current = [];
+    setHistoryVersion(v => v + 1);
   }, [canvas?.id]);
 
-  const persistCanvas = (next) => {
+  const rememberCanvas = () => {
+    undoRef.current.push(JSON.parse(JSON.stringify(draftRef.current)));
+    if (undoRef.current.length > 80) undoRef.current.shift();
+    redoRef.current = [];
+    setHistoryVersion(v => v + 1);
+  };
+
+  const persistCanvas = (next, options = {}) => {
+    if (options.history !== false) rememberCanvas();
     const saved = { ...next, modifiedAt: new Date().toISOString() };
     setDraftLocal(saved);
     onSave && onSave(saved);
@@ -302,6 +344,32 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     if (persist) return persistCanvas(next);
     setDraftLocal(next);
     return next;
+  };
+
+  const undoCanvas = () => {
+    const previous = undoRef.current.pop();
+    if (!previous) return;
+    redoRef.current.push(JSON.parse(JSON.stringify(draftRef.current)));
+    const restored = { ...previous, modifiedAt: new Date().toISOString() };
+    setDraftLocal(restored);
+    onSave && onSave(restored);
+    setSelectedIds([]);
+    setContextMenu(null);
+    setEditingTextId(null);
+    setHistoryVersion(v => v + 1);
+  };
+
+  const redoCanvas = () => {
+    const next = redoRef.current.pop();
+    if (!next) return;
+    undoRef.current.push(JSON.parse(JSON.stringify(draftRef.current)));
+    const restored = { ...next, modifiedAt: new Date().toISOString() };
+    setDraftLocal(restored);
+    onSave && onSave(restored);
+    setSelectedIds([]);
+    setContextMenu(null);
+    setEditingTextId(null);
+    setHistoryVersion(v => v + 1);
   };
 
   const saveTitle = () => {
@@ -320,7 +388,15 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     };
   };
 
-  const selectedIds = () => selectedId ? [selectedId] : [];
+  const canvasPointToScreen = (point) => {
+    const viewport = draftRef.current.viewport || { x: 0, y: 0, scale: 1 };
+    return {
+      x: point.x * viewport.scale + viewport.x,
+      y: point.y * viewport.scale + viewport.y,
+    };
+  };
+
+  const currentSelectionIds = () => selectedIds.length ? selectedIds : [];
 
   const updateElementById = (id, patch, persist = false) => {
     updateDraft(prev => ({
@@ -335,11 +411,11 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
       ...prev,
       elements: (prev.elements || []).filter(el => !ids.includes(el.id)),
     }), true);
-    if (ids.includes(selectedId)) setSelectedId(null);
+    setSelectedIds(prev => prev.filter(id => !ids.includes(id)));
     setContextMenu(null);
   };
 
-  const copyElements = async (ids = selectedIds(), cut = false) => {
+  const copyElements = async (ids = currentSelectionIds(), cut = false) => {
     const elements = (draftRef.current.elements || []).filter(el => ids.includes(el.id));
     if (!elements.length) return false;
     clipboardRef.current = elements;
@@ -365,57 +441,151 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     if (!elements.length) return;
     const clones = elements.map(el => mnCanvasCloneElement(el));
     updateDraft(prev => ({ ...prev, elements: [...(prev.elements || []), ...clones] }), true);
-    setSelectedId(clones[clones.length - 1]?.id || null);
+    setSelectedIds(clones.map(el => el.id));
     setContextMenu(null);
   };
 
   const applyColor = (key, value) => {
     setStyle(prev => ({ ...prev, [key]: value }));
-    if (!selectedElement) return;
-    updateElementById(selectedElement.id, { [key]: value }, true);
+    if (!selectedIds.length) return;
+    updateDraft(prev => ({
+      ...prev,
+      elements: (prev.elements || []).map(el => selectedIds.includes(el.id) ? { ...el, [key]: value } : el),
+    }), true);
   };
 
   const applyStrokeWidth = (value) => {
     const width = Number(value) || 1;
     setStyle(prev => ({ ...prev, strokeWidth: width }));
-    if (!selectedElement) return;
-    updateElementById(selectedElement.id, { strokeWidth: width }, true);
+    if (!selectedIds.length) return;
+    updateDraft(prev => ({
+      ...prev,
+      elements: (prev.elements || []).map(el => selectedIds.includes(el.id) ? { ...el, strokeWidth: width } : el),
+    }), true);
   };
 
   const editText = (el) => {
     if (!['text', 'sticky'].includes(el.type)) return;
-    const value = window.prompt('Edit text', el.text || '');
-    if (value == null) return;
-    updateElementById(el.id, { text: value }, true);
+    rememberCanvas();
+    setSelectedIds([el.id]);
+    setEditingTextId(el.id);
+  };
+
+  const alignSelected = (mode) => {
+    if (selectedElements.length < 2) return;
+    const bounds = mnCanvasSelectionBounds(selectedElements);
+    if (!bounds) return;
+    updateDraft(prev => ({
+      ...prev,
+      elements: (prev.elements || []).map(el => {
+        if (!selectedIds.includes(el.id)) return el;
+        const b = mnCanvasBounds(el);
+        if (mode === 'left') return mnCanvasMoveElement(el, bounds.x - b.x, 0);
+        if (mode === 'right') return mnCanvasMoveElement(el, bounds.x + bounds.w - (b.x + b.w), 0);
+        if (mode === 'top') return mnCanvasMoveElement(el, 0, bounds.y - b.y);
+        if (mode === 'bottom') return mnCanvasMoveElement(el, 0, bounds.y + bounds.h - (b.y + b.h));
+        if (mode === 'center-x') return mnCanvasMoveElement(el, bounds.x + bounds.w / 2 - (b.x + b.w / 2), 0);
+        if (mode === 'center-y') return mnCanvasMoveElement(el, 0, bounds.y + bounds.h / 2 - (b.y + b.h / 2));
+        return el;
+      }),
+    }), true);
+  };
+
+  const distributeSelected = (axis) => {
+    if (selectedElements.length < 3) return;
+    const sorted = [...selectedElements].sort((a, b) => {
+      const ba = mnCanvasBounds(a);
+      const bb = mnCanvasBounds(b);
+      return axis === 'x' ? ba.x - bb.x : ba.y - bb.y;
+    });
+    const first = mnCanvasBounds(sorted[0]);
+    const last = mnCanvasBounds(sorted[sorted.length - 1]);
+    const start = axis === 'x' ? first.x + first.w / 2 : first.y + first.h / 2;
+    const end = axis === 'x' ? last.x + last.w / 2 : last.y + last.h / 2;
+    const step = (end - start) / (sorted.length - 1);
+    const targetCenters = new Map(sorted.map((el, i) => [el.id, start + step * i]));
+    updateDraft(prev => ({
+      ...prev,
+      elements: (prev.elements || []).map(el => {
+        if (!targetCenters.has(el.id)) return el;
+        const b = mnCanvasBounds(el);
+        return axis === 'x'
+          ? mnCanvasMoveElement(el, targetCenters.get(el.id) - (b.x + b.w / 2), 0)
+          : mnCanvasMoveElement(el, 0, targetCenters.get(el.id) - (b.y + b.h / 2));
+      }),
+    }), true);
+  };
+
+  const setZoom = (nextScale) => {
+    const current = draftRef.current.viewport || { x: 0, y: 0, scale: 1 };
+    const scale = Math.max(0.25, Math.min(3, nextScale));
+    updateDraft(prev => ({ ...prev, viewport: { ...current, scale } }), true);
+  };
+
+  const fitToScreen = () => {
+    const bounds = mnCanvasSelectionBounds(draftRef.current.elements || []);
+    const rect = svgRef.current?.getBoundingClientRect?.();
+    if (!bounds || !rect) return;
+    const pad = 80;
+    const scale = Math.max(0.25, Math.min(2.5, Math.min(
+      (rect.width - pad) / Math.max(1, bounds.w),
+      (rect.height - pad) / Math.max(1, bounds.h)
+    )));
+    updateDraft(prev => ({
+      ...prev,
+      viewport: {
+        scale,
+        x: rect.width / 2 - (bounds.x + bounds.w / 2) * scale,
+        y: rect.height / 2 - (bounds.y + bounds.h / 2) * scale,
+      },
+    }), true);
   };
 
   const beginCreate = (e, point) => {
     if (tool === 'eraser') return;
     const element = mnCanvasElement(tool, point, style);
+    rememberCanvas();
     if (tool === 'text' || tool === 'sticky') {
-      updateDraft(prev => ({ ...prev, elements: [...(prev.elements || []), element] }), true);
-      setSelectedId(element.id);
+      updateDraft(prev => ({ ...prev, elements: [...(prev.elements || []), element] }), false);
+      persistCanvas(draftRef.current, { history: false });
+      setSelectedIds([element.id]);
+      setEditingTextId(element.id);
       return;
     }
     updateDraft(prev => ({ ...prev, elements: [...(prev.elements || []), element] }), false);
-    setSelectedId(element.id);
+    setSelectedIds([element.id]);
     actionRef.current = { mode: 'create', id: element.id, type: tool, start: point };
     svgRef.current?.setPointerCapture?.(e.pointerId);
   };
 
   const onStageDown = (e) => {
     rootRef.current?.focus();
+    if (e.button === 1 || (e.button === 0 && spaceDown)) {
+      e.preventDefault();
+      actionRef.current = {
+        mode: 'pan',
+        startClient: { x: e.clientX, y: e.clientY },
+        viewport: { ...(draftRef.current.viewport || { x: 0, y: 0, scale: 1 }) },
+      };
+      svgRef.current?.setPointerCapture?.(e.pointerId);
+      return;
+    }
     if (e.button === 2) {
       e.preventDefault();
-      setSelectedId(null);
+      setSelectedIds([]);
       setContextMenu({ kind: 'stage', x: e.clientX, y: e.clientY });
       return;
     }
     if (e.button !== 0 || e.target !== svgRef.current) return;
     const point = toCanvasPoint(e);
     setContextMenu(null);
-    setSelectedId(null);
+    setSelectedIds([]);
     if (tool !== 'select') beginCreate(e, point);
+    if (tool === 'select') {
+      actionRef.current = { mode: 'marquee', start: point };
+      setMarquee({ x: point.x, y: point.y, w: 0, h: 0 });
+      svgRef.current?.setPointerCapture?.(e.pointerId);
+    }
   };
 
   const onElementDown = (e, el) => {
@@ -427,19 +597,43 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     }
     if (e.button === 2) {
       e.preventDefault();
-      setSelectedId(el.id);
-      setContextMenu({ kind: 'element', id: el.id, x: e.clientX, y: e.clientY });
+      const ids = selectedIds.includes(el.id) ? selectedIds : [el.id];
+      setSelectedIds(ids);
+      setContextMenu({ kind: 'element', id: el.id, ids, x: e.clientX, y: e.clientY });
       return;
     }
     if (e.button !== 0 || tool !== 'select') return;
     setContextMenu(null);
-    setSelectedId(el.id);
+    if (e.shiftKey) {
+      setSelectedIds(prev => prev.includes(el.id) ? prev.filter(id => id !== el.id) : [...prev, el.id]);
+      return;
+    }
+    rememberCanvas();
+    const actionIds = selectedIds.includes(el.id) ? selectedIds : [el.id];
+    setSelectedIds(actionIds);
     const point = toCanvasPoint(e);
     actionRef.current = {
       mode: 'move',
-      id: el.id,
+      ids: actionIds,
       start: point,
-      original: { ...el, points: Array.isArray(el.points) ? el.points.map(p => ({ ...p })) : null },
+      originals: (draftRef.current.elements || [])
+        .filter(item => actionIds.includes(item.id))
+        .map(item => ({ ...item, points: Array.isArray(item.points) ? item.points.map(p => ({ ...p })) : null })),
+    };
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+  };
+
+  const onResizeDown = (e, handle) => {
+    if (!selectedElement || selectedIds.length !== 1) return;
+    e.stopPropagation();
+    e.preventDefault();
+    rememberCanvas();
+    actionRef.current = {
+      mode: 'resize',
+      id: selectedElement.id,
+      handle,
+      start: toCanvasPoint(e),
+      original: { ...selectedElement },
     };
     svgRef.current?.setPointerCapture?.(e.pointerId);
   };
@@ -466,35 +660,59 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const updateMoveAction = (action, point) => {
     const dx = point.x - action.start.x;
     const dy = point.y - action.start.y;
-    if (action.original.type === 'line' || action.original.type === 'arrow') {
-      updateElementById(action.id, {
-        x: action.original.x + dx,
-        y: action.original.y + dy,
-        x2: action.original.x2 + dx,
-        y2: action.original.y2 + dy,
-      }, false);
-      return;
+    updateDraft(prev => ({
+      ...prev,
+      elements: (prev.elements || []).map(el => {
+        const original = (action.originals || []).find(item => item.id === el.id);
+        if (!original) return el;
+        return mnCanvasMoveElement(original, dx, dy);
+      }),
+    }), false);
+  };
+
+  const updateResizeAction = (action, point) => {
+    const original = action.original;
+    if (!original || ['line', 'arrow', 'pen'].includes(original.type)) return;
+    const dx = point.x - action.start.x;
+    const dy = point.y - action.start.y;
+    let x = original.x;
+    let y = original.y;
+    let w = original.w || 1;
+    let h = original.h || 1;
+    if (action.handle.includes('e')) w = Math.max(12, original.w + dx);
+    if (action.handle.includes('s')) h = Math.max(12, original.h + dy);
+    if (action.handle.includes('w')) {
+      x = Math.min(original.x + original.w - 12, original.x + dx);
+      w = Math.max(12, original.w - dx);
     }
-    if (action.original.type === 'pen') {
-      updateElementById(action.id, {
-        x: action.original.x + dx,
-        y: action.original.y + dy,
-        points: (action.original.points || []).map(p => ({ x: p.x + dx, y: p.y + dy })),
-      }, false);
-      return;
+    if (action.handle.includes('n')) {
+      y = Math.min(original.y + original.h - 12, original.y + dy);
+      h = Math.max(12, original.h - dy);
     }
-    updateElementById(action.id, {
-      x: action.original.x + dx,
-      y: action.original.y + dy,
-    }, false);
+    updateElementById(action.id, { x, y, w, h }, false);
   };
 
   const onPointerMove = (e) => {
     const action = actionRef.current;
     if (!action) return;
+    if (action.mode === 'pan') {
+      const dx = e.clientX - action.startClient.x;
+      const dy = e.clientY - action.startClient.y;
+      updateDraft(prev => ({ ...prev, viewport: { ...action.viewport, x: action.viewport.x + dx, y: action.viewport.y + dy } }), false);
+      return;
+    }
     const point = toCanvasPoint(e);
     if (action.mode === 'create') updateCreateAction(action, point);
     if (action.mode === 'move') updateMoveAction(action, point);
+    if (action.mode === 'resize') updateResizeAction(action, point);
+    if (action.mode === 'marquee') {
+      setMarquee({
+        x: Math.min(action.start.x, point.x),
+        y: Math.min(action.start.y, point.y),
+        w: Math.abs(point.x - action.start.x),
+        h: Math.abs(point.y - action.start.y),
+      });
+    }
   };
 
   const finishPointerAction = (e) => {
@@ -502,26 +720,61 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     if (!action) return;
     actionRef.current = null;
     svgRef.current?.releasePointerCapture?.(e.pointerId);
-    persistCanvas(draftRef.current);
+    if (action.mode === 'marquee') {
+      const point = toCanvasPoint(e);
+      const box = {
+        x: Math.min(action.start.x, point.x),
+        y: Math.min(action.start.y, point.y),
+        w: Math.abs(point.x - action.start.x),
+        h: Math.abs(point.y - action.start.y),
+      };
+      setMarquee(null);
+      if (box && (box.w > 3 || box.h > 3)) {
+        const hits = (draftRef.current.elements || []).filter(el => {
+          const b = mnCanvasBounds(el);
+          return b.x <= box.x + box.w && b.x + b.w >= box.x && b.y <= box.y + box.h && b.y + b.h >= box.y;
+        });
+        setSelectedIds(hits.map(el => el.id));
+      }
+      return;
+    }
+    persistCanvas(draftRef.current, { history: false });
   };
 
   const onWheel = (e) => {
     e.preventDefault();
     const current = draftRef.current.viewport || { x: 0, y: 0, scale: 1 };
     const nextScale = Math.max(0.45, Math.min(2.2, current.scale + (e.deltaY > 0 ? -0.08 : 0.08)));
-    updateDraft(prev => ({ ...prev, viewport: { ...current, scale: nextScale } }), true);
+    const saved = { ...draftRef.current, viewport: { ...current, scale: nextScale }, modifiedAt: new Date().toISOString() };
+    setDraftLocal(saved);
+    onSave && onSave(saved);
   };
 
   useEffectC(() => {
-    const onKey = async (e) => {
+    const onKeyDown = async (e) => {
       if (!rootRef.current?.contains(document.activeElement)) return;
+      if (e.code === 'Space') {
+        setSpaceDown(true);
+        if (e.target === rootRef.current || e.target === document.body) e.preventDefault();
+      }
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return;
       const isMod = e.metaKey || e.ctrlKey;
       const key = (e.key || '').toLowerCase();
-      if ((e.key === 'Backspace' || e.key === 'Delete') && selectedId) {
+      if (isMod && key === 'z') {
         e.preventDefault();
-        removeElements([selectedId]);
+        if (e.shiftKey) redoCanvas();
+        else undoCanvas();
+        return;
+      }
+      if (isMod && key === 'y') {
+        e.preventDefault();
+        redoCanvas();
+        return;
+      }
+      if ((e.key === 'Backspace' || e.key === 'Delete') && selectedIds.length) {
+        e.preventDefault();
+        removeElements(selectedIds);
         return;
       }
       if (isMod && key === 'c') {
@@ -529,20 +782,28 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
         await copyElements();
       } else if (isMod && key === 'x') {
         e.preventDefault();
-        await copyElements(selectedIds(), true);
+        await copyElements(currentSelectionIds(), true);
       } else if (isMod && key === 'v') {
         e.preventDefault();
         await pasteElements();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId]);
+    const onKeyUp = (e) => {
+      if (e.code === 'Space') setSpaceDown(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [selectedIds]);
 
   const viewport = draft.viewport || { x: 0, y: 0, scale: 1 };
   const activeStroke = selectedElement?.stroke || style.stroke;
   const activeFill = selectedElement?.fill || style.fill;
   const activeStrokeWidth = selectedElement?.strokeWidth || style.strokeWidth;
+  const editingOrigin = editingElement ? canvasPointToScreen({ x: editingElement.x || 0, y: editingElement.y || 0 }) : null;
 
   return (
     <div
@@ -630,11 +891,29 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
             style={{ width: 72 }}
           />
         </label>
+        <div style={{ width: 1, height: 24, background: T.lineSub, margin: '0 5px' }} />
+        <MnCanvasActionButton icon="undo" label="Undo" onClick={undoCanvas} disabled={!canUndo} T={T} />
+        <MnCanvasActionButton icon="redo" label="Redo" onClick={redoCanvas} disabled={!canRedo} T={T} />
+        <MnCanvasActionButton icon="zoom-out" label="Zoom out" onClick={() => setZoom((viewport.scale || 1) - 0.15)} T={T} />
+        <span style={{ minWidth: 38, textAlign: 'center', fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+          {Math.round((viewport.scale || 1) * 100)}%
+        </span>
+        <MnCanvasActionButton icon="zoom-in" label="Zoom in" onClick={() => setZoom((viewport.scale || 1) + 0.15)} T={T} />
+        <MnCanvasActionButton icon="fit" label="Fit to screen" onClick={fitToScreen} disabled={!(draft.elements || []).length} T={T} />
+        <div style={{ width: 1, height: 24, background: T.lineSub, margin: '0 5px' }} />
+        <MnCanvasActionButton icon="align-left" label="Align left" onClick={() => alignSelected('left')} disabled={selectedIds.length < 2} T={T} />
+        <MnCanvasActionButton icon="align-center" label="Align center" onClick={() => alignSelected('center-x')} disabled={selectedIds.length < 2} T={T} />
+        <MnCanvasActionButton icon="align-right" label="Align right" onClick={() => alignSelected('right')} disabled={selectedIds.length < 2} T={T} />
+        <MnCanvasActionButton icon="align-top" label="Align top" onClick={() => alignSelected('top')} disabled={selectedIds.length < 2} T={T} />
+        <MnCanvasActionButton icon="align-middle" label="Align middle" onClick={() => alignSelected('center-y')} disabled={selectedIds.length < 2} T={T} />
+        <MnCanvasActionButton icon="align-bottom" label="Align bottom" onClick={() => alignSelected('bottom')} disabled={selectedIds.length < 2} T={T} />
+        <MnCanvasActionButton icon="distribute-x" label="Distribute horizontally" onClick={() => distributeSelected('x')} disabled={selectedIds.length < 3} T={T} />
+        <MnCanvasActionButton icon="distribute-y" label="Distribute vertically" onClick={() => distributeSelected('y')} disabled={selectedIds.length < 3} T={T} />
         <div style={{ flex: 1 }} />
-        <button onClick={() => selectedId && copyElements(selectedIds(), true)} disabled={!selectedId} style={mnCanvasToolButton(T)}>Cut</button>
-        <button onClick={() => copyElements()} disabled={!selectedId} style={mnCanvasToolButton(T)}>Copy</button>
+        <button onClick={() => selectedIds.length && copyElements(currentSelectionIds(), true)} disabled={!selectedIds.length} style={mnCanvasToolButton(T)}>Cut</button>
+        <button onClick={() => copyElements()} disabled={!selectedIds.length} style={mnCanvasToolButton(T)}>Copy</button>
         <button onClick={pasteElements} style={mnCanvasToolButton(T)}>Paste</button>
-        <button onClick={() => removeElements(selectedIds())} disabled={!selectedId} style={mnCanvasToolButton(T)}>Delete</button>
+        <button onClick={() => removeElements(currentSelectionIds())} disabled={!selectedIds.length} style={mnCanvasToolButton(T)}>Delete</button>
         <button
           onClick={() => setDeleteDialogOpen(true)}
           style={{ ...mnCanvasToolButton(T), color: T.danger }}>
@@ -655,7 +934,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
           height="100%"
           style={{
             display: 'block',
-            cursor: tool === 'select' ? 'default' : tool === 'eraser' ? 'not-allowed' : 'crosshair',
+            cursor: spaceDown ? 'grab' : tool === 'select' ? 'default' : tool === 'eraser' ? 'not-allowed' : 'crosshair',
             backgroundImage: `linear-gradient(${T.lineSub} 1px, transparent 1px), linear-gradient(90deg, ${T.lineSub} 1px, transparent 1px)`,
             backgroundSize: '28px 28px',
           }}>
@@ -664,14 +943,86 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
               <MnCanvasElement
                 key={el.id}
                 element={el}
-                selected={selectedId === el.id}
+                selected={selectedIds.includes(el.id)}
                 onPointerDown={(e) => onElementDown(e, el)}
                 onDoubleClick={() => editText(el)}
                 T={T}
               />
             ))}
+            {selectedIds.length > 1 && selectionBounds && (
+              <rect
+                x={selectionBounds.x - 6}
+                y={selectionBounds.y - 6}
+                width={selectionBounds.w + 12}
+                height={selectionBounds.h + 12}
+                fill="none"
+                stroke={T.accent}
+                strokeDasharray="5 4"
+                strokeWidth="1.2"
+                pointerEvents="none"
+              />
+            )}
+            {selectedIds.length === 1 && selectedElement && !['line', 'arrow', 'pen'].includes(selectedElement.type) && (
+              <MnCanvasResizeHandles bounds={mnCanvasBounds(selectedElement)} onPointerDown={onResizeDown} T={T} />
+            )}
+            {marquee && (
+              <rect
+                x={marquee.x}
+                y={marquee.y}
+                width={marquee.w}
+                height={marquee.h}
+                fill={`color-mix(in oklab, ${T.accent} 10%, transparent)`}
+                stroke={T.accent}
+                strokeDasharray="4 3"
+                strokeWidth="1"
+                pointerEvents="none"
+              />
+            )}
           </g>
         </svg>
+        {editingElement && editingOrigin && (
+          <textarea
+            autoFocus
+            value={editingElement.text || ''}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => updateElementById(editingElement.id, { text: e.target.value }, false)}
+            onBlur={() => {
+              setEditingTextId(null);
+              persistCanvas(draftRef.current, { history: false });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setEditingTextId(null);
+                persistCanvas(draftRef.current, { history: false });
+              }
+              if (editingElement.type === 'text' && e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            style={{
+              position: 'absolute',
+              left: editingOrigin.x,
+              top: editingOrigin.y,
+              width: Math.max(80, (editingElement.w || 160) * (viewport.scale || 1)),
+              height: Math.max(42, (editingElement.h || 60) * (viewport.scale || 1)),
+              resize: 'none',
+              border: `1px solid ${T.accent}`,
+              borderRadius: editingElement.type === 'sticky' ? 7 : 4,
+              outline: 'none',
+              padding: editingElement.type === 'sticky' ? 9 : 3,
+              background: editingElement.type === 'sticky' ? (editingElement.fill || '#fef3c7') : T.bg,
+              color: editingElement.stroke || T.ink,
+              fontFamily: editingElement.type === 'text' ? 'var(--mn-body)' : 'var(--mn-ui)',
+              fontSize: (editingElement.type === 'text' ? 18 : 13) * (viewport.scale || 1),
+              lineHeight: 1.35,
+              zIndex: 12,
+              boxShadow: `0 10px 26px color-mix(in oklab, ${T.ink} 14%, transparent)`,
+            }}
+          />
+        )}
         <div style={{
           position: 'absolute',
           left: 16,
@@ -689,10 +1040,10 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
           <MnCanvasContextMenu
             menu={contextMenu}
             canPaste={true}
-            onCopy={() => copyElements(contextMenu.id ? [contextMenu.id] : selectedIds())}
-            onCut={() => copyElements(contextMenu.id ? [contextMenu.id] : selectedIds(), true)}
+            onCopy={() => copyElements(contextMenu.ids || (contextMenu.id ? [contextMenu.id] : currentSelectionIds()))}
+            onCut={() => copyElements(contextMenu.ids || (contextMenu.id ? [contextMenu.id] : currentSelectionIds()), true)}
             onPaste={pasteElements}
-            onDelete={() => contextMenu.id && removeElements([contextMenu.id])}
+            onDelete={() => removeElements(contextMenu.ids || (contextMenu.id ? [contextMenu.id] : []))}
             onClose={() => setContextMenu(null)}
             T={T}
           />
@@ -760,6 +1111,79 @@ function MnCanvasToolButton({ tool, active, onClick, T }) {
       }}>
       <MnCanvasToolIcon id={tool.id} />
     </button>
+  );
+}
+
+function MnCanvasActionButton({ icon, label, onClick, disabled = false, T }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      style={{
+        ...mnCanvasIconToolButton(T),
+        color: disabled ? T.inkDim : T.inkMed,
+        opacity: disabled ? 0.45 : 1,
+        cursor: disabled ? 'default' : 'pointer',
+      }}>
+      <MnCanvasActionIcon id={icon} />
+    </button>
+  );
+}
+
+function MnCanvasActionIcon({ id }) {
+  const common = { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.45 };
+  if (id === 'undo') return <svg {...common}><path d="M6 5H3V2" strokeLinecap="round" strokeLinejoin="round"/><path d="M3.4 5C4.5 3.7 6.1 3 8 3C11 3 13 5 13 8C13 11 11 13 8 13C6.5 13 5.2 12.5 4.2 11.6" strokeLinecap="round"/></svg>;
+  if (id === 'redo') return <svg {...common}><path d="M10 5H13V2" strokeLinecap="round" strokeLinejoin="round"/><path d="M12.6 5C11.5 3.7 9.9 3 8 3C5 3 3 5 3 8C3 11 5 13 8 13C9.5 13 10.8 12.5 11.8 11.6" strokeLinecap="round"/></svg>;
+  if (id === 'zoom-in') return <svg {...common}><circle cx="7" cy="7" r="4.3"/><path d="M7 4.8V9.2M4.8 7H9.2M10.5 10.5L13.3 13.3" strokeLinecap="round"/></svg>;
+  if (id === 'zoom-out') return <svg {...common}><circle cx="7" cy="7" r="4.3"/><path d="M4.8 7H9.2M10.5 10.5L13.3 13.3" strokeLinecap="round"/></svg>;
+  if (id === 'fit') return <svg {...common}><path d="M3 6V3H6M10 3H13V6M13 10V13H10M6 13H3V10" strokeLinecap="round" strokeLinejoin="round"/><rect x="5.4" y="5.4" width="5.2" height="5.2" rx="1"/></svg>;
+  if (id === 'align-left') return <svg {...common}><path d="M3 3V13M5.5 5H13M5.5 9H10.5" strokeLinecap="round"/></svg>;
+  if (id === 'align-center') return <svg {...common}><path d="M8 3V13M3.5 5H12.5M5.5 9H10.5" strokeLinecap="round"/></svg>;
+  if (id === 'align-right') return <svg {...common}><path d="M13 3V13M3 5H10.5M5.5 9H10.5" strokeLinecap="round"/></svg>;
+  if (id === 'align-top') return <svg {...common}><path d="M3 3H13M5 5.5V13M10 5.5V10.5" strokeLinecap="round"/></svg>;
+  if (id === 'align-middle') return <svg {...common}><path d="M3 8H13M5 3.5V12.5M10 5.5V10.5" strokeLinecap="round"/></svg>;
+  if (id === 'align-bottom') return <svg {...common}><path d="M3 13H13M5 3V10.5M10 5.5V10.5" strokeLinecap="round"/></svg>;
+  if (id === 'distribute-x') return <svg {...common}><path d="M3 3V13M13 3V13M5.2 8H10.8M6 5V11M10 5V11" strokeLinecap="round"/></svg>;
+  if (id === 'distribute-y') return <svg {...common}><path d="M3 3H13M3 13H13M8 5.2V10.8M5 6H11M5 10H11" strokeLinecap="round"/></svg>;
+  return null;
+}
+
+function MnCanvasResizeHandles({ bounds, onPointerDown, T }) {
+  const size = 7;
+  const x = bounds.x;
+  const y = bounds.y;
+  const w = bounds.w || 0;
+  const h = bounds.h || 0;
+  const handles = [
+    { id: 'nw', x, y, cursor: 'nwse-resize' },
+    { id: 'n', x: x + w / 2, y, cursor: 'ns-resize' },
+    { id: 'ne', x: x + w, y, cursor: 'nesw-resize' },
+    { id: 'e', x: x + w, y: y + h / 2, cursor: 'ew-resize' },
+    { id: 'se', x: x + w, y: y + h, cursor: 'nwse-resize' },
+    { id: 's', x: x + w / 2, y: y + h, cursor: 'ns-resize' },
+    { id: 'sw', x, y: y + h, cursor: 'nesw-resize' },
+    { id: 'w', x, y: y + h / 2, cursor: 'ew-resize' },
+  ];
+  return (
+    <g>
+      {handles.map(handle => (
+        <rect
+          key={handle.id}
+          x={handle.x - size / 2}
+          y={handle.y - size / 2}
+          width={size}
+          height={size}
+          rx="1.5"
+          fill={T.bg}
+          stroke={T.accent}
+          strokeWidth="1.2"
+          style={{ cursor: handle.cursor }}
+          onPointerDown={(e) => onPointerDown(e, handle.id)}
+        />
+      ))}
+    </g>
   );
 }
 

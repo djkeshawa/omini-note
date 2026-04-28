@@ -432,6 +432,24 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvas, /rootRef\.current\?\.focus\(\)/);
   assert.match(canvas, /saveTitle\(\); onBack && onBack\(\)/);
   assert.doesNotMatch(canvas, /if \(action\.mode === 'create'\) setTool\('select'\)/);
+  assert.match(canvas, /const \[selectedIds, setSelectedIds\]/);
+  assert.match(canvas, /function mnCanvasSelectionBounds/);
+  assert.match(canvas, /function mnCanvasMoveElement/);
+  assert.match(canvas, /const undoCanvas = \(\) =>/);
+  assert.match(canvas, /const redoCanvas = \(\) =>/);
+  assert.match(canvas, /isMod && key === 'z'/);
+  assert.match(canvas, /isMod && key === 'y'/);
+  assert.match(canvas, /const \[marquee, setMarquee\]/);
+  assert.match(canvas, /mode: 'marquee'/);
+  assert.match(canvas, /function MnCanvasResizeHandles/);
+  assert.match(canvas, /mode: 'resize'/);
+  assert.match(canvas, /alignSelected\('left'\)/);
+  assert.match(canvas, /distributeSelected\('x'\)/);
+  assert.match(canvas, /const fitToScreen = \(\) =>/);
+  assert.match(canvas, /const \[spaceDown, setSpaceDown\]/);
+  assert.match(canvas, /mode: 'pan'/);
+  assert.match(canvas, /const \[editingTextId, setEditingTextId\]/);
+  assert.match(canvas, /<textarea/);
 
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   assert.match(app, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
