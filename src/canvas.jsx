@@ -395,7 +395,6 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     if (tool === 'text' || tool === 'sticky') {
       updateDraft(prev => ({ ...prev, elements: [...(prev.elements || []), element] }), true);
       setSelectedId(element.id);
-      setTool('select');
       return;
     }
     updateDraft(prev => ({ ...prev, elements: [...(prev.elements || []), element] }), false);
@@ -504,7 +503,6 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     actionRef.current = null;
     svgRef.current?.releasePointerCapture?.(e.pointerId);
     persistCanvas(draftRef.current);
-    if (action.mode === 'create') setTool('select');
   };
 
   const onWheel = (e) => {

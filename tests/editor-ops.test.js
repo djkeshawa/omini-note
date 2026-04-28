@@ -431,6 +431,7 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvas, /releasePointerCapture/);
   assert.match(canvas, /rootRef\.current\?\.focus\(\)/);
   assert.match(canvas, /saveTitle\(\); onBack && onBack\(\)/);
+  assert.doesNotMatch(canvas, /if \(action\.mode === 'create'\) setTool\('select'\)/);
 
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   assert.match(app, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
