@@ -1500,7 +1500,7 @@ function MnApp() {
         return null;
       }
     }
-    setActiveCanvas(saved);
+    setActiveCanvas(current => current?.id === saved.id ? saved : current);
     upsertCanvasSummary(saved);
     return saved;
   }, [activeVaultId, upsertCanvasSummary]);

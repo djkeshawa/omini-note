@@ -393,6 +393,38 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(canvas, /function MnCanvasEmbed/);
 });
 
+test('Canvas editor supports expected drawing, color, clipboard, and delete interactions', () => {
+  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
+
+  assert.match(canvas, /id: 'pen'/);
+  assert.match(canvas, /function MnCanvasContextMenu/);
+  assert.match(canvas, /onContextMenu=\{\(e\) => e\.preventDefault\(\)\}/);
+  assert.match(canvas, /Delete object/);
+  assert.match(canvas, /copyElements/);
+  assert.match(canvas, /pasteElements/);
+  assert.match(canvas, /navigator\.clipboard/);
+  assert.match(canvas, /key === 'c'/);
+  assert.match(canvas, /key === 'x'/);
+  assert.match(canvas, /key === 'v'/);
+  assert.match(canvas, /x2: point\.x/);
+  assert.match(canvas, /y2: point\.y/);
+  assert.match(canvas, /points: \[/);
+  assert.match(canvas, /function MnCanvasColorControl/);
+  assert.match(canvas, /type="color"/);
+  assert.match(canvas, /applyColor\('stroke'/);
+  assert.match(canvas, /applyColor\('fill'/);
+  assert.match(canvas, /function MnCanvasDeleteDialog/);
+  assert.match(canvas, /role="dialog"/);
+  assert.doesNotMatch(canvas, /window\.confirm\('Delete this canvas\?'\)/);
+  assert.match(canvas, /setPointerCapture/);
+  assert.match(canvas, /releasePointerCapture/);
+  assert.match(canvas, /rootRef\.current\?\.focus\(\)/);
+  assert.match(canvas, /saveTitle\(\); onBack && onBack\(\)/);
+
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  assert.match(app, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
+});
+
 test('Selection toolbar closes on outside click and keeps overflow actions in More', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
 
