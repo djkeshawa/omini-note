@@ -397,6 +397,13 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
 
   assert.match(canvas, /id: 'pen'/);
+  assert.match(canvas, /id: 'arrow'/);
+  assert.match(canvas, /id: 'diamond'/);
+  assert.match(canvas, /id: 'triangle'/);
+  assert.match(canvas, /id: 'eraser'/);
+  assert.match(canvas, /function MnCanvasToolIcon/);
+  assert.match(canvas, /aria-label=\{tool\.label\}/);
+  assert.match(canvas, /mnCanvasIconToolButton/);
   assert.match(canvas, /function MnCanvasContextMenu/);
   assert.match(canvas, /onContextMenu=\{\(e\) => e\.preventDefault\(\)\}/);
   assert.match(canvas, /Delete object/);
@@ -409,6 +416,10 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvas, /x2: point\.x/);
   assert.match(canvas, /y2: point\.y/);
   assert.match(canvas, /points: \[/);
+  assert.match(canvas, /mnCanvasArrowHead/);
+  assert.match(canvas, /element\.type === 'diamond'/);
+  assert.match(canvas, /element\.type === 'triangle'/);
+  assert.match(canvas, /tool === 'eraser'/);
   assert.match(canvas, /function MnCanvasColorControl/);
   assert.match(canvas, /type="color"/);
   assert.match(canvas, /applyColor\('stroke'/);

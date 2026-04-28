@@ -10,6 +10,10 @@ const MN_CANVAS_TOOLS = [
   { id: 'rect', label: 'Rectangle' },
   { id: 'ellipse', label: 'Ellipse' },
   { id: 'line', label: 'Line' },
+  { id: 'arrow', label: 'Arrow' },
+  { id: 'diamond', label: 'Diamond' },
+  { id: 'triangle', label: 'Triangle' },
+  { id: 'eraser', label: 'Eraser' },
 ];
 
 const MN_CANVAS_COLORS = [
@@ -60,8 +64,9 @@ function mnCanvasElement(type, point, style = MN_CANVAS_DEFAULT_STYLE) {
   if (type === 'text') return { ...base, w: 180, h: 46, text: 'Text', fill: 'transparent' };
   if (type === 'sticky') return { ...base, w: 170, h: 110, text: 'Sticky note', fill: style.fill || '#fef3c7' };
   if (type === 'ellipse') return { ...base, w: 1, h: 1, text: '' };
-  if (type === 'line') return { ...base, x2: point.x, y2: point.y, text: '', fill: 'transparent' };
+  if (type === 'line' || type === 'arrow') return { ...base, x2: point.x, y2: point.y, text: '', fill: 'transparent' };
   if (type === 'pen') return { ...base, points: [point], text: '', fill: 'transparent' };
+  if (type === 'diamond' || type === 'triangle') return { ...base, w: 1, h: 1, text: '' };
   return { ...base, type: 'rect', w: 1, h: 1, text: '' };
 }
 
@@ -86,7 +91,7 @@ function mnCanvasCloneElement(element, offset = 24) {
 }
 
 function mnCanvasBounds(element) {
-  if (element.type === 'line') {
+  if (element.type === 'line' || element.type === 'arrow') {
     return {
       x: Math.min(element.x, element.x2),
       y: Math.min(element.y, element.y2),
@@ -385,6 +390,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   };
 
   const beginCreate = (e, point) => {
+    if (tool === 'eraser') return;
     const element = mnCanvasElement(tool, point, style);
     if (tool === 'text' || tool === 'sticky') {
       updateDraft(prev => ({ ...prev, elements: [...(prev.elements || []), element] }), true);
@@ -416,6 +422,10 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const onElementDown = (e, el) => {
     e.stopPropagation();
     rootRef.current?.focus();
+    if (e.button === 0 && tool === 'eraser') {
+      removeElements([el.id]);
+      return;
+    }
     if (e.button === 2) {
       e.preventDefault();
       setSelectedId(el.id);
@@ -436,7 +446,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   };
 
   const updateCreateAction = (action, point) => {
-    if (action.type === 'line') {
+    if (action.type === 'line' || action.type === 'arrow') {
       updateElementById(action.id, { x2: point.x, y2: point.y }, false);
       return;
     }
@@ -457,7 +467,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const updateMoveAction = (action, point) => {
     const dx = point.x - action.start.x;
     const dy = point.y - action.start.y;
-    if (action.original.type === 'line') {
+    if (action.original.type === 'line' || action.original.type === 'arrow') {
       updateElementById(action.id, {
         x: action.original.x + dx,
         y: action.original.y + dy,
@@ -597,19 +607,17 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
           }}
         />
         <div style={{ width: 1, height: 24, background: T.lineSub, margin: '0 5px' }} />
-        {MN_CANVAS_TOOLS.map(item => (
-          <button
-            key={item.id}
-            onClick={() => setTool(item.id)}
-            title={item.label}
-            style={{
-              ...mnCanvasToolButton(T),
-              background: tool === item.id ? T.selBg : 'transparent',
-              color: tool === item.id ? T.ink : T.inkMed,
-            }}>
-            {item.label}
-          </button>
-        ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          {MN_CANVAS_TOOLS.map(item => (
+            <MnCanvasToolButton
+              key={item.id}
+              tool={item}
+              active={tool === item.id}
+              onClick={() => setTool(item.id)}
+              T={T}
+            />
+          ))}
+        </div>
         <div style={{ width: 1, height: 24, background: T.lineSub, margin: '0 5px' }} />
         <MnCanvasColorControl label="Stroke" value={activeStroke} onChange={(v) => applyColor('stroke', v)} T={T} />
         <MnCanvasColorControl label="Fill" value={activeFill === 'transparent' ? '#ffffff' : activeFill} onChange={(v) => applyColor('fill', v)} T={T} />
@@ -649,7 +657,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
           height="100%"
           style={{
             display: 'block',
-            cursor: tool === 'select' ? 'default' : 'crosshair',
+            cursor: tool === 'select' ? 'default' : tool === 'eraser' ? 'not-allowed' : 'crosshair',
             backgroundImage: `linear-gradient(${T.lineSub} 1px, transparent 1px), linear-gradient(90deg, ${T.lineSub} 1px, transparent 1px)`,
             backgroundSize: '28px 28px',
           }}>
@@ -738,6 +746,61 @@ function MnCanvasColorControl({ label, value, onChange, T }) {
       </div>
     </div>
   );
+}
+
+function MnCanvasToolButton({ tool, active, onClick, T }) {
+  return (
+    <button
+      onClick={onClick}
+      title={tool.label}
+      aria-label={tool.label}
+      style={{
+        ...mnCanvasIconToolButton(T),
+        background: active ? T.selBg : 'transparent',
+        borderColor: active ? T.accent : T.lineSub,
+        color: active ? T.accent : T.inkMed,
+      }}>
+      <MnCanvasToolIcon id={tool.id} />
+    </button>
+  );
+}
+
+function MnCanvasToolIcon({ id }) {
+  const common = { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.45 };
+  if (id === 'select') return (
+    <svg {...common}><path d="M4 2.5L11.8 8L8.6 8.7L10.6 12.3L8.9 13.2L7 9.6L4.8 11.9L4 2.5Z" strokeLinejoin="round"/></svg>
+  );
+  if (id === 'pen') return (
+    <svg {...common}><path d="M3 12.5L4.1 9.1L10.8 2.4L13.6 5.2L6.9 11.9L3 12.5Z" strokeLinejoin="round"/><path d="M9.7 3.5L12.5 6.3" strokeLinecap="round"/></svg>
+  );
+  if (id === 'text') return (
+    <svg {...common}><path d="M3 4V2.8H13V4M8 3V13M5.6 13H10.4" strokeLinecap="round"/></svg>
+  );
+  if (id === 'sticky') return (
+    <svg {...common}><path d="M3 3H13V10L10 13H3V3Z" strokeLinejoin="round"/><path d="M10 13V10H13" strokeLinejoin="round"/></svg>
+  );
+  if (id === 'rect') return (
+    <svg {...common}><rect x="3" y="4" width="10" height="8" rx="1.2"/></svg>
+  );
+  if (id === 'ellipse') return (
+    <svg {...common}><ellipse cx="8" cy="8" rx="5.2" ry="3.7"/></svg>
+  );
+  if (id === 'line') return (
+    <svg {...common}><path d="M3 12L13 4" strokeLinecap="round"/></svg>
+  );
+  if (id === 'arrow') return (
+    <svg {...common}><path d="M3 12L12 3" strokeLinecap="round"/><path d="M7.8 3H12V7.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+  );
+  if (id === 'diamond') return (
+    <svg {...common}><path d="M8 2.8L13.2 8L8 13.2L2.8 8L8 2.8Z" strokeLinejoin="round"/></svg>
+  );
+  if (id === 'triangle') return (
+    <svg {...common}><path d="M8 2.8L13.3 12.5H2.7L8 2.8Z" strokeLinejoin="round"/></svg>
+  );
+  if (id === 'eraser') return (
+    <svg {...common}><path d="M5.4 11.7L2.8 9.1L8.6 3.3C9.1 2.8 9.9 2.8 10.4 3.3L12.7 5.6C13.2 6.1 13.2 6.9 12.7 7.4L8.4 11.7H5.4Z" strokeLinejoin="round"/><path d="M7 5L11 9M3 13H13" strokeLinecap="round"/></svg>
+  );
+  return null;
 }
 
 function MnCanvasContextMenu({ menu, canPaste, onCopy, onCut, onPaste, onDelete, onClose, T }) {
@@ -944,15 +1007,33 @@ function MnCanvasDeleteDialog({ canvas, T, onCancel, onConfirm }) {
   );
 }
 
+function mnCanvasArrowHead(x1, y1, x2, y2, size = 11) {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const wing = Math.PI / 7;
+  const p1 = {
+    x: x2 - size * Math.cos(angle - wing),
+    y: y2 - size * Math.sin(angle - wing),
+  };
+  const p2 = {
+    x: x2 - size * Math.cos(angle + wing),
+    y: y2 - size * Math.sin(angle + wing),
+  };
+  return `${x2},${y2} ${p1.x},${p1.y} ${p2.x},${p2.y}`;
+}
+
 function MnCanvasElement({ element, selected, onPointerDown, onDoubleClick, T }) {
   const stroke = selected ? T.accent : (element.stroke || T.inkDim);
   const strokeWidth = selected ? Math.max(2, (element.strokeWidth || 2) + 1) : (element.strokeWidth || 2);
   const fill = element.fill || 'transparent';
-  if (element.type === 'line') {
+  if (element.type === 'line' || element.type === 'arrow') {
     return (
       <g onPointerDown={onPointerDown} style={{ cursor: 'move' }}>
         <line x1={element.x} y1={element.y} x2={element.x2} y2={element.y2}
           stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" />
+        {element.type === 'arrow' && (
+          <polygon points={mnCanvasArrowHead(element.x, element.y, element.x2, element.y2, Math.max(10, strokeWidth * 4))}
+            fill={stroke} />
+        )}
         <line x1={element.x} y1={element.y} x2={element.x2} y2={element.y2}
           stroke="transparent" strokeWidth={Math.max(12, strokeWidth + 8)} strokeLinecap="round" />
       </g>
@@ -986,6 +1067,39 @@ function MnCanvasElement({ element, selected, onPointerDown, onDoubleClick, T })
         <ellipse cx={element.x + element.w / 2} cy={element.y + element.h / 2}
           rx={element.w / 2} ry={element.h / 2}
           fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
+      </g>
+    );
+  }
+  if (element.type === 'diamond') {
+    const points = [
+      `${element.x + element.w / 2},${element.y}`,
+      `${element.x + element.w},${element.y + element.h / 2}`,
+      `${element.x + element.w / 2},${element.y + element.h}`,
+      `${element.x},${element.y + element.h / 2}`,
+    ].join(' ');
+    return (
+      <g onPointerDown={onPointerDown} style={{ cursor: 'move' }}>
+        <polygon points={points} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
+        {selected && (
+          <rect x={element.x - 4} y={element.y - 4} width={(element.w || 0) + 8} height={(element.h || 0) + 8}
+            fill="none" stroke={T.accent} strokeDasharray="4 3" strokeWidth="1.2" pointerEvents="none" />
+        )}
+      </g>
+    );
+  }
+  if (element.type === 'triangle') {
+    const points = [
+      `${element.x + element.w / 2},${element.y}`,
+      `${element.x + element.w},${element.y + element.h}`,
+      `${element.x},${element.y + element.h}`,
+    ].join(' ');
+    return (
+      <g onPointerDown={onPointerDown} style={{ cursor: 'move' }}>
+        <polygon points={points} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
+        {selected && (
+          <rect x={element.x - 4} y={element.y - 4} width={(element.w || 0) + 8} height={(element.h || 0) + 8}
+            fill="none" stroke={T.accent} strokeDasharray="4 3" strokeWidth="1.2" pointerEvents="none" />
+        )}
       </g>
     );
   }
@@ -1102,6 +1216,22 @@ function mnCanvasToolButton(T) {
     cursor: 'pointer',
     fontFamily: 'var(--mn-ui)',
     fontSize: 12,
+  };
+}
+
+function mnCanvasIconToolButton(T) {
+  return {
+    width: 30,
+    height: 30,
+    border: `1px solid ${T.lineSub}`,
+    background: 'transparent',
+    color: T.inkMed,
+    borderRadius: 6,
+    padding: 0,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   };
 }
 
