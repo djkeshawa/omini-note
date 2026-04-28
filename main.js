@@ -306,6 +306,10 @@ ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId) => {
   await store.deleteNote(vaultId, noteId);
   idx.removeNote(vaultId, noteId);
 }));
+ipcMain.handle('mn:listCanvases',   wrap(store.listCanvases));
+ipcMain.handle('mn:getCanvas',      wrap(store.getCanvas));
+ipcMain.handle('mn:saveCanvas',     wrap(store.saveCanvas));
+ipcMain.handle('mn:deleteCanvas',   wrap(store.deleteCanvas));
 ipcMain.handle('mn:saveVaultMeta',  wrap(store.saveVaultMeta));
 
 // Prefs

@@ -355,6 +355,44 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   assert.match(panels, /<button onClick=\{onSnooze \|\| onDismiss\}[\s\S]*>Snooze<\/button>/);
 });
 
+test('Canvas workspace is wired through storage, navigation, and note embeds', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
+
+  assert.match(html, /src="src\/canvas\.jsx"/);
+  assert.match(store, /function canvasDir\(slug\)/);
+  assert.match(store, /async function listCanvases\(vaultId\)/);
+  assert.match(store, /async function saveCanvas\(vaultId, canvas\)/);
+  assert.match(store, /async function deleteCanvas\(vaultId, canvasId\)/);
+  assert.match(main, /ipcMain\.handle\('mn:listCanvases'/);
+  assert.match(main, /ipcMain\.handle\('mn:getCanvas'/);
+  assert.match(preload, /listCanvases: \(vaultId\) => ipcRenderer\.invoke\('mn:listCanvases', vaultId\)/);
+  assert.match(preload, /saveCanvas: \(vaultId, canvas\) => ipcRenderer\.invoke\('mn:saveCanvas', vaultId, canvas\)/);
+  assert.match(sidebar, /label="Canvas"/);
+  assert.match(sidebar, /canvasActive/);
+  assert.match(app, /const \[canvases, setCanvases\]/);
+  assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
+  assert.match(app, /window\.mn\.listCanvases\(activeId\)/);
+  assert.match(app, /view === 'canvas'/);
+  assert.match(app, /<MnCanvasPanel/);
+  assert.match(editor, /allCanvases=\{canvases\}/);
+  assert.match(outliner, /id: 'canvas'/);
+  assert.match(outliner, /\{\{canvas/);
+  assert.match(outliner, /<MnCanvasPicker/);
+  assert.match(outliner, /<MnCanvasEmbed/);
+  assert.match(canvas, /const MN_CANVAS_TOOLS = \[/);
+  assert.match(canvas, /function MnCanvasPanel/);
+  assert.match(canvas, /function MnCanvasEditor/);
+  assert.match(canvas, /function MnCanvasEmbed/);
+});
+
 test('Selection toolbar closes on outside click and keeps overflow actions in More', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
 

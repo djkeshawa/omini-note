@@ -4,6 +4,7 @@ const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useE
 
 function MnEditor({
   note, notes, tags, links, vaultId,
+  canvases = [], onOpenCanvas, onCreateCanvas,
   onOpen, onOpenTag,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
   onPinToggle, onDelete, onOpenGraph, onBack,
@@ -265,6 +266,7 @@ function MnEditor({
             blocks={note.blocks || []}
             setBlocks={setBlocks}
             allNotes={notes}
+            allCanvases={canvases}
             noteTitle={note.title}
             zoomBlockId={zoomBlockId}
             onZoomBlock={setZoomBlockId}
@@ -283,6 +285,8 @@ function MnEditor({
               if (target) onOpen(target.id);
             }}
             onTagClick={onOpenTag}
+            onOpenCanvas={onOpenCanvas}
+            onCreateCanvas={onCreateCanvas}
             fontSize={fontSize}
             indentGuides={indentGuides}
             spellCheck={spellCheck}

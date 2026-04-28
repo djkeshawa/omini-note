@@ -688,6 +688,8 @@ function MnApp() {
   const [tags, setTags] = useStateA([]);
   const [notes, setNotes] = useStateA([]);
   const [selectedId, setSelectedId] = useStateA(null);
+  const [canvases, setCanvases] = useStateA([]);
+  const [activeCanvas, setActiveCanvas] = useStateA(null);
 
   const [selectedTag, setSelectedTag] = useStateA(null);
   const [selectedWorkflow, setSelectedWorkflow] = useStateA(null);
@@ -770,11 +772,12 @@ function MnApp() {
           if (cancelled) return;
           setVaults([{
             id: 'v_personal', name: 'Personal', slug: 'personal',
-            path: '~/OminiNote/personal', notes: seedNotes, tags: SEED_TAGS,
+            path: '~/OminiNote/personal', notes: seedNotes, tags: SEED_TAGS, canvases: [],
           }]);
           setActiveVaultId('v_personal');
           setTags(SEED_TAGS);
           setNotes(seedNotes);
+          setCanvases([]);
           setSelectedId(seedNotes[0]?.id || null);
           setBootState('ready');
           return;
@@ -801,14 +804,20 @@ function MnApp() {
         if (!vaultRes.ok) throw new Error(vaultRes.error);
         const v = vaultRes.value;
         const loadedNotes = normalizeNotes(v.notes, mnMdToBlocks);
+        let loadedCanvases = [];
+        try {
+          const canvasRes = await window.mn.listCanvases(activeId);
+          if (canvasRes.ok) loadedCanvases = canvasRes.value || [];
+        } catch (e) { console.error('listCanvases failed', activeId, e); }
 
         if (cancelled) return;
         setVaults(vlist.map(meta => meta.id === activeId
-          ? { ...meta, notes: loadedNotes, tags: v.tags, lastSelectedId: v.lastSelectedId }
-          : { ...meta, notes: null, tags: null }));
+          ? { ...meta, notes: loadedNotes, tags: v.tags, lastSelectedId: v.lastSelectedId, canvases: loadedCanvases }
+          : { ...meta, notes: null, tags: null, canvases: null }));
         setActiveVaultId(activeId);
         setTags(v.tags || []);
         setNotes(loadedNotes);
+        setCanvases(loadedCanvases);
         setSelectedId(v.lastSelectedId || loadedNotes[0]?.id || null);
         setBootState('ready');
       } catch (e) {
@@ -925,12 +934,13 @@ function MnApp() {
     await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
     // stash current vault's in-memory state into cache
     setVaults(vs => vs.map(v => v.id === activeVaultId
-      ? { ...v, notes, tags, lastSelectedId: selectedId }
+      ? { ...v, notes, tags, lastSelectedId: selectedId, canvases }
       : v));
     const target = vaults.find(v => v.id === id);
     if (!target) return;
 
     let targetNotes = target.notes, targetTags = target.tags, targetSel = target.lastSelectedId;
+    let targetCanvases = target.canvases;
     if (!targetNotes && HAS_DISK) {
       try {
         const res = await window.mn.loadVault(id);
@@ -941,15 +951,24 @@ function MnApp() {
         }
       } catch (e) { console.error('loadVault failed', id, e); }
     }
+    if (!targetCanvases && HAS_DISK) {
+      try {
+        const res = await window.mn.listCanvases(id);
+        if (res.ok) targetCanvases = res.value || [];
+      } catch (e) { console.error('listCanvases failed', id, e); }
+    }
     targetNotes = targetNotes || [];
     targetTags = targetTags || [];
+    targetCanvases = targetCanvases || [];
     setNotes(targetNotes);
     setTags(targetTags);
+    setCanvases(targetCanvases);
+    setActiveCanvas(null);
     setSelectedId(targetSel || targetNotes[0]?.id || null);
     setActiveVaultId(id);
     setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
     if (HAS_DISK) window.mn.setPrefs({ activeVaultId: id });
-  }, [activeVaultId, vaults, notes, tags, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView]);
+  }, [activeVaultId, vaults, notes, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView]);
 
   const createVault = useCallbackA(async (name) => {
     const pendingForCurrentVault = [...dirtyNotes.entries()].filter(([, vaultId]) => vaultId === activeVaultId);
@@ -965,11 +984,13 @@ function MnApp() {
         date: new Date().toISOString(), tags: [], pinned: false,
         blocks: mnMdToBlocks(`- This is your new vault\n- Create notes with ⌘N`),
       }];
+      const newCanvases = [];
       setVaults(vs => [
-        ...vs.map(v => v.id === activeVaultId ? { ...v, notes, tags, lastSelectedId: selectedId } : v),
-        { id, name, slug, path: `~/OminiNote/${slug}`, notes: null, tags: null },
+        ...vs.map(v => v.id === activeVaultId ? { ...v, notes, tags, lastSelectedId: selectedId, canvases } : v),
+        { id, name, slug, path: `~/OminiNote/${slug}`, notes: null, tags: null, canvases: newCanvases },
       ]);
       setNotes(newNotes); setTags([]); setSelectedId(firstNoteId);
+      setCanvases(newCanvases); setActiveCanvas(null);
       setActiveVaultId(id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
       return;
     }
@@ -979,8 +1000,8 @@ function MnApp() {
       const v = res.value;
       // stash current
       setVaults(vs => [
-        ...vs.map(x => x.id === activeVaultId ? { ...x, notes, tags, lastSelectedId: selectedId } : x),
-        { ...v, notes: null, tags: null },
+        ...vs.map(x => x.id === activeVaultId ? { ...x, notes, tags, lastSelectedId: selectedId, canvases } : x),
+        { ...v, notes: null, tags: null, canvases: [] },
       ]);
       // load the new vault from disk (it has the seeded welcome note)
       const loadRes = await window.mn.loadVault(v.id);
@@ -988,13 +1009,14 @@ function MnApp() {
       const loaded = loadRes.value;
       const loadedNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
       setNotes(loadedNotes); setTags(loaded.tags || []);
+      setCanvases([]); setActiveCanvas(null);
       setSelectedId(loaded.lastSelectedId || loadedNotes[0]?.id || null);
       setActiveVaultId(v.id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
       window.mn.setPrefs({ activeVaultId: v.id });
     } catch (e) {
       console.error('createVault failed', e); alert('Could not create vault: ' + e.message);
     }
-  }, [activeVaultId, notes, vaults, tags, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView]);
+  }, [activeVaultId, notes, vaults, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView]);
 
   const renameVault = useCallbackA(async (id, name) => {
     setVaults(vs => vs.map(v => v.id === id ? { ...v, name } : v));
@@ -1026,7 +1048,7 @@ function MnApp() {
         if (!res.ok) throw new Error(res.error);
         nextVaults = (res.value?.vaults || localRemaining).map(meta => {
           const cached = localRemaining.find(v => v.id === meta.id) || {};
-          return { ...meta, notes: cached.notes || null, tags: cached.tags || null, lastSelectedId: cached.lastSelectedId || null };
+          return { ...meta, notes: cached.notes || null, tags: cached.tags || null, lastSelectedId: cached.lastSelectedId || null, canvases: cached.canvases || null };
         });
         nextActiveId = deletingActive ? (res.value?.activeVaultId || nextVaults[0]?.id) : activeVaultId;
       } catch (e) {
@@ -1053,6 +1075,7 @@ function MnApp() {
 
     let nextNotes = nextMeta.notes || [];
     let nextTags = nextMeta.tags || [];
+    let nextCanvases = nextMeta.canvases || [];
     let nextSelectedId = nextMeta.lastSelectedId || null;
     if (HAS_DISK) {
       try {
@@ -1062,6 +1085,8 @@ function MnApp() {
         nextNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
         nextTags = loaded.tags || [];
         nextSelectedId = loaded.lastSelectedId || nextNotes[0]?.id || null;
+        const canvasRes = await window.mn.listCanvases(nextMeta.id);
+        nextCanvases = canvasRes.ok ? (canvasRes.value || []) : [];
       } catch (e) {
         console.error('loadVault after delete failed', e);
         return { ok: false, error: e.message || String(e) };
@@ -1069,10 +1094,12 @@ function MnApp() {
     }
 
     setVaults(nextVaults.map(v => v.id === nextMeta.id
-      ? { ...v, notes: nextNotes, tags: nextTags, lastSelectedId: nextSelectedId }
+      ? { ...v, notes: nextNotes, tags: nextTags, lastSelectedId: nextSelectedId, canvases: nextCanvases }
       : v));
     setNotes(nextNotes);
     setTags(nextTags);
+    setCanvases(nextCanvases);
+    setActiveCanvas(null);
     setSelectedId(nextSelectedId || nextNotes[0]?.id || null);
     setActiveVaultId(nextMeta.id);
     setSelectedTag(null);
@@ -1087,7 +1114,8 @@ function MnApp() {
   const vaultsForSidebar = useMemoA(() => vaults.map(v => ({
     ...v,
     noteCount: v.id === activeVaultId ? notes.length : (v.notes?.length ?? 0),
-  })), [vaults, activeVaultId, notes]);
+    canvasCount: v.id === activeVaultId ? canvases.length : (v.canvases?.length ?? 0),
+  })), [vaults, activeVaultId, notes, canvases]);
   const activeVault = useMemoA(() => vaults.find(v => v.id === activeVaultId) || null, [vaults, activeVaultId]);
 
   const sidebarHidden = tweaks.showSidebar === false;
@@ -1365,6 +1393,136 @@ function MnApp() {
     }
   };
 
+  const summarizeCanvas = (canvas) => ({
+    ...canvas,
+    id: canvas.id,
+    title: canvas.title || 'Untitled canvas',
+    createdAt: canvas.createdAt,
+    modifiedAt: canvas.modifiedAt,
+    elementCount: (canvas.elements || []).length,
+  });
+
+  const upsertCanvasList = (list, canvas) => {
+    const summary = summarizeCanvas(canvas);
+    return [summary, ...(list || []).filter(c => c.id !== summary.id)]
+      .sort((a, b) => new Date(b.modifiedAt || 0) - new Date(a.modifiedAt || 0));
+  };
+
+  const cacheCanvases = useCallbackA((nextCanvases) => {
+    setCanvases(nextCanvases);
+    setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, canvases: nextCanvases } : v));
+  }, [activeVaultId]);
+
+  const upsertCanvasSummary = useCallbackA((canvas) => {
+    setCanvases(cur => upsertCanvasList(cur, canvas));
+    setVaults(vs => vs.map(v => v.id === activeVaultId
+      ? { ...v, canvases: upsertCanvasList(v.canvases || [], canvas) }
+      : v));
+  }, [activeVaultId]);
+
+  const openCanvasDashboard = useCallbackA(() => {
+    setActiveCanvas(null);
+    setSelectedTag(null);
+    setSelectedWorkflow(null);
+    setQuery('');
+    navigateView('canvas');
+  }, [navigateView]);
+
+  const openCanvas = useCallbackA(async (canvasId) => {
+    if (!canvasId) {
+      openCanvasDashboard();
+      return null;
+    }
+    let canvas = null;
+    if (HAS_DISK && activeVaultId) {
+      try {
+        const res = await window.mn.getCanvas(activeVaultId, canvasId);
+        if (!res.ok) throw new Error(res.error);
+        canvas = res.value;
+      } catch (e) {
+        console.error('getCanvas failed', canvasId, e);
+      }
+    } else {
+      canvas = canvases.find(c => c.id === canvasId) || null;
+    }
+    if (!canvas) return null;
+    setActiveCanvas(canvas);
+    setSelectedTag(null);
+    setSelectedWorkflow(null);
+    setQuery('');
+    navigateView('canvas');
+    return canvas;
+  }, [activeVaultId, canvases, navigateView, openCanvasDashboard]);
+
+  const createCanvas = useCallbackA(async (title = 'Untitled canvas', options = {}) => {
+    const makeCanvas = window.mnNewCanvas || ((name) => ({
+      id: `c_${Date.now().toString(36)}`,
+      title: name,
+      createdAt: new Date().toISOString(),
+      modifiedAt: new Date().toISOString(),
+      viewport: { x: 0, y: 0, scale: 1 },
+      elements: [],
+    }));
+    const initial = makeCanvas(title);
+    let saved = initial;
+    if (HAS_DISK && activeVaultId) {
+      try {
+        const res = await window.mn.saveCanvas(activeVaultId, initial);
+        if (!res.ok) throw new Error(res.error);
+        saved = res.value;
+      } catch (e) {
+        console.error('saveCanvas failed', e);
+        alert('Could not create canvas: ' + (e.message || String(e)));
+        return null;
+      }
+    }
+    upsertCanvasSummary(saved);
+    if (options.open !== false) {
+      setActiveCanvas(saved);
+      setSelectedTag(null);
+      setSelectedWorkflow(null);
+      setQuery('');
+      navigateView('canvas');
+    }
+    return saved;
+  }, [activeVaultId, navigateView, upsertCanvasSummary]);
+
+  const saveCanvas = useCallbackA(async (canvas) => {
+    if (!canvas?.id) return null;
+    let saved = canvas;
+    if (HAS_DISK && activeVaultId) {
+      try {
+        const res = await window.mn.saveCanvas(activeVaultId, canvas);
+        if (!res.ok) throw new Error(res.error);
+        saved = res.value;
+      } catch (e) {
+        console.error('saveCanvas failed', canvas.id, e);
+        return null;
+      }
+    }
+    setActiveCanvas(saved);
+    upsertCanvasSummary(saved);
+    return saved;
+  }, [activeVaultId, upsertCanvasSummary]);
+
+  const deleteCanvas = useCallbackA(async (canvasId) => {
+    if (!canvasId) return;
+    if (HAS_DISK && activeVaultId) {
+      try {
+        const res = await window.mn.deleteCanvas(activeVaultId, canvasId);
+        if (!res.ok) throw new Error(res.error);
+      } catch (e) {
+        console.error('deleteCanvas failed', canvasId, e);
+        alert('Could not delete canvas: ' + (e.message || String(e)));
+        return;
+      }
+    }
+    const next = canvases.filter(c => c.id !== canvasId);
+    cacheCanvases(next);
+    if (activeCanvas?.id === canvasId) setActiveCanvas(null);
+    navigateView('canvas');
+  }, [activeVaultId, activeCanvas, canvases, cacheCanvases, navigateView]);
+
   useEffectA(() => {
     const h = (e) => {
       const isMod = e.metaKey || e.ctrlKey;
@@ -1474,11 +1632,14 @@ function MnApp() {
               onOpenTodos={() => { navigateView('todos'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenToday={() => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onOpenCanvas={openCanvasDashboard}
               onOpenAskAI={HAS_DISK ? () => setAskAiOpen(true) : null}
               todayActive={view === 'today'}
               todosActive={view === 'todos'}
               graphActive={view === 'graph'}
               workflowActive={view === 'workflow'}
+              canvasActive={view === 'canvas'}
+              canvasCount={canvases.length}
               onNewTag={promptNewTag}
               onNew={() => setCaptureOpen(true)}
               onOpenSettings={() => setSettingsOpen(true)}
@@ -1526,6 +1687,9 @@ function MnApp() {
             <MnEditor
               note={selectedNote} notes={notesWithBody} tags={tags} links={links}
               vaultId={activeVaultId}
+              canvases={canvases}
+              onOpenCanvas={openCanvas}
+              onCreateCanvas={createCanvas}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               onOpenTag={(t) => {
                 if (!tags.find(x => x.name === t)) addTag(t);
@@ -1598,6 +1762,18 @@ function MnApp() {
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               rollupFormat={tweaks.rollupFormat || 'long'}
               T={T} theme={theme}
+            />
+          )}
+          {view === 'canvas' && (
+            <MnCanvasPanel
+              canvases={canvases}
+              activeCanvas={activeCanvas}
+              onCreate={createCanvas}
+              onOpen={openCanvas}
+              onBack={openCanvasDashboard}
+              onSave={saveCanvas}
+              onDelete={deleteCanvas}
+              T={T}
             />
           )}
         </div>

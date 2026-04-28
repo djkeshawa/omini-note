@@ -392,6 +392,103 @@ function mnSpellMenuButton(T, strong) {
   };
 }
 
+function MnCanvasPicker({ canvases = [], onPick, onCreate, onClose, T }) {
+  useEffectOE(() => {
+    const onDown = (e) => {
+      if (e.target.closest?.('.mn-canvas-picker')) return;
+      onClose && onClose();
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="mn-canvas-picker"
+      onMouseDown={(e) => e.preventDefault()}
+      style={{
+        position: 'absolute',
+        zIndex: 1200,
+        top: 'calc(100% + 6px)',
+        left: 0,
+        width: 260,
+        maxHeight: 280,
+        overflow: 'auto',
+        background: T.bg,
+        color: T.ink,
+        border: `1px solid ${T.line}`,
+        borderRadius: 8,
+        padding: 6,
+        boxShadow: `0 14px 38px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+        fontFamily: 'var(--mn-ui)',
+      }}>
+      <div style={{
+        padding: '6px 8px',
+        fontFamily: 'var(--mn-mono)',
+        fontSize: 10,
+        textTransform: 'uppercase',
+        letterSpacing: '0.08em',
+        color: T.inkDim,
+      }}>Attach canvas</div>
+      <button
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onCreate && onCreate();
+        }}
+        style={{
+          width: '100%',
+          border: `1px solid ${T.lineSub}`,
+          background: T.bgSub,
+          color: T.ink,
+          borderRadius: 6,
+          padding: '8px 9px',
+          textAlign: 'left',
+          cursor: 'pointer',
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 12.5,
+          fontWeight: 600,
+        }}>
+        Create new canvas
+      </button>
+      <div style={{ height: 1, background: T.lineSub, margin: '6px 2px' }} />
+      {canvases.length === 0 ? (
+        <div style={{
+          padding: '10px 8px',
+          color: T.inkDim,
+          fontSize: 12,
+        }}>No existing canvases</div>
+      ) : canvases.map(canvas => (
+        <button
+          key={canvas.id}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onPick && onPick(canvas.id);
+          }}
+          style={{
+            width: '100%',
+            border: 'none',
+            background: 'transparent',
+            color: T.ink,
+            borderRadius: 6,
+            padding: '7px 8px',
+            textAlign: 'left',
+            cursor: 'pointer',
+            fontFamily: 'var(--mn-ui)',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {canvas.title || 'Untitled canvas'}
+          </div>
+          <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, marginTop: 2 }}>
+            {canvas.elementCount || 0} item{canvas.elementCount === 1 ? '' : 's'}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Disclosure triangle ────────────────────────────────────────────────
 function MnDisclosure({ open, hasChildren, onClick, T, padTop }) {
   return (
@@ -436,6 +533,7 @@ const MN_SLASH_CMDS = [
   { id: 'code',   label: 'Code block', hint: 'Monospaced fenced',    kbd: '```', icon: '{}', kind: 'code' },
   { id: 'table',  label: 'Table',      hint: 'Markdown table',       kbd: '|',   icon: '▦',  kind: 'table', content: '| Column 1 | Column 2 |\n| --- | --- |\n|  |  |' },
   { id: 'div',    label: 'Divider',    hint: 'Horizontal rule',      kbd: '---', icon: '—',  kind: 'divider' },
+  { id: 'canvas', label: 'Attach canvas', hint: 'Embed an existing or new canvas', kbd: '/canvas', icon: '□', canvasAction: true },
   { id: 'link',   label: 'Link to note', hint: 'Wiki-link to a note', kbd: '[[', icon: '⇉', insert: '[[' },
   { id: 'tag',    label: 'Tag',        hint: 'Categorize',           kbd: '#tag', icon: '#', insert: '#' },
   { id: 'date',   label: "Today's date", hint: 'Insert YYYY-MM-DD',  kbd: '@today', icon: '☉',
@@ -661,6 +759,7 @@ function MnSelectionToolbar({ rect, selectionKind, onApply, onOpenAiMenu, onDele
 // ── Block row ─────────────────────────────────────────────────────────
 function MnBlockRow({
   block, depth, focusId, T, allNotes,
+  allCanvases = [], onOpenCanvas, onCreateCanvas,
   onChange, onChangeKind, onIndent, onOutdent, onSplit, onMergePrev,
   onInsertBlocksAt,
   onToggleCollapse, onToggleCheck, onSetAnnotation, onClearAnnotation,
@@ -681,6 +780,7 @@ function MnBlockRow({
   const [autoIdx, setAutoIdx] = useStateOE(0);
   const [slashQ, setSlashQ] = useStateOE(null); // slash menu query
   const [slashIdx, setSlashIdx] = useStateOE(0);
+  const [canvasPicker, setCanvasPicker] = useStateOE(false);
   const [dropPos, setDropPos] = useStateOE(null); // 'before' | 'after' | 'child' | null
   const [spellIssues, setSpellIssues] = useStateOE({});
   const [spellMenu, setSpellMenu] = useStateOE(null);
@@ -1059,6 +1159,14 @@ function MnBlockRow({
       setSlashQ(null);
       setSlashIdx(0);
       onAiAction && onAiAction(cmd.aiAction, cmd.aiScope || 'page', { blockId: block.id, cleanContent });
+      return;
+    }
+    if (cmd.canvasAction) {
+      onChange(block.id, cleanContent);
+      setSlashQ(null);
+      setSlashIdx(0);
+      setEditing(false);
+      setCanvasPicker(true);
       return;
     }
     if (cmd.kind) {
@@ -1477,6 +1585,10 @@ function MnBlockRow({
                 if (blockEmbed) {
                   return <MnBlockEmbed refId={blockEmbed[1]} allNotes={allNotes} T={T} onOpenBlock={(noteId, blockId) => onOpen && onOpen(null, noteId, blockId)} />;
                 }
+                const canvasEmbed = content.match(/^\{\{canvas\s+([A-Za-z0-9_-]+)\}\}$/);
+                if (canvasEmbed) {
+                  return <MnCanvasEmbed canvasId={canvasEmbed[1]} canvases={allCanvases} T={T} onOpenCanvas={onOpenCanvas} />;
+                }
                 if (block.kind === 'table') {
                   return <MnMarkdownTable markdown={content} T={T} />;
                 }
@@ -1501,6 +1613,26 @@ function MnBlockRow({
               onClose={() => setSpellMenu(null)}
               T={T}
             />
+            {canvasPicker && (
+              <MnCanvasPicker
+                canvases={allCanvases}
+                onPick={(canvasId) => {
+                  onChange(block.id, `{{canvas ${canvasId}}}`);
+                  setCanvasPicker(false);
+                  setFocusId && setFocusId(block.id);
+                }}
+                onCreate={async () => {
+                  const canvas = await onCreateCanvas?.('Untitled canvas', { open: false });
+                  if (canvas?.id) {
+                    onChange(block.id, `{{canvas ${canvas.id}}}`);
+                    setCanvasPicker(false);
+                    setFocusId && setFocusId(block.id);
+                  }
+                }}
+                onClose={() => setCanvasPicker(false)}
+                T={T}
+              />
+            )}
             {block.collapsed && hasChildren && (
               <span style={{
                 marginLeft: 8, fontFamily: 'var(--mn-mono)',
@@ -1991,7 +2123,7 @@ function MnOutlineTree({ blocks, depth, ...handlers }) {
 
 // ── Main outliner component ────────────────────────────────────────────
 function MnOutliner({
-  blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBlockId,
+  blocks, setBlocks, allNotes, allCanvases = [], onOpen, onTagClick, onOpenCanvas, onCreateCanvas, T, zoomBlockId,
   onZoomBlock, onShowToast, noteTitle, fontSize,
   indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
 }) {
@@ -2956,7 +3088,7 @@ function MnOutliner({
     onMove,
     onContextMenu, onZoom,
     onAiAction: runAiAction,
-    aiTarget, focusId, setFocusId, T, allNotes,
+    aiTarget, focusId, setFocusId, T, allNotes, allCanvases, onOpenCanvas, onCreateCanvas,
     onSelectionChange: setSelection,
     onBlockMouseDown: beginBlockSelection,
     onBlockMouseEnter: extendBlockSelection,

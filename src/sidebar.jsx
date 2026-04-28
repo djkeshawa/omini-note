@@ -6,6 +6,7 @@ function MnSidebar({
   onOpenToday, todayActive, todosActive, graphActive,
   selectedWorkflow, workflowStates, workflowCounts, workflowTotal,
   onSelectWorkflow, onOpenWorkflowPanel, workflowActive,
+  onOpenCanvas, canvasActive, canvasCount = 0,
   onOpenAskAI,
   onNewTag, onNew, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRenameVault, onDeleteVault,
@@ -132,6 +133,7 @@ function MnSidebar({
   const iconTodos = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="4" height="4" rx="0.8" stroke="currentColor" strokeWidth="1.3"/><path d="M3 4.5L3.7 5.2L5 3.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><rect x="2" y="9.5" width="4" height="4" rx="0.8" stroke="currentColor" strokeWidth="1.3"/><path d="M8 4.5H14M8 11.5H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconWorkflow = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4H8.5M3 8H11M3 12H7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="12" cy="4" r="1.5" stroke="currentColor" strokeWidth="1.3"/><circle cx="13" cy="12" r="1.5" stroke="currentColor" strokeWidth="1.3"/></svg>);
   const iconGraph = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="1.8" stroke="currentColor" strokeWidth="1.3"/><circle cx="12" cy="4" r="1.8" stroke="currentColor" strokeWidth="1.3"/><circle cx="8" cy="12" r="1.8" stroke="currentColor" strokeWidth="1.3"/><path d="M5.5 5L10.5 5M5.3 5.8L6.8 10.4M10.7 5.8L9.2 10.4" stroke="currentColor" strokeWidth="1.3"/></svg>);
+  const iconCanvas = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3" width="11" height="10" rx="1.3" stroke="currentColor" strokeWidth="1.3"/><path d="M5 6H8.5M5 8.5H11M5 11H7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M10.6 5.4L12 4M11.1 7.1L13 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconAI = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2L9.5 6.5L14 8L9.5 9.5L8 14L6.5 9.5L2 8L6.5 6.5L8 2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>);
 
   return (
@@ -346,7 +348,7 @@ function MnSidebar({
       {openSections.allnotes && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
-               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive}
+               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !canvasActive}
                onClick={() => onSelectTag(null)} />
           <Row icon={iconToday} label="Daily rollup" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
@@ -357,6 +359,9 @@ function MnSidebar({
                active={workflowActive}
                onClick={onOpenWorkflowPanel} accent={T.accent} />
           <Row icon={iconGraph} label="Graph" active={graphActive} onClick={onOpenGraph} />
+          <Row icon={iconCanvas} label="Canvas" count={canvasCount}
+               active={canvasActive}
+               onClick={onOpenCanvas} accent={T.accent} />
           {onOpenAskAI && (
             <Row icon={iconAI} label="Ask AI" onClick={onOpenAskAI} />
           )}
