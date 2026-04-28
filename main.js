@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const store = require('./lib/store');
 const idx = require('./lib/index');
@@ -7,14 +8,27 @@ const ai = require('./lib/ai');
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+const APP_ICON_PATH = path.join(__dirname, 'assets', 'omini-note-icon.svg');
 
-function createTrayIcon() {
+function createFallbackIcon() {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <rect x="5" y="4" width="22" height="24" rx="5" fill="#111827"/>
-      <path d="M11 11H21M11 16H20M11 21H17" stroke="#F9FAFB" stroke-width="2" stroke-linecap="round"/>
+      <rect width="32" height="32" fill="#57595d"/>
+      <path d="M7 11C7 7 12 6 15 9L16 10L17 9C20 6 25 7 25 11C25 15 20 17 17 14L16 13L15 14C12 17 7 15 7 11Z" fill="none" stroke="#9bbdff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M10 16C6 18 7 24 12 24C13 27 16 27 16 23M22 16C26 18 25 24 20 24C19 27 16 27 16 23M16 15V23" fill="none" stroke="#aaa5ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
   return nativeImage.createFromDataURL(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+}
+
+function createAppIcon() {
+  try {
+    const svg = fs.readFileSync(APP_ICON_PATH, 'utf8');
+    const image = nativeImage.createFromDataURL(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+    if (!image.isEmpty()) return image;
+  } catch (e) {
+    console.error('failed to load app icon', e);
+  }
+  return createFallbackIcon();
 }
 
 function showMainWindow() {
@@ -51,7 +65,7 @@ function updateTrayMenu() {
 
 function createTray() {
   if (tray) return;
-  tray = new Tray(createTrayIcon());
+  tray = new Tray(createAppIcon());
   tray.setToolTip('OminiNote');
   tray.on('click', () => {
     if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) mainWindow.hide();
@@ -61,6 +75,36 @@ function createTray() {
   updateTrayMenu();
 }
 
+function attachEditContextMenu(win) {
+  win.webContents.on('context-menu', (_event, params) => {
+    const flags = params.editFlags || {};
+    const template = [];
+
+    if (params.isEditable) {
+      template.push(
+        { label: 'Undo', role: 'undo', enabled: !!flags.canUndo },
+        { label: 'Redo', role: 'redo', enabled: !!flags.canRedo },
+        { type: 'separator' },
+        { label: 'Cut', role: 'cut', enabled: !!flags.canCut },
+        { label: 'Copy', role: 'copy', enabled: !!flags.canCopy },
+        { label: 'Paste', role: 'paste', enabled: !!flags.canPaste },
+        { label: 'Delete', role: 'delete', enabled: !!flags.canDelete },
+        { type: 'separator' },
+        { label: 'Select All', role: 'selectAll', enabled: !!flags.canSelectAll }
+      );
+    } else if (params.selectionText) {
+      template.push(
+        { label: 'Copy', role: 'copy', enabled: !!flags.canCopy },
+        { type: 'separator' },
+        { label: 'Select All', role: 'selectAll', enabled: !!flags.canSelectAll }
+      );
+    }
+
+    if (!template.length) return;
+    Menu.buildFromTemplate(template).popup({ window: win });
+  });
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -68,6 +112,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: '#f6f7f9',
+    icon: createAppIcon(),
     title: 'OminiNote',
     webPreferences: {
       contextIsolation: true,
@@ -78,6 +123,7 @@ function createWindow() {
 
   win.loadFile('OminiNote.html');
   mainWindow = win;
+  attachEditContextMenu(win);
 
   win.on('close', (event) => {
     if (isQuitting) return;
@@ -190,6 +236,7 @@ async function rescanAllVaults() {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
+  if (process.platform === 'darwin') app.dock?.setIcon(createAppIcon());
   try {
     await store.loadConfig();   // ensures the OminiNote vault folder, seeds on first run
     const prefs = await store.getPrefs();

@@ -11,7 +11,7 @@
 //
 // Right-click context menu on bullet: copy ref, copy embed, zoom in, move, indent/outdent, delete
 
-const MN_WORKFLOW_STATES = [
+const MN_DEFAULT_WORKFLOW_STATES = [
   { id: 'TODO',      next: 'DOING',     color: 'oklch(0.55 0.18 30)',  bg: 'oklch(0.96 0.04 30)'  },
   { id: 'DOING',     next: 'DONE',      color: 'oklch(0.55 0.18 250)', bg: 'oklch(0.95 0.04 250)' },
   { id: 'DONE',      next: null,        color: 'oklch(0.55 0.15 145)', bg: 'oklch(0.95 0.04 145)' },
@@ -21,8 +21,61 @@ const MN_WORKFLOW_STATES = [
   { id: 'CANCELLED', next: null,        color: 'oklch(0.55 0.05 250)', bg: 'oklch(0.95 0.02 250)' },
 ];
 
+let MN_WORKFLOW_STATES = MN_DEFAULT_WORKFLOW_STATES;
+
+function mnNormalizeWorkflowId(raw) {
+  return String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
+}
+
+function mnWorkflowColor(index) {
+  const hues = [30, 250, 145, 290, 15, 60, 205, 330, 115, 275, 180, 5];
+  return hues[index % hues.length];
+}
+
+function mnNormalizeWorkflowStates(states) {
+  const byDefault = Object.fromEntries(MN_DEFAULT_WORKFLOW_STATES.map(s => [s.id, s]));
+  const seen = new Set();
+  const source = Array.isArray(states) && states.length ? states : MN_DEFAULT_WORKFLOW_STATES;
+  const next = source.map((state, index) => {
+    const id = mnNormalizeWorkflowId(state?.id || state);
+    if (!id || seen.has(id)) return null;
+    seen.add(id);
+    const fallback = byDefault[id] || {};
+    const hue = mnWorkflowColor(index);
+    return {
+      id,
+      color: state?.color || fallback.color || `oklch(0.55 0.16 ${hue})`,
+      bg: state?.bg || fallback.bg || `oklch(0.95 0.04 ${hue})`,
+      next: Object.prototype.hasOwnProperty.call(state || {}, 'next')
+        ? (state.next ? mnNormalizeWorkflowId(state.next) : null)
+        : (Object.prototype.hasOwnProperty.call(fallback, 'next')
+          ? (fallback.next ? mnNormalizeWorkflowId(fallback.next) : null)
+          : undefined),
+    };
+  }).filter(Boolean);
+  const safe = next.length ? next : MN_DEFAULT_WORKFLOW_STATES;
+  const safeIds = new Set(safe.map(state => state.id));
+  return safe.map((state, index) => ({
+    ...state,
+    next: state.next === undefined
+      ? (safe[index + 1]?.id || null)
+      : (state.next && safeIds.has(state.next) ? state.next : null),
+  }));
+}
+
+function mnSetWorkflowStates(states) {
+  MN_WORKFLOW_STATES = mnNormalizeWorkflowStates(states);
+  if (window.MN_LOGSEQ) window.MN_LOGSEQ.WORKFLOW_STATES = MN_WORKFLOW_STATES;
+  return MN_WORKFLOW_STATES;
+}
+
 function mnWorkflow(id) {
   return MN_WORKFLOW_STATES.find(s => s.id === id) || null;
+}
+
+function mnWorkflowIsClosed(state) {
+  const workflow = typeof state === 'string' ? mnWorkflow(state) : state;
+  return !!workflow && workflow.next === null;
 }
 
 function MnWorkflowPill({ state, onClick, T }) {
@@ -41,8 +94,8 @@ function MnWorkflowPill({ state, onClick, T }) {
         marginRight: 5,
         verticalAlign: 'middle', display: 'inline-block',
         lineHeight: 1.5,
-        textDecoration: state === 'DONE' || state === 'CANCELLED' ? 'line-through' : 'none',
-        opacity: state === 'DONE' || state === 'CANCELLED' ? 0.7 : 1,
+        textDecoration: mnWorkflowIsClosed(s) ? 'line-through' : 'none',
+        opacity: mnWorkflowIsClosed(s) ? 0.7 : 1,
       }}>{s.id}</button>
   );
 }
@@ -230,7 +283,11 @@ function MnBlockEmbed({ refId, allNotes, T, onOpenBlock }) {
 }
 
 // Right-click context menu on a bullet
-function MnBlockContextMenu({ block, x, y, onClose, onCopyRef, onCopyEmbed, onZoom, onIndent, onOutdent, onMoveUp, onMoveDown, onDelete, onDuplicate, onSetWorkflow, onChangeKind, T }) {
+function MnBlockContextMenu({
+  block, x, y, onClose, onCopyRef, onCopyEmbed, onCopyBlock, onCutBlock,
+  onPasteAfter, onZoom, onIndent, onOutdent, onMoveUp, onMoveDown,
+  onDelete, onDuplicate, onSetWorkflow, onChangeKind, T
+}) {
   React.useEffect(() => {
     const onDown = (e) => {
       // Close on click outside menu
@@ -292,6 +349,9 @@ function MnBlockContextMenu({ block, x, y, onClose, onCopyRef, onCopyEmbed, onZo
       <Item divider />
       <Item icon="⌘"  label="Copy block ref"      onClick={onCopyRef} />
       <Item icon="⎘"  label="Copy block embed"    onClick={onCopyEmbed} />
+      <Item icon="C"  label="Copy block"          kbd="⌘C"   onClick={onCopyBlock} />
+      <Item icon="X"  label="Cut block"           kbd="⌘X"   onClick={onCutBlock} />
+      <Item icon="V"  label="Paste after"         kbd="⌘V"   onClick={onPasteAfter} />
       <Item divider />
       <Item icon="→"  label="Indent"               kbd="Tab"   onClick={onIndent} />
       <Item icon="←"  label="Outdent"              kbd="⇧Tab"  onClick={onOutdent} />
@@ -424,7 +484,12 @@ function MnZoomBar({ block, noteTitle, onExit, onCopyRef, T, onChangeContent }) 
 
 window.MN_LOGSEQ = {
   WORKFLOW_STATES: MN_WORKFLOW_STATES,
+  DEFAULT_WORKFLOW_STATES: MN_DEFAULT_WORKFLOW_STATES,
+  mnNormalizeWorkflowId,
+  mnNormalizeWorkflowStates,
+  setWorkflowStates: mnSetWorkflowStates,
   mnWorkflow,
+  mnWorkflowIsClosed,
   mnIsPropertyLine, mnParseProperty,
   mnFindBlockById,
 };

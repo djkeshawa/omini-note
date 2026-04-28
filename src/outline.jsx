@@ -57,7 +57,12 @@ function mnMdToBlocks(md) {
 
   // Detect "TODO Some content" → { workflow: 'TODO', content: 'Some content' }
   const splitWorkflow = (content) => {
-    const m = content.match(/^(TODO|DOING|DONE|LATER|NOW|WAIT|CANCELLED)\s+(.*)$/);
+    const states = window.MN_LOGSEQ?.WORKFLOW_STATES || window.MN_LOGSEQ?.DEFAULT_WORKFLOW_STATES || [
+      { id: 'TODO' }, { id: 'DOING' }, { id: 'DONE' }, { id: 'LATER' }, { id: 'NOW' }, { id: 'WAIT' }, { id: 'CANCELLED' },
+    ];
+    const ids = states.map(s => s.id).filter(Boolean).sort((a, b) => b.length - a.length);
+    const escaped = ids.map(id => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    const m = escaped ? content.match(new RegExp(`^(${escaped})\\s+(.*)$`)) : null;
     if (m) return { workflow: m[1], content: m[2] };
     return { workflow: null, content };
   };

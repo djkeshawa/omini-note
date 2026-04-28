@@ -28,6 +28,7 @@ const MN_TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showOverdue": true,
   "snoozeMinutes": "15",
   "weekStart": "monday",
+  "workflowStates": null,
   "autoSave": true,
   "storageFormat": "markdown",
   "sync": "local"
@@ -49,6 +50,7 @@ function noteForDisk(n, mnBlocksToMd) {
     date: n.date || new Date().toISOString(),
     tags: Array.isArray(n.tags) ? n.tags : [],
     pinned: !!n.pinned,
+    workflowArchived: !!n.workflowArchived,
     body: mnBlocksToMd(n.blocks || []),
   };
 }
@@ -58,13 +60,13 @@ function collectWorkflowBlocks(notes, states, mnWalk) {
   const counts = Object.fromEntries(stateIds.map(id => [id, 0]));
   const byState = Object.fromEntries(stateIds.map(id => [id, []]));
   const noteIdsByState = Object.fromEntries(stateIds.map(id => [id, new Set()]));
+  const archivedNotes = [];
 
   notes.forEach(note => {
+    const noteItems = [];
     mnWalk(note.blocks || [], (block) => {
       if (!block.workflow || !counts.hasOwnProperty(block.workflow)) return;
-      counts[block.workflow]++;
-      noteIdsByState[block.workflow].add(note.id);
-      byState[block.workflow].push({
+      noteItems.push({
         id: block.id,
         noteId: note.id,
         noteTitle: note.title,
@@ -74,14 +76,117 @@ function collectWorkflowBlocks(notes, states, mnWalk) {
         workflow: block.workflow,
       });
     });
+    if (note.workflowArchived) {
+      if (noteItems.length) {
+        archivedNotes.push({
+          id: note.id,
+          title: note.title,
+          tags: note.tags || [],
+          workflowCount: noteItems.length,
+        });
+      }
+      return;
+    }
+    noteItems.forEach(item => {
+      counts[item.workflow]++;
+      noteIdsByState[item.workflow].add(note.id);
+      byState[item.workflow].push(item);
+    });
   });
 
   return {
     counts,
     byState,
     noteIdsByState,
+    archivedNotes,
     total: Object.values(counts).reduce((sum, count) => sum + count, 0),
   };
+}
+
+function normalizeTagName(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function mnParseDefaultTags(value) {
+  return String(value || '')
+    .split(',')
+    .map(normalizeTagName)
+    .filter(Boolean)
+    .filter((tag, index, arr) => arr.indexOf(tag) === index);
+}
+
+function mnNormalizeWorkflowStatesForApp(states) {
+  return (window.MN_LOGSEQ?.mnNormalizeWorkflowStates || ((value) => value))(
+    Array.isArray(states) && states.length
+      ? states
+      : (window.MN_LOGSEQ?.DEFAULT_WORKFLOW_STATES || window.MN_LOGSEQ?.WORKFLOW_STATES || [])
+  );
+}
+
+function mnReminderKey(item) {
+  return [item.noteId, item.line ?? item.blockId ?? '', item.remindAt?.date || '', item.remindAt?.time || '', item.text || ''].join('|');
+}
+
+function mnReadSnoozedReminders() {
+  try { return JSON.parse(localStorage.getItem('mn:snoozedReminders') || '{}') || {}; }
+  catch { return {}; }
+}
+
+function mnWriteSnoozedReminder(key, until) {
+  const data = mnReadSnoozedReminders();
+  data[key] = until;
+  try { localStorage.setItem('mn:snoozedReminders', JSON.stringify(data)); } catch (e) {}
+}
+
+function mnCollectReminderItems(notes) {
+  const parser = window.MN_REMIND;
+  if (!parser?.parse) return [];
+  const out = [];
+  notes.forEach(note => {
+    const pushItem = (text, meta = {}) => {
+      const remindAt = parser.parse(text);
+      if (!remindAt) return;
+      out.push({
+        noteId: note.id,
+        noteTitle: note.title,
+        text: parser.strip ? parser.strip(text) : String(text || '').replace(remindAt.raw, '').trim(),
+        remindAt,
+        ...meta,
+      });
+    };
+    if (note.blocks?.length && window.mnWalk) {
+      window.mnWalk(note.blocks, block => {
+        if (block.kind === 'todo' && block.checked) return;
+        pushItem(block.content || '', { blockId: block.id });
+      });
+      return;
+    }
+    String(note.body || '').split('\n').forEach((line, lineIndex) => {
+      if (/^\s*-\s+\[[xX]\]/.test(line)) return;
+      pushItem(line, { line: lineIndex });
+    });
+  });
+  return out.map(item => ({ ...item, key: mnReminderKey(item) }));
+}
+
+function mnPlayReminderSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 740;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.05, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.24);
+    setTimeout(() => ctx.close?.(), 400);
+  } catch (e) {}
 }
 
 const MN_LAUNCH_BLOOMS = [
@@ -95,6 +200,24 @@ const MN_LAUNCH_RIPPLES = [
   { color: '#a9c2ff', duration: '4.8s', delay: '-1.6s' },
   { color: '#9fe2c9', duration: '4.8s', delay: '-3.2s' },
 ];
+
+function MnBootLogo() {
+  return (
+    <div className="mn-boot-brand" aria-label="OminiNote">
+      <svg className="mn-boot-logo" viewBox="0 0 240 170" role="img" aria-hidden="true">
+        <path className="mn-logo-aura" d="M44 58C44 32 76 23 98 44L120 65L142 44C164 23 196 32 196 58C196 84 165 94 142 73L120 51L98 73C75 94 44 84 44 58Z" stroke="#a8c7ff" pathLength="100" />
+        <path className="mn-logo-aura" d="M66 96C42 107 42 145 74 149C77 169 111 169 119 145M174 96C198 107 198 145 166 149C163 169 129 169 121 145M120 83V145" stroke="#aaa5ff" pathLength="100" />
+        <path className="mn-logo-aura" d="M142 44C164 23 196 32 196 58C196 84 165 94 142 73" stroke="#ff9c92" pathLength="100" />
+        <path className="mn-logo-line" d="M44 58C44 32 76 23 98 44L120 65L142 44C164 23 196 32 196 58C196 84 165 94 142 73L120 51L98 73C75 94 44 84 44 58Z" stroke="#9bbdff" pathLength="100" />
+        <path className="mn-logo-line mn-logo-line-soft" d="M66 96C42 107 42 145 74 149C77 169 111 169 119 145M174 96C198 107 198 145 166 149C163 169 129 169 121 145M120 83V145" stroke="#9b99ff" pathLength="100" />
+        <path className="mn-logo-line mn-logo-line-soft" d="M72 122C85 111 102 114 108 127M168 122C155 111 138 114 132 127M86 84C96 78 107 78 116 85M154 84C144 78 133 78 124 85" stroke="#8d8dff" pathLength="100" />
+        <path className="mn-logo-line" d="M142 44C164 23 196 32 196 58C196 84 165 94 142 73" stroke="#ff9c92" pathLength="100" />
+      </svg>
+      <div className="mn-boot-title mn-boot-wordmark"><span className="mn-word-omni">Omini</span><span className="mn-word-note">Note</span></div>
+      <div className="mn-boot-tagline"><span>Capture</span><i /><span>Organize</span><i /><span>Remember</span></div>
+    </div>
+  );
+}
 
 function MnLaunchScreen({ state, error, T }) {
   const loading = state === 'loading';
@@ -128,7 +251,7 @@ function MnLaunchScreen({ state, error, T }) {
         ))}
       </div>
       <div className="mn-boot-core">
-        <div className="mn-boot-title">OminiNote</div>
+        <MnBootLogo />
         <div className="mn-boot-subtitle" style={{ color: loading ? '#667187' : '#b84b42' }}>
           {loading ? 'Connecting your workspace' : 'Launch interrupted'}
         </div>
@@ -370,6 +493,7 @@ function MnApp() {
   const [captureOpen, setCaptureOpen] = useStateA(false);
   const [deleteTargetId, setDeleteTargetId] = useStateA(null);
   const [toast, setToast] = useStateA(null);
+  const dismissedReminderKeys = useRefA(new Set());
   const [query, setQuery] = useStateA('');
 
   useEffectA(() => {
@@ -454,7 +578,11 @@ function MnApp() {
         const prefsRes = await window.mn.getPrefs();
         if (!prefsRes.ok) throw new Error(prefsRes.error);
         const prefs = prefsRes.value;
-        if (prefs.tweaks) setTweaks(t => ({ ...t, ...prefs.tweaks }));
+        if (prefs.tweaks) {
+          const mergedTweaks = { ...MN_TWEAK_DEFAULTS, ...prefs.tweaks };
+          window.MN_LOGSEQ?.setWorkflowStates?.(mnNormalizeWorkflowStatesForApp(mergedTweaks.workflowStates));
+          setTweaks(t => ({ ...t, ...prefs.tweaks }));
+        }
         if (prefs.aiConfig && window.mn?.ai) await window.mn.ai.setConfig(prefs.aiConfig);
 
         const vlistRes = await window.mn.listVaults();
@@ -774,7 +902,19 @@ function MnApp() {
   })), [notes]);
 
   const links = useMemoA(() => buildLinks(notesWithBody), [notesWithBody]);
-  const workflowStates = window.MN_LOGSEQ?.WORKFLOW_STATES || [];
+  const workflowStates = useMemoA(
+    () => mnNormalizeWorkflowStatesForApp(tweaks.workflowStates),
+    [tweaks.workflowStates]
+  );
+  useEffectA(() => {
+    window.MN_LOGSEQ?.setWorkflowStates?.(workflowStates);
+    if (selectedWorkflow && !workflowStates.some(s => s.id === selectedWorkflow)) {
+      setSelectedWorkflow(null);
+    }
+  }, [workflowStates, selectedWorkflow]);
+  const updateWorkflowStates = useCallbackA((states) => {
+    setTweak('workflowStates', mnNormalizeWorkflowStatesForApp(states));
+  }, []);
   const workflowData = useMemoA(
     () => collectWorkflowBlocks(notesWithBody, workflowStates, mnWalk),
     [notesWithBody, workflowStates, mnWalk]
@@ -840,12 +980,20 @@ function MnApp() {
       return ns;
     }
     ns.sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return new Date(b.date) - new Date(a.date);
+      if (tweaks.pinnedFirst !== false) {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+      }
+      if ((tweaks.sortBy || 'modified') === 'title') {
+        return String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' });
+      }
+      if ((tweaks.sortBy || 'modified') === 'created') {
+        return new Date(b.date || 0) - new Date(a.date || 0);
+      }
+      return new Date(b.modifiedAt || b.date || 0) - new Date(a.modifiedAt || a.date || 0);
     });
     return ns;
-  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHits]);
+  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHits, tweaks.sortBy, tweaks.pinnedFirst]);
 
   const workflowViewData = useMemoA(
     () => collectWorkflowBlocks(filteredNotes, workflowStates, mnWalk),
@@ -857,23 +1005,40 @@ function MnApp() {
 
   const createNote = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [] } = {}) => {
     const id = 'n_' + Date.now().toString(36);
+    const defaults = mnParseDefaultTags(tweaks.defaultTags);
+    const cleanTags = [...noteTags, ...defaults]
+      .map(normalizeTagName)
+      .filter(Boolean)
+      .filter((tag, index, arr) => arr.indexOf(tag) === index);
+    const missingTags = cleanTags.filter(tag => !tags.some(t => t.name === tag));
+    if (missingTags.length) {
+      setTags(ts => {
+        const existing = new Set(ts.map(t => t.name));
+        const additions = missingTags
+          .filter(name => !existing.has(name))
+          .map(name => ({ name, hue: (Math.floor(Math.random() * 12) * 30) + 10 }));
+        return additions.length ? [...ts, ...additions] : ts;
+      });
+      markTagsDirty();
+    }
     const blocks = body ? mnMdToBlocks(body) : [mkBlock({ kind: 'paragraph', content: '' })];
     const newNote = {
-      id, title, body, blocks, tags: noteTags,
+      id, title, body, blocks, tags: cleanTags,
       date: new Date().toISOString(),
+      modifiedAt: new Date().toISOString(),
     };
     setNotes(ns => [newNote, ...ns]);
     setSelectedId(id);
     navigateView('notes');
     markDirty(id);
     return id;
-  }, [markDirty, navigateView]);
+  }, [markDirty, navigateView, tweaks.defaultTags, tags]);
 
   const updateNote = (id, patch) => {
     setNotes(ns => ns.map(n => {
       if (n.id !== id) return n;
       const resolved = typeof patch === 'function' ? patch(n) : patch;
-      return { ...n, ...resolved };
+      return { ...n, ...resolved, modifiedAt: new Date().toISOString() };
     }));
     markDirty(id);
   };
@@ -883,14 +1048,24 @@ function MnApp() {
       if (n.id !== id) return n;
       const prevBlocks = n.blocks || [];
       const nextBlocks = window.MN_EDITOR_OPS.resolveBlocksChange(prevBlocks, blocksOrUpdater);
-      return { ...n, blocks: nextBlocks };
+      return { ...n, blocks: nextBlocks, modifiedAt: new Date().toISOString() };
     }));
     markDirty(id);
   }, [markDirty]);
 
   const toggleCheckFromAggregate = (it) => {
+    if (it.isReminderOnly) return;
     const n = notes.find(x => x.id === it.noteId);
     if (!n) return;
+    if (it.blockId) {
+      const nextBlocks = mnCloneBlocks(n.blocks || []);
+      const loc = mnLocate(nextBlocks, it.blockId);
+      if (loc?.block?.kind === 'todo') {
+        loc.block.checked = !loc.block.checked;
+        updateNote(it.noteId, { blocks: nextBlocks });
+      }
+      return;
+    }
     const target = it.text.trim();
     let changed = false;
     const walkMutate = (bs) => bs.map(b => {
@@ -913,11 +1088,13 @@ function MnApp() {
     updateNote(noteId, { blocks: nextBlocks });
   }, [notes, mnCloneBlocks, mnLocate]);
 
+  const updateWorkflowArchived = useCallbackA((noteId, workflowArchived) => {
+    updateNote(noteId, { workflowArchived: !!workflowArchived });
+  }, [updateNote]);
+
   const updateNoteTags = useCallbackA((noteId, noteTags) => {
     updateNote(noteId, { tags: noteTags });
   }, [updateNote]);
-
-  const normalizeTagName = (name) => String(name || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
 
   const addTag = (name) => {
     const clean = normalizeTagName(name);
@@ -986,16 +1163,33 @@ function MnApp() {
     return () => window.removeEventListener('keydown', h);
   }, [createNote, view, navigateView]);
 
-  // Reminder demo toast — only fire if the seeded errands note exists.
+  // Runtime reminder scan over @remind directives in the active vault.
   useEffectA(() => {
     if (bootState !== 'ready') return;
-    const n6 = notes.find(n => n.id === 'n6');
-    if (!n6) return;
-    const tm = setTimeout(() => {
-      setToast({ noteId: n6.id, noteTitle: n6.title, text: 'Pick up prescription' });
-    }, 2600);
-    return () => clearTimeout(tm);
-  }, [bootState]);
+    const check = () => {
+      if (toast) return;
+      const now = Date.now();
+      const today = new Date().toDateString();
+      const snoozed = mnReadSnoozedReminders();
+      const due = mnCollectReminderItems(notesWithBody)
+        .filter(item => {
+          const dueTime = item.remindAt?.at?.getTime?.();
+          if (!dueTime || dueTime > now) return false;
+          if (tweaks.showOverdue === false && item.remindAt.at.toDateString() !== today) return false;
+          if (dismissedReminderKeys.current.has(item.key)) return false;
+          if ((Number(snoozed[item.key]) || 0) > now) return false;
+          return true;
+        })
+        .sort((a, b) => a.remindAt.at - b.remindAt.at);
+      if (!due.length) return;
+      const next = due[0];
+      setToast(next);
+      if (tweaks.reminderSound === true) mnPlayReminderSound();
+    };
+    check();
+    const tm = setInterval(check, 60000);
+    return () => clearInterval(tm);
+  }, [bootState, notesWithBody, tweaks.showOverdue, tweaks.reminderSound, toast]);
 
   // Push vault + selected note into the OS title bar
   useEffectA(() => {
@@ -1013,7 +1207,7 @@ function MnApp() {
     ? `#${selectedTag}`
     : selectedWorkflow
     ? selectedWorkflow
-    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Today' : 'All notes');
+    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Daily rollup' : 'All notes');
   const noteListSubtitle = query.trim()
     ? `${filteredNotes.length} match${filteredNotes.length === 1 ? '' : 'es'}`
     : view === 'workflow'
@@ -1127,6 +1321,10 @@ function MnApp() {
               noteListHidden={noteListHidden}
               editorWidth={tweaks.editorWidth}
               fontSize={tweaks.fontSize}
+              indentGuides={tweaks.indentGuides !== false}
+              spellCheck={tweaks.spellCheck !== false}
+              autoLink={tweaks.autoLink !== false}
+              collapseByDefault={tweaks.collapseByDefault === true}
               theme={theme} T={T}
             />
           )}
@@ -1155,8 +1353,11 @@ function MnApp() {
               tags={tags}
               workflowStates={workflowStates}
               workflowItems={workflowViewData.byState}
+              archivedNotes={workflowViewData.archivedNotes}
+              onWorkflowStatesChange={updateWorkflowStates}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               onSetWorkflow={updateWorkflowBlockState}
+              onSetWorkflowArchived={updateWorkflowArchived}
               onSetNoteTags={updateNoteTags}
               T={T} theme={theme}
             />
@@ -1165,6 +1366,7 @@ function MnApp() {
             <MnTodayPanel
               notes={notesWithBody} tags={tags}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
+              rollupFormat={tweaks.rollupFormat || 'long'}
               T={T} theme={theme}
             />
           )}
@@ -1183,8 +1385,21 @@ function MnApp() {
         )}
         <MnReminderToast
           toast={toast}
-          onDismiss={() => setToast(null)}
-          onOpen={(id) => { setSelectedId(id); navigateView('notes'); setToast(null); }}
+          onDismiss={() => {
+            if (toast?.key) dismissedReminderKeys.current.add(toast.key);
+            setToast(null);
+          }}
+          onSnooze={() => {
+            if (toast?.key) {
+              const minutes = Number(tweaks.snoozeMinutes || 15) || 15;
+              mnWriteSnoozedReminder(toast.key, Date.now() + minutes * 60000);
+            }
+            setToast(null);
+          }}
+          onOpen={(id) => {
+            if (toast?.key) dismissedReminderKeys.current.add(toast.key);
+            setSelectedId(id); navigateView('notes'); setToast(null);
+          }}
           T={T} variant={tweaks.toastVariant}
         />
 

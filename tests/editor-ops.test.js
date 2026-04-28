@@ -183,7 +183,7 @@ test('Advertised keyboard shortcuts are wired to handlers', () => {
   assert.match(outliner, /const isBlockMoveUp = e\.altKey && !isMod && key === 'ArrowUp'/);
   assert.match(outliner, /const isBlockMoveDown = e\.altKey && !isMod && key === 'ArrowDown'/);
   assert.match(outliner, /const isBlockDuplicate = isMod && lowerKey === 'd'/);
-  assert.match(outliner, /const isBlockDelete = isMod && \(key === 'Backspace' \|\| key === 'Delete'\)/);
+  assert.match(outliner, /const isBlockDelete = isMod && \(key === 'Backspace' \|\| key === 'Delete'\) && !isFormField/);
   assert.match(outliner, /moveBlockRef\.current && moveBlockRef\.current\(activeBlockId\(\), activeBlockId\(\), 'up'\)/);
   assert.match(outliner, /duplicateBlockRef\.current && duplicateBlockRef\.current\(activeBlockId\(\)\)/);
   assert.match(outliner, /deleteBlockRef\.current && deleteBlockRef\.current\(activeBlockId\(\)\)/);
@@ -200,7 +200,9 @@ test('Block area selection can delete as one undoable operation and redo it', ()
   assert.match(outliner, /selectedBlockIds/);
   assert.match(outliner, /selectedAsArea/);
   assert.match(outliner, /const deleteSelection = \(\) =>/);
-  assert.match(outliner, /const isAreaDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && selectionRef\.current && !isMod/);
+  assert.match(outliner, /const currentSelection = selectionRef\.current/);
+  assert.match(outliner, /const isAreaDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && currentSelection\?\.kind === 'blocks' && !isMod/);
+  assert.doesNotMatch(outliner, /const isAreaDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && selectionRef\.current && !isMod/);
   assert.match(outliner, /deleteSelectionRef\.current && deleteSelectionRef\.current\(\)/);
   assert.match(outliner, /onUndo=\{undo\}/);
   assert.match(outliner, /onRedo=\{redo\}/);
@@ -325,6 +327,7 @@ test('Launch screen uses OminiNote pastel blooming light design', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
 
   assert.match(html, /<title>OminiNote<\/title>/);
+  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="assets\/omini-note-icon\.svg" \/>/);
   assert.match(html, /@keyframes mnLightBloom/);
   assert.match(html, /@keyframes mnLightWash/);
   assert.match(html, /@keyframes mnPastelRipple/);
@@ -338,9 +341,20 @@ test('Launch screen uses OminiNote pastel blooming light design', () => {
   assert.doesNotMatch(html, /mn-pastel-float/);
   assert.doesNotMatch(html, /mn-boot-neural-field/);
   assert.doesNotMatch(html, /animateMotion/);
-  assert.match(html, /mn-boot-title">OminiNote/);
+  assert.match(html, /mn-boot-brand/);
+  assert.match(html, /mn-boot-logo/);
+  assert.match(html, /mn-boot-title mn-boot-wordmark/);
+  assert.match(html, /mn-word-omni">Omini/);
+  assert.match(html, /mn-word-note">Note/);
+  assert.match(html, /Capture<\/span><i><\/i><span>Organize<\/span><i><\/i><span>Remember/);
+  assert.match(html, /@keyframes mnBootLogoTrace/);
+  assert.match(html, /@keyframes mnBootWordGlow/);
   assert.match(html, /Connecting your workspace/);
-  assert.match(app, /<div className="mn-boot-title">OminiNote<\/div>/);
+  assert.match(app, /function MnBootLogo/);
+  assert.match(app, /className="mn-boot-title mn-boot-wordmark"/);
+  assert.match(app, /className="mn-word-omni">Omini/);
+  assert.match(app, /className="mn-word-note">Note/);
+  assert.match(app, /<MnBootLogo \/>/);
   assert.match(app, /MN_LAUNCH_BLOOMS/);
   assert.match(app, /MN_LAUNCH_RIPPLES/);
   assert.match(app, /className="mn-boot-light-field"/);
@@ -363,4 +377,181 @@ test('App and editor font size settings use stepper controls', () => {
   assert.match(app, /transform: `scale\(\$\{appScale\}\)`/);
   assert.match(app, /width: `calc\(100vw \/ \$\{appScale\}\)`/);
   assert.match(outliner, /mnEditorFontScale/);
+});
+
+test('Review fixes wire settings, rollup, reminders, and safe note paths', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+  const markdown = fs.readFileSync(path.join(__dirname, '../src/markdown.jsx'), 'utf8');
+  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+
+  assert.match(app, /tweaks\.sortBy/);
+  assert.match(app, /tweaks\.pinnedFirst/);
+  assert.match(app, /mnParseDefaultTags\(tweaks\.defaultTags\)/);
+  assert.match(app, /toggleCheckFromAggregate = \(it\) =>/);
+  assert.match(app, /it\.blockId/);
+  assert.match(app, /mnCollectReminderItems\(notesWithBody\)/);
+  assert.match(app, /mnWriteSnoozedReminder/);
+
+  assert.match(outliner, /spellCheck=\{spellCheck\}/);
+  assert.match(outliner, /indentGuides && Array\.from/);
+  assert.match(outliner, /autoLink \? before\.match/);
+  assert.match(outliner, /collapseByDefault && cmd\.kind === 'heading'/);
+  assert.match(outliner, /window\.MN_REMIND\?\.defaultText/);
+  assert.doesNotMatch(outliner, /@remind\(tomorrow 9am\)/);
+
+  assert.match(markdown, /window\.MN_REMIND/);
+  assert.match(markdown, /function mnDefaultReminderText/);
+  assert.match(panels, /blockId: block\.id/);
+  assert.match(panels, /isReminderOnly/);
+  assert.match(panels, /onSnooze \|\| onDismiss/);
+  assert.match(panels, /rollupFormat === 'short'/);
+  assert.match(sidebar, /label="Daily rollup"/);
+  assert.match(sidebar, /const rollupCount = notes\.length/);
+
+  assert.match(settings, /<StaticValue T=\{T\}>Markdown<\/StaticValue>/);
+  assert.match(settings, /<StaticValue T=\{T\}>Local only<\/StaticValue>/);
+  assert.match(settings, /<StaticValue T=\{T\}>Always on<\/StaticValue>/);
+  assert.match(store, /function validateNoteId/);
+  assert.match(store, /\^\[A-Za-z0-9_-\]\+\$/);
+  assert.match(store, /path\.relative\(dir, file\)/);
+});
+
+test('Electron installs native edit context menu for right-click copy paste cut', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const icon = fs.readFileSync(path.join(__dirname, '../assets/omini-note-icon.svg'), 'utf8');
+
+  assert.match(main, /APP_ICON_PATH = path\.join\(__dirname, 'assets', 'omini-note-icon\.svg'\)/);
+  assert.match(main, /const fs = require\('fs'\)/);
+  assert.match(main, /fs\.readFileSync\(APP_ICON_PATH, 'utf8'\)/);
+  assert.match(main, /function createAppIcon\(\)/);
+  assert.match(main, /function createFallbackIcon\(\)/);
+  assert.match(main, /if \(!image\.isEmpty\(\)\) return image/);
+  assert.match(main, /nativeImage\.createFromDataURL/);
+  assert.match(main, /new Tray\(createAppIcon\(\)\)/);
+  assert.match(main, /icon: createAppIcon\(\)/);
+  assert.match(main, /app\.dock\?\.setIcon\(createAppIcon\(\)\)/);
+  assert.match(main, /function attachEditContextMenu\(win\)/);
+  assert.match(main, /webContents\.on\('context-menu'/);
+  assert.match(main, /params\.isEditable/);
+  assert.match(main, /role: 'cut'/);
+  assert.match(main, /role: 'copy'/);
+  assert.match(main, /role: 'paste'/);
+  assert.match(main, /role: 'selectAll'/);
+  assert.match(main, /attachEditContextMenu\(win\)/);
+  assert.match(icon, /OminiNote app icon/);
+  assert.match(icon, /<svg[^>]+width="512"[^>]+height="512"[^>]+viewBox="0 0 512 512"/);
+  assert.match(icon, /<rect width="512" height="512"/);
+  assert.match(icon, /strokeMain/);
+  assert.match(icon, /strokeBrain/);
+  assert.match(icon, /softGlow/);
+  assert.match(html, /href="assets\/omini-note-icon\.svg"/);
+});
+
+test('Block clipboard preserves multi-block formatting for copy cut paste', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
+
+  assert.match(outliner, /MN_BLOCK_CLIPBOARD_TYPE/);
+  assert.match(outliner, /mnNormalizeClipboardMarkdown/);
+  assert.match(outliner, /mnReidBlocks/);
+  assert.match(outliner, /writeBlocksToClipboard/);
+  assert.match(outliner, /parseClipboardBlocks/);
+  assert.match(outliner, /document\.addEventListener\('copy', onCopy\)/);
+  assert.match(outliner, /document\.addEventListener\('cut', onCut\)/);
+  assert.match(outliner, /document\.addEventListener\('paste', onPaste\)/);
+  assert.match(outliner, /parseClipboardBlocks\?\.\(e\.clipboardData, \{ allowSingle: false \}\)/);
+  assert.match(outliner, /if \(e\.button === 2\) return/);
+  assert.match(outliner, /keyboardEditActionsRef/);
+  assert.match(outliner, /const isBlockEditCommand = currentSelection\?\.kind === 'blocks' && \(isCopy \|\| isCut \|\| isPaste\)/);
+  assert.match(outliner, /keyboardEditActionsRef\.current\?\.copySelectedBlocks\?\.\(\)/);
+  assert.match(outliner, /keyboardEditActionsRef\.current\?\.cutSelectedBlocks\?\.\(\)/);
+  assert.match(outliner, /keyboardEditActionsRef\.current\?\.pasteForKeyboard\?\.\(\)/);
+  assert.match(outliner, /keyboardEditActionsRef\.current\?\.selectAllBlocks\?\.\(\)/);
+  assert.match(outliner, /replaceSelectedBlocksWith/);
+  assert.match(outliner, /onCopyBlock=\{\(\) => copyContextBlocks\(ctxBlock\.id\)\}/);
+  assert.match(outliner, /onCutBlock=\{\(\) => cutContextBlocks\(ctxBlock\.id\)\}/);
+  assert.match(outliner, /onPasteAfter=\{\(\) => pasteContextBlocksAfter\(ctxBlock\.id\)\}/);
+  assert.match(outliner, /if \(!fullSelection\) return/);
+  assert.match(outliner, /value\.slice\(0, start\) \+ value\.slice\(end\)/);
+  assert.match(outliner, /writeBlocksToSystemClipboard/);
+  assert.match(outliner, /document\.execCommand\?\.\('copy'\)/);
+  assert.match(outliner, /document\.execCommand\?\.\('cut'\)/);
+  assert.match(outliner, /await navigator\.clipboard\.writeText\(payload\.markdown\)/);
+  assert.match(outliner, /catch \(e\) \{[\s\S]*return false;/);
+  assert.match(outliner, /const copied = await writeBlocksToSystemClipboard/);
+  assert.match(outliner, /const copied = writeBlocksToClipboard\(selectedBlocks, e\.clipboardData\)/);
+
+  assert.match(blockFeatures, /label="Copy block"/);
+  assert.match(blockFeatures, /label="Cut block"/);
+  assert.match(blockFeatures, /label="Paste after"/);
+});
+
+test('Workflow notes can be archived from workflow boards only', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
+  const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
+
+  assert.match(app, /workflowArchived: !!n\.workflowArchived/);
+  assert.match(app, /if \(note\.workflowArchived\) \{/);
+  assert.match(app, /archivedNotes\.push/);
+  assert.match(app, /const updateWorkflowArchived = useCallbackA/);
+  assert.match(app, /archivedNotes=\{workflowViewData\.archivedNotes\}/);
+  assert.match(app, /onSetWorkflowArchived=\{updateWorkflowArchived\}/);
+  assert.match(app, /"workflowStates": null/);
+  assert.match(app, /mnNormalizeWorkflowStatesForApp/);
+  assert.match(app, /const workflowStates = useMemoA/);
+  assert.match(app, /setWorkflowStates\?\.\(workflowStates\)/);
+  assert.match(app, /const updateWorkflowStates = useCallbackA/);
+  assert.match(app, /onWorkflowStatesChange=\{updateWorkflowStates\}/);
+  assert.doesNotMatch(app, /countFor\('WAIT'\) \+ countFor\('LATER'\)/);
+  assert.doesNotMatch(app, /countFor\('DONE'\) \+ countFor\('CANCELLED'\)/);
+
+  assert.match(panels, /archivedNotes = \[\]/);
+  assert.match(panels, /ArchiveButton/);
+  assert.match(panels, /Archive note from workflow/);
+  assert.match(panels, /Archived from workflow/);
+  assert.match(panels, /\{showArchived \? <ArchivedNotes \/> : \(/);
+  assert.match(panels, /Restore/);
+  assert.match(panels, /archiveNote\(note\.id, false\)/);
+  assert.match(panels, /WorkflowStateManager/);
+  assert.match(panels, /new column/);
+  assert.match(panels, /addWorkflowState/);
+  assert.match(panels, /removeWorkflowState/);
+  assert.match(panels, /onWorkflowStatesChange && onWorkflowStatesChange/);
+  assert.match(panels, /SummaryStat label="Columns"/);
+  assert.match(panels, /SummaryStat label="Active cols"/);
+  assert.doesNotMatch(panels, /const waitingCount = countFor\('WAIT'\) \+ countFor\('LATER'\)/);
+  assert.doesNotMatch(panels, /const closedCount = countFor\('DONE'\) \+ countFor\('CANCELLED'\)/);
+
+  assert.match(store, /workflowArchived: !!fm\.workflowArchived/);
+  assert.match(store, /workflowArchived: !!note\.workflowArchived/);
+  assert.match(blockFeatures, /mnNormalizeWorkflowStates/);
+  assert.match(blockFeatures, /mnNormalizeWorkflowId/);
+  assert.match(blockFeatures, /let MN_WORKFLOW_STATES = MN_DEFAULT_WORKFLOW_STATES/);
+  assert.match(blockFeatures, /Object\.prototype\.hasOwnProperty\.call\(state \|\| \{\}, 'next'\)/);
+  assert.match(blockFeatures, /Object\.prototype\.hasOwnProperty\.call\(fallback, 'next'\)/);
+  assert.match(blockFeatures, /next: state\.next === undefined/);
+  assert.match(blockFeatures, /safe\[index \+ 1\]\?\.id \|\| null/);
+  assert.match(blockFeatures, /function mnWorkflowIsClosed\(state\)/);
+  assert.match(blockFeatures, /mnWorkflowIsClosed,/);
+  assert.match(blockFeatures, /setWorkflowStates: mnSetWorkflowStates/);
+  assert.match(blockFeatures, /DEFAULT_WORKFLOW_STATES/);
+  assert.match(panels, /const isClosedState = \(state\) => window\.MN_LOGSEQ\?\.mnWorkflowIsClosed/);
+  assert.match(panels, /textDecoration: isClosedState\(state\) \? 'line-through' : 'none'/);
+  assert.doesNotMatch(panels, /state\.id === 'DONE' \|\| state\.id === 'CANCELLED'/);
+  assert.match(outliner, /function mnWorkflowSlashCommands/);
+  assert.match(outliner, /return \[\.\.\.MN_SLASH_CMDS, \.\.\.mnWorkflowSlashCommands\(\)\]/);
+  assert.match(outline, /window\.MN_LOGSEQ\?\.WORKFLOW_STATES/);
+  assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
+  assert.match(notelist, /const workflowPattern = states/);
+  assert.doesNotMatch(notelist, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
 });

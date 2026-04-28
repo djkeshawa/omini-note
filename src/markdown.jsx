@@ -5,6 +5,46 @@
 
 const { useState, useMemo, useCallback, useEffect, useRef } = React;
 
+const MN_REMINDER_PATTERN = /@remind\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?/;
+const MN_REMINDER_INLINE_PATTERN = /@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g;
+
+function mnDefaultReminderText() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `@remind ${yyyy}-${mm}-${dd} 09:00 `;
+}
+
+function mnParseReminder(text) {
+  const match = String(text || '').match(MN_REMINDER_PATTERN);
+  if (!match) return null;
+  const date = match[1];
+  const time = match[2] || '';
+  const dateTime = new Date(`${date}T${time || '00:00'}:00`);
+  if (Number.isNaN(dateTime.getTime())) return null;
+  return {
+    date,
+    time,
+    at: dateTime,
+    raw: match[0],
+    index: match.index || 0,
+  };
+}
+
+function mnStripReminder(text) {
+  return String(text || '').replace(MN_REMINDER_INLINE_PATTERN, '').trim();
+}
+
+window.MN_REMIND = {
+  pattern: MN_REMINDER_PATTERN,
+  inlinePattern: MN_REMINDER_INLINE_PATTERN,
+  defaultText: mnDefaultReminderText,
+  parse: mnParseReminder,
+  strip: mnStripReminder,
+};
+
 // Parse a markdown string into a flat block list.
 function mnParse(md) {
   const lines = md.split('\n');

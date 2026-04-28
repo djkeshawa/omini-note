@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="OminiNote app icon">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="62%">
+      <stop offset="0%" stop-color="#f4f0ff"/>
+      <stop offset="36%" stop-color="#b9b1ff"/>
+      <stop offset="62%" stop-color="#9ec8ff"/>
+      <stop offset="100%" stop-color="#57595d"/>
+    </radialGradient>
+    <radialGradient id="warmGlow" cx="66%" cy="34%" r="38%">
+      <stop offset="0%" stop-color="#ffb29e" stop-opacity="0.92"/>
+      <stop offset="48%" stop-color="#ff9ea3" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#ff9ea3" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="coolGlow" cx="34%" cy="38%" r="42%">
+      <stop offset="0%" stop-color="#9ad4ff" stop-opacity="0.96"/>
+      <stop offset="50%" stop-color="#9ea4ff" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#9ea4ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="violetGlow" cx="50%" cy="58%" r="45%">
+      <stop offset="0%" stop-color="#b8a7ff" stop-opacity="0.86"/>
+      <stop offset="60%" stop-color="#9b96ff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#9b96ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="strokeMain" x1="118" y1="158" x2="394" y2="158" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#89c8ff"/>
+      <stop offset="0.5" stop-color="#a19cff"/>
+      <stop offset="1" stop-color="#ff9a8f"/>
+    </linearGradient>
+    <linearGradient id="strokeBrain" x1="132" y1="230" x2="380" y2="358" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9ab7ff"/>
+      <stop offset="0.58" stop-color="#9d98ff"/>
+      <stop offset="1" stop-color="#7f8fff"/>
+    </linearGradient>
+    <filter id="softGlow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="13" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.56  0 0 0 0 1  0 0 0 0.72 0"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#coolGlow)"/>
+  <rect width="512" height="512" fill="url(#warmGlow)"/>
+  <rect width="512" height="512" fill="url(#violetGlow)"/>
+  <g filter="url(#softGlow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M104 170C104 113 174 94 221 139L256 174L291 139C338 94 408 113 408 170C408 227 339 247 291 202L256 166L221 202C173 247 104 227 104 170Z" stroke="url(#strokeMain)" stroke-width="13"/>
+    <path d="M145 245C94 270 96 349 162 359C169 398 238 398 252 349" stroke="url(#strokeBrain)" stroke-width="13"/>
+    <path d="M367 245C418 270 416 349 350 359C343 398 274 398 260 349" stroke="url(#strokeBrain)" stroke-width="13"/>
+    <path d="M256 224V349" stroke="url(#strokeBrain)" stroke-width="13"/>
+    <path d="M167 310C193 285 227 292 238 324" stroke="#8f91ff" stroke-width="11"/>
+    <path d="M345 310C319 285 285 292 274 324" stroke="#8f91ff" stroke-width="11"/>
+    <path d="M192 242C214 229 236 230 253 246" stroke="#8f91ff" stroke-width="10"/>
+    <path d="M320 242C298 229 276 230 259 246" stroke="#8f91ff" stroke-width="10"/>
+  </g>
+  <rect width="512" height="512" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="2"/>
+</svg>

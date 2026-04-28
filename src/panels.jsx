@@ -10,22 +10,48 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
 
-  // Gather all todos and reminders
+  // Gather all todos and reminders from block data so duplicate text toggles
+  // the intended task.
   const items = useMemoP(() => {
     const acc = [];
+    const remind = window.MN_REMIND;
     notes.forEach(n => {
-      const lines = n.body.split('\n');
-      let listBlockIdx = -1, itemIdxInBlock = -1;
-      let curBlock = -1, curItem = -1;
+      if (n.blocks?.length && window.mnWalk) {
+        window.mnWalk(n.blocks, block => {
+          const parsed = remind?.parse?.(block.content || '');
+          if (block.kind === 'todo') {
+            acc.push({
+              noteId: n.id, noteTitle: n.title, noteTags: n.tags,
+              blockId: block.id,
+              text: block.content || '',
+              checked: !!block.checked,
+              remindAt: parsed,
+              noteDate: n.date,
+            });
+          } else if (parsed) {
+            acc.push({
+              noteId: n.id, noteTitle: n.title, noteTags: n.tags,
+              blockId: block.id,
+              text: remind?.strip?.(block.content || '') || block.content || '',
+              checked: false,
+              isReminderOnly: true,
+              remindAt: parsed,
+              noteDate: n.date,
+            });
+          }
+        });
+        return;
+      }
+      const lines = String(n.body || '').split('\n');
       lines.forEach((line, lineNum) => {
         const m = line.match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
         if (m) {
           const checked = /[xX]/.test(m[2]);
-          const remMatch = m[3].match(/@remind\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?/);
+          const parsed = remind?.parse?.(m[3]);
           acc.push({
             noteId: n.id, noteTitle: n.title, noteTags: n.tags,
             text: m[3], checked, line: lineNum,
-            remindAt: remMatch ? { date: remMatch[1], time: remMatch[2] || '' } : null,
+            remindAt: parsed,
             noteDate: n.date,
           });
         }
@@ -33,12 +59,13 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
       // Also capture bare @remind directives not inside checkboxes
       lines.forEach((line, lineNum) => {
         if (/^\s*-\s+\[/.test(line)) return;
-        const rm = line.match(/@remind\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s+(.*)$/);
-        if (rm) {
+        const parsed = remind?.parse?.(line);
+        if (parsed) {
           acc.push({
             noteId: n.id, noteTitle: n.title, noteTags: n.tags,
-            text: rm[3], checked: false, line: lineNum, isReminder: true,
-            remindAt: { date: rm[1], time: rm[2] || '' }, noteDate: n.date,
+            text: remind?.strip?.(line) || line, checked: false, line: lineNum,
+            isReminderOnly: true,
+            remindAt: parsed, noteDate: n.date,
           });
         }
       });
@@ -51,7 +78,8 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
   const withRem = open.filter(i => i.remindAt);
 
   const Card = ({ it, idx }) => {
-    const isOverdue = it.remindAt && new Date(it.remindAt.date) < new Date();
+    const isOverdue = it.remindAt && it.remindAt.at < new Date();
+    const label = window.MN_REMIND?.strip?.(it.text) || String(it.text || '').trim();
     return (
       <div key={idx}
         onClick={() => onOpen(it.noteId)}
@@ -67,12 +95,24 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
         }}
         onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
         onMouseLeave={e => e.currentTarget.style.background = T.bg}>
-        <button onClick={(e) => { e.stopPropagation(); onToggleCheck(it); }} style={{
-          width: 15, height: 15, marginTop: 2, flexShrink: 0,
-          border: `1.5px solid ${it.checked ? T.accent : T.line}`,
-          background: it.checked ? T.accent : 'transparent',
-          borderRadius: 4, cursor: 'pointer', padding: 0,
-        }} />
+        {it.isReminderOnly ? (
+          <span style={{
+            width: 15, height: 15, marginTop: 2, flexShrink: 0,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            color: isOverdue ? T.danger : T.warn,
+          }}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+              <circle cx="8" cy="9" r="5.5"/><path d="M8 6V9L10 10" strokeLinecap="round"/>
+            </svg>
+          </span>
+        ) : (
+          <button onClick={(e) => { e.stopPropagation(); onToggleCheck(it); }} style={{
+            width: 15, height: 15, marginTop: 2, flexShrink: 0,
+            border: `1.5px solid ${it.checked ? T.accent : T.line}`,
+            background: it.checked ? T.accent : 'transparent',
+            borderRadius: 4, cursor: 'pointer', padding: 0,
+          }} />
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontFamily: 'var(--mn-body)', fontSize: 14.5,
@@ -80,7 +120,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
             textDecoration: it.checked ? 'line-through' : 'none',
             lineHeight: 1.5,
           }}>
-            {it.text.replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/, '').trim() || <span style={{ color: T.inkDim, fontStyle: 'italic' }}>Reminder</span>}
+            {label || <span style={{ color: T.inkDim, fontStyle: 'italic' }}>Reminder</span>}
           </div>
           <div style={{
             marginTop: 6, display: 'flex', gap: 8, alignItems: 'center',
@@ -225,9 +265,14 @@ function SectionHead({ label, count, T }) {
 // ────────────────────────────────────────────────────────────
 // Workflow aggregate panel
 // ────────────────────────────────────────────────────────────
-function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWorkflow, onSetNoteTags, T, theme }) {
+function MnWorkflowPanel({
+  workflowStates, workflowItems, archivedNotes = [], tags,
+  onOpen, onWorkflowStatesChange, onSetWorkflow, onSetWorkflowArchived, onSetNoteTags, T, theme
+}) {
   const [mode, setMode] = useStateP('kanban');
   const [dragItem, setDragItem] = useStateP(null);
+  const [showArchived, setShowArchived] = useStateP(false);
+  const [stateDraft, setStateDraft] = useStateP('');
   const tagHue = useMemoP(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
@@ -235,16 +280,53 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
   const total = (workflowStates || []).reduce((sum, state) => {
     return sum + countFor(state.id);
   }, 0);
-  const activeCount = countFor('NOW') + countFor('DOING');
-  const waitingCount = countFor('WAIT') + countFor('LATER');
-  const closedCount = countFor('DONE') + countFor('CANCELLED');
-  const openCount = Math.max(0, total - closedCount);
+  const populatedStateCount = (workflowStates || []).filter(state => countFor(state.id) > 0).length;
   const stateCount = Math.max(1, (workflowStates || []).length);
   const kanbanMinWidth = Math.max(760, stateCount * 172);
+  const normalizeStateId = (raw) => window.MN_LOGSEQ?.mnNormalizeWorkflowId
+    ? window.MN_LOGSEQ.mnNormalizeWorkflowId(raw)
+    : String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
+  const normalizeStates = (states) => window.MN_LOGSEQ?.mnNormalizeWorkflowStates
+    ? window.MN_LOGSEQ.mnNormalizeWorkflowStates(states)
+    : states;
+  const isClosedState = (state) => window.MN_LOGSEQ?.mnWorkflowIsClosed
+    ? window.MN_LOGSEQ.mnWorkflowIsClosed(state)
+    : state?.next === null;
+  const stateColor = (index) => {
+    const hues = [30, 250, 145, 290, 15, 60, 205, 330, 115, 275, 180, 5];
+    return hues[index % hues.length];
+  };
 
   const moveItem = (item, stateId) => {
     if (!item || item.workflow === stateId) return;
     onSetWorkflow && onSetWorkflow(item.noteId, item.id, stateId);
+  };
+
+  const archiveNote = (noteId, archived) => {
+    onSetWorkflowArchived && onSetWorkflowArchived(noteId, archived);
+  };
+
+  const addWorkflowState = () => {
+    const id = normalizeStateId(stateDraft);
+    if (!id || (workflowStates || []).some(state => state.id === id)) return;
+    const hue = stateColor((workflowStates || []).length);
+    const next = normalizeStates([
+      ...(workflowStates || []),
+      {
+        id,
+        color: `oklch(0.55 0.16 ${hue})`,
+        bg: `oklch(0.95 0.04 ${hue})`,
+      },
+    ]);
+    onWorkflowStatesChange && onWorkflowStatesChange(next);
+    setStateDraft('');
+  };
+
+  const removeWorkflowState = (stateId) => {
+    if ((workflowStates || []).length <= 1) return;
+    onWorkflowStatesChange && onWorkflowStatesChange(
+      normalizeStates((workflowStates || []).filter(state => state.id !== stateId))
+    );
   };
 
   const ModeButton = ({ id, label }) => (
@@ -260,6 +342,110 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
       cursor: 'pointer',
       boxShadow: mode === id ? `0 1px 3px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
     }}>{label}</button>
+  );
+
+  const WorkflowStateManager = () => (
+    <div style={{
+      border: `1px solid ${T.lineSub}`,
+      borderRadius: 8,
+      background: T.bgSub,
+      padding: 9,
+      marginBottom: 14,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+    }}>
+      <span style={{
+        fontFamily: 'var(--mn-mono)',
+        fontSize: 10,
+        color: T.inkDim,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        marginRight: 2,
+      }}>Columns</span>
+      {(workflowStates || []).map(state => (
+        <span key={state.id} style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '2px 3px 2px 6px',
+          borderRadius: 4,
+          background: state.bg,
+          color: state.color,
+          fontFamily: 'var(--mn-mono)',
+          fontSize: 9.5,
+          fontWeight: 700,
+          letterSpacing: '0.06em',
+        }}>
+          {state.id}
+          <button
+            type="button"
+            title={`Remove ${state.id}`}
+            disabled={(workflowStates || []).length <= 1}
+            onClick={() => removeWorkflowState(state.id)}
+            style={{
+              width: 16,
+              height: 16,
+              border: 'none',
+              borderRadius: 3,
+              background: 'transparent',
+              color: 'currentColor',
+              cursor: (workflowStates || []).length <= 1 ? 'default' : 'pointer',
+              opacity: (workflowStates || []).length <= 1 ? 0.35 : 0.75,
+              padding: 0,
+              lineHeight: 1,
+            }}>x</button>
+        </span>
+      ))}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        marginLeft: 'auto',
+        minWidth: 190,
+      }}>
+        <input
+          value={stateDraft}
+          onChange={(e) => setStateDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addWorkflowState();
+            }
+          }}
+          placeholder="new column"
+          style={{
+            minWidth: 0,
+            flex: 1,
+            height: 26,
+            border: `1px solid ${T.line}`,
+            borderRadius: 5,
+            background: T.bg,
+            color: T.ink,
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 12,
+            padding: '0 8px',
+            outline: 'none',
+          }}
+        />
+        <button
+          type="button"
+          onClick={addWorkflowState}
+          disabled={!normalizeStateId(stateDraft)}
+          style={{
+            height: 26,
+            padding: '0 9px',
+            borderRadius: 5,
+            border: `1px solid ${T.line}`,
+            background: normalizeStateId(stateDraft) ? T.ink : T.bg,
+            color: normalizeStateId(stateDraft) ? T.bg : T.inkDim,
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 12,
+            cursor: normalizeStateId(stateDraft) ? 'pointer' : 'default',
+          }}>Add</button>
+      </div>
+    </div>
   );
 
   const SummaryStat = ({ label, value, accent }) => (
@@ -304,6 +490,30 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
       whiteSpace: 'nowrap',
       flexShrink: 0,
     }}>{state.id}</span>
+  );
+
+  const ArchiveButton = ({ item, compact = false }) => (
+    <button
+      type="button"
+      title="Archive note from workflow"
+      onClick={(e) => {
+        e.stopPropagation();
+        archiveNote(item.noteId, true);
+      }}
+      style={{
+        height: compact ? 24 : 22,
+        padding: compact ? '0 8px' : '0 6px',
+        borderRadius: 5,
+        border: `1px solid ${T.lineSub}`,
+        background: T.bg,
+        color: T.inkDim,
+        fontFamily: 'var(--mn-ui)',
+        fontSize: compact ? 11.5 : 11,
+        cursor: 'pointer',
+        flexShrink: 0,
+      }}>
+      Archive
+    </button>
   );
 
   const TagEditorCell = ({ item }) => {
@@ -408,11 +618,12 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>{item.noteTitle || 'Untitled'}</div>
         <StatePill state={state} />
+        <ArchiveButton item={item} />
       </div>
       <div style={{
         fontFamily: 'var(--mn-body)', fontSize: 13.5,
-        color: state.id === 'DONE' || state.id === 'CANCELLED' ? T.inkDim : T.ink,
-        textDecoration: state.id === 'DONE' || state.id === 'CANCELLED' ? 'line-through' : 'none',
+        color: isClosedState(state) ? T.inkDim : T.ink,
+        textDecoration: isClosedState(state) ? 'line-through' : 'none',
         lineHeight: 1.42,
         display: '-webkit-box',
         WebkitLineClamp: 2,
@@ -447,6 +658,97 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
           <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>no tags</span>
         )}
         <span style={{ marginLeft: 'auto', fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, flexShrink: 0 }}>{item.kind}</span>
+      </div>
+    </div>
+  );
+
+  const ArchivedNotes = () => (
+    <div style={{
+      border: `1px solid ${T.lineSub}`,
+      borderRadius: 8,
+      background: T.bgSub,
+      padding: 10,
+      marginBottom: 16,
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+        marginBottom: 8,
+      }}>
+        <div style={{
+          fontFamily: 'var(--mn-mono)',
+          fontSize: 10,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: T.inkDim,
+        }}>Archived from workflow</div>
+        <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+          {archivedNotes.length}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {archivedNotes.map(note => (
+          <div key={note.id} style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '9px 10px',
+            border: `1px solid ${T.lineSub}`,
+            borderRadius: 6,
+            background: T.bg,
+          }}>
+            <div onClick={() => onOpen(note.id)} style={{
+              flex: 1,
+              minWidth: 0,
+              cursor: 'pointer',
+            }}>
+              <div style={{
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 13.5,
+                fontWeight: 600,
+                color: T.ink,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>{note.title || 'Untitled'}</div>
+              <div style={{
+                marginTop: 3,
+                fontFamily: 'var(--mn-mono)',
+                fontSize: 10,
+                color: T.inkDim,
+              }}>{note.workflowCount} workflow block{note.workflowCount === 1 ? '' : 's'}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => archiveNote(note.id, false)}
+              style={{
+                height: 26,
+                padding: '0 9px',
+                borderRadius: 5,
+                border: `1px solid ${T.line}`,
+                background: T.bg,
+                color: T.ink,
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12,
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}>
+              Restore
+            </button>
+          </div>
+        ))}
+        {!archivedNotes.length && (
+          <div style={{
+            padding: 14,
+            textAlign: 'center',
+            fontFamily: 'var(--mn-body)',
+            fontSize: 12.5,
+            color: T.inkDim,
+            fontStyle: 'italic',
+          }}>No archived workflow notes</div>
+        )}
       </div>
     </div>
   );
@@ -548,157 +850,178 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
             <ModeButton id="kanban" label="Kanban" />
             <ModeButton id="table" label="Table" />
             <ModeButton id="list" label="List" />
+            <button onClick={() => setShowArchived(v => !v)} style={{
+              padding: '5px 10px',
+              borderRadius: 5,
+              border: 'none',
+              background: showArchived ? T.bg : 'transparent',
+              color: showArchived ? T.ink : T.inkMed,
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 12,
+              fontWeight: showArchived ? 600 : 500,
+              cursor: 'pointer',
+              boxShadow: showArchived ? `0 1px 3px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
+            }}>Archived {archivedNotes.length}</button>
           </div>
         </div>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
-          gap: 8,
-          marginBottom: 16,
-        }}>
-          <SummaryStat label="Open" value={openCount} accent={T.accent} />
-          <SummaryStat label="Active" value={activeCount} accent={T.warn} />
-          <SummaryStat label="Waiting" value={waitingCount} accent={T.inkMed} />
-          <SummaryStat label="Closed" value={closedCount} accent={T.success} />
-        </div>
-
-        {mode === 'kanban' && (
-          <div style={{
-            overflowX: 'auto',
-            overflowY: 'visible',
-            paddingBottom: 10,
-          }}>
+        {showArchived ? <ArchivedNotes /> : (
+          <>
+            <WorkflowStateManager />
             <div style={{
               display: 'grid',
-              gridTemplateColumns: `repeat(${stateCount}, minmax(172px, 1fr))`,
-              gap: 10,
-              minWidth: kanbanMinWidth,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+              gap: 8,
+              marginBottom: 16,
             }}>
-              {(workflowStates || []).map(state => {
-                const items = workflowItems?.[state.id] || [];
-                return (
-                  <DropColumn key={state.id} state={state} empty={!items.length}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {items.map(item => <Card key={item.id} item={item} state={state} />)}
-                    </div>
-                  </DropColumn>
-                );
-              })}
+              <SummaryStat label="Items" value={total} accent={T.accent} />
+              <SummaryStat label="Columns" value={(workflowStates || []).length} accent={T.warn} />
+              <SummaryStat label="Active cols" value={populatedStateCount} accent={T.inkMed} />
+              <SummaryStat label="Archived" value={archivedNotes.length} accent={T.success} />
             </div>
-          </div>
-        )}
 
-        {mode === 'table' && (
-          <div style={{
-            border: `1px solid ${T.lineSub}`,
-            borderRadius: 8,
-            overflowX: 'auto',
-            overflowY: 'auto',
-            maxHeight: 'calc(100vh - 205px)',
-          }}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '108px minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(180px, 1fr) 126px',
-              gap: 0,
-              padding: '8px 12px',
-              background: T.bgSub,
-              borderBottom: `1px solid ${T.lineSub}`,
-              position: 'sticky',
-              top: 0,
-              zIndex: 1,
-              fontFamily: 'var(--mn-mono)',
-              fontSize: 10,
-              color: T.inkDim,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              minWidth: 880,
-              boxSizing: 'border-box',
-            }}>
-              <span>Status</span><span>Block</span><span>Note</span><span>Tags</span><span>Change</span>
-            </div>
-            {allItems.map(({ state, ...item }) => (
-              <div key={item.id} style={{
-                display: 'grid',
-                gridTemplateColumns: '108px minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(180px, 1fr) 126px',
-                gap: 0,
-                padding: '10px 12px',
-                borderBottom: `1px solid ${T.lineSub}`,
-                alignItems: 'start',
-                fontFamily: 'var(--mn-ui)',
-                fontSize: 13,
-                minWidth: 880,
-                boxSizing: 'border-box',
-                background: T.bg,
+            {mode === 'kanban' && (
+              <div style={{
+                overflowX: 'auto',
+                overflowY: 'visible',
+                paddingBottom: 10,
               }}>
-                <div style={{ minWidth: 0, paddingTop: 3, overflow: 'hidden' }}>
-                  <StatePill state={state} />
-                </div>
-                <span onClick={() => onOpen(item.noteId)} style={{
-                  color: T.ink, cursor: 'pointer',
-                  textDecoration: state.id === 'DONE' || state.id === 'CANCELLED' ? 'line-through' : 'none',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'normal',
-                  lineHeight: 1.35,
-                  paddingTop: 3,
-                  minWidth: 0,
-                }}>{item.text || 'Empty block'}</span>
-                <span onClick={() => onOpen(item.noteId)} style={{
-                  color: T.inkMed,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  cursor: 'pointer',
-                  paddingTop: 3,
-                  minWidth: 0,
-                }}>{item.noteTitle}</span>
-                <TagEditorCell item={item} />
-                <select value={state.id} onChange={(e) => moveItem(item, e.target.value)} style={{
-                  border: `1px solid ${T.line}`,
-                  borderRadius: 5,
-                  background: T.bg,
-                  color: T.ink,
-                  fontFamily: 'var(--mn-ui)',
-                  fontSize: 12,
-                  padding: '4px 6px',
-                  width: '100%',
-                  boxSizing: 'border-box',
-                }}>
-                  {(workflowStates || []).map(s => <option key={s.id} value={s.id}>{s.id}</option>)}
-                </select>
-              </div>
-            ))}
-            {!allItems.length && (
-              <div style={{ padding: 22, textAlign: 'center', color: T.inkDim, fontFamily: 'var(--mn-body)', fontStyle: 'italic' }}>No workflow blocks yet</div>
-            )}
-          </div>
-        )}
-
-        {mode === 'list' && (workflowStates || []).map(state => {
-          const items = workflowItems?.[state.id] || [];
-          return (
-            <div key={state.id} style={{ marginBottom: 20 }}>
-              <SectionHead T={T} label={state.id} count={items.length} />
-              {items.length ? (
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))',
-                  gap: 8,
+                  gridTemplateColumns: `repeat(${stateCount}, minmax(172px, 1fr))`,
+                  gap: 10,
+                  minWidth: kanbanMinWidth,
                 }}>
-                  {items.map(item => <Card key={item.id} item={item} state={state} />)}
+                  {(workflowStates || []).map(state => {
+                    const items = workflowItems?.[state.id] || [];
+                    return (
+                      <DropColumn key={state.id} state={state} empty={!items.length}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {items.map(item => <Card key={item.id} item={item} state={state} />)}
+                        </div>
+                      </DropColumn>
+                    );
+                  })}
                 </div>
-              ) : (
+              </div>
+            )}
+
+            {mode === 'table' && (
+              <div style={{
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 8,
+                overflowX: 'auto',
+                overflowY: 'auto',
+                maxHeight: 'calc(100vh - 205px)',
+              }}>
                 <div style={{
-                  padding: 14, textAlign: 'center',
-                  fontFamily: 'var(--mn-body)', fontSize: 12.5,
-                  color: T.inkDim, fontStyle: 'italic',
-                  background: T.bgSub, border: `1px solid ${T.lineSub}`,
-                  borderRadius: 6,
-                }}>No workflow blocks</div>
-              )}
-            </div>
-          );
-        })}
+                  display: 'grid',
+                  gridTemplateColumns: '108px minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(180px, 1fr) 176px',
+                  gap: 0,
+                  padding: '8px 12px',
+                  background: T.bgSub,
+                  borderBottom: `1px solid ${T.lineSub}`,
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 1,
+                  fontFamily: 'var(--mn-mono)',
+                  fontSize: 10,
+                  color: T.inkDim,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  minWidth: 880,
+                  boxSizing: 'border-box',
+                }}>
+                  <span>Status</span><span>Block</span><span>Note</span><span>Tags</span><span>Change</span>
+                </div>
+                {allItems.map(({ state, ...item }) => (
+                  <div key={item.id} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '108px minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(180px, 1fr) 176px',
+                    gap: 0,
+                    padding: '10px 12px',
+                    borderBottom: `1px solid ${T.lineSub}`,
+                    alignItems: 'start',
+                    fontFamily: 'var(--mn-ui)',
+                    fontSize: 13,
+                    minWidth: 880,
+                    boxSizing: 'border-box',
+                    background: T.bg,
+                  }}>
+                    <div style={{ minWidth: 0, paddingTop: 3, overflow: 'hidden' }}>
+                      <StatePill state={state} />
+                    </div>
+                    <span onClick={() => onOpen(item.noteId)} style={{
+                      color: T.ink, cursor: 'pointer',
+                      textDecoration: isClosedState(state) ? 'line-through' : 'none',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'normal',
+                      lineHeight: 1.35,
+                      paddingTop: 3,
+                      minWidth: 0,
+                    }}>{item.text || 'Empty block'}</span>
+                    <span onClick={() => onOpen(item.noteId)} style={{
+                      color: T.inkMed,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      cursor: 'pointer',
+                      paddingTop: 3,
+                      minWidth: 0,
+                    }}>{item.noteTitle}</span>
+                    <TagEditorCell item={item} />
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
+                      <select value={state.id} onChange={(e) => moveItem(item, e.target.value)} style={{
+                        border: `1px solid ${T.line}`,
+                        borderRadius: 5,
+                        background: T.bg,
+                        color: T.ink,
+                        fontFamily: 'var(--mn-ui)',
+                        fontSize: 12,
+                        padding: '4px 6px',
+                        minWidth: 0,
+                        flex: 1,
+                        boxSizing: 'border-box',
+                      }}>
+                        {(workflowStates || []).map(s => <option key={s.id} value={s.id}>{s.id}</option>)}
+                      </select>
+                      <ArchiveButton item={item} compact />
+                    </div>
+                  </div>
+                ))}
+                {!allItems.length && (
+                  <div style={{ padding: 22, textAlign: 'center', color: T.inkDim, fontFamily: 'var(--mn-body)', fontStyle: 'italic' }}>No workflow blocks yet</div>
+                )}
+              </div>
+            )}
+
+            {mode === 'list' && (workflowStates || []).map(state => {
+              const items = workflowItems?.[state.id] || [];
+              return (
+                <div key={state.id} style={{ marginBottom: 20 }}>
+                  <SectionHead T={T} label={state.id} count={items.length} />
+                  {items.length ? (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))',
+                      gap: 8,
+                    }}>
+                      {items.map(item => <Card key={item.id} item={item} state={state} />)}
+                    </div>
+                  ) : (
+                    <div style={{
+                      padding: 14, textAlign: 'center',
+                      fontFamily: 'var(--mn-body)', fontSize: 12.5,
+                      color: T.inkDim, fontStyle: 'italic',
+                      background: T.bgSub, border: `1px solid ${T.lineSub}`,
+                      borderRadius: 6,
+                    }}>No workflow blocks</div>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        )}
       </div>
     </div>
   );
@@ -707,7 +1030,7 @@ function MnWorkflowPanel({ workflowStates, workflowItems, tags, onOpen, onSetWor
 // ────────────────────────────────────────────────────────────
 // Today view (note rollup)
 // ────────────────────────────────────────────────────────────
-function MnTodayPanel({ notes, tags, onOpen, T, theme }) {
+function MnTodayPanel({ notes, tags, onOpen, T, theme, rollupFormat = 'long' }) {
   const tagHue = useMemoP(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
@@ -747,7 +1070,9 @@ function MnTodayPanel({ notes, tags, onOpen, T, theme }) {
               <div style={{
                 fontFamily: 'var(--mn-body)', fontSize: 16, fontWeight: 600,
                 color: T.ink, letterSpacing: '-0.01em',
-              }}>{g.date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+              }}>{g.date.toLocaleDateString([], rollupFormat === 'short'
+                ? { weekday: 'short', month: 'short', day: 'numeric' }
+                : { weekday: 'long', month: 'long', day: 'numeric' })}</div>
               <div style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
               }}>{g.notes.length} note{g.notes.length > 1 ? 's' : ''}</div>
@@ -899,7 +1224,7 @@ function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
 // ────────────────────────────────────────────────────────────
 // Reminder toast
 // ────────────────────────────────────────────────────────────
-function MnReminderToast({ toast, onDismiss, onOpen, T, variant }) {
+function MnReminderToast({ toast, onDismiss, onSnooze, onOpen, T, variant }) {
   if (!toast) return null;
 
   if (variant === 'banner') {
@@ -953,7 +1278,7 @@ function MnReminderToast({ toast, onDismiss, onOpen, T, variant }) {
         </svg>
         Reminder
         <div style={{ flex: 1 }} />
-        <button onClick={onDismiss} style={{
+        <button onClick={onSnooze || onDismiss} style={{
           background: 'none', border: 'none', cursor: 'pointer',
           color: T.inkDim, padding: 0, fontSize: 14,
         }}>✕</button>

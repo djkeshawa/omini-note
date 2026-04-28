@@ -28,6 +28,13 @@ function mnPreview(body) {
 }
 
 function mnSnippet(body, query) {
+  const states = window.MN_LOGSEQ?.WORKFLOW_STATES || window.MN_LOGSEQ?.DEFAULT_WORKFLOW_STATES || [];
+  const workflowPattern = states
+    .map(s => s.id)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map(id => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
   const plain = body
     .split('\n')
     .filter(l => !/^[a-zA-Z][a-zA-Z0-9_-]*::\s/.test(l))  // skip page properties
@@ -39,7 +46,7 @@ function mnSnippet(body, query) {
     .replace(/-\s+\[[ x]\]/g, '✓')
     .replace(/-\s+/g, '')
     .replace(/@remind\s+\S+\s*\S*/g, '')
-    .replace(/^(TODO|DOING|DONE|LATER|NOW|WAIT|CANCELLED)\s+/gm, '')
+    .replace(workflowPattern ? new RegExp(`^(${workflowPattern})\\s+`, 'gm') : /$^/, '')
     .trim().replace(/\s+/g, ' ');
   if (!query) return plain.slice(0, 140);
   const idx = plain.toLowerCase().indexOf(query.toLowerCase());

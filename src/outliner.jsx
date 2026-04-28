@@ -202,22 +202,30 @@ const MN_SLASH_CMDS = [
   { id: 'tag',    label: 'Tag',        hint: 'Categorize',           kbd: '#tag', icon: '#', insert: '#' },
   { id: 'date',   label: "Today's date", hint: 'Insert YYYY-MM-DD',  kbd: '@today', icon: '☉',
     insertFn: () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }},
-  { id: 'remind', label: 'Reminder',   hint: 'Schedule reminder',   kbd: '@remind', icon: '⏰', insert: '@remind(tomorrow 9am)' },
+  { id: 'remind', label: 'Reminder',   hint: 'Schedule reminder',   kbd: '@remind', icon: '⏰', insertFn: () => window.MN_REMIND?.defaultText?.() || '@remind 2026-04-30 09:00 ' },
   { id: 'ai-improve-page', label: 'AI: Improve writing on this page', hint: 'Rewrite the whole page body', kbd: '/ai improve', icon: '✦', aiAction: 'improve', aiScope: 'page' },
   { id: 'ai-format-page', label: 'AI: Format this page', hint: 'Clean up the whole page body', kbd: '/ai format', icon: 'AI', aiAction: 'format', aiScope: 'page' },
   { id: 'ai-summarize-page', label: 'AI: Summarize this page', hint: 'Replace page body with a summary', kbd: '/ai summary', icon: 'Σ', aiAction: 'summarize', aiScope: 'page' },
   { id: 'ai-concise-page', label: 'AI: Make this page concise', hint: 'Shorten the whole page body', kbd: '/ai concise', icon: '↘', aiAction: 'concise', aiScope: 'page' },
   { id: 'ai-fix-page', label: 'AI: Fix spelling on this page', hint: 'Correct the whole page body', kbd: '/ai fix', icon: '✓', aiAction: 'fix', aiScope: 'page' },
   { id: 'ai-write-section', label: 'AI: Write in this section', hint: 'Preview generated text before applying', kbd: '/ai write', icon: '+', aiAction: 'write', aiScope: 'section' },
-  // Workflow markers
-  { id: 'wf-todo',      label: 'TODO',      hint: 'Workflow: not started', kbd: '/TODO',      icon: 'T', workflow: 'TODO' },
-  { id: 'wf-doing',     label: 'DOING',     hint: 'Workflow: in progress', kbd: '/DOING',     icon: 'D', workflow: 'DOING' },
-  { id: 'wf-done',      label: 'DONE',      hint: 'Workflow: finished',    kbd: '/DONE',      icon: '✓', workflow: 'DONE' },
-  { id: 'wf-later',     label: 'LATER',     hint: 'Workflow: deferred',    kbd: '/LATER',     icon: 'L', workflow: 'LATER' },
-  { id: 'wf-now',       label: 'NOW',       hint: 'Workflow: doing now',   kbd: '/NOW',       icon: 'N', workflow: 'NOW' },
-  { id: 'wf-wait',      label: 'WAIT',      hint: 'Workflow: blocked',     kbd: '/WAIT',      icon: 'W', workflow: 'WAIT' },
-  { id: 'wf-cancelled', label: 'CANCELLED', hint: 'Workflow: cancelled',   kbd: '/CANC',      icon: '✗', workflow: 'CANCELLED' },
 ];
+
+function mnWorkflowSlashCommands() {
+  const states = window.MN_LOGSEQ?.WORKFLOW_STATES || [];
+  return states.map(state => ({
+    id: `wf-${String(state.id || '').toLowerCase()}`,
+    label: state.id,
+    hint: `Workflow: ${state.id.toLowerCase()}`,
+    kbd: `/${state.id}`,
+    icon: String(state.id || '?').slice(0, 1),
+    workflow: state.id,
+  }));
+}
+
+function mnSlashCommands() {
+  return [...MN_SLASH_CMDS, ...mnWorkflowSlashCommands()];
+}
 
 function mnFindSlashCommandTrigger(text, cursor) {
   const before = text.slice(0, cursor);
@@ -243,6 +251,36 @@ function mnSlashCommandScore(cmd, query) {
   if (hint.includes(q)) return 50;
   if (label.includes(q) || id.includes(q)) return 60;
   return Infinity;
+}
+
+const MN_BLOCK_CLIPBOARD_TYPE = 'application/x-omininote-blocks';
+
+function mnReidBlocks(blocks) {
+  let seq = 0;
+  const nextId = () => `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}_${seq++}`;
+  const next = mnCloneBlocks(blocks || []);
+  const reid = (b) => {
+    b.id = nextId();
+    (b.children || []).forEach(reid);
+  };
+  next.forEach(reid);
+  return next;
+}
+
+function mnNormalizeClipboardMarkdown(text) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function mnLooksLikeBlockMarkdown(text) {
+  const normalized = mnNormalizeClipboardMarkdown(text);
+  const lines = normalized.split('\n').filter(line => line.trim());
+  if (lines.length < 2) return false;
+  if (/\n\s*\n/.test(normalized)) return true;
+  return lines.some(line => /^(#{1,3}\s+|>\s+|---+$|\s*-\s+|\|.+\|)/.test(line));
 }
 
 // ── Selection toolbar (floats above selected text) ────────────────────
@@ -394,6 +432,11 @@ function MnBlockRow({
   onBlockMouseDown, onBlockMouseEnter, selectedBlockIds,
   onBeginContentEdit, onEndContentEdit,
   editorFontSize,
+  indentGuides = true,
+  spellCheck = true,
+  autoLink = true,
+  collapseByDefault = false,
+  parseClipboardBlocks,
 }) {
   const [editing, setEditing] = useStateOE(focusId === block.id);
   const [autoQ, setAutoQ] = useStateOE(null);   // wiki autocomplete query
@@ -438,7 +481,7 @@ function MnBlockRow({
 
   const slashMatches = useMemoOE(() => {
     if (slashQ == null) return [];
-    return MN_SLASH_CMDS
+    return mnSlashCommands()
       .map((cmd, index) => ({ cmd, index, score: mnSlashCommandScore(cmd, slashQ.query) }))
       .filter(x => x.score !== Infinity)
       .sort((a, b) => a.score - b.score || a.index - b.index)
@@ -446,10 +489,11 @@ function MnBlockRow({
   }, [slashQ]);
 
   const wikiSuggestions = useMemoOE(() => {
+    if (!autoLink) return [];
     if (autoQ == null) return [];
     const q = autoQ.toLowerCase();
     return (allNotes || []).filter(n => n.title.toLowerCase().includes(q)).slice(0, 6);
-  }, [autoQ, allNotes]);
+  }, [autoQ, allNotes, autoLink]);
 
   // ── keyboard ─────────────────────────────────────────────────────
   const handleKey = (e) => {
@@ -572,7 +616,7 @@ function MnBlockRow({
     const pos = e.target.selectionStart;
     const before = v.slice(0, pos);
     // Wiki autocomplete
-    const wm = before.match(/\[\[([^\]\n]*)$/);
+    const wm = autoLink ? before.match(/\[\[([^\]\n]*)$/) : null;
     setAutoQ(wm ? wm[1] : null);
     if (wm) setAutoIdx(0);
     // Slash menu — trigger when `/` appears at start of content or after a
@@ -589,42 +633,73 @@ function MnBlockRow({
 
   const handlePaste = (e) => {
     const markdown = mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable(e);
-    if (!markdown) return;
     const ta = inputRef.current;
     if (!ta) return;
-    e.preventDefault();
-    setAutoQ(null);
-    setSlashQ(null);
     const start = ta.selectionStart ?? 0;
     const end = ta.selectionEnd ?? start;
     const fullSelection = start === 0 && end === String(block.content || '').length;
-    if (!String(block.content || '').trim() || fullSelection) {
-      onChangeKind(block.id, {
-        kind: 'table',
-        level: 0,
-        checked: null,
-        content: markdown,
-      });
-      setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.focus();
-          inputRef.current.setSelectionRange(markdown.length, markdown.length);
-        }
-      }, 0);
+    if (markdown) {
+      e.preventDefault();
+      setAutoQ(null);
+      setSlashQ(null);
+      if (!String(block.content || '').trim() || fullSelection) {
+        onChangeKind(block.id, {
+          kind: 'table',
+          level: 0,
+          checked: null,
+          content: markdown,
+        });
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.setSelectionRange(markdown.length, markdown.length);
+          }
+        }, 0);
+        return;
+      }
+      const tableBlock = mkBlock({ kind: 'table', content: markdown });
+      onInsertBlocksAt && onInsertBlocksAt(block.id, start, end, [tableBlock]);
+      setFocusId && setFocusId(tableBlock.id);
       return;
     }
-    const tableBlock = mkBlock({ kind: 'table', content: markdown });
-    onInsertBlocksAt && onInsertBlocksAt(block.id, start, end, [tableBlock]);
-    setFocusId && setFocusId(tableBlock.id);
+    const pastedBlocks = parseClipboardBlocks?.(e.clipboardData, { allowSingle: false });
+    if (!pastedBlocks?.length) return;
+    e.preventDefault();
+    setAutoQ(null);
+    setSlashQ(null);
+    onInsertBlocksAt && onInsertBlocksAt(block.id, start, end, pastedBlocks);
+    setFocusId && setFocusId(pastedBlocks[0].id);
   };
 
   const handleCopy = (e) => {
+    const ta = inputRef.current;
     if (block.kind !== 'table' || !mnMarkdownTableToHtml) return;
     const html = mnMarkdownTableToHtml(block.content || '');
     if (!html || !e.clipboardData) return;
+    const value = String(block.content || '');
+    const start = ta?.selectionStart ?? 0;
+    const end = ta?.selectionEnd ?? start;
+    const hasSelection = start !== end;
+    const fullSelection = hasSelection && start === 0 && end === value.length;
+    if (!fullSelection) return;
     e.preventDefault();
     e.clipboardData.setData('text/plain', block.content || '');
     e.clipboardData.setData('text/html', html);
+    return true;
+  };
+
+  const handleCut = (e) => {
+    const copied = handleCopy(e);
+    const ta = inputRef.current;
+    if (!copied || !ta) return;
+    const value = String(block.content || '');
+    const start = ta.selectionStart ?? 0;
+    const end = ta.selectionEnd ?? start;
+    if (start === end) return;
+    onChange(block.id, value.slice(0, start) + value.slice(end));
+    setTimeout(() => {
+      if (inputRef.current) inputRef.current.setSelectionRange(start, start);
+    }, 0);
   };
 
   const handleSelect = (e) => {
@@ -700,6 +775,7 @@ function MnBlockRow({
         level: cmd.level || 0,
         checked: cmd.checked != null ? cmd.checked : null,
         content: cleanContent || cmd.content || '',
+        collapsed: collapseByDefault && cmd.kind === 'heading',
       });
     } else if (cmd.workflow !== undefined) {
       // Set workflow marker and strip the slash text atomically.
@@ -816,7 +892,7 @@ function MnBlockRow({
         ...(selectedAsArea ? { background: T.selBg, outline: `1px solid color-mix(in oklab, ${T.accent || T.ink} 32%, transparent)`, outlineOffset: -1 } : {}),
       }}>
       {/* Vertical guide lines for each ancestor level */}
-      {Array.from({ length: depth }, (_, i) => (
+      {indentGuides && Array.from({ length: depth }, (_, i) => (
         <div key={i} style={{
           position: 'absolute',
           // Align with the bullet center of the ancestor at depth i:
@@ -944,6 +1020,7 @@ function MnBlockRow({
               onChange={handleInput}
               onPaste={handlePaste}
               onCopy={handleCopy}
+              onCut={handleCut}
               onSelect={handleSelect}
               onMouseUp={handleSelect}
               onKeyUp={handleSelect}
@@ -954,6 +1031,7 @@ function MnBlockRow({
                 }, 100);
               }}
               onKeyDown={handleKey}
+              spellCheck={spellCheck}
               rows={1}
               placeholder={mnPlaceholder(block)}
               style={{
@@ -1566,7 +1644,11 @@ function MnOutlineTree({ blocks, depth, ...handlers }) {
 }
 
 // ── Main outliner component ────────────────────────────────────────────
-function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBlockId, onZoomBlock, onShowToast, noteTitle, fontSize }) {
+function MnOutliner({
+  blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBlockId,
+  onZoomBlock, onShowToast, noteTitle, fontSize,
+  indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
+}) {
   const [focusId, setFocusId] = useStateOE(null);
   const [selection, setSelection] = useStateOE(null); // { blockId, start, end, rect }
   const [ctxMenu, setCtxMenu] = useStateOE(null); // { blockId, x, y } | null
@@ -1586,6 +1668,8 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
   const duplicateBlockRef = useRefOE(null);
   const deleteBlockRef = useRefOE(null);
   const zoomBlockRef = useRefOE(null);
+  const keyboardEditActionsRef = useRefOE(null);
+  const localClipboardRef = useRefOE(null);
   const contentEditHistoryRef = useRefOE({ blockId: null, armed: false });
 
   const snapshotBlocks = (value = blocks) => mnCloneBlocks(value || []);
@@ -1653,23 +1737,30 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
       const isMod = e.metaKey || e.ctrlKey;
       const key = e.key || '';
       const lowerKey = key.toLowerCase();
+      const target = e.target;
+      const tag = target?.tagName;
+      const isFormField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
+      const currentSelection = selectionRef.current;
       const isUndo = isMod && lowerKey === 'z' && !e.shiftKey;
       const isRedo = (isMod && e.shiftKey && lowerKey === 'z') || (isMod && lowerKey === 'y');
-      const isAreaDelete = (key === 'Backspace' || key === 'Delete') && selectionRef.current && !isMod;
+      const isCopy = isMod && lowerKey === 'c' && !e.altKey && !e.shiftKey;
+      const isCut = isMod && lowerKey === 'x' && !e.altKey && !e.shiftKey;
+      const isPaste = isMod && lowerKey === 'v' && !e.altKey && !e.shiftKey;
+      const isSelectAll = isMod && lowerKey === 'a' && !e.altKey && !e.shiftKey;
+      const isBlockEditCommand = currentSelection?.kind === 'blocks' && (isCopy || isCut || isPaste);
+      const isOutlinerSelectAll = isSelectAll && !isFormField;
+      const isAreaDelete = (key === 'Backspace' || key === 'Delete') && currentSelection?.kind === 'blocks' && !isMod;
       const isBlockZoom = isMod && key === 'Enter';
       const isBlockMoveUp = e.altKey && !isMod && key === 'ArrowUp';
       const isBlockMoveDown = e.altKey && !isMod && key === 'ArrowDown';
       const isBlockDuplicate = isMod && lowerKey === 'd';
-      const isBlockDelete = isMod && (key === 'Backspace' || key === 'Delete');
+      const isBlockDelete = isMod && (key === 'Backspace' || key === 'Delete') && !isFormField;
       const isBlockShortcut = isBlockZoom || isBlockMoveUp || isBlockMoveDown || isBlockDuplicate || isBlockDelete;
-      if (!isUndo && !isRedo && !isAreaDelete && !isBlockShortcut) return;
-      const target = e.target;
-      const tag = target?.tagName;
-      const isFormField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
+      if (!isUndo && !isRedo && !isAreaDelete && !isBlockShortcut && !isBlockEditCommand && !isOutlinerSelectAll) return;
       if ((isUndo || isRedo) && isFormField && !target.closest?.('.mn-block-row')) return;
       const insideOutliner = !!target.closest?.('.mn-outliner');
       const activeInsideOutliner = !!document.activeElement?.closest?.('.mn-outliner');
-      if ((isAreaDelete || isBlockShortcut) && !insideOutliner && !activeInsideOutliner) return;
+      if ((isAreaDelete || isBlockShortcut || isBlockEditCommand || isOutlinerSelectAll) && !insideOutliner && !activeInsideOutliner) return;
       const activeBlockId = () => {
         const currentSelection = selectionRef.current;
         if (currentSelection?.kind === 'blocks' && currentSelection.blockIds?.length) return currentSelection.blockIds[0];
@@ -1680,6 +1771,10 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
       e.stopPropagation();
       e.stopImmediatePropagation && e.stopImmediatePropagation();
       if (isAreaDelete) deleteSelectionRef.current && deleteSelectionRef.current();
+      else if (isCopy) keyboardEditActionsRef.current?.copySelectedBlocks?.();
+      else if (isCut) keyboardEditActionsRef.current?.cutSelectedBlocks?.();
+      else if (isPaste) keyboardEditActionsRef.current?.pasteForKeyboard?.();
+      else if (isSelectAll) keyboardEditActionsRef.current?.selectAllBlocks?.();
       else if (isUndo) undoActionRef.current && undoActionRef.current();
       else if (isRedo) redoActionRef.current && redoActionRef.current();
       else if (isBlockZoom) zoomBlockRef.current && zoomBlockRef.current(activeBlockId());
@@ -1996,6 +2091,114 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
     });
   };
 
+  const blocksForClipboardIds = (ids, sourceBlocks = blocks) => {
+    return topLevelSelectedIds(ids, sourceBlocks)
+      .map(id => mnLocate(sourceBlocks, id)?.block)
+      .filter(Boolean);
+  };
+
+  const blockClipboardPayload = (blocksToCopy) => {
+    const sourceBlocks = mnCloneBlocks(blocksToCopy || []);
+    if (!sourceBlocks.length) return null;
+    const markdown = mnNormalizeClipboardMarkdown(mnBlocksToMd(sourceBlocks));
+    if (!markdown) return null;
+    return { sourceBlocks, markdown };
+  };
+
+  const writeBlocksToClipboard = (blocksToCopy, clipboardData = null) => {
+    const payload = blockClipboardPayload(blocksToCopy);
+    if (!payload) return false;
+    const { sourceBlocks, markdown } = payload;
+    if (!clipboardData) return false;
+    localClipboardRef.current = sourceBlocks;
+    clipboardData.setData('text/plain', markdown);
+    clipboardData.setData('text/markdown', markdown);
+    clipboardData.setData(MN_BLOCK_CLIPBOARD_TYPE, JSON.stringify(sourceBlocks));
+    return true;
+  };
+
+  const writeBlocksToSystemClipboard = async (blocksToCopy) => {
+    const payload = blockClipboardPayload(blocksToCopy);
+    if (!payload || !navigator.clipboard?.writeText) return false;
+    try {
+      await navigator.clipboard.writeText(payload.markdown);
+      localClipboardRef.current = payload.sourceBlocks;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const parseClipboardBlocks = (clipboardData, options = {}) => {
+    const allowSingle = options.allowSingle === true;
+    const rawBlocks = clipboardData?.getData?.(MN_BLOCK_CLIPBOARD_TYPE);
+    if (rawBlocks) {
+      try {
+        const parsed = JSON.parse(rawBlocks);
+        if (Array.isArray(parsed) && parsed.length) return mnReidBlocks(parsed);
+      } catch (e) {}
+    }
+    const text = mnNormalizeClipboardMarkdown(
+      clipboardData?.getData?.('text/markdown') ||
+      clipboardData?.getData?.('text/plain') ||
+      ''
+    );
+    if (!text) return [];
+    const parsed = mnMdToBlocks(text);
+    if (!parsed.length) return [];
+    if (allowSingle || parsed.length > 1 || mnLooksLikeBlockMarkdown(text)) return parsed;
+    return [];
+  };
+
+  const insertBlocksAfter = (targetId, insertedBlocks) => {
+    if (!insertedBlocks?.length) return;
+    const first = insertedBlocks[0];
+    mutate(bs => {
+      const loc = mnLocate(bs, targetId);
+      const blocksToInsert = mnCloneBlocks(insertedBlocks);
+      if (!loc) {
+        bs.push(...blocksToInsert);
+        return;
+      }
+      loc.arr.splice(loc.idx + 1, 0, ...blocksToInsert);
+    });
+    setFocusId(first.id);
+  };
+
+  const contextClipboardIds = (blockId) => {
+    if (selection?.kind === 'blocks' && (selection.blockIds || []).includes(blockId)) return selection.blockIds || [];
+    return [blockId];
+  };
+
+  const copyContextBlocks = async (blockId) => {
+    const copied = await writeBlocksToSystemClipboard(blocksForClipboardIds(contextClipboardIds(blockId)));
+    if (copied) onShowToast && onShowToast('Copied block markdown');
+    else onShowToast && onShowToast('Clipboard unavailable');
+  };
+
+  const cutContextBlocks = async (blockId) => {
+    const ids = contextClipboardIds(blockId);
+    const copied = await writeBlocksToSystemClipboard(blocksForClipboardIds(ids));
+    if (!copied) {
+      onShowToast && onShowToast('Clipboard unavailable');
+      return;
+    }
+    if (selection?.kind === 'blocks' && ids.length > 1) deleteSelection();
+    else onDelete(blockId);
+    onShowToast && onShowToast('Cut block markdown');
+  };
+
+  const pasteContextBlocksAfter = async (blockId) => {
+    let pasted = localClipboardRef.current ? mnReidBlocks(localClipboardRef.current) : [];
+    if (!pasted.length) {
+      const text = await navigator.clipboard?.readText?.().catch(() => '');
+      pasted = mnMdToBlocks(mnNormalizeClipboardMarkdown(text || ''));
+    }
+    if (!pasted.length) return;
+    insertBlocksAfter(blockId, pasted);
+    onShowToast && onShowToast(`Pasted ${pasted.length} block${pasted.length === 1 ? '' : 's'}`);
+  };
+
   const selectionRectForBlocks = (ids) => {
     const rects = ids
       .map(id => document.querySelector(`.mn-block-row[data-block-id="${CSS.escape(id)}"]`)?.getBoundingClientRect())
@@ -2017,6 +2220,92 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
       if (rect.bottom >= top && rect.top <= bottom) ids.push(row.dataset.blockId);
     }
     return orderedBlockIds(ids);
+  };
+
+  const replaceSelectedBlocksWith = (insertedBlocks) => {
+    const current = selectionRef.current;
+    if (current?.kind !== 'blocks' || !insertedBlocks?.length) return false;
+    const first = insertedBlocks[0];
+    mutate(bs => {
+      const ids = topLevelSelectedIds(current.blockIds || [], bs);
+      if (!ids.length) return;
+      const selected = new Set(ids);
+      const blocksToInsert = mnCloneBlocks(insertedBlocks);
+      let inserted = false;
+      const replaceSelected = (arr) => {
+        for (let i = 0; i < arr.length; i++) {
+          if (selected.has(arr[i].id)) {
+            if (!inserted) {
+              arr.splice(i, 1, ...blocksToInsert);
+              inserted = true;
+              i += blocksToInsert.length - 1;
+            } else {
+              arr.splice(i, 1);
+              i--;
+            }
+          } else {
+            replaceSelected(arr[i].children || []);
+          }
+        }
+      };
+      replaceSelected(bs);
+    });
+    setSelection(null);
+    setFocusId(first.id);
+    return true;
+  };
+
+  keyboardEditActionsRef.current = {
+    copySelectedBlocks: async () => {
+      const current = selectionRef.current;
+      if (current?.kind !== 'blocks') return false;
+      if (document.execCommand?.('copy')) return true;
+      const copied = await writeBlocksToSystemClipboard(blocksForClipboardIds(current.blockIds || []));
+      if (copied) onShowToast && onShowToast('Copied block markdown');
+      else onShowToast && onShowToast('Clipboard unavailable');
+      return copied;
+    },
+    cutSelectedBlocks: async () => {
+      const current = selectionRef.current;
+      if (current?.kind !== 'blocks') return false;
+      if (document.execCommand?.('cut')) return true;
+      const copied = await writeBlocksToSystemClipboard(blocksForClipboardIds(current.blockIds || []));
+      if (!copied) {
+        onShowToast && onShowToast('Clipboard unavailable');
+        return false;
+      }
+      deleteSelection();
+      onShowToast && onShowToast('Cut block markdown');
+      return true;
+    },
+    pasteForKeyboard: async () => {
+      let pasted = localClipboardRef.current ? mnReidBlocks(localClipboardRef.current) : [];
+      if (!pasted.length) {
+        const text = await navigator.clipboard?.readText?.().catch(() => '');
+        pasted = mnMdToBlocks(mnNormalizeClipboardMarkdown(text || ''));
+      }
+      if (!pasted.length) return false;
+      const current = selectionRef.current;
+      if (current?.kind === 'blocks') replaceSelectedBlocksWith(pasted);
+      else insertBlocksAfter(focusIdRef.current, pasted);
+      onShowToast && onShowToast(`Pasted ${pasted.length} block${pasted.length === 1 ? '' : 's'}`);
+      return true;
+    },
+    selectAllBlocks: () => {
+      const visibleIds = [...document.querySelectorAll('.mn-block-row[data-block-id]')]
+        .map(row => row.dataset.blockId)
+        .filter(Boolean);
+      const allIds = visibleIds.length
+        ? orderedBlockIds(visibleIds)
+        : mnFlatten(blocks, 0, false).map(x => x.block.id);
+      if (!allIds.length) return false;
+      setSelection({
+        kind: 'blocks',
+        blockIds: allIds,
+        rect: selectionRectForBlocks(allIds),
+      });
+      return true;
+    },
   };
 
   const beginBlockSelection = (id, e) => {
@@ -2049,12 +2338,60 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
   useEffectOE(() => {
     if (!selection) return;
     const onDown = (e) => {
+      if (e.button === 2) return;
       if (e.target.closest?.('.mn-selection-toolbar') || e.target.closest?.('.mn-ai-action-menu')) return;
       setSelection(null);
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [selection]);
+
+  useEffectOE(() => {
+    const isInsideOutliner = (target) => !!target?.closest?.('.mn-outliner') || !!document.activeElement?.closest?.('.mn-outliner');
+    const isFormField = (target) => {
+      const tag = target?.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
+    };
+    const onCopy = (e) => {
+      const current = selectionRef.current;
+      if (current?.kind !== 'blocks' || !isInsideOutliner(e.target)) return;
+      const selectedBlocks = blocksForClipboardIds(current.blockIds || []);
+      if (!selectedBlocks.length) return;
+      e.preventDefault();
+      const copied = writeBlocksToClipboard(selectedBlocks, e.clipboardData);
+      if (copied) onShowToast && onShowToast('Copied block markdown');
+    };
+    const onCut = (e) => {
+      const current = selectionRef.current;
+      if (current?.kind !== 'blocks' || !isInsideOutliner(e.target)) return;
+      const selectedBlocks = blocksForClipboardIds(current.blockIds || []);
+      if (!selectedBlocks.length) return;
+      e.preventDefault();
+      const copied = writeBlocksToClipboard(selectedBlocks, e.clipboardData);
+      if (!copied) return;
+      deleteSelection();
+      onShowToast && onShowToast('Cut block markdown');
+    };
+    const onPaste = (e) => {
+      if (!isInsideOutliner(e.target) || isFormField(e.target)) return;
+      const pasted = parseClipboardBlocks(e.clipboardData, { allowSingle: true });
+      if (!pasted.length) return;
+      e.preventDefault();
+      const current = selectionRef.current;
+      const targetId = current?.kind === 'blocks' && current.blockIds?.length
+        ? current.blockIds[current.blockIds.length - 1]
+        : focusIdRef.current;
+      insertBlocksAfter(targetId, pasted);
+    };
+    document.addEventListener('copy', onCopy);
+    document.addEventListener('cut', onCut);
+    document.addEventListener('paste', onPaste);
+    return () => {
+      document.removeEventListener('copy', onCopy);
+      document.removeEventListener('cut', onCut);
+      document.removeEventListener('paste', onPaste);
+    };
+  });
 
   const parseAiBlocks = (text) => {
     const parsed = mnMdToBlocks(String(text || '').trim());
@@ -2280,6 +2617,11 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
     onBeginContentEdit,
     onEndContentEdit,
     editorFontSize: fontSize,
+    indentGuides,
+    spellCheck,
+    autoLink,
+    collapseByDefault,
+    parseClipboardBlocks,
   };
 
   // Find zoomed block.
@@ -2472,6 +2814,9 @@ function MnOutliner({ blocks, setBlocks, allNotes, onOpen, onTagClick, T, zoomBl
             navigator.clipboard?.writeText(e);
             onShowToast && onShowToast(`Copied embed: ${e}`);
           }}
+          onCopyBlock={() => copyContextBlocks(ctxBlock.id)}
+          onCutBlock={() => cutContextBlocks(ctxBlock.id)}
+          onPasteAfter={() => pasteContextBlocksAfter(ctxBlock.id)}
           onZoom={() => onZoomBlock && onZoomBlock(ctxBlock.id)}
           onIndent={() => onIndent(ctxBlock.id)}
           onOutdent={() => onOutdent(ctxBlock.id)}

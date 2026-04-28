@@ -1,4 +1,4 @@
-// Sidebar pane: tags, Today, todos count, settings.
+// Sidebar pane: tags, daily rollup, todos count, settings.
 const { useMemo: useMemoS } = React;
 
 function MnSidebar({
@@ -48,11 +48,7 @@ function MnSidebar({
     return acc + m.length;
   }, 0);
 
-  const todayCount = notes.filter(n => {
-    const d = new Date(n.date);
-    const t = new Date();
-    return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth();
-  }).length;
+  const rollupCount = notes.length;
 
   const submitTag = () => {
     const name = newTagName.trim();
@@ -352,7 +348,7 @@ function MnSidebar({
           <Row icon={iconInbox} label="All notes" count={notes.length}
                active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive}
                onClick={() => onSelectTag(null)} />
-          <Row icon={iconToday} label="Today" count={todayCount}
+          <Row icon={iconToday} label="Daily rollup" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
           <Row icon={iconTodos} label="Todos" count={openTodos}
                active={todosActive}

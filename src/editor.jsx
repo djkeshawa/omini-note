@@ -10,6 +10,7 @@ function MnEditor({
   onToggleSidebar, sidebarHidden,
   onToggleNoteList, noteListHidden,
   editorWidth = 'medium', fontSize = 'default',
+  indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
   theme, T,
 }) {
   const HAS_DISK_E = typeof window !== 'undefined' && !!window.mn;
@@ -282,6 +283,10 @@ function MnEditor({
             }}
             onTagClick={onOpenTag}
             fontSize={fontSize}
+            indentGuides={indentGuides}
+            spellCheck={spellCheck}
+            autoLink={autoLink}
+            collapseByDefault={collapseByDefault}
             T={T}
           />
 

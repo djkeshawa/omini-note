@@ -340,9 +340,7 @@ function SectionReminders({ tweaks, setTweak, T }) {
           options={[{ value: '5', label: '5m' }, { value: '15', label: '15m' }, { value: '60', label: '1h' }, { value: '1440', label: '1d' }]} />
       </Row>
       <Row T={T} label="Week starts on" sub="Affects calendar picker for reminders.">
-        <Segmented T={T} value={tweaks.weekStart || 'monday'}
-          onChange={v => setTweak('weekStart', v)}
-          options={[{ value: 'sunday', label: 'Sun' }, { value: 'monday', label: 'Mon' }]} />
+        <StaticValue T={T}>No calendar picker yet</StaticValue>
       </Row>
     </div>
   );
@@ -588,17 +586,13 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
         </div>
       </Row>
       <Row T={T} label="Auto-save" sub="Persist changes to disk as you type.">
-        <Toggle T={T} checked={tweaks.autoSave !== false} onChange={v => setTweak('autoSave', v)} />
+        <StaticValue T={T}>Always on</StaticValue>
       </Row>
       <Row T={T} label="Storage format" sub="Every note is saved as a standalone file.">
-        <Segmented T={T} value={tweaks.storageFormat || 'markdown'}
-          onChange={v => setTweak('storageFormat', v)}
-          options={[{ value: 'markdown', label: 'Markdown' }, { value: 'mdx', label: 'MDX' }]} />
+        <StaticValue T={T}>Markdown</StaticValue>
       </Row>
       <Row T={T} label="Sync backend" sub="Keep notes in sync across devices.">
-        <Segmented T={T} value={tweaks.sync || 'local'}
-          onChange={v => setTweak('sync', v)}
-          options={[{ value: 'local', label: 'Local only' }, { value: 'icloud', label: 'iCloud' }, { value: 'custom', label: 'Custom' }]} />
+        <StaticValue T={T}>Local only</StaticValue>
       </Row>
       <Row T={T} label="Delete current vault" sub={canDeleteVault ? "Permanently remove this vault and every note file inside it." : "Create another vault before deleting this one."}>
         <BtnOutline
@@ -675,6 +669,21 @@ function BtnOutline({ T, children, danger, disabled, onClick }) {
       fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500,
       opacity: disabled ? 0.62 : 1,
     }}>{children}</button>
+  );
+}
+
+function StaticValue({ T, children }) {
+  return (
+    <span style={{
+      padding: '5px 10px',
+      borderRadius: 5,
+      border: `1px solid ${T.lineSub}`,
+      background: T.bgSub,
+      color: T.inkMed,
+      fontFamily: 'var(--mn-ui)',
+      fontSize: 12,
+      whiteSpace: 'nowrap',
+    }}>{children}</span>
   );
 }
 
