@@ -616,6 +616,12 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
       setContextMenu({ kind: 'element', id: el.id, ids, x: e.clientX, y: e.clientY });
       return;
     }
+    if (e.button === 0 && tool !== 'select') {
+      setContextMenu(null);
+      setSelectedIds([]);
+      beginCreate(e, toCanvasPoint(e));
+      return;
+    }
     if (e.button !== 0 || tool !== 'select') return;
     setContextMenu(null);
     if (e.shiftKey) {
