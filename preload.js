@@ -13,11 +13,16 @@ contextBridge.exposeInMainWorld('mn', {
   loadVault: (vaultId) => ipcRenderer.invoke('mn:loadVault', vaultId),
   saveNote: (vaultId, note) => ipcRenderer.invoke('mn:saveNote', vaultId, note),
   deleteNote: (vaultId, noteId) => ipcRenderer.invoke('mn:deleteNote', vaultId, noteId),
+  listCanvases: (vaultId) => ipcRenderer.invoke('mn:listCanvases', vaultId),
+  getCanvas: (vaultId, canvasId) => ipcRenderer.invoke('mn:getCanvas', vaultId, canvasId),
+  saveCanvas: (vaultId, canvas) => ipcRenderer.invoke('mn:saveCanvas', vaultId, canvas),
+  deleteCanvas: (vaultId, canvasId) => ipcRenderer.invoke('mn:deleteCanvas', vaultId, canvasId),
   saveVaultMeta: (vaultId, patch) => ipcRenderer.invoke('mn:saveVaultMeta', vaultId, patch),
 
   // Prefs
   getPrefs: () => ipcRenderer.invoke('mn:getPrefs'),
   setPrefs: (patch) => ipcRenderer.invoke('mn:setPrefs', patch),
+  spellcheck: (words) => ipcRenderer.invoke('mn:spellcheck', words),
 
   // Search / backlinks / tags (SQLite-backed)
   search:      (vaultId, query, limit) => ipcRenderer.invoke('mn:search', vaultId, query, limit),

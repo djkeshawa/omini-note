@@ -9,6 +9,99 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 const APP_ICON_PATH = path.join(__dirname, 'assets', 'omini-note-icon.svg');
+const SPELL_DICTIONARY_PATHS = [
+  '/usr/share/dict/american-english',
+  '/usr/share/dict/british-english',
+  '/usr/share/hunspell/en_US.dic',
+  '/usr/share/hunspell/en_GB.dic',
+];
+let spellWords = null;
+let spellWordBuckets = null;
+const spellSuggestionCache = new Map();
+
+const COMMON_SPELL_WORDS = [
+  'about', 'after', 'again', 'also', 'because', 'block', 'blocks', 'calendar',
+  'check', 'checker', 'code', 'correct', 'document', 'editor', 'feature',
+  'features', 'highlight', 'language', 'markdown', 'misspelled', 'note',
+  'notes', 'notification', 'notifications', 'programming', 'reminder',
+  'reminders', 'settings', 'spell', 'spelling', 'suggestion', 'suggestions',
+  'syntax', 'text', 'their', 'there', 'these', 'this', 'typing', 'with',
+  'word', 'words', 'working',
+];
+
+function normalizeSpellWord(word) {
+  return String(word || '').toLowerCase().replace(/^[^a-z']+|[^a-z']+$/g, '');
+}
+
+function loadSpellWords() {
+  if (spellWords) return spellWords;
+  const words = new Set(COMMON_SPELL_WORDS);
+  for (const file of SPELL_DICTIONARY_PATHS) {
+    try {
+      const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+      for (const line of lines) {
+        const raw = line.replace(/\/.*$/, '').trim();
+        const word = normalizeSpellWord(raw);
+        if (word.length >= 2 && /^[a-z][a-z']*$/.test(word)) words.add(word);
+      }
+    } catch (e) {}
+  }
+  spellWordBuckets = new Map();
+  for (const word of words) {
+    const first = word[0] || '';
+    if (!spellWordBuckets.has(first)) spellWordBuckets.set(first, []);
+    spellWordBuckets.get(first).push(word);
+  }
+  spellWords = words;
+  return spellWords;
+}
+
+function spellDistance(a, b) {
+  const alen = a.length, blen = b.length;
+  if (Math.abs(alen - blen) > 2) return 99;
+  const prev = Array.from({ length: blen + 1 }, (_, i) => i);
+  for (let i = 1; i <= alen; i++) {
+    let last = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= blen; j++) {
+      const old = prev[j];
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, last + cost);
+      last = old;
+    }
+  }
+  return prev[blen];
+}
+
+function spellSuggestions(word, dictionary) {
+  if (spellSuggestionCache.has(word)) return spellSuggestionCache.get(word);
+  const first = word[0];
+  const maxDistance = word.length <= 5 ? 1 : 2;
+  const scored = [];
+  const candidates = spellWordBuckets?.get(first) || dictionary;
+  for (const candidate of candidates) {
+    if (Math.abs(candidate.length - word.length) > maxDistance) continue;
+    const distance = spellDistance(word, candidate);
+    if (distance <= maxDistance) scored.push({ candidate, distance });
+  }
+  const suggestions = scored
+    .sort((a, b) => a.distance - b.distance || a.candidate.length - b.candidate.length || a.candidate.localeCompare(b.candidate))
+    .slice(0, 5)
+    .map(item => item.candidate);
+  spellSuggestionCache.set(word, suggestions);
+  return suggestions;
+}
+
+function spellcheckWords(inputWords = []) {
+  const dictionary = loadSpellWords();
+  const result = {};
+  for (const raw of inputWords) {
+    const word = normalizeSpellWord(raw);
+    if (!word || word.length < 3 || dictionary.has(word)) continue;
+    result[word] = spellSuggestions(word, dictionary);
+  }
+  return result;
+}
 
 function createFallbackIcon() {
   const svg = `
@@ -81,6 +174,18 @@ function attachEditContextMenu(win) {
     const template = [];
 
     if (params.isEditable) {
+      const suggestions = Array.isArray(params.dictionarySuggestions)
+        ? params.dictionarySuggestions.slice(0, 5)
+        : [];
+      if (params.misspelledWord && suggestions.length) {
+        suggestions.forEach(word => {
+          template.push({
+            label: word,
+            click: () => win.webContents.replaceMisspelling(word),
+          });
+        });
+        template.push({ type: 'separator' });
+      }
       template.push(
         { label: 'Undo', role: 'undo', enabled: !!flags.canUndo },
         { label: 'Redo', role: 'redo', enabled: !!flags.canRedo },
@@ -92,6 +197,15 @@ function attachEditContextMenu(win) {
         { type: 'separator' },
         { label: 'Select All', role: 'selectAll', enabled: !!flags.canSelectAll }
       );
+      if (params.misspelledWord) {
+        template.push(
+          { type: 'separator' },
+          {
+            label: `Add "${params.misspelledWord}" to Dictionary`,
+            click: () => win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+          }
+        );
+      }
     } else if (params.selectionText) {
       template.push(
         { label: 'Copy', role: 'copy', enabled: !!flags.canCopy },
@@ -117,9 +231,19 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: true,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  const spellSession = win.webContents.session;
+  spellSession.setSpellCheckerEnabled(true);
+  const spellLanguages = spellSession.availableSpellCheckerLanguages || [];
+  const spellLanguage = spellLanguages.includes('en-US')
+    ? 'en-US'
+    : spellLanguages.includes('en-GB')
+    ? 'en-GB'
+    : spellLanguages.find(lang => /^en[-_]/i.test(lang));
+  if (spellLanguage) spellSession.setSpellCheckerLanguages([spellLanguage]);
 
   win.loadFile('OminiNote.html');
   mainWindow = win;
@@ -182,11 +306,16 @@ ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId) => {
   await store.deleteNote(vaultId, noteId);
   idx.removeNote(vaultId, noteId);
 }));
+ipcMain.handle('mn:listCanvases',   wrap(store.listCanvases));
+ipcMain.handle('mn:getCanvas',      wrap(store.getCanvas));
+ipcMain.handle('mn:saveCanvas',     wrap(store.saveCanvas));
+ipcMain.handle('mn:deleteCanvas',   wrap(store.deleteCanvas));
 ipcMain.handle('mn:saveVaultMeta',  wrap(store.saveVaultMeta));
 
 // Prefs
 ipcMain.handle('mn:getPrefs',       wrap(store.getPrefs));
 ipcMain.handle('mn:setPrefs',       wrap(store.setPrefs));
+ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
 
 // Search / backlinks / tags (SQLite-backed)
 ipcMain.handle('mn:search',         wrap((vaultId, query, limit) => idx.search(vaultId, query, limit)));

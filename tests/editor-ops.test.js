@@ -2,9 +2,26 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const ops = require('../src/editorOps.js');
 const tableOps = require('../src/tableOps.js');
+
+function loadOutlineForTest() {
+  const code = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
+  const sandbox = {
+    React: {
+      useState() {},
+      useEffect() {},
+      useRef() {},
+      useCallback() {},
+      useMemo() {},
+    },
+    window: { MN_TABLE_OPS: tableOps },
+  };
+  vm.runInNewContext(code, sandbox);
+  return sandbox.window.MN_OUTLINE;
+}
 
 function block(content, annotations = []) {
   return { id: Math.random().toString(36).slice(2), content, annotations, children: [] };
@@ -298,6 +315,152 @@ test('Table blocks are parsed, rendered, copied, and pasted as formatted markdow
   assert.match(outliner, /onInsertBlocksAt/);
 });
 
+test('Code blocks preserve language metadata and expose syntax UI', () => {
+  const outlineApi = loadOutlineForTest();
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+
+  const blocks = outlineApi.mnMdToBlocks('```js\nconst answer = 42;\n```');
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].kind, 'code');
+  assert.equal(blocks[0].language, 'javascript');
+  assert.equal(blocks[0].content, 'const answer = 42;');
+  assert.equal(outlineApi.mnBlocksToMd(blocks), '```javascript\nconst answer = 42;\n```');
+
+  assert.match(outliner, /const MN_CODE_LANGUAGES = \[/);
+  assert.match(outliner, /value: 'javascript'/);
+  assert.match(outliner, /function mnRenderCode/);
+  assert.match(outliner, /<select[\s\S]+Code language/);
+  assert.match(outliner, /mnRenderCode\(content, block\.language, T\)/);
+});
+
+test('Reminder center and spellcheck wiring are visible in app shell', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+
+  assert.match(app, /function MnReminderCenter/);
+  assert.match(app, /className="mn-reminder-center"/);
+  assert.match(app, /mnCollectReminderItems\(notesWithBody\)/);
+  assert.match(app, /reminderDueCount/);
+  assert.match(app, /Reminder notifications/);
+  assert.match(app, /setReminderCenterOpen\(false\)/);
+  assert.match(app, /const visibleItems = items/);
+  assert.doesNotMatch(app, /items\.slice\(0, 12\)/);
+  assert.match(editor, /padding: '14px 76px 10px 28px'/);
+
+  assert.match(editor, /spellCheck=\{spellCheck\}/);
+  assert.match(outliner, /spellCheck=\{block\.kind === 'code' \? false : spellCheck\}/);
+  assert.match(panels, /<button onClick=\{onDismiss\}[\s\S]*>✕<\/button>/);
+  assert.match(panels, /<button onClick=\{onSnooze \|\| onDismiss\}[\s\S]*>Snooze<\/button>/);
+});
+
+test('Canvas workspace is wired through storage, navigation, and note embeds', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
+
+  assert.match(html, /src="src\/canvas\.jsx"/);
+  assert.match(store, /function canvasDir\(slug\)/);
+  assert.match(store, /async function listCanvases\(vaultId\)/);
+  assert.match(store, /async function saveCanvas\(vaultId, canvas\)/);
+  assert.match(store, /async function deleteCanvas\(vaultId, canvasId\)/);
+  assert.match(main, /ipcMain\.handle\('mn:listCanvases'/);
+  assert.match(main, /ipcMain\.handle\('mn:getCanvas'/);
+  assert.match(preload, /listCanvases: \(vaultId\) => ipcRenderer\.invoke\('mn:listCanvases', vaultId\)/);
+  assert.match(preload, /saveCanvas: \(vaultId, canvas\) => ipcRenderer\.invoke\('mn:saveCanvas', vaultId, canvas\)/);
+  assert.match(sidebar, /label="Canvas"/);
+  assert.match(sidebar, /canvasActive/);
+  assert.match(app, /const \[canvases, setCanvases\]/);
+  assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
+  assert.match(app, /window\.mn\.listCanvases\(activeId\)/);
+  assert.match(app, /view === 'canvas'/);
+  assert.match(app, /<MnCanvasPanel/);
+  assert.match(editor, /allCanvases=\{canvases\}/);
+  assert.match(outliner, /id: 'canvas'/);
+  assert.match(outliner, /\{\{canvas/);
+  assert.match(outliner, /<MnCanvasPicker/);
+  assert.match(outliner, /<MnCanvasEmbed/);
+  assert.match(canvas, /const MN_CANVAS_TOOLS = \[/);
+  assert.match(canvas, /function MnCanvasPanel/);
+  assert.match(canvas, /function MnCanvasEditor/);
+  assert.match(canvas, /function MnCanvasEmbed/);
+});
+
+test('Canvas editor supports expected drawing, color, clipboard, and delete interactions', () => {
+  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
+
+  assert.match(canvas, /id: 'pen'/);
+  assert.match(canvas, /id: 'arrow'/);
+  assert.match(canvas, /id: 'diamond'/);
+  assert.match(canvas, /id: 'triangle'/);
+  assert.match(canvas, /id: 'eraser'/);
+  assert.match(canvas, /function MnCanvasToolIcon/);
+  assert.match(canvas, /aria-label=\{tool\.label\}/);
+  assert.match(canvas, /mnCanvasIconToolButton/);
+  assert.match(canvas, /function MnCanvasContextMenu/);
+  assert.match(canvas, /onContextMenu=\{\(e\) => e\.preventDefault\(\)\}/);
+  assert.match(canvas, /Delete object/);
+  assert.match(canvas, /copyElements/);
+  assert.match(canvas, /pasteElements/);
+  assert.match(canvas, /navigator\.clipboard/);
+  assert.match(canvas, /key === 'c'/);
+  assert.match(canvas, /key === 'x'/);
+  assert.match(canvas, /key === 'v'/);
+  assert.match(canvas, /x2: point\.x/);
+  assert.match(canvas, /y2: point\.y/);
+  assert.match(canvas, /points: \[/);
+  assert.match(canvas, /mnCanvasArrowHead/);
+  assert.match(canvas, /element\.type === 'diamond'/);
+  assert.match(canvas, /element\.type === 'triangle'/);
+  assert.match(canvas, /tool === 'eraser'/);
+  assert.match(canvas, /function MnCanvasColorControl/);
+  assert.match(canvas, /type="color"/);
+  assert.match(canvas, /applyColor\('stroke'/);
+  assert.match(canvas, /applyColor\('fill'/);
+  assert.match(canvas, /function MnCanvasDeleteDialog/);
+  assert.match(canvas, /role="dialog"/);
+  assert.doesNotMatch(canvas, /window\.confirm\('Delete this canvas\?'\)/);
+  assert.match(canvas, /setPointerCapture/);
+  assert.match(canvas, /releasePointerCapture/);
+  assert.match(canvas, /rootRef\.current\?\.focus\(\)/);
+  assert.match(canvas, /saveTitle\(\); onBack && onBack\(\)/);
+  assert.doesNotMatch(canvas, /if \(action\.mode === 'create'\) setTool\('select'\)/);
+  assert.match(canvas, /const \[selectedIds, setSelectedIds\]/);
+  assert.match(canvas, /function mnCanvasSelectionBounds/);
+  assert.match(canvas, /function mnCanvasMoveElement/);
+  assert.match(canvas, /const undoCanvas = \(\) =>/);
+  assert.match(canvas, /const redoCanvas = \(\) =>/);
+  assert.match(canvas, /isMod && key === 'z'/);
+  assert.match(canvas, /isMod && key === 'y'/);
+  assert.match(canvas, /const \[marquee, setMarquee\]/);
+  assert.match(canvas, /mode: 'marquee'/);
+  assert.match(canvas, /function MnCanvasResizeHandles/);
+  assert.match(canvas, /mode: 'resize'/);
+  assert.match(canvas, /alignSelected\('left'\)/);
+  assert.match(canvas, /distributeSelected\('x'\)/);
+  assert.match(canvas, /const fitToScreen = \(\) =>/);
+  assert.match(canvas, /const \[spaceDown, setSpaceDown\]/);
+  assert.match(canvas, /mode: 'pan'/);
+  assert.match(canvas, /const \[editingTextId, setEditingTextId\]/);
+  assert.match(canvas, /<textarea/);
+  assert.match(canvas, /svg\.createSVGPoint\(\)/);
+  assert.match(canvas, /screenMatrix\.inverse\(\)/);
+  assert.match(canvas, /const showSelectionUi = tool === 'select'/);
+  assert.match(canvas, /selected=\{showSelectionUi && selectedIds\.includes\(el\.id\)\}/);
+  assert.match(canvas, /e\.button === 0 && tool !== 'select'/);
+  assert.match(canvas, /beginCreate\(e, toCanvasPoint\(e\)\)/);
+
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  assert.match(app, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
+});
+
 test('Selection toolbar closes on outside click and keeps overflow actions in More', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
 
@@ -347,8 +510,11 @@ test('Launch screen uses OminiNote pastel blooming light design', () => {
   assert.match(html, /mn-word-omni">Omini/);
   assert.match(html, /mn-word-note">Note/);
   assert.match(html, /Capture<\/span><i><\/i><span>Organize<\/span><i><\/i><span>Remember/);
-  assert.match(html, /@keyframes mnBootLogoTrace/);
-  assert.match(html, /@keyframes mnBootWordGlow/);
+  assert.doesNotMatch(html, /@keyframes mnBootLogoTrace/);
+  assert.doesNotMatch(html, /@keyframes mnBootLogoGlow/);
+  assert.doesNotMatch(html, /@keyframes mnBootWordGlow/);
+  assert.doesNotMatch(html, /mnBootLogoFloat/);
+  assert.doesNotMatch(html, /mnBootWordGlow/);
   assert.match(html, /Connecting your workspace/);
   assert.match(app, /function MnBootLogo/);
   assert.match(app, /className="mn-boot-title mn-boot-wordmark"/);
@@ -396,7 +562,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /mnCollectReminderItems\(notesWithBody\)/);
   assert.match(app, /mnWriteSnoozedReminder/);
 
-  assert.match(outliner, /spellCheck=\{spellCheck\}/);
+  assert.match(outliner, /spellCheck=\{block\.kind === 'code' \? false : spellCheck\}/);
   assert.match(outliner, /indentGuides && Array\.from/);
   assert.match(outliner, /autoLink \? before\.match/);
   assert.match(outliner, /collapseByDefault && cmd\.kind === 'heading'/);
@@ -438,6 +604,14 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(main, /function attachEditContextMenu\(win\)/);
   assert.match(main, /webContents\.on\('context-menu'/);
   assert.match(main, /params\.isEditable/);
+  assert.match(main, /dictionarySuggestions/);
+  assert.match(main, /replaceMisspelling\(word\)/);
+  assert.match(main, /addWordToSpellCheckerDictionary\(params\.misspelledWord\)/);
+  assert.match(main, /spellcheck: true/);
+  assert.match(main, /setSpellCheckerEnabled\(true\)/);
+  assert.match(main, /availableSpellCheckerLanguages/);
+  assert.match(main, /setSpellCheckerLanguages\(\[spellLanguage\]\)/);
+  assert.match(main, /ipcMain\.handle\('mn:spellcheck'/);
   assert.match(main, /role: 'cut'/);
   assert.match(main, /role: 'copy'/);
   assert.match(main, /role: 'paste'/);
@@ -450,6 +624,22 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(icon, /strokeBrain/);
   assert.match(icon, /softGlow/);
   assert.match(html, /href="assets\/omini-note-icon\.svg"/);
+});
+
+test('Fallback spell checker underlines misspellings and offers replacements', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+
+  assert.match(main, /function spellcheckWords/);
+  assert.match(main, /SPELL_DICTIONARY_PATHS/);
+  assert.match(main, /spellSuggestions\(word, dictionary\)/);
+  assert.match(preload, /spellcheck: \(words\) => ipcRenderer\.invoke\('mn:spellcheck', words\)/);
+  assert.match(outliner, /function mnRenderSpellCheckedText/);
+  assert.match(outliner, /textDecorationStyle: 'wavy'/);
+  assert.match(outliner, /MnSpellSuggestionMenu/);
+  assert.match(outliner, /window\.mn\.spellcheck\(words\)/);
+  assert.match(outliner, /applySpellSuggestion/);
 });
 
 test('Block clipboard preserves multi-block formatting for copy cut paste', () => {

@@ -77,23 +77,6 @@
       transform: translate(-50%, -50%) scale(1);
     }
   }
-  @keyframes mnBootLogoFloat {
-    0%, 100% { transform: translate3d(0, 0, 0); }
-    50% { transform: translate3d(0, -8px, 0); }
-  }
-  @keyframes mnBootLogoTrace {
-    0% { stroke-dashoffset: 100; opacity: 0.42; }
-    42% { opacity: 1; }
-    100% { stroke-dashoffset: 0; opacity: 0.82; }
-  }
-  @keyframes mnBootLogoGlow {
-    0%, 100% { opacity: 0.44; transform: scale(0.98); }
-    50% { opacity: 0.9; transform: scale(1.03); }
-  }
-  @keyframes mnBootWordGlow {
-    0%, 100% { text-shadow: 0 0 18px rgba(146,164,255,0.24), 0 0 28px rgba(255,154,144,0.08); }
-    50% { text-shadow: 0 0 26px rgba(146,164,255,0.46), 0 0 34px rgba(255,154,144,0.28); }
-  }
   .mn-boot-splash {
     position: fixed;
     inset: 0;
@@ -173,7 +156,6 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    animation: mnBootLogoFloat 6.4s ease-in-out infinite;
   }
   .mn-boot-logo {
     width: 216px;
@@ -186,20 +168,13 @@
     vector-effect: non-scaling-stroke;
   }
   .mn-logo-aura {
-    fill: none;
-    stroke-width: 18;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    opacity: 0.48;
-    animation: mnBootLogoGlow 5.4s ease-in-out infinite;
+    display: none;
   }
   .mn-logo-line {
     fill: none;
     stroke-width: 7;
     stroke-linecap: round;
     stroke-linejoin: round;
-    stroke-dasharray: 100;
-    animation: mnBootLogoTrace 2.8s ease-in-out infinite alternate;
   }
   .mn-logo-line-soft {
     opacity: 0.76;
@@ -209,7 +184,6 @@
     display: flex;
     align-items: baseline;
     justify-content: center;
-    animation: mnBootWordGlow 5.2s ease-in-out infinite;
   }
   .mn-word-omni {
     color: #243047;
@@ -232,14 +206,12 @@
     letter-spacing: 0.22em;
     text-transform: uppercase;
     color: #26354f;
-    text-shadow: 0 0 18px rgba(255,255,255,0.78), 0 0 16px rgba(154,166,255,0.22);
   }
   .mn-boot-tagline i {
     width: 8px;
     height: 8px;
     border-radius: 999px;
     background: linear-gradient(135deg, #9d98ff, #a6bcff);
-    box-shadow: 0 0 14px rgba(157,152,255,0.62);
   }
   .mn-boot-subtitle {
     position: relative;
@@ -330,6 +302,7 @@
 <script type="text/babel" src="src/notelist.jsx"></script>
 <script type="text/babel" src="src/editor.jsx"></script>
 <script type="text/babel" src="src/panels.jsx"></script>
+<script type="text/babel" src="src/canvas.jsx"></script>
 <script type="text/babel" src="src/settings.jsx"></script>
 <script type="text/babel" src="src/ai.jsx"></script>
 <script type="text/babel" src="src/app.jsx"></script>

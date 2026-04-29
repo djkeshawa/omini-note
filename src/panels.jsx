@@ -1278,7 +1278,7 @@ function MnReminderToast({ toast, onDismiss, onSnooze, onOpen, T, variant }) {
         </svg>
         Reminder
         <div style={{ flex: 1 }} />
-        <button onClick={onSnooze || onDismiss} style={{
+        <button onClick={onDismiss} style={{
           background: 'none', border: 'none', cursor: 'pointer',
           color: T.inkDim, padding: 0, fontSize: 14,
         }}>✕</button>
@@ -1297,7 +1297,7 @@ function MnReminderToast({ toast, onDismiss, onSnooze, onOpen, T, variant }) {
           background: T.ink, color: T.bg, border: 'none',
           fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500,
         }}>Open note</button>
-        <button onClick={onDismiss} style={{
+        <button onClick={onSnooze || onDismiss} style={{
           padding: '5px 10px', borderRadius: 5, cursor: 'pointer',
           background: T.bg, color: T.inkMed, border: `1px solid ${T.line}`,
           fontFamily: 'var(--mn-ui)', fontSize: 12,

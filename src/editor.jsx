@@ -4,6 +4,7 @@ const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useE
 
 function MnEditor({
   note, notes, tags, links, vaultId,
+  canvases = [], onOpenCanvas, onCreateCanvas,
   onOpen, onOpenTag,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
   onPinToggle, onDelete, onOpenGraph, onBack,
@@ -98,7 +99,7 @@ function MnEditor({
     }}>
       {/* Toolbar */}
       <div style={{
-        padding: '14px 28px 10px', display: 'flex', alignItems: 'center', gap: 8,
+        padding: '14px 76px 10px 28px', display: 'flex', alignItems: 'center', gap: 8,
       }}>
         {onBack && (
           <button onClick={onBack} title="Back to previous view" style={iconBtn(T)}>
@@ -156,6 +157,7 @@ function MnEditor({
           <input
             value={note.title}
             onChange={(e) => onTitleChange(e.target.value)}
+            spellCheck={spellCheck}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
                 e.preventDefault();
@@ -264,6 +266,7 @@ function MnEditor({
             blocks={note.blocks || []}
             setBlocks={setBlocks}
             allNotes={notes}
+            allCanvases={canvases}
             noteTitle={note.title}
             zoomBlockId={zoomBlockId}
             onZoomBlock={setZoomBlockId}
@@ -282,6 +285,8 @@ function MnEditor({
               if (target) onOpen(target.id);
             }}
             onTagClick={onOpenTag}
+            onOpenCanvas={onOpenCanvas}
+            onCreateCanvas={onCreateCanvas}
             fontSize={fontSize}
             indentGuides={indentGuides}
             spellCheck={spellCheck}
