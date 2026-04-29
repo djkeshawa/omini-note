@@ -380,8 +380,22 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   };
 
   const toCanvasPoint = (event) => {
-    const rect = svgRef.current.getBoundingClientRect();
+    const svg = svgRef.current;
     const viewport = draftRef.current.viewport || { x: 0, y: 0, scale: 1 };
+    if (svg?.createSVGPoint && svg?.getScreenCTM) {
+      const screenMatrix = svg.getScreenCTM();
+      if (screenMatrix) {
+        const point = svg.createSVGPoint();
+        point.x = event.clientX;
+        point.y = event.clientY;
+        const svgPoint = point.matrixTransform(screenMatrix.inverse());
+        return {
+          x: (svgPoint.x - viewport.x) / viewport.scale,
+          y: (svgPoint.y - viewport.y) / viewport.scale,
+        };
+      }
+    }
+    const rect = svg.getBoundingClientRect();
     return {
       x: (event.clientX - rect.left - viewport.x) / viewport.scale,
       y: (event.clientY - rect.top - viewport.y) / viewport.scale,
@@ -804,6 +818,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const activeFill = selectedElement?.fill || style.fill;
   const activeStrokeWidth = selectedElement?.strokeWidth || style.strokeWidth;
   const editingOrigin = editingElement ? canvasPointToScreen({ x: editingElement.x || 0, y: editingElement.y || 0 }) : null;
+  const showSelectionUi = tool === 'select';
 
   return (
     <div
@@ -943,13 +958,13 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
               <MnCanvasElement
                 key={el.id}
                 element={el}
-                selected={selectedIds.includes(el.id)}
+                selected={showSelectionUi && selectedIds.includes(el.id)}
                 onPointerDown={(e) => onElementDown(e, el)}
                 onDoubleClick={() => editText(el)}
                 T={T}
               />
             ))}
-            {selectedIds.length > 1 && selectionBounds && (
+            {showSelectionUi && selectedIds.length > 1 && selectionBounds && (
               <rect
                 x={selectionBounds.x - 6}
                 y={selectionBounds.y - 6}
@@ -962,7 +977,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
                 pointerEvents="none"
               />
             )}
-            {selectedIds.length === 1 && selectedElement && !['line', 'arrow', 'pen'].includes(selectedElement.type) && (
+            {showSelectionUi && selectedIds.length === 1 && selectedElement && !['line', 'arrow', 'pen'].includes(selectedElement.type) && (
               <MnCanvasResizeHandles bounds={mnCanvasBounds(selectedElement)} onPointerDown={onResizeDown} T={T} />
             )}
             {marquee && (

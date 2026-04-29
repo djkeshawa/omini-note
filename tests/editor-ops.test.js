@@ -450,6 +450,10 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvas, /mode: 'pan'/);
   assert.match(canvas, /const \[editingTextId, setEditingTextId\]/);
   assert.match(canvas, /<textarea/);
+  assert.match(canvas, /svg\.createSVGPoint\(\)/);
+  assert.match(canvas, /screenMatrix\.inverse\(\)/);
+  assert.match(canvas, /const showSelectionUi = tool === 'select'/);
+  assert.match(canvas, /selected=\{showSelectionUi && selectedIds\.includes\(el\.id\)\}/);
 
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   assert.match(app, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
