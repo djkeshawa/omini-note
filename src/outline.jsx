@@ -185,6 +185,7 @@ function mnBlocksToMd(blocks, depth = 0) {
   for (const b of blocks) {
     if (b.kind === 'heading') {
       out.push('#'.repeat(b.level || 1) + ' ' + wfPrefix(b) + b.content);
+      if (b.children.length) out.push(mnBlocksToMd(b.children, depth + 1));
     } else if (b.kind === 'quote') {
       out.push('> ' + wfPrefix(b) + b.content);
     } else if (b.kind === 'divider') {

@@ -34,6 +34,273 @@ const MN_TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "sync": "local"
 }/*EDITMODE-END*/;
 
+const MN_NOVELIST_TAGS = [
+  { name: 'novel-manuscript', hue: 250 },
+  { name: 'novel-arc', hue: 30 },
+  { name: 'novel-chapter', hue: 220 },
+  { name: 'novel-scene', hue: 190 },
+  { name: 'novel-character', hue: 330 },
+  { name: 'novel-location', hue: 145 },
+  { name: 'novel-plot', hue: 35 },
+  { name: 'novel-research', hue: 280 },
+];
+
+const MN_NOVELIST_WORKFLOW_STATES = [
+  { id: 'IDEA', next: 'OUTLINE', color: 'oklch(0.55 0.17 35)', bg: 'oklch(0.96 0.04 35)' },
+  { id: 'OUTLINE', next: 'DRAFT', color: 'oklch(0.55 0.15 250)', bg: 'oklch(0.95 0.04 250)' },
+  { id: 'DRAFT', next: 'REVISE', color: 'oklch(0.55 0.14 205)', bg: 'oklch(0.95 0.04 205)' },
+  { id: 'REVISE', next: 'FINAL', color: 'oklch(0.55 0.16 290)', bg: 'oklch(0.95 0.04 290)' },
+  { id: 'FINAL', next: null, color: 'oklch(0.55 0.15 145)', bg: 'oklch(0.95 0.04 145)' },
+];
+
+const MN_NOVELIST_STARTERS = [
+  {
+    title: 'Manuscript',
+    tags: ['novel-manuscript'],
+    body: '# Manuscript\n- [[Arc 1]]\n  - [[Chapter 1]]\n    - [[Scene 1]]\n- Add arcs, chapters, and scenes here as the draft grows.',
+  },
+  {
+    title: 'Arc 1',
+    tags: ['novel-arc'],
+    body: '# Arc 1\n- purpose:: \n- [[Chapter 1]]\n- OUTLINE Major turn\n- REVISE Open questions',
+  },
+  {
+    title: 'Chapter 1',
+    tags: ['novel-chapter'],
+    body: '# Chapter 1\n- arc:: [[Arc 1]]\n- [[Scene 1]]\n- OUTLINE Chapter goal\n- DRAFT Scene list\n- REVISE Revision notes',
+  },
+  {
+    title: 'Scene 1',
+    tags: ['novel-scene'],
+    body: '# Scene 1\n- arc:: [[Arc 1]]\n- chapter:: [[Chapter 1]]\n- pov:: \n- purpose:: \n- DRAFT Draft the scene here.',
+  },
+  {
+    title: 'Characters',
+    tags: ['novel-character'],
+    body: '# Characters\n- Create one note per major character.\n- Track goals, secrets, relationships, and changes.',
+  },
+  {
+    title: 'Locations',
+    tags: ['novel-location'],
+    body: '# Locations\n- Capture places, sensory details, constraints, and recurring imagery.',
+  },
+  {
+    title: 'Plot Threads',
+    tags: ['novel-plot'],
+    body: '# Plot Threads\n- IDEA Main promise of the story\n- OUTLINE Act turns\n- REVISE Open continuity questions',
+  },
+  {
+    title: 'Research',
+    tags: ['novel-research'],
+    body: '# Research\n- Sources, facts, questions, and reminders that support the novel.',
+  },
+];
+
+function mnNovelistNoteId(title) {
+  return `n_novel_${String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || Date.now().toString(36)}`;
+}
+
+function mnEnsureNovelistTags(existingTags = []) {
+  const byName = new Map((existingTags || []).map(tag => [tag.name, tag]));
+  MN_NOVELIST_TAGS.forEach(tag => {
+    if (!byName.has(tag.name)) byName.set(tag.name, tag);
+  });
+  return [...byName.values()];
+}
+
+function mnBuildNovelistStarterNotes(notes = [], mnMdToBlocks) {
+  const existing = new Set((notes || []).flatMap(note => [
+    String(note.title || '').toLowerCase(),
+    ...(note.tags || []),
+  ]));
+  return MN_NOVELIST_STARTERS
+    .filter(item => !existing.has(item.title.toLowerCase()) && !item.tags.some(tag => existing.has(tag)))
+    .map(item => ({
+      id: mnNovelistNoteId(item.title),
+      title: item.title,
+      body: item.body,
+      blocks: mnMdToBlocks(item.body),
+      tags: item.tags,
+      pinned: item.title === 'Manuscript',
+      date: new Date().toISOString(),
+      modifiedAt: new Date().toISOString(),
+    }));
+}
+
+function mnIsNovelistNote(note) {
+  return (note.tags || []).some(tag => tag.startsWith('novel-'));
+}
+
+function mnNovelTitleKey(title) {
+  return String(title || '')
+    .split('|')[0]
+    .replace(/#[^\]]+$/, '')
+    .trim()
+    .toLowerCase();
+}
+
+function mnNovelWikiTitles(body = '') {
+  return [...String(body || '').matchAll(/\[\[([^\]]+)\]\]/g)]
+    .map(match => match[1].trim())
+    .filter(Boolean);
+}
+
+function mnNovelPropertyTitle(body = '', key = '') {
+  const safeKey = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^\\s*-?\\s*${safeKey}::\\s*(?:\\[\\[([^\\]]+)\\]\\]|([^\\n#]+))`, 'im');
+  const match = String(body || '').match(re);
+  return match ? String(match[1] || match[2] || '').trim() : '';
+}
+
+function mnNovelHasWikiLink(body = '', title = '') {
+  const target = mnNovelTitleKey(title);
+  return mnNovelWikiTitles(body).some(link => mnNovelTitleKey(link) === target);
+}
+
+function mnNovelEnsureWikiLink(body = '', title = '') {
+  const cleanTitle = String(title || '').trim();
+  if (!cleanTitle || mnNovelHasWikiLink(body, cleanTitle)) return body || '';
+  const base = String(body || '').trimEnd();
+  return `${base}${base ? '\n' : ''}- [[${cleanTitle}]]`;
+}
+
+function mnNovelUpsertPropertyLink(body = '', key = '', title = '') {
+  const cleanTitle = String(title || '').trim();
+  if (!key || !cleanTitle) return body || '';
+  const source = String(body || '');
+  const safeKey = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const lineRe = new RegExp(`(^\\s*-?\\s*${safeKey}::\\s*)(?:\\[\\[[^\\]]+\\]\\])?(.*$)`, 'im');
+  if (lineRe.test(source)) {
+    return source.replace(lineRe, `$1[[${cleanTitle}]]$2`);
+  }
+  const lines = source.split('\n');
+  const insertAt = lines.findIndex(line => /^#{1,3}\s+/.test(line));
+  const propLine = `- ${key}:: [[${cleanTitle}]]`;
+  if (insertAt >= 0) {
+    lines.splice(insertAt + 1, 0, propLine);
+    return lines.join('\n');
+  }
+  const base = source.trimEnd();
+  return `${base}${base ? '\n' : ''}${propLine}`;
+}
+
+function mnBuildNovelistStructure(notes = []) {
+  const allNotes = notes || [];
+  const novelNotes = allNotes.filter(mnIsNovelistNote);
+  const byTitle = new Map(allNotes.map(note => [mnNovelTitleKey(note.title), note]));
+  const isTagged = (note, tag) => (note?.tags || []).includes(tag);
+  const hasNovelNonStructureTag = (note) => (note?.tags || []).some(tag =>
+    tag.startsWith('novel-') && !['novel-manuscript', 'novel-arc', 'novel-chapter', 'novel-scene'].includes(tag)
+  );
+  const stageIds = {
+    arcs: new Set(allNotes.filter(note => isTagged(note, 'novel-arc')).map(note => note.id)),
+    chapters: new Set(allNotes.filter(note => isTagged(note, 'novel-chapter')).map(note => note.id)),
+    scenes: new Set(allNotes.filter(note => isTagged(note, 'novel-scene')).map(note => note.id)),
+  };
+  const addStage = (stage, note) => {
+    if (!note || hasNovelNonStructureTag(note) || isTagged(note, 'novel-manuscript')) return;
+    if (stage === 'chapter' && !isTagged(note, 'novel-arc') && !stageIds.scenes.has(note.id)) stageIds.chapters.add(note.id);
+    if (stage === 'scene' && !isTagged(note, 'novel-arc') && !stageIds.chapters.has(note.id)) stageIds.scenes.add(note.id);
+  };
+  allNotes.forEach(note => {
+    if (mnNovelPropertyTitle(note.body, 'arc')) addStage('chapter', note);
+    if (mnNovelPropertyTitle(note.body, 'chapter')) addStage('scene', note);
+  });
+  const manuscripts = allNotes.filter(note => isTagged(note, 'novel-manuscript'));
+  const manuscript = manuscripts[0] || null;
+  const childrenByArcId = {};
+  const childrenByChapterId = {};
+  const parentByChapterId = {};
+  const parentBySceneId = {};
+  const arcBySceneId = {};
+  const stageByNoteId = {};
+  const noteById = new Map(allNotes.map(note => [note.id, note]));
+
+  const addUnique = (bucket, parentId, childId) => {
+    if (!parentId || !childId) return;
+    if (!bucket[parentId]) bucket[parentId] = [];
+    if (!bucket[parentId].includes(childId)) bucket[parentId].push(childId);
+  };
+  const linkedNotes = (note) => mnNovelWikiTitles(note?.body || '')
+    .map(title => byTitle.get(mnNovelTitleKey(title)))
+    .filter(Boolean);
+
+  let arcs = allNotes.filter(note => stageIds.arcs.has(note.id));
+  let chapters = allNotes.filter(note => stageIds.chapters.has(note.id));
+  let scenes = allNotes.filter(note => stageIds.scenes.has(note.id));
+
+  chapters.forEach(chapter => {
+    const arc = byTitle.get(mnNovelTitleKey(mnNovelPropertyTitle(chapter.body, 'arc')));
+    if (arc && stageIds.arcs.has(arc.id)) {
+      parentByChapterId[chapter.id] = arc.id;
+      addUnique(childrenByArcId, arc.id, chapter.id);
+    }
+  });
+  arcs.forEach(arc => {
+    linkedNotes(arc)
+      .filter(note => note.id !== arc.id && !hasNovelNonStructureTag(note) && !stageIds.arcs.has(note.id) && !stageIds.scenes.has(note.id))
+      .forEach(chapter => {
+        addStage('chapter', chapter);
+        if (!parentByChapterId[chapter.id]) parentByChapterId[chapter.id] = arc.id;
+        addUnique(childrenByArcId, arc.id, chapter.id);
+      });
+  });
+  chapters = allNotes.filter(note => stageIds.chapters.has(note.id));
+
+  scenes.forEach(scene => {
+    const chapter = byTitle.get(mnNovelTitleKey(mnNovelPropertyTitle(scene.body, 'chapter')));
+    const arc = byTitle.get(mnNovelTitleKey(mnNovelPropertyTitle(scene.body, 'arc')));
+    if (chapter && stageIds.chapters.has(chapter.id)) {
+      parentBySceneId[scene.id] = chapter.id;
+      addUnique(childrenByChapterId, chapter.id, scene.id);
+    }
+    if (arc && stageIds.arcs.has(arc.id)) arcBySceneId[scene.id] = arc.id;
+  });
+  chapters.forEach(chapter => {
+    linkedNotes(chapter)
+      .filter(note => note.id !== chapter.id && !hasNovelNonStructureTag(note) && !stageIds.arcs.has(note.id) && !stageIds.chapters.has(note.id))
+      .forEach(scene => {
+        addStage('scene', scene);
+        if (!parentBySceneId[scene.id]) parentBySceneId[scene.id] = chapter.id;
+        addUnique(childrenByChapterId, chapter.id, scene.id);
+      });
+  });
+  scenes = allNotes.filter(note => stageIds.scenes.has(note.id));
+  arcs.forEach(note => { stageByNoteId[note.id] = 'arc'; });
+  chapters.forEach(note => { stageByNoteId[note.id] = 'chapter'; });
+  scenes.forEach(note => { stageByNoteId[note.id] = 'scene'; });
+
+  const pathByNoteId = {};
+  arcs.forEach(arc => {
+    pathByNoteId[arc.id] = [manuscript, arc].filter(Boolean);
+  });
+  chapters.forEach(chapter => {
+    const arc = noteById.get(parentByChapterId[chapter.id]);
+    pathByNoteId[chapter.id] = [manuscript, arc, chapter].filter(Boolean);
+  });
+  scenes.forEach(scene => {
+    const chapter = noteById.get(parentBySceneId[scene.id]);
+    const arc = noteById.get(chapter ? parentByChapterId[chapter.id] : arcBySceneId[scene.id]);
+    pathByNoteId[scene.id] = [manuscript, arc, chapter, scene].filter(Boolean);
+  });
+  manuscripts.forEach(note => { pathByNoteId[note.id] = [note]; });
+
+  return {
+    novelNotes,
+    arcs,
+    chapters,
+    scenes,
+    manuscripts,
+    manuscript,
+    childrenByArcId,
+    childrenByChapterId,
+    parentByChapterId,
+    parentBySceneId,
+    stageByNoteId,
+    pathByNoteId,
+  };
+}
+
 // Convert raw notes (with markdown body) to runtime form (with parsed blocks).
 function normalizeNotes(notes, mnMdToBlocks) {
   return (notes || []).map(n => ({
@@ -116,6 +383,7 @@ function mnParseDefaultTags(value) {
 }
 
 function mnNormalizeWorkflowStatesForApp(states) {
+  if (Array.isArray(states) && states.length === 0) return [];
   return (window.MN_LOGSEQ?.mnNormalizeWorkflowStates || ((value) => value))(
     Array.isArray(states) && states.length
       ? states
@@ -796,6 +1064,7 @@ function MnApp() {
   const [view, setView] = useStateA('notes');
   const lastViewRef = useRefA('notes');
   const [askAiOpen, setAskAiOpen] = useStateA(false);
+  const [askAiSeed, setAskAiSeed] = useStateA('');
   const askAiOpenRef = useRefA(false);
   const [askAiSession, setAskAiSession] = useStateA({
     messages: [],
@@ -841,8 +1110,9 @@ function MnApp() {
     });
   }, []);
 
-  const openAskAi = useCallbackA(() => {
+  const openAskAi = useCallbackA((initialQuery = '') => {
     setAiNotice(null);
+    setAskAiSeed(typeof initialQuery === 'string' ? initialQuery : '');
     setAskAiOpen(true);
   }, []);
 
@@ -897,10 +1167,10 @@ function MnApp() {
           // In-browser fallback: use seed
           const seedNotes = normalizeNotes(SEED_NOTES, mnMdToBlocks);
           if (cancelled) return;
-          setVaults([{
-            id: 'v_personal', name: 'Personal', slug: 'personal',
-            path: '~/OminiNote/personal', notes: seedNotes, tags: SEED_TAGS, canvases: [],
-          }]);
+        setVaults([{
+          id: 'v_personal', name: 'Personal', slug: 'personal',
+            path: '~/OminiNote/personal', notes: seedNotes, tags: SEED_TAGS, canvases: [], novelistMode: false,
+        }]);
           setActiveVaultId('v_personal');
           setTags(SEED_TAGS);
           setNotes(seedNotes);
@@ -939,7 +1209,7 @@ function MnApp() {
 
         if (cancelled) return;
         setVaults(vlist.map(meta => meta.id === activeId
-          ? { ...meta, notes: loadedNotes, tags: v.tags, lastSelectedId: v.lastSelectedId, canvases: loadedCanvases }
+          ? { ...meta, novelistMode: !!v.novelistMode, workflowStates: v.workflowStates || meta.workflowStates || null, notes: loadedNotes, tags: v.tags, lastSelectedId: v.lastSelectedId, canvases: loadedCanvases }
           : { ...meta, notes: null, tags: null, canvases: null }));
         setActiveVaultId(activeId);
         setTags(v.tags || []);
@@ -1067,6 +1337,8 @@ function MnApp() {
     if (!target) return;
 
     let targetNotes = target.notes, targetTags = target.tags, targetSel = target.lastSelectedId;
+    let targetNovelistMode = !!target.novelistMode;
+    let targetWorkflowStates = target.workflowStates || null;
     let targetCanvases = target.canvases;
     if (!targetNotes && HAS_DISK) {
       try {
@@ -1075,6 +1347,8 @@ function MnApp() {
           targetNotes = normalizeNotes(res.value.notes, mnMdToBlocks);
           targetTags = res.value.tags || [];
           targetSel = res.value.lastSelectedId;
+          targetNovelistMode = !!res.value.novelistMode;
+          targetWorkflowStates = res.value.workflowStates || null;
         }
       } catch (e) { console.error('loadVault failed', id, e); }
     }
@@ -1093,11 +1367,27 @@ function MnApp() {
     setActiveCanvas(null);
     setSelectedId(targetSel || targetNotes[0]?.id || null);
     setActiveVaultId(id);
+    setVaults(vs => vs.map(v => v.id === id ? { ...v, novelistMode: targetNovelistMode, workflowStates: targetWorkflowStates } : v));
     setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
     if (HAS_DISK) window.mn.setPrefs({ activeVaultId: id });
   }, [activeVaultId, vaults, notes, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView]);
 
-  const createVault = useCallbackA(async (name) => {
+  const persistNovelistSetup = async (vaultId, sourceNotes, sourceTags, sourceWorkflowStates = null) => {
+    const nextTags = mnEnsureNovelistTags(sourceTags);
+    const nextWorkflowStates = mnNormalizeWorkflowStatesForApp(sourceWorkflowStates || MN_NOVELIST_WORKFLOW_STATES);
+    const starterNotes = mnBuildNovelistStarterNotes(sourceNotes, mnMdToBlocks);
+    const nextNotes = [...starterNotes, ...sourceNotes];
+    if (HAS_DISK && vaultId) {
+      await window.mn.saveVaultMeta(vaultId, { tags: nextTags, novelistMode: true, workflowStates: nextWorkflowStates });
+      for (const note of starterNotes) {
+        await window.mn.saveNote(vaultId, noteForDisk(note, mnBlocksToMd));
+      }
+    }
+    return { notes: nextNotes, tags: nextTags, workflowStates: nextWorkflowStates };
+  };
+
+  const createVault = useCallbackA(async (name, options = {}) => {
+    const vaultType = options.type === 'novelist' ? 'novelist' : 'notes';
     const pendingForCurrentVault = [...dirtyNotes.entries()].filter(([, vaultId]) => vaultId === activeVaultId);
     await saveDirtyNotesNow(pendingForCurrentVault, notes, vaults);
     await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
@@ -1111,18 +1401,21 @@ function MnApp() {
         date: new Date().toISOString(), tags: [], pinned: false,
         blocks: mnMdToBlocks(`- This is your new vault\n- Create notes with ⌘N`),
       }];
+      const setup = vaultType === 'novelist'
+        ? await persistNovelistSetup(id, newNotes, [])
+        : { notes: newNotes, tags: [] };
       const newCanvases = [];
       setVaults(vs => [
         ...vs.map(v => v.id === activeVaultId ? { ...v, notes, tags, lastSelectedId: selectedId, canvases } : v),
-        { id, name, slug, path: `~/OminiNote/${slug}`, notes: null, tags: null, canvases: newCanvases },
+        { id, name, slug, path: `~/OminiNote/${slug}`, notes: setup.notes, tags: setup.tags, workflowStates: setup.workflowStates || null, canvases: newCanvases, novelistMode: vaultType === 'novelist' },
       ]);
-      setNotes(newNotes); setTags([]); setSelectedId(firstNoteId);
+      setNotes(setup.notes); setTags(setup.tags); setSelectedId(setup.notes[0]?.id || firstNoteId);
       setCanvases(newCanvases); setActiveCanvas(null);
       setActiveVaultId(id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
       return;
     }
     try {
-      const res = await window.mn.createVault(name);
+      const res = await window.mn.createVault(name, { type: vaultType, workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null });
       if (!res.ok) throw new Error(res.error);
       const v = res.value;
       // stash current
@@ -1134,16 +1427,55 @@ function MnApp() {
       const loadRes = await window.mn.loadVault(v.id);
       if (!loadRes.ok) throw new Error(loadRes.error);
       const loaded = loadRes.value;
-      const loadedNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
-      setNotes(loadedNotes); setTags(loaded.tags || []);
+      let loadedNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
+      let loadedTags = loaded.tags || [];
+      if (vaultType === 'novelist') {
+        const setup = await persistNovelistSetup(v.id, loadedNotes, loadedTags);
+        loadedNotes = setup.notes;
+        loadedTags = setup.tags;
+        loaded.workflowStates = setup.workflowStates;
+      }
+      setNotes(loadedNotes); setTags(loadedTags);
       setCanvases([]); setActiveCanvas(null);
       setSelectedId(loaded.lastSelectedId || loadedNotes[0]?.id || null);
       setActiveVaultId(v.id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
+      setVaults(vs => vs.map(x => x.id === v.id
+        ? { ...x, notes: loadedNotes, tags: loadedTags, workflowStates: loaded.workflowStates || null, novelistMode: vaultType === 'novelist' }
+        : x));
       window.mn.setPrefs({ activeVaultId: v.id });
     } catch (e) {
       console.error('createVault failed', e); alert('Could not create vault: ' + e.message);
     }
-  }, [activeVaultId, notes, vaults, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView]);
+  }, [activeVaultId, notes, vaults, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks, mnBlocksToMd]);
+
+  const setActiveVaultNovelistMode = useCallbackA(async (enabled) => {
+    if (!activeVaultId) return { ok: false, error: 'No active vault.' };
+    if (enabled) {
+      try {
+        const setup = await persistNovelistSetup(activeVaultId, notes, tags);
+        setNotes(setup.notes);
+        setTags(setup.tags);
+        setVaults(vs => vs.map(v => v.id === activeVaultId
+          ? { ...v, notes: setup.notes, tags: setup.tags, workflowStates: setup.workflowStates, novelistMode: true }
+          : v));
+        tagsDirty.current = false;
+        return { ok: true };
+      } catch (e) {
+        console.error('enable novelist mode failed', e);
+        return { ok: false, error: e.message || String(e) };
+      }
+    }
+
+    try {
+      if (HAS_DISK) await window.mn.saveVaultMeta(activeVaultId, { novelistMode: false });
+      setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, novelistMode: false } : v));
+      if (view === 'novelist') navigateView('notes');
+      return { ok: true };
+    } catch (e) {
+      console.error('disable novelist mode failed', e);
+      return { ok: false, error: e.message || String(e) };
+    }
+  }, [activeVaultId, notes, tags, view, navigateView]);
 
   const renameVault = useCallbackA(async (id, name) => {
     setVaults(vs => vs.map(v => v.id === id ? { ...v, name } : v));
@@ -1175,7 +1507,7 @@ function MnApp() {
         if (!res.ok) throw new Error(res.error);
         nextVaults = (res.value?.vaults || localRemaining).map(meta => {
           const cached = localRemaining.find(v => v.id === meta.id) || {};
-          return { ...meta, notes: cached.notes || null, tags: cached.tags || null, lastSelectedId: cached.lastSelectedId || null, canvases: cached.canvases || null };
+          return { ...meta, notes: cached.notes || null, tags: cached.tags || null, lastSelectedId: cached.lastSelectedId || null, canvases: cached.canvases || null, novelistMode: !!(meta.novelistMode ?? cached.novelistMode) };
         });
         nextActiveId = deletingActive ? (res.value?.activeVaultId || nextVaults[0]?.id) : activeVaultId;
       } catch (e) {
@@ -1212,6 +1544,7 @@ function MnApp() {
         nextNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
         nextTags = loaded.tags || [];
         nextSelectedId = loaded.lastSelectedId || nextNotes[0]?.id || null;
+        nextMeta.novelistMode = !!loaded.novelistMode;
         const canvasRes = await window.mn.listCanvases(nextMeta.id);
         nextCanvases = canvasRes.ok ? (canvasRes.value || []) : [];
       } catch (e) {
@@ -1221,7 +1554,7 @@ function MnApp() {
     }
 
     setVaults(nextVaults.map(v => v.id === nextMeta.id
-      ? { ...v, notes: nextNotes, tags: nextTags, lastSelectedId: nextSelectedId, canvases: nextCanvases }
+      ? { ...v, notes: nextNotes, tags: nextTags, lastSelectedId: nextSelectedId, canvases: nextCanvases, novelistMode: !!nextMeta.novelistMode }
       : v));
     setNotes(nextNotes);
     setTags(nextTags);
@@ -1260,12 +1593,19 @@ function MnApp() {
   const notesWithBody = useMemoA(() => notes.map(n => ({
     ...n, body: mnBlocksToMd(n.blocks || []),
   })), [notes]);
+  const novelistNotes = useMemoA(() => notesWithBody.filter(mnIsNovelistNote), [notesWithBody]);
+  const novelistStructure = useMemoA(() => mnBuildNovelistStructure(notesWithBody), [notesWithBody]);
 
   const links = useMemoA(() => buildLinks(notesWithBody), [notesWithBody]);
-  const workflowStates = useMemoA(
+  const normalWorkflowStates = useMemoA(
     () => mnNormalizeWorkflowStatesForApp(tweaks.workflowStates),
     [tweaks.workflowStates]
   );
+  const novelistWorkflowStates = useMemoA(
+    () => mnNormalizeWorkflowStatesForApp(activeVault?.workflowStates || MN_NOVELIST_WORKFLOW_STATES),
+    [activeVault?.workflowStates]
+  );
+  const workflowStates = activeVault?.novelistMode ? novelistWorkflowStates : normalWorkflowStates;
   useEffectA(() => {
     window.MN_LOGSEQ?.setWorkflowStates?.(workflowStates);
     if (selectedWorkflow && !workflowStates.some(s => s.id === selectedWorkflow)) {
@@ -1273,8 +1613,17 @@ function MnApp() {
     }
   }, [workflowStates, selectedWorkflow]);
   const updateWorkflowStates = useCallbackA((states) => {
-    setTweak('workflowStates', mnNormalizeWorkflowStatesForApp(states));
-  }, []);
+    const next = mnNormalizeWorkflowStatesForApp(states);
+    if (activeVault?.novelistMode && activeVaultId) {
+      setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, workflowStates: next } : v));
+      if (HAS_DISK) {
+        window.mn.saveVaultMeta(activeVaultId, { workflowStates: next })
+          .catch(e => console.error('save novelist workflow states failed', e));
+      }
+      return;
+    }
+    setTweak('workflowStates', next);
+  }, [activeVault?.novelistMode, activeVaultId]);
   const workflowData = useMemoA(
     () => collectWorkflowBlocks(notesWithBody, workflowStates, mnWalk),
     [notesWithBody, workflowStates, mnWalk]
@@ -1388,7 +1737,7 @@ function MnApp() {
     item.status === 'due' && !dismissedReminderKeys.current.has(item.key)
   ).length;
 
-  const createNote = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [] } = {}) => {
+  const createNote = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [] } = {}, options = {}) => {
     const id = 'n_' + Date.now().toString(36);
     const defaults = mnParseDefaultTags(tweaks.defaultTags);
     const cleanTags = [...noteTags, ...defaults]
@@ -1413,8 +1762,10 @@ function MnApp() {
       modifiedAt: new Date().toISOString(),
     };
     setNotes(ns => [newNote, ...ns]);
-    setSelectedId(id);
-    navigateView('notes');
+    if (options.open !== false) {
+      setSelectedId(id);
+      navigateView(options.view || 'notes');
+    }
     markDirty(id);
     return id;
   }, [markDirty, navigateView, tweaks.defaultTags, tags]);
@@ -1427,6 +1778,56 @@ function MnApp() {
     }));
     markDirty(id);
   };
+
+  const updateNoteBody = useCallbackA((id, bodyOrUpdater) => {
+    setNotes(ns => ns.map(n => {
+      if (n.id !== id) return n;
+      const currentBody = mnBlocksToMd(n.blocks || []);
+      const nextBody = typeof bodyOrUpdater === 'function' ? bodyOrUpdater(currentBody, n) : bodyOrUpdater;
+      return { ...n, blocks: mnMdToBlocks(nextBody || ''), modifiedAt: new Date().toISOString() };
+    }));
+    markDirty(id);
+  }, [markDirty, mnMdToBlocks, mnBlocksToMd]);
+
+  const ensureNoteHasTag = useCallbackA((id, tag) => {
+    const cleanTag = normalizeTagName(tag);
+    if (!id || !cleanTag) return;
+    setNotes(ns => ns.map(n => {
+      if (n.id !== id || (n.tags || []).includes(cleanTag)) return n;
+      return { ...n, tags: [...(n.tags || []), cleanTag], modifiedAt: new Date().toISOString() };
+    }));
+    if (!tags.some(t => t.name === cleanTag)) {
+      const preset = MN_NOVELIST_TAGS.find(t => t.name === cleanTag);
+      setTags(ts => ts.some(t => t.name === cleanTag) ? ts : [...ts, preset || { name: cleanTag, hue: 240 }]);
+      markTagsDirty();
+    }
+    markDirty(id);
+  }, [markDirty, tags]);
+
+  const linkNovelistChapter = useCallbackA((arcId, chapterId, chapterTitle) => {
+    const arc = notesWithBody.find(n => n.id === arcId);
+    const chapter = notesWithBody.find(n => n.id === chapterId);
+    const cleanChapterTitle = chapter?.title || chapterTitle;
+    if (!arc || !cleanChapterTitle) return;
+    if (chapterId) ensureNoteHasTag(chapterId, 'novel-chapter');
+    updateNoteBody(arc.id, body => mnNovelEnsureWikiLink(body, cleanChapterTitle));
+    if (chapterId) updateNoteBody(chapterId, body => mnNovelUpsertPropertyLink(body, 'arc', arc.title));
+  }, [ensureNoteHasTag, notesWithBody, updateNoteBody]);
+
+  const linkNovelistScene = useCallbackA((chapterId, sceneId, sceneTitle) => {
+    const chapter = notesWithBody.find(n => n.id === chapterId);
+    const scene = notesWithBody.find(n => n.id === sceneId);
+    const cleanSceneTitle = scene?.title || sceneTitle;
+    if (!chapter || !cleanSceneTitle) return;
+    const arc = notesWithBody.find(n => n.id === novelistStructure.parentByChapterId?.[chapter.id]);
+    if (sceneId) ensureNoteHasTag(sceneId, 'novel-scene');
+    updateNoteBody(chapter.id, body => mnNovelEnsureWikiLink(body, cleanSceneTitle));
+    if (sceneId) updateNoteBody(sceneId, body => {
+      let next = mnNovelUpsertPropertyLink(body, 'chapter', chapter.title);
+      if (arc) next = mnNovelUpsertPropertyLink(next, 'arc', arc.title);
+      return next;
+    });
+  }, [ensureNoteHasTag, notesWithBody, novelistStructure, updateNoteBody]);
 
   const updateNoteBlocks = useCallbackA((id, blocksOrUpdater) => {
     setNotes(ns => ns.map(n => {
@@ -1489,6 +1890,15 @@ function MnApp() {
     setTags(ts => ts.find(t => t.name === clean) ? ts : [...ts, { name: clean, hue }]);
     markTagsDirty();
     return clean;
+  };
+
+  const removeNovelistSupportingType = (name) => {
+    const clean = normalizeTagName(name);
+    const structureTags = new Set(['novel-manuscript', 'novel-arc', 'novel-chapter', 'novel-scene']);
+    if (!clean || structureTags.has(clean)) return;
+    setTags(ts => ts.filter(t => t.name !== clean));
+    if (selectedTag === clean) setSelectedTag(null);
+    markTagsDirty();
   };
 
   const promptNewTag = (name) => {
@@ -1761,6 +2171,7 @@ function MnApp() {
               onSelectTag={(t) => { setSelectedTag(t); setSelectedWorkflow(null); navigateView('notes'); }}
               onSelectWorkflow={(wf) => { setSelectedWorkflow(wf); setSelectedTag(null); navigateView('notes'); }}
               onOpenWorkflowPanel={() => { navigateView('workflow'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onOpenNovelist={() => { navigateView('novelist'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
               onOpenTodos={() => { navigateView('todos'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenToday={() => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
@@ -1770,6 +2181,9 @@ function MnApp() {
               todosActive={view === 'todos'}
               graphActive={view === 'graph'}
               workflowActive={view === 'workflow'}
+              novelistActive={view === 'novelist'}
+              novelistEnabled={!!activeVault?.novelistMode}
+              novelistCount={novelistNotes.length}
               canvasActive={view === 'canvas'}
               canvasCount={canvases.length}
               onNewTag={promptNewTag}
@@ -1804,6 +2218,8 @@ function MnApp() {
               subtitle={noteListSubtitle}
               query={query}
               onQueryChange={setQuery}
+              novelistStructure={activeVault?.novelistMode && view === 'notes' && !query.trim() && !selectedTag && !selectedWorkflow ? novelistStructure : null}
+              allNotes={notesWithBody}
               tags={tags} theme={theme} density={tweaks.density} T={T}
             />
           )}
@@ -1823,6 +2239,34 @@ function MnApp() {
               onOpenCanvas={openCanvas}
               onCreateCanvas={createCanvas}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onCreateLinkedNote={(title) => {
+                const cleanTitle = String(title || '').trim();
+                if (!cleanTitle) return null;
+                if ((selectedNote.tags || []).includes('novel-arc')) {
+                  return createNote({
+                    title: cleanTitle,
+                    body: `# ${cleanTitle}\n- arc:: [[${selectedNote.title}]]\n- OUTLINE Goal\n- DRAFT Scene list\n- REVISE Notes`,
+                    tags: ['novel-chapter'],
+                  });
+                }
+                if ((selectedNote.tags || []).includes('novel-chapter')) {
+                  const arc = notesWithBody.find(n => n.id === novelistStructure.parentByChapterId?.[selectedNote.id]);
+                  return createNote({
+                    title: cleanTitle,
+                    body: `# ${cleanTitle}\n${arc ? `- arc:: [[${arc.title}]]\n` : ''}- chapter:: [[${selectedNote.title}]]\n- pov:: \n- setting:: \n- purpose:: \n- DRAFT Draft the scene here.`,
+                    tags: ['novel-scene'],
+                  });
+                }
+                const lowerTitle = cleanTitle.toLowerCase();
+                const inferredTags = lowerTitle.includes('scene')
+                  ? ['novel-scene']
+                  : lowerTitle.includes('chapter')
+                  ? ['novel-chapter']
+                  : lowerTitle.includes('arc')
+                  ? ['novel-arc']
+                  : [];
+                return createNote({ title: cleanTitle, body: `# ${cleanTitle}\n`, tags: inferredTags });
+              }}
               onOpenTag={(t) => {
                 if (!tags.find(x => x.name === t)) addTag(t);
                 setSelectedTag(t); setSelectedWorkflow(null); navigateView('notes');
@@ -1851,6 +2295,7 @@ function MnApp() {
               spellCheck={tweaks.spellCheck !== false}
               autoLink={tweaks.autoLink !== false}
               collapseByDefault={tweaks.collapseByDefault === true}
+              novelistPath={activeVault?.novelistMode ? novelistStructure.pathByNoteId?.[selectedNote.id] : null}
               theme={theme} T={T}
             />
           )}
@@ -1886,6 +2331,29 @@ function MnApp() {
               onSetWorkflowArchived={updateWorkflowArchived}
               onSetNoteTags={updateNoteTags}
               T={T} theme={theme}
+            />
+          )}
+          {view === 'novelist' && !!activeVault?.novelistMode && (
+            <MnNovelistPanel
+              notes={notesWithBody}
+              novelistNotes={novelistNotes}
+              tags={tags}
+              canvases={canvases}
+              workflowStates={workflowStates}
+              workflowItems={workflowViewData.byState}
+              novelistStructure={novelistStructure}
+              onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] }, { open: false })}
+              onLinkChapter={linkNovelistChapter}
+              onLinkScene={linkNovelistScene}
+              onDeleteNote={requestDeleteNote}
+              onOpenCanvas={openCanvas}
+              onCreateCanvas={createCanvas}
+              onOpenAskAI={HAS_DISK ? openAskAi : null}
+              onCreateTag={addTag}
+              onRemoveSupportingType={removeNovelistSupportingType}
+              T={T}
+              theme={theme}
             />
           )}
           {view === 'today' && (
@@ -1985,6 +2453,7 @@ function MnApp() {
             activeVault={activeVault}
             onCreateVault={createVault}
             onDeleteVault={deleteVault}
+            onSetVaultNovelistMode={setActiveVaultNovelistMode}
             onClose={() => setSettingsOpen(false)} />
         )}
         {deleteTargetNote && (
@@ -2000,6 +2469,7 @@ function MnApp() {
             vaultId={activeVaultId}
             currentNote={selectedNote ? { ...selectedNote, body: mnBlocksToMd(selectedNote.blocks || []) } : null}
             allNotes={notesWithBody}
+            initialQuery={askAiSeed}
             onClose={() => setAskAiOpen(false)}
             onOpenNote={(id) => { setSelectedId(id); navigateView('notes'); }}
             onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] })}

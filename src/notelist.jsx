@@ -1,5 +1,5 @@
 // Middle pane: list of notes (filtered). Click to select.
-const { useMemo: useMemoL } = React;
+const { useMemo: useMemoL, useState: useStateL } = React;
 
 function mnFormatDate(iso) {
   const d = new Date(iso);
@@ -81,11 +81,271 @@ function mnHighlight(text, query, T) {
 function MnNoteList({
   notes, selectedId, onSelect, title, subtitle,
   query, onQueryChange,
+  novelistStructure = null,
+  allNotes = null,
   tags, theme, density, T,
 }) {
+  const [collapsed, setCollapsed] = useStateL({});
   const tagHue = useMemoL(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
+  const novelistList = useMemoL(() => {
+    if (!novelistStructure) return null;
+    const sourceNotes = allNotes || notes || [];
+    const noteById = new Map(sourceNotes.map(note => [note.id, note]));
+    const visibleIds = new Set((notes || []).map(note => note.id));
+    const used = new Set();
+    const arcs = (novelistStructure.arcs || []).filter(note => visibleIds.has(note.id));
+    const chapterIdsByArc = {};
+    const sceneIdsByChapter = {};
+    const addUnique = (bucket, parentId, childId) => {
+      if (!parentId || !childId) return;
+      if (!bucket[parentId]) bucket[parentId] = [];
+      if (!bucket[parentId].includes(childId)) bucket[parentId].push(childId);
+    };
+    Object.entries(novelistStructure.childrenByArcId || {}).forEach(([arcId, chapterIds]) => {
+      (chapterIds || []).forEach(chapterId => addUnique(chapterIdsByArc, arcId, chapterId));
+    });
+    Object.entries(novelistStructure.parentByChapterId || {}).forEach(([chapterId, arcId]) => {
+      addUnique(chapterIdsByArc, arcId, chapterId);
+    });
+    Object.entries(novelistStructure.childrenByChapterId || {}).forEach(([chapterId, sceneIds]) => {
+      (sceneIds || []).forEach(sceneId => addUnique(sceneIdsByChapter, chapterId, sceneId));
+    });
+    Object.entries(novelistStructure.parentBySceneId || {}).forEach(([sceneId, chapterId]) => {
+      addUnique(sceneIdsByChapter, chapterId, sceneId);
+    });
+    const chapterIds = new Set((novelistStructure.chapters || []).map(note => note.id));
+    const sceneIds = new Set((novelistStructure.scenes || []).map(note => note.id));
+    const chaptersForArc = (arc) => (chapterIdsByArc[arc.id] || [])
+      .map(id => noteById.get(id))
+      .filter(note => note && chapterIds.has(note.id) && visibleIds.has(note.id));
+    const scenesForChapter = (chapter) => (sceneIdsByChapter[chapter.id] || [])
+      .map(id => noteById.get(id))
+      .filter(note => note && sceneIds.has(note.id) && visibleIds.has(note.id));
+    arcs.forEach(arc => {
+      used.add(arc.id);
+      chaptersForArc(arc).forEach(chapter => {
+        used.add(chapter.id);
+        scenesForChapter(chapter).forEach(scene => used.add(scene.id));
+      });
+    });
+    const looseChapters = (novelistStructure.chapters || [])
+      .filter(note => visibleIds.has(note.id) && !used.has(note.id));
+    looseChapters.forEach(chapter => {
+      used.add(chapter.id);
+      scenesForChapter(chapter).forEach(scene => used.add(scene.id));
+    });
+    const looseScenes = (novelistStructure.scenes || [])
+      .filter(note => visibleIds.has(note.id) && !used.has(note.id));
+    looseScenes.forEach(scene => used.add(scene.id));
+    const other = (notes || []).filter(note => !used.has(note.id));
+    return { arcs, looseChapters, looseScenes, chaptersForArc, scenesForChapter, other };
+  }, [notes, allNotes, novelistStructure]);
+
+  const NoteRow = ({ n, depth = 0, compact = false, meta = '' }) => {
+    const active = n.id === selectedId;
+    return (
+      <div key={n.id} onClick={() => onSelect(n.id)} style={{
+        padding: density === 'compact' || compact ? '9px 18px' : '14px 20px',
+        paddingLeft: 20 + depth * 16,
+        borderBottom: `1px solid ${T.lineSub}`,
+        cursor: 'pointer',
+        background: active ? T.selBg : 'transparent',
+        borderLeft: active ? `2px solid ${T.accent}` : '2px solid transparent',
+        position: 'relative',
+        transition: 'background 80ms',
+      }}
+      onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
+      onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          {n.pinned && (
+            <svg width="9" height="9" viewBox="0 0 10 10" fill={T.accent}>
+              <circle cx="5" cy="5" r="3" />
+            </svg>
+          )}
+          <div style={{
+            flex: 1, fontFamily: 'var(--mn-ui)',
+            fontSize: 13.5, fontWeight: depth ? 500 : 600,
+            color: T.ink, letterSpacing: '-0.005em',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{mnHighlight(n.title, query, T)}</div>
+          <div style={{
+            fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim,
+            flexShrink: 0,
+          }}>{mnFormatDate(n.date)}</div>
+        </div>
+        {density !== 'compact' && !compact && (
+          <div style={{
+            fontFamily: 'var(--mn-body)', fontSize: 12.5,
+            color: T.inkMed, lineHeight: 1.5,
+            marginTop: 4, display: '-webkit-box',
+            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+          }}>{mnHighlight(mnSnippet(n.body, query), query, T)}</div>
+        )}
+        {!compact && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+            {(n.tags || []).map(t => (
+              <span key={t} style={{
+                fontFamily: 'var(--mn-mono)', fontSize: 9.5,
+                letterSpacing: '0.03em',
+                color: mnGetTagColor(tagHue[t] ?? 240, theme),
+                padding: '1px 6px', borderRadius: 3,
+                background: mnGetTagBg(tagHue[t] ?? 240, theme),
+              }}>#{t}</span>
+            ))}
+          </div>
+        )}
+        {meta && (
+          <div style={{
+            marginTop: compact ? 2 : 5,
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 11.5,
+            color: T.inkDim,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>{meta}</div>
+        )}
+      </div>
+    );
+  };
+
+  const GroupHeader = ({ note, depth = 0, count = 0, type = '', linkedTo = '' }) => {
+    const isCollapsed = collapsed[note.id] === true;
+    const toggle = () => setCollapsed(current => ({ ...current, [note.id]: !isCollapsed }));
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7,
+        padding: density === 'compact' ? '8px 14px' : '10px 16px',
+        paddingLeft: 16 + depth * 16,
+        borderBottom: `1px solid ${T.lineSub}`,
+        background: note.id === selectedId ? T.selBg : T.bgSub,
+        cursor: 'pointer',
+      }}
+      onClick={toggle}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggle();
+          }}
+          title={isCollapsed ? 'Expand' : 'Collapse'}
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 5,
+            border: `1px solid ${T.lineSub}`,
+            background: T.bg,
+            color: T.inkDim,
+            cursor: 'pointer',
+            padding: 0,
+            flexShrink: 0,
+          }}>
+          {isCollapsed ? '+' : '−'}
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(note.id);
+          }}
+          style={{
+            minWidth: 0,
+            flex: 1,
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            color: T.ink,
+            cursor: 'pointer',
+            textAlign: 'left',
+            fontFamily: 'var(--mn-ui)',
+          }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+            <span style={{
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontSize: 13,
+              fontWeight: 650,
+            }}>{note.title || 'Untitled'}</span>
+            {type && (
+              <span style={{
+                fontFamily: 'var(--mn-mono)',
+                fontSize: 9,
+                color: T.inkDim,
+                textTransform: 'uppercase',
+              }}>{type}</span>
+            )}
+            <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim }}>{count}</span>
+          </div>
+          {linkedTo && (
+            <div style={{
+              marginTop: 3,
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 11,
+              color: T.inkDim,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>{linkedTo}</div>
+          )}
+        </button>
+      </div>
+    );
+  };
+
+  const CollectionHeader = ({ id, label, count, depth = 0 }) => {
+    const isCollapsed = collapsed[id] === true;
+    const toggle = () => setCollapsed(current => ({ ...current, [id]: !isCollapsed }));
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7,
+        padding: density === 'compact' ? '8px 14px' : '10px 16px',
+        paddingLeft: 16 + depth * 16,
+        borderBottom: `1px solid ${T.lineSub}`,
+        background: T.bgSub,
+        cursor: 'pointer',
+      }}
+      onClick={toggle}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggle();
+          }}
+          title={isCollapsed ? 'Expand' : 'Collapse'}
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 5,
+            border: `1px solid ${T.lineSub}`,
+            background: T.bg,
+            color: T.inkDim,
+            cursor: 'pointer',
+            padding: 0,
+            flexShrink: 0,
+          }}>
+          {isCollapsed ? '+' : '−'}
+        </button>
+        <div style={{
+          minWidth: 0,
+          flex: 1,
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 7,
+          fontFamily: 'var(--mn-ui)',
+          color: T.ink,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 650 }}>{label}</span>
+          <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim }}>{count}</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{
@@ -159,61 +419,63 @@ function MnNoteList({
               : <span style={{ fontStyle: 'italic' }}>No notes yet.</span>}
           </div>
         )}
-        {notes.map((n, i) => {
-          const active = n.id === selectedId;
-          const date = new Date(n.date);
-          return (
-            <div key={n.id} onClick={() => onSelect(n.id)} style={{
-              padding: density === 'compact' ? '10px 18px' : '14px 20px',
-              borderBottom: `1px solid ${T.lineSub}`,
-              cursor: 'pointer',
-              background: active ? T.selBg : 'transparent',
-              borderLeft: active ? `2px solid ${T.accent}` : '2px solid transparent',
-              position: 'relative',
-              transition: 'background 80ms',
-            }}
-            onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
-            onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                {n.pinned && (
-                  <svg width="9" height="9" viewBox="0 0 10 10" fill={T.accent}>
-                    <circle cx="5" cy="5" r="3" />
-                  </svg>
-                )}
-                <div style={{
-                  flex: 1, fontFamily: 'var(--mn-ui)',
-                  fontSize: 13.5, fontWeight: 500,
-                  color: T.ink, letterSpacing: '-0.005em',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>{mnHighlight(n.title, query, T)}</div>
-                <div style={{
-                  fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim,
-                  flexShrink: 0,
-                }}>{mnFormatDate(n.date)}</div>
-              </div>
-              {density !== 'compact' && (
-                <div style={{
-                  fontFamily: 'var(--mn-body)', fontSize: 12.5,
-                  color: T.inkMed, lineHeight: 1.5,
-                  marginTop: 4, display: '-webkit-box',
-                  WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                }}>{mnHighlight(mnSnippet(n.body, query), query, T)}</div>
-              )}
-              <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                {n.tags.map(t => (
-                  <span key={t} style={{
-                    fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-                    letterSpacing: '0.03em',
-                    color: mnGetTagColor(tagHue[t] ?? 240, theme),
-                    padding: '1px 6px', borderRadius: 3,
-                    background: mnGetTagBg(tagHue[t] ?? 240, theme),
-                  }}>#{t}</span>
+        {novelistList ? (
+          <>
+            {novelistList.arcs.map(arc => {
+              const chapters = novelistList.chaptersForArc(arc);
+              const arcCollapsed = collapsed[arc.id] === true;
+              return (
+                <React.Fragment key={arc.id}>
+                  <GroupHeader note={arc} count={chapters.length} type="arc" />
+                  {!arcCollapsed && chapters.map(chapter => {
+                    const scenes = novelistList.scenesForChapter(chapter);
+                    const chapterCollapsed = collapsed[chapter.id] === true;
+                    return (
+                      <React.Fragment key={chapter.id}>
+                        <GroupHeader note={chapter} depth={1} count={scenes.length} type="chapter" linkedTo={`Linked to ${arc.title || 'arc'}`} />
+                        {!chapterCollapsed && scenes.map(scene => <NoteRow key={scene.id} n={scene} depth={2} compact meta={`Linked to ${chapter.title || 'chapter'}`} />)}
+                      </React.Fragment>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
+            {novelistList.looseChapters.length > 0 && (
+              <>
+                <CollectionHeader id="mn-loose-chapters" label="Unlinked chapters" count={novelistList.looseChapters.length} />
+                {collapsed['mn-loose-chapters'] !== true && novelistList.looseChapters.map(chapter => {
+                  const scenes = novelistList.scenesForChapter(chapter);
+                  const chapterCollapsed = collapsed[chapter.id] === true;
+                  return (
+                    <React.Fragment key={chapter.id}>
+                      <GroupHeader note={chapter} depth={1} count={scenes.length} type="chapter" />
+                      {!chapterCollapsed && scenes.map(scene => <NoteRow key={scene.id} n={scene} depth={2} compact meta={`Linked to ${chapter.title || 'chapter'}`} />)}
+                    </React.Fragment>
+                  );
+                })}
+              </>
+            )}
+            {novelistList.looseScenes.length > 0 && (
+              <>
+                <CollectionHeader id="mn-loose-scenes" label="Unlinked scenes" count={novelistList.looseScenes.length} />
+                {collapsed['mn-loose-scenes'] !== true && novelistList.looseScenes.map(scene => (
+                  <NoteRow key={scene.id} n={scene} depth={1} compact />
                 ))}
-              </div>
-            </div>
-          );
-        })}
+              </>
+            )}
+            {novelistList.other.length > 0 && (
+              <div style={{
+                padding: '12px 18px 6px',
+                fontFamily: 'var(--mn-mono)',
+                fontSize: 10,
+                color: T.inkDim,
+                textTransform: 'uppercase',
+                borderBottom: `1px solid ${T.lineSub}`,
+              }}>Other notes</div>
+            )}
+            {novelistList.other.map(n => <NoteRow key={n.id} n={n} />)}
+          </>
+        ) : notes.map(n => <NoteRow key={n.id} n={n} />)}
       </div>
     </div>
   );

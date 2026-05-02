@@ -1,7 +1,7 @@
 // Standardized settings modal with tabbed sections.
 const { useState: useStateS, useEffect: useEffectS } = React;
 
-function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault, onCreateVault, onDeleteVault }) {
+function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault, onCreateVault, onDeleteVault, onSetVaultNovelistMode }) {
   const [section, setSection] = useStateS('appearance');
 
   const sections = [
@@ -175,6 +175,7 @@ function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVa
                 activeVault={activeVault}
                 onCreateVault={onCreateVault}
                 onDeleteVault={onDeleteVault}
+                onSetVaultNovelistMode={onSetVaultNovelistMode}
               />
             )}
             {section === 'shortcuts' && <SectionShortcuts T={T} />}
@@ -804,8 +805,9 @@ function mnSettingsInput(T, options = {}) {
   };
 }
 
-function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault, onCreateVault, onDeleteVault }) {
+function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault, onCreateVault, onDeleteVault, onSetVaultNovelistMode }) {
   const [newVaultName, setNewVaultName] = useStateS('');
+  const [newVaultType, setNewVaultType] = useStateS('notes');
   const [confirmingDelete, setConfirmingDelete] = useStateS(false);
   const [confirmText, setConfirmText] = useStateS('');
   const [busy, setBusy] = useStateS(false);
@@ -819,8 +821,9 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
     setError('');
     setBusy(true);
     try {
-      await onCreateVault(name);
+      await onCreateVault(name, { type: newVaultType });
       setNewVaultName('');
+      setNewVaultType('notes');
       setConfirmingDelete(false);
       setConfirmText('');
     } finally {
@@ -856,7 +859,9 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
           }} title={currentVault?.path || ''}>{currentVault?.path || '~/OminiNote/vault'}</div>
         </Row>
         <Row T={T} label="Create vault" sub="Start a separate local workspace with its own notes and tags.">
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Segmented T={T} value={newVaultType} onChange={setNewVaultType}
+              options={[{ value: 'notes', label: 'Notes' }, { value: 'novelist', label: 'Novelist' }]} />
             <input
               value={newVaultName}
               onChange={e => setNewVaultName(e.target.value)}
@@ -868,6 +873,21 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
             />
             <BtnOutline T={T} disabled={busy || !newVaultName.trim()} onClick={submitCreateVault}>Create</BtnOutline>
           </div>
+        </Row>
+        <Row T={T} label="Vault mode" sub="Convert this vault into a focused novel-writing workspace.">
+          <Segmented T={T} value={currentVault?.novelistMode ? 'novelist' : 'notes'}
+            onChange={async (mode) => {
+              if (!onSetVaultNovelistMode) return;
+              setBusy(true);
+              setError('');
+              try {
+                const result = await onSetVaultNovelistMode(mode === 'novelist');
+                if (result && result.ok === false) setError(result.error || 'Could not update vault mode.');
+              } finally {
+                setBusy(false);
+              }
+            }}
+            options={[{ value: 'notes', label: 'Notes vault' }, { value: 'novelist', label: 'Novelist vault' }]} />
         </Row>
         <Row T={T} label="Auto-save" sub="Persist changes to disk as you type.">
           <StaticValue T={T}>Always on</StaticValue>
@@ -891,6 +911,12 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
           >Delete vault...</BtnOutline>
         </Row>
       </SettingsCard>
+      {error && !confirmingDelete && <div style={{
+        marginTop: 10,
+        fontFamily: 'var(--mn-ui)',
+        fontSize: 12,
+        color: T.danger,
+      }}>{error}</div>}
       {confirmingDelete && currentVault && (
         <div style={{
           marginTop: 12,
