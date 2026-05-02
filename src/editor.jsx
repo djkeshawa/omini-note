@@ -5,13 +5,14 @@ const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useE
 function MnEditor({
   note, notes, tags, links, vaultId,
   canvases = [], onOpenCanvas, onCreateCanvas,
-  onOpen, onOpenTag,
+  onOpen, onCreateLinkedNote, onOpenTag,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
   onPinToggle, onDelete, onOpenGraph, onBack,
   onToggleSidebar, sidebarHidden,
   onToggleNoteList, noteListHidden,
   editorWidth = 'medium', fontSize = 'default',
   indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
+  novelistPath = null,
   theme, T,
 }) {
   const HAS_DISK_E = typeof window !== 'undefined' && !!window.mn;
@@ -154,6 +155,43 @@ function MnEditor({
             <span>{wordCount} words</span>
           </div>
 
+          {Array.isArray(novelistPath) && novelistPath.length > 1 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              flexWrap: 'wrap',
+              margin: '-3px 0 10px',
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 11.5,
+              color: T.inkDim,
+            }}>
+              {novelistPath.map((item, index) => (
+                <React.Fragment key={item.id}>
+                  {index > 0 && <span style={{ color: T.line }}>›</span>}
+                  <button
+                    onClick={() => onOpen && onOpen(item.id)}
+                    disabled={item.id === note.id}
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: item.id === note.id ? T.inkDim : T.inkMed,
+                      cursor: item.id === note.id ? 'default' : 'pointer',
+                      padding: '1px 2px',
+                      fontFamily: 'var(--mn-ui)',
+                      fontSize: 11.5,
+                      maxWidth: 180,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                    {item.title || 'Untitled'}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+
           <input
             value={note.title}
             onChange={(e) => onTitleChange(e.target.value)}
@@ -283,6 +321,7 @@ function MnEditor({
               }
               const target = notes.find(n => n.title.toLowerCase() === label.toLowerCase());
               if (target) onOpen(target.id);
+              else if (onCreateLinkedNote) onCreateLinkedNote(label);
             }}
             onTagClick={onOpenTag}
             onOpenCanvas={onOpenCanvas}

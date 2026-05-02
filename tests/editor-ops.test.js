@@ -333,6 +333,18 @@ test('Code blocks preserve language metadata and expose syntax UI', () => {
   assert.match(outliner, /mnRenderCode\(content, block\.language, T\)/);
 });
 
+test('Markdown round-trip preserves heading children used by novelist links', () => {
+  const outlineApi = loadOutlineForTest();
+  const md = '# Arc 1\n- arc:: [[Act One]]\n- [[Chapter 1]]\n  - [[Scene 1]]';
+  const blocks = outlineApi.mnMdToBlocks(md);
+  const roundTrip = outlineApi.mnBlocksToMd(blocks);
+
+  assert.match(roundTrip, /# Arc 1/);
+  assert.match(roundTrip, /arc:: \[\[Act One\]\]/);
+  assert.match(roundTrip, /\[\[Chapter 1\]\]/);
+  assert.match(roundTrip, /\[\[Scene 1\]\]/);
+});
+
 test('Reminder center and spellcheck wiring are visible in app shell', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
@@ -468,6 +480,119 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(canvas, /Delete canvas/);
   assert.match(canvas, /function MnCanvasEditor/);
   assert.match(canvas, /function MnCanvasEmbed/);
+});
+
+test('Novelist mode is a vault type with settings, templates, workflow, and dashboard wiring', () => {
+  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
+  const ai = fs.readFileSync(path.join(__dirname, '../src/ai.jsx'), 'utf8');
+
+  assert.match(store, /novelistMode: !!meta\.novelistMode/);
+  assert.match(store, /workflowStates: Array\.isArray\(meta\.workflowStates\) \? normalizeWorkflowStates\(meta\.workflowStates\) : null/);
+  assert.match(store, /async function createVault\(name, options = \{\}\)/);
+  assert.match(main, /store\.createVault\(name, options\)/);
+  assert.match(preload, /createVault: \(name, options\) => ipcRenderer\.invoke\('mn:createVault', name, options\)/);
+  assert.match(app, /const MN_NOVELIST_TAGS = \[/);
+  assert.match(app, /novel-arc/);
+  assert.match(app, /\[\[Arc 1\]\]/);
+  assert.match(app, /\[\[Chapter 1\]\]/);
+  assert.match(app, /\[\[Scene 1\]\]/);
+  assert.match(app, /const MN_NOVELIST_WORKFLOW_STATES = \[/);
+  assert.match(app, /sourceWorkflowStates = null/);
+  assert.match(app, /workflowStates: nextWorkflowStates/);
+  assert.match(app, /workflowStates: vaultType === 'novelist' \? MN_NOVELIST_WORKFLOW_STATES : null/);
+  assert.match(app, /const normalWorkflowStates = useMemoA/);
+  assert.match(app, /const novelistWorkflowStates = useMemoA/);
+  assert.match(app, /activeVault\?\.novelistMode \? novelistWorkflowStates : normalWorkflowStates/);
+  assert.match(app, /saveVaultMeta\(activeVaultId, \{ workflowStates: next \}\)/);
+  assert.doesNotMatch(app, /setTweak\('workflowStates', MN_NOVELIST_WORKFLOW_STATES\)/);
+  assert.match(app, /function mnBuildNovelistStarterNotes/);
+  assert.match(app, /function mnBuildNovelistStructure/);
+  assert.match(app, /split\('\|'\)\[0\]/);
+  assert.match(app, /\|\|\s*match\[2\]/);
+  assert.match(app, /addStage\('chapter', chapter\)/);
+  assert.match(app, /addStage\('scene', scene\)/);
+  assert.match(app, /stageByNoteId/);
+  assert.match(app, /const ensureNoteHasTag = useCallbackA/);
+  assert.match(app, /mnNovelEnsureWikiLink/);
+  assert.match(app, /mnNovelUpsertPropertyLink/);
+  assert.match(app, /const setActiveVaultNovelistMode = useCallbackA/);
+  assert.match(app, /view === 'novelist'/);
+  assert.match(app, /<MnNovelistPanel/);
+  assert.match(app, /createNote\(\{ title, body, tags: noteTags \|\| \[\] \}, \{ open: false \}\)/);
+  assert.match(app, /onLinkChapter=\{linkNovelistChapter\}/);
+  assert.match(app, /onLinkScene=\{linkNovelistScene\}/);
+  assert.match(app, /onDeleteNote=\{requestDeleteNote\}/);
+  assert.match(app, /const removeNovelistSupportingType = \(name\) =>/);
+  assert.match(app, /setTags\(ts => ts\.filter\(t => t\.name !== clean\)\)/);
+  assert.match(app, /onCreateTag=\{addTag\}/);
+  assert.match(app, /onRemoveSupportingType=\{removeNovelistSupportingType\}/);
+  assert.match(app, /novelistPath=\{activeVault\?\.novelistMode/);
+  assert.match(app, /novelistStructure=\{activeVault\?\.novelistMode/);
+  assert.match(app, /onSetVaultNovelistMode=\{setActiveVaultNovelistMode\}/);
+  assert.match(sidebar, /label="Novelist"/);
+  assert.match(sidebar, /Novelist vault/);
+  assert.match(settings, /Vault mode/);
+  assert.match(settings, /Novelist vault/);
+  assert.match(panels, /function MnNovelistPanel/);
+  assert.match(panels, /Story Structure/);
+  assert.match(panels, /Arc -> Chapter -> Scene/);
+  assert.match(panels, /function MnNovelistPanel[\s\S]*childrenByArcId/);
+  assert.match(panels, /supportingTypes = \(tags \|\| \[\]\)/);
+  assert.match(panels, /normalizeSupportingTypeTag/);
+  assert.match(panels, /onCreateTag\?\.\(tagName\)/);
+  assert.match(panels, /onRemoveSupportingType\?\.\(type\.tag\)/);
+  assert.match(panels, /Add type/);
+  assert.match(panels, /Remove type/);
+  assert.match(panels, /\+ Note/);
+  assert.match(panels, /novel-character/);
+  assert.match(panels, /novel-research/);
+  assert.match(panels, /No chapters linked/);
+  assert.match(panels, /No scenes linked/);
+  assert.match(panels, /\+ \{type === 'chapter' \? 'Chapter' : 'Scene'\}/);
+  assert.match(panels, /Link \{type\}/);
+  assert.match(panels, /showLinkNotice/);
+  assert.match(panels, /LinkNoticeChip/);
+  assert.match(panels, /linkNotice\.text/);
+  assert.match(panels, /linkNotice\.parentId/);
+  assert.match(panels, /Linked to \$\{linkedTo\.title/);
+  assert.match(panels, /Unlinked chapters/);
+  assert.match(panels, /Unlinked scenes/);
+  assert.match(panels, /linkNoticeTimer/);
+  assert.match(panels, /onContextMenu=\{\(e\) => openNoteMenu\(e, note\)\}/);
+  assert.match(panels, /closeOnEscape/);
+  assert.match(panels, /Delete note/);
+  assert.match(panels, /Choose arc for new Chapter/);
+  assert.match(panels, /Create standalone/);
+  assert.match(panels, /createChapterForArc/);
+  assert.match(panels, /createSceneForChapter/);
+  assert.match(editor, /novelistPath = null/);
+  assert.match(editor, /onCreateLinkedNote/);
+  assert.match(notelist, /function MnNoteList[\s\S]*novelistStructure = null/);
+  assert.match(notelist, /allNotes = null/);
+  assert.match(notelist, /const sourceNotes = allNotes \|\| notes \|\| \[\]/);
+  assert.match(notelist, /const GroupHeader/);
+  assert.match(notelist, /const CollectionHeader/);
+  assert.match(notelist, /chaptersForArc/);
+  assert.match(notelist, /scenesForChapter/);
+  assert.match(notelist, /const chapterIds = new Set/);
+  assert.match(notelist, /linkedTo=\{`Linked to \$\{arc\.title/);
+  assert.match(notelist, /parentByChapterId/);
+  assert.match(notelist, /parentBySceneId/);
+  assert.match(notelist, /Unlinked chapters/);
+  assert.match(notelist, /looseScenes/);
+  assert.match(panels, /Novel Plot Board/);
+  assert.match(panels, /Continue scene/);
+  assert.match(panels, /Supporting Notes/);
+  assert.match(panels, /Workflow Status/);
+  assert.match(ai, /initialQuery/);
 });
 
 test('Canvas editor supports expected drawing, color, clipboard, and delete interactions', () => {
@@ -703,6 +828,72 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(html, /href="assets\/omini-note-icon\.svg"/);
 });
 
+test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const markdown = fs.readFileSync(path.join(__dirname, '../src/markdown.jsx'), 'utf8');
+  const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const store = require('../lib/store');
+  const ai = require('../lib/ai');
+
+  assert.match(main, /const \{ pathToFileURL \} = require\('url'\)/);
+  assert.match(main, /function hardenWindow\(win\)/);
+  assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/);
+  assert.match(main, /webContents\.on\('will-navigate'/);
+  assert.match(main, /setPermissionRequestHandler/);
+  assert.match(main, /webSecurity: true/);
+  assert.match(main, /allowRunningInsecureContent: false/);
+  assert.match(main, /ai\.setConfig\(prefs\.aiConfig, \{ rejectUnknown: false \}\)/);
+  assert.match(main, /result\?\.config\?\.provider === 'ollama'/);
+  assert.match(main, /store\.setPrefs\(\{ aiConfig: ai\.getConfig\(\) \}\)/);
+
+  assert.match(html, /Content-Security-Policy/);
+  assert.match(html, /default-src 'self'/);
+  assert.match(html, /script-src 'self' 'unsafe-inline' 'unsafe-eval'/);
+  assert.match(html, /object-src 'none'/);
+  assert.match(html, /frame-ancestors 'none'/);
+
+  assert.doesNotMatch(markdown, /dangerouslySetInnerHTML/);
+  assert.doesNotMatch(markdown, /\.innerHTML\s*=/);
+
+  assert.match(storeSource, /function sanitizeVaultMetaPatch/);
+  assert.match(storeSource, /Unsupported vault metadata field/);
+  assert.match(storeSource, /if \(states === null \|\| states === undefined\) return null/);
+  assert.match(storeSource, /Unsupported preferences field/);
+
+  const cleanMeta = store.__test.sanitizeVaultMetaPatch({
+    tags: [{ name: ' Novel Cast ', hue: 999 }, 'novel-research'],
+    lastSelectedId: 'n_valid-1',
+    novelistMode: true,
+    workflowStates: [],
+  });
+  assert.deepEqual(cleanMeta.tags, [
+    { name: 'novel-cast', hue: 360 },
+    { name: 'novel-research', hue: 240 },
+  ]);
+  assert.equal(cleanMeta.lastSelectedId, 'n_valid-1');
+  assert.equal(cleanMeta.novelistMode, true);
+  assert.deepEqual(cleanMeta.workflowStates, []);
+  assert.throws(() => store.__test.sanitizeVaultMetaPatch({ slug: '../x' }), /Unsupported vault metadata field/);
+  assert.throws(() => store.__test.sanitizeVaultMetaPatch({ lastSelectedId: '../x' }), /Invalid note id/);
+
+  assert.match(aiSource, /function sanitizeConfigPatch/);
+  assert.match(aiSource, /SECRET_CONFIG_KEYS/);
+  assert.match(aiSource, /Invalid \$\{field\} protocol/);
+  assert.match(aiSource, /config: publicConfig\(\)/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'file:///tmp/model' }), /Invalid customBaseUrl protocol/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ surprise: true }), /Unsupported AI config field/);
+  assert.equal(
+    ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://localhost:11434/v1/' }).customBaseUrl,
+    'http://localhost:11434/v1'
+  );
+  assert.equal(
+    ai.__test.publicConfig({ openaiApiKey: 'secret-key', provider: 'openai' }).openaiApiKey,
+    'configured'
+  );
+});
+
 test('Fallback spell checker underlines misspellings and offers replacements', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -775,9 +966,12 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(app, /onSetWorkflowArchived=\{updateWorkflowArchived\}/);
   assert.match(app, /"workflowStates": null/);
   assert.match(app, /mnNormalizeWorkflowStatesForApp/);
-  assert.match(app, /const workflowStates = useMemoA/);
+  assert.match(app, /const normalWorkflowStates = useMemoA/);
+  assert.match(app, /const novelistWorkflowStates = useMemoA/);
+  assert.match(app, /activeVault\?\.novelistMode \? novelistWorkflowStates : normalWorkflowStates/);
   assert.match(app, /setWorkflowStates\?\.\(workflowStates\)/);
   assert.match(app, /const updateWorkflowStates = useCallbackA/);
+  assert.match(app, /saveVaultMeta\(activeVaultId, \{ workflowStates: next \}\)/);
   assert.match(app, /onWorkflowStatesChange=\{updateWorkflowStates\}/);
   assert.doesNotMatch(app, /countFor\('WAIT'\) \+ countFor\('LATER'\)/);
   assert.doesNotMatch(app, /countFor\('DONE'\) \+ countFor\('CANCELLED'\)/);
@@ -789,7 +983,11 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(panels, /\{showArchived \? <ArchivedNotes \/> : \(/);
   assert.match(panels, /Restore/);
   assert.match(panels, /archiveNote\(note\.id, false\)/);
-  assert.match(panels, /WorkflowStateManager/);
+  assert.match(panels, /renderWorkflowStateManager/);
+  assert.match(panels, /Array\.isArray\(states\) && states\.length === 0 \? \[\]/);
+  assert.doesNotMatch(panels, /disabled=\{\(workflowStates \|\| \[\]\)\.length <= 1\}/);
+  assert.match(app, /if \(Array\.isArray\(states\) && states\.length === 0\) return \[\]/);
+  assert.match(blockFeatures, /if \(Array\.isArray\(states\) && states\.length === 0\) return \[\]/);
   assert.match(panels, /new column/);
   assert.match(panels, /addWorkflowState/);
   assert.match(panels, /removeWorkflowState/);

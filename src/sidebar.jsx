@@ -6,6 +6,7 @@ function MnSidebar({
   onOpenToday, todayActive, todosActive, graphActive,
   selectedWorkflow, workflowStates, workflowCounts, workflowTotal,
   onSelectWorkflow, onOpenWorkflowPanel, workflowActive,
+  onOpenNovelist, novelistActive, novelistEnabled, novelistCount = 0,
   onOpenCanvas, canvasActive, canvasCount = 0,
   onOpenAskAI,
   onNewTag, onNew, onOpenSettings, onCollapse,
@@ -15,6 +16,7 @@ function MnSidebar({
   const [vaultOpen, setVaultOpen] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [newName, setNewName] = React.useState('');
+  const [newVaultType, setNewVaultType] = React.useState('notes');
   const [creatingTag, setCreatingTag] = React.useState(false);
   const [newTagName, setNewTagName] = React.useState('');
   const tagCreatorRef = React.useRef(null);
@@ -57,6 +59,16 @@ function MnSidebar({
     onNewTag && onNewTag(name);
     setNewTagName('');
     setCreatingTag(false);
+  };
+
+  const submitVault = () => {
+    const name = newName.trim();
+    if (!name) return;
+    onCreateVault(name, { type: newVaultType });
+    setNewName('');
+    setNewVaultType('notes');
+    setCreating(false);
+    setVaultOpen(false);
   };
 
   React.useEffect(() => {
@@ -132,6 +144,7 @@ function MnSidebar({
   const iconToday = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5 2V4M11 2V4M2 7H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="8" cy="10.5" r="1.3" fill="currentColor"/></svg>);
   const iconTodos = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="4" height="4" rx="0.8" stroke="currentColor" strokeWidth="1.3"/><path d="M3 4.5L3.7 5.2L5 3.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><rect x="2" y="9.5" width="4" height="4" rx="0.8" stroke="currentColor" strokeWidth="1.3"/><path d="M8 4.5H14M8 11.5H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconWorkflow = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4H8.5M3 8H11M3 12H7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="12" cy="4" r="1.5" stroke="currentColor" strokeWidth="1.3"/><circle cx="13" cy="12" r="1.5" stroke="currentColor" strokeWidth="1.3"/></svg>);
+  const iconNovelist = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 2.5H10.5L12 4V13.5H4V2.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M10.5 2.5V4H12M6 7H10M6 9.5H10M6 12H8.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconGraph = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="1.8" stroke="currentColor" strokeWidth="1.3"/><circle cx="12" cy="4" r="1.8" stroke="currentColor" strokeWidth="1.3"/><circle cx="8" cy="12" r="1.8" stroke="currentColor" strokeWidth="1.3"/><path d="M5.5 5L10.5 5M5.3 5.8L6.8 10.4M10.7 5.8L9.2 10.4" stroke="currentColor" strokeWidth="1.3"/></svg>);
   const iconCanvas = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3" width="11" height="10" rx="1.3" stroke="currentColor" strokeWidth="1.3"/><path d="M5 6H8.5M5 8.5H11M5 11H7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M10.6 5.4L12 4M11.1 7.1L13 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconAI = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2L9.5 6.5L14 8L9.5 9.5L8 14L6.5 9.5L2 8L6.5 6.5L8 2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>);
@@ -265,43 +278,67 @@ function MnSidebar({
               })}
 
               {creating ? (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '7px 9px', borderRadius: 5,
-                  border: `1px solid ${T.accent}`, marginTop: 4,
-                }}>
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke={T.accent} strokeWidth="1.3" style={{ flexShrink: 0 }}>
-                    <path d="M3 4H13V13H3V4Z"/>
-                    <path d="M3 4L5.5 2H10.5L13 4" strokeLinejoin="round"/>
-                  </svg>
-                  <input autoFocus value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    placeholder="Vault name"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newName.trim()) {
-                        onCreateVault(newName.trim());
-                        setNewName(''); setCreating(false); setVaultOpen(false);
-                      }
-                      if (e.key === 'Escape') { setCreating(false); setNewName(''); }
-                    }}
-                    style={{
-                      flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                      color: T.ink, fontFamily: 'var(--mn-ui)', fontSize: 12.5,
-                    }} />
-                  <button onClick={() => {
-                    if (newName.trim()) {
-                      onCreateVault(newName.trim());
-                      setNewName(''); setCreating(false); setVaultOpen(false);
-                    }
-                  }} disabled={!newName.trim()}
-                    style={{
-                      padding: '3px 10px', borderRadius: 4, border: 'none',
-                      background: newName.trim() ? T.ink : T.bgSub,
-                      color: newName.trim() ? T.bg : T.inkDim,
-                      cursor: newName.trim() ? 'pointer' : 'default',
-                      fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 500,
-                    }}>Create</button>
-                </div>
+                <>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 9px', borderRadius: 5,
+                    border: `1px solid ${T.accent}`, marginTop: 4,
+                  }}>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke={T.accent} strokeWidth="1.3" style={{ flexShrink: 0 }}>
+                      <path d="M3 4H13V13H3V4Z"/>
+                      <path d="M3 4L5.5 2H10.5L13 4" strokeLinejoin="round"/>
+                    </svg>
+                    <input autoFocus value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      placeholder="Vault name"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newName.trim()) {
+                          submitVault();
+                        }
+                        if (e.key === 'Escape') { setCreating(false); setNewName(''); setNewVaultType('notes'); }
+                      }}
+                      style={{
+                        flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                        color: T.ink, fontFamily: 'var(--mn-ui)', fontSize: 12.5,
+                      }} />
+                    <button onClick={() => {
+                      submitVault();
+                    }} disabled={!newName.trim()}
+                      style={{
+                        padding: '3px 10px', borderRadius: 4, border: 'none',
+                        background: newName.trim() ? T.ink : T.bgSub,
+                        color: newName.trim() ? T.bg : T.inkDim,
+                        cursor: newName.trim() ? 'pointer' : 'default',
+                        fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 500,
+                      }}>Create</button>
+                  </div>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 5,
+                    margin: '5px 0 0 29px',
+                  }}>
+                    {[
+                      { id: 'notes', label: 'Notes vault' },
+                      { id: 'novelist', label: 'Novelist vault' },
+                    ].map(type => (
+                      <button
+                        key={type.id}
+                        type="button"
+                        onClick={() => setNewVaultType(type.id)}
+                        style={{
+                          padding: '5px 7px',
+                          borderRadius: 5,
+                          border: `1px solid ${newVaultType === type.id ? T.selLine : T.lineSub}`,
+                          background: newVaultType === type.id ? T.accentSoft : T.bgSub,
+                          color: newVaultType === type.id ? T.accent : T.inkMed,
+                          fontFamily: 'var(--mn-ui)',
+                          fontSize: 11.5,
+                          cursor: 'pointer',
+                        }}>{type.label}</button>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <div onClick={() => setCreating(true)} style={{
                   display: 'flex', alignItems: 'center', gap: 8,
@@ -348,7 +385,7 @@ function MnSidebar({
       {openSections.allnotes && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
-               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !canvasActive}
+               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive}
                onClick={() => onSelectTag(null)} />
           <Row icon={iconToday} label="Daily rollup" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
@@ -358,6 +395,11 @@ function MnSidebar({
           <Row icon={iconWorkflow} label="Workflow" count={workflowTotal || 0}
                active={workflowActive}
                onClick={onOpenWorkflowPanel} accent={T.accent} />
+          {novelistEnabled && (
+            <Row icon={iconNovelist} label="Novelist" count={novelistCount}
+                 active={novelistActive}
+                 onClick={onOpenNovelist} accent={T.accent} />
+          )}
           <Row icon={iconGraph} label="Graph" active={graphActive} onClick={onOpenGraph} />
           <Row icon={iconCanvas} label="Canvas" count={canvasCount}
                active={canvasActive}

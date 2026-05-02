@@ -33,6 +33,7 @@ function mnWorkflowColor(index) {
 }
 
 function mnNormalizeWorkflowStates(states) {
+  if (Array.isArray(states) && states.length === 0) return [];
   const byDefault = Object.fromEntries(MN_DEFAULT_WORKFLOW_STATES.map(s => [s.id, s]));
   const seen = new Set();
   const source = Array.isArray(states) && states.length ? states : MN_DEFAULT_WORKFLOW_STATES;

@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('mn', {
   // Vaults
   listVaults: () => ipcRenderer.invoke('mn:listVaults'),
-  createVault: (name) => ipcRenderer.invoke('mn:createVault', name),
+  createVault: (name, options) => ipcRenderer.invoke('mn:createVault', name, options),
   renameVault: (id, name) => ipcRenderer.invoke('mn:renameVault', id, name),
   deleteVault: (id) => ipcRenderer.invoke('mn:deleteVault', id),
   setActiveVault: (id) => ipcRenderer.invoke('mn:setActiveVault', id),

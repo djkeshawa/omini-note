@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const store = require('./lib/store');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
@@ -219,6 +220,26 @@ function attachEditContextMenu(win) {
   });
 }
 
+function isAllowedAppNavigation(rawUrl) {
+  try {
+    const target = new URL(rawUrl);
+    const appUrl = new URL(pathToFileURL(path.join(__dirname, 'OminiNote.html')).href);
+    return target.protocol === appUrl.protocol && target.pathname === appUrl.pathname;
+  } catch (e) {
+    return false;
+  }
+}
+
+function hardenWindow(win) {
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, targetUrl) => {
+    if (!isAllowedAppNavigation(targetUrl)) event.preventDefault();
+  });
+  win.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false);
+  });
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -231,10 +252,13 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
       spellcheck: true,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  hardenWindow(win);
   const spellSession = win.webContents.session;
   spellSession.setSpellCheckerEnabled(true);
   const spellLanguages = spellSession.availableSpellCheckerLanguages || [];
@@ -280,8 +304,8 @@ function wrap(fn) {
 
 // Vault management
 ipcMain.handle('mn:listVaults',     wrap(store.listVaults));
-ipcMain.handle('mn:createVault',    wrap(async (name) => {
-  const v = await store.createVault(name);
+ipcMain.handle('mn:createVault',    wrap(async (name, options) => {
+  const v = await store.createVault(name, options);
   // Index the seeded welcome note
   const data = await store.loadVault(v.id);
   idx.rescanVault(v.id, data.notes);
@@ -327,7 +351,7 @@ ipcMain.handle('mn:tagCounts',      wrap((vaultId) => idx.tagCounts(vaultId)));
 ipcMain.handle('mn:ai.status',      wrap(() => ai.status()));
 ipcMain.handle('mn:ai.connect',     wrap(async () => {
   const result = await ai.connect();
-  if (result?.config) await store.setPrefs({ aiConfig: result.config });
+  if (result?.config?.provider === 'ollama') await store.setPrefs({ aiConfig: ai.getConfig() });
   return result;
 }));
 ipcMain.handle('mn:ai.ask',         wrap((vaultId, query, options) => ai.ask(vaultId, query, store, options || {})));
@@ -370,7 +394,7 @@ app.whenReady().then(async () => {
   try {
     await store.loadConfig();   // ensures the OminiNote vault folder, seeds on first run
     const prefs = await store.getPrefs();
-    if (prefs.aiConfig) ai.setConfig(prefs.aiConfig);
+    if (prefs.aiConfig) ai.setConfig(prefs.aiConfig, { rejectUnknown: false });
     idx.init();                 // opens / creates the local search index
     await rescanAllVaults();    // sync index with disk
   } catch (e) {

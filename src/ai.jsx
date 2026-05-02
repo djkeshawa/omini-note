@@ -33,7 +33,7 @@ function mnAskStatusText(status) {
 
 function MnAskAI({
   vaultId, currentNote, allNotes, onClose, onOpenNote, onCreateNote, onApplyCurrentPageBody,
-  session, setSession, onBackgroundComplete, T,
+  session, setSession, onBackgroundComplete, initialQuery, T,
 }) {
   const [query, setQuery] = useStateAI('');
   const [status, setStatus] = useStateAI(null);
@@ -64,6 +64,12 @@ function MnAskAI({
       window.mn.ai.status().then(r => { if (r.ok) setStatus(r.value); });
     }
   }, []);
+
+  useEffectAI(() => {
+    if (!initialQuery) return;
+    setQuery(initialQuery);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, [initialQuery]);
 
   useEffectAI(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;

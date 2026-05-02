@@ -1,6 +1,6 @@
 // Overlay panels: Todos aggregator, Today view, Quick-capture, Reminder toast, Tweaks
 
-const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP } = React;
+const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
 
 // ────────────────────────────────────────────────────────────
 // Aggregated Todos
@@ -263,6 +263,1001 @@ function SectionHead({ label, count, T }) {
 }
 
 // ────────────────────────────────────────────────────────────
+// Novelist workspace
+// ────────────────────────────────────────────────────────────
+function MnNovelistPanel({
+  notes, novelistNotes, tags, canvases, workflowStates, workflowItems,
+  novelistStructure,
+  onOpen, onCreateNote, onLinkChapter, onLinkScene,
+  onDeleteNote, onOpenCanvas, onCreateCanvas, onOpenAskAI,
+  onCreateTag, onRemoveSupportingType, T
+}) {
+  const [linkMenu, setLinkMenu] = useStateP(null);
+  const [createMenu, setCreateMenu] = useStateP(null);
+  const [addingSupportType, setAddingSupportType] = useStateP(false);
+  const [supportTypeDraft, setSupportTypeDraft] = useStateP('');
+  const [collapsed, setCollapsed] = useStateP({});
+  const [noteMenu, setNoteMenu] = useStateP(null);
+  const [linkNotice, setLinkNotice] = useStateP(null);
+  const linkNoticeTimer = useRefP(null);
+  useEffectP(() => {
+    if (!noteMenu && !createMenu && !linkMenu) return;
+    const close = () => {
+      setNoteMenu(null);
+      setCreateMenu(null);
+      setLinkMenu(null);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') close();
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [noteMenu, createMenu, linkMenu]);
+  const novelNotes = novelistNotes || (notes || []).filter(n => (n.tags || []).some(t => t.startsWith('novel-')));
+  const byTag = (tag) => novelNotes.filter(n => (n.tags || []).includes(tag));
+  const arcs = novelistStructure?.arcs || byTag('novel-arc');
+  const chapters = novelistStructure?.chapters || byTag('novel-chapter');
+  const scenes = novelistStructure?.scenes || byTag('novel-scene');
+  const childrenByArcId = novelistStructure?.childrenByArcId || {};
+  const childrenByChapterId = novelistStructure?.childrenByChapterId || {};
+  const parentByChapterId = novelistStructure?.parentByChapterId || {};
+  const parentBySceneId = novelistStructure?.parentBySceneId || {};
+  const structureTagNames = new Set(['novel-manuscript', 'novel-arc', 'novel-chapter', 'novel-scene']);
+  const supportTypeDefaults = {
+    'novel-character': {
+      label: 'Character',
+      sectionTitle: 'Characters',
+      body: '# Character\n- Want:: \n- Need:: \n- Secret:: \n- Change:: ',
+    },
+    'novel-location': {
+      label: 'Location',
+      sectionTitle: 'Locations',
+      body: '# Location\n- Mood:: \n- Sensory details:: \n- Rules or constraints:: ',
+    },
+    'novel-plot': {
+      label: 'Plot Thread',
+      sectionTitle: 'Plot Threads',
+      body: '# Plot Thread\n- IDEA Promise\n- OUTLINE Setup\n- REVISE Payoff',
+    },
+    'novel-research': {
+      label: 'Research',
+      sectionTitle: 'Research',
+      body: '# Research\n- Source:: \n- Notes\n  - ',
+    },
+  };
+  const titleFromTag = (tagName) => String(tagName || '')
+    .replace(/^novel-/, '')
+    .split('-')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || 'Note';
+  const pluralize = (label) => {
+    if (/s$/i.test(label)) return label;
+    if (/y$/i.test(label)) return `${label.slice(0, -1)}ies`;
+    return `${label}s`;
+  };
+  const normalizeSupportingTypeTag = (raw) => {
+    const clean = String(raw || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]+/g, '').replace(/^-+|-+$/g, '');
+    if (!clean) return '';
+    return clean.startsWith('novel-') ? clean : `novel-${clean}`;
+  };
+  const supportingTypes = (tags || [])
+    .filter(tag => tag?.name?.startsWith('novel-') && !structureTagNames.has(tag.name))
+    .filter((tag, index, arr) => arr.findIndex(item => item.name === tag.name) === index)
+    .map(tag => {
+      const fallbackLabel = titleFromTag(tag.name);
+      const defaults = supportTypeDefaults[tag.name] || {};
+      return {
+        tag: tag.name,
+        label: defaults.label || fallbackLabel,
+        sectionTitle: defaults.sectionTitle || pluralize(fallbackLabel),
+        body: defaults.body || `# ${fallbackLabel}\n- Notes\n  - `,
+      };
+    });
+  const supportingTotal = supportingTypes.reduce((sum, type) => sum + byTag(type.tag).length, 0);
+  const plotBoard = (canvases || []).find(c => (c.title || '').toLowerCase() === 'novel plot board');
+  const workflowTotal = (workflowStates || []).reduce((sum, state) => sum + ((workflowItems?.[state.id] || []).length), 0);
+
+  const uniqueTitle = (base) => {
+    const existing = new Set((notes || []).map(note => String(note.title || '').toLowerCase()));
+    if (!existing.has(base.toLowerCase())) return base;
+    for (let i = 2; i < 1000; i++) {
+      const next = `${base} ${i}`;
+      if (!existing.has(next.toLowerCase())) return next;
+    }
+    return `${base} ${Date.now().toString(36)}`;
+  };
+  const createTemplate = (template, e) => {
+    if ((template.tags || []).includes('novel-chapter') && arcs.length) {
+      if (arcs.length === 1) {
+        createChapterForArc(arcs[0]);
+        return;
+      }
+      setCreateMenu({ type: 'chapter', x: e?.clientX || 0, y: e?.clientY || 0 });
+      return;
+    }
+    if ((template.tags || []).includes('novel-scene') && chapters.length) {
+      if (chapters.length === 1) {
+        createSceneForChapter(chapters[0]);
+        return;
+      }
+      setCreateMenu({ type: 'scene', x: e?.clientX || 0, y: e?.clientY || 0 });
+      return;
+    }
+    const title = uniqueTitle(template.title);
+    onCreateNote && onCreateNote({ ...template, title, body: template.body.replace(new RegExp(`# ${template.title}\\b`), `# ${title}`) });
+  };
+  const createChapterForArc = (arc) => {
+    if (!arc) return;
+    const title = uniqueTitle(`${arc.title || 'Arc'} Chapter`);
+    const body = `# ${title}\n- arc:: [[${arc.title || 'Arc'}]]\n- OUTLINE Goal\n- DRAFT Scene list\n- REVISE Notes`;
+    const id = onCreateNote?.({ title, body, tags: ['novel-chapter'] });
+    if (id) onLinkChapter?.(arc.id, id, title);
+    showLinkNotice(`Created and linked ${title} to ${arc.title || 'arc'}`, arc.id);
+  };
+  const createSceneForChapter = (chapter) => {
+    if (!chapter) return;
+    const arc = (notes || []).find(note => note.id === parentByChapterId[chapter.id]);
+    const title = uniqueTitle(`${chapter.title || 'Chapter'} Scene`);
+    const body = `# ${title}\n${arc ? `- arc:: [[${arc.title}]]\n` : ''}- chapter:: [[${chapter.title || 'Chapter'}]]\n- pov:: \n- setting:: \n- purpose:: \n- DRAFT Draft the scene here.`;
+    const id = onCreateNote?.({ title, body, tags: ['novel-scene'] });
+    if (id) onLinkScene?.(chapter.id, id, title);
+    showLinkNotice(`Created and linked ${title} to ${chapter.title || 'chapter'}`, chapter.id);
+  };
+  const openPlotBoard = async () => {
+    if (plotBoard?.id) {
+      onOpenCanvas && onOpenCanvas(plotBoard.id);
+      return;
+    }
+    await onCreateCanvas?.('Novel Plot Board');
+  };
+  const ask = (prompt) => {
+    onOpenAskAI && onOpenAskAI(prompt);
+  };
+  const openNoteMenu = (e, note) => {
+    if (!note) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setNoteMenu({ note, x: e.clientX, y: e.clientY });
+  };
+
+  const templates = [
+    { title: 'Arc', tags: ['novel-arc'], body: '# Arc\n- purpose:: \n- OUTLINE Major turn\n- REVISE Open questions' },
+    { title: 'Chapter', tags: ['novel-chapter'], body: '# Chapter\n- arc:: \n- OUTLINE Goal\n- DRAFT Scene list\n- REVISE Notes' },
+    { title: 'Scene', tags: ['novel-scene'], body: '# Scene\n- chapter:: \n- pov:: \n- setting:: \n- purpose:: \n- DRAFT Draft the scene here.' },
+    ...supportingTypes.map(type => ({ title: type.label, tags: [type.tag], body: type.body })),
+  ];
+  const aiActions = [
+    { label: 'Continue scene', prompt: 'Continue the current novel scene. Preserve the existing voice, point of view, and continuity from my notes.' },
+    { label: 'Improve prose', prompt: 'Improve the prose in the current novel scene. Keep the meaning, POV, tense, markdown, and story facts intact.' },
+    { label: 'Summarize chapter', prompt: 'Summarize the current chapter or scene for a novelist. Include plot movement, character changes, and open revision questions.' },
+    { label: 'Suggest next scene', prompt: 'Suggest the next scene for this novel using my manuscript, plot, character, and research notes as context.' },
+    { label: 'Extract character facts', prompt: 'Extract character facts from the current scene and suggest updates for the story bible.' },
+  ];
+  const noteById = new Map((notes || []).map(note => [note.id, note]));
+  const childrenForArc = (arc) => (childrenByArcId[arc.id] || []).map(id => noteById.get(id)).filter(Boolean);
+  const childrenForChapter = (chapter) => (childrenByChapterId[chapter.id] || []).map(id => noteById.get(id)).filter(Boolean);
+  const unlinkedChapters = chapters.filter(chapter => !parentByChapterId[chapter.id]);
+  const unlinkedScenes = scenes.filter(scene => !parentBySceneId[scene.id]);
+  const isNonStructureNovel = (note) => (note?.tags || []).some(tag =>
+    tag.startsWith('novel-') && !['novel-chapter', 'novel-scene'].includes(tag)
+  );
+  const chapterCandidatesForArc = (arc) => (notes || []).filter(note =>
+    note.id !== arc.id &&
+    !parentByChapterId[note.id] &&
+    !parentBySceneId[note.id] &&
+    !isNonStructureNovel(note) &&
+    !(note.tags || []).includes('novel-scene')
+  );
+  const sceneCandidatesForChapter = (chapter) => (notes || []).filter(note =>
+    note.id !== chapter.id &&
+    !parentBySceneId[note.id] &&
+    !isNonStructureNovel(note) &&
+    !(note.tags || []).includes('novel-chapter')
+  );
+  const arcForChapter = (chapter) => noteById.get(parentByChapterId[chapter?.id]);
+  const chapterForScene = (scene) => noteById.get(parentBySceneId[scene?.id]);
+  const arcForScene = (scene) => {
+    const chapter = chapterForScene(scene);
+    return chapter ? arcForChapter(chapter) : null;
+  };
+  const showLinkNotice = (text, parentId = null) => {
+    setLinkNotice({ text, parentId, at: Date.now() });
+    if (linkNoticeTimer.current) window.clearTimeout(linkNoticeTimer.current);
+    linkNoticeTimer.current = window.setTimeout(() => setLinkNotice(null), 3200);
+  };
+  const addSupportingType = () => {
+    const tagName = normalizeSupportingTypeTag(supportTypeDraft);
+    if (!tagName || structureTagNames.has(tagName)) return;
+    onCreateTag?.(tagName);
+    setSupportTypeDraft('');
+    setAddingSupportType(false);
+  };
+  const createSupportingNote = (type) => {
+    const title = uniqueTitle(type.label);
+    onCreateNote?.({
+      title,
+      tags: [type.tag],
+      body: type.body.replace(new RegExp(`# ${type.label}\\b`), `# ${title}`),
+    });
+  };
+
+  const TypeLine = ({ label, linkedTo, extraParent, count }) => (
+    <div style={{
+      marginTop: 3,
+      fontFamily: 'var(--mn-mono)',
+      fontSize: 9.5,
+      color: T.inkDim,
+      textTransform: 'uppercase',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    }}>
+      {label}{typeof count === 'number' ? ` · ${count}` : ''}
+      {linkedTo ? ` · Linked to ${linkedTo.title || 'Untitled'}${extraParent ? ` · ${extraParent.title || 'Untitled'}` : ''}` : ''}
+    </div>
+  );
+
+  const NoteCard = ({ note }) => (
+    <button
+      key={note.id}
+      onClick={() => onOpen && onOpen(note.id)}
+      onContextMenu={(e) => openNoteMenu(e, note)}
+      style={{
+        border: `1px solid ${T.lineSub}`,
+        borderRadius: 7,
+        background: T.bg,
+        color: T.ink,
+        padding: '9px 10px',
+        cursor: 'pointer',
+        textAlign: 'left',
+        minHeight: 58,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 5,
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+      onMouseLeave={e => e.currentTarget.style.background = T.bg}>
+      <div style={{
+        fontFamily: 'var(--mn-ui)',
+        fontSize: 13.5,
+        fontWeight: 650,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}>{note.title || 'Untitled'}</div>
+      <TypeLine label={(note.tags || []).find(t => t.startsWith('novel-'))?.replace('novel-', '') || 'note'} />
+    </button>
+  );
+
+  const Section = ({ type, items, empty }) => (
+    <section style={{
+      border: `1px solid ${T.lineSub}`,
+      borderRadius: 8,
+      background: T.bg,
+      padding: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink, minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{type.sectionTitle}</div>
+        <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>{items.length}</div>
+        <button
+          onClick={() => createSupportingNote(type)}
+          style={mnPanelMiniButton(T)}>
+          + Note
+        </button>
+        <button
+          onClick={() => onRemoveSupportingType?.(type.tag)}
+          title={`Remove ${type.sectionTitle} from Supporting Notes`}
+          style={{ ...mnPanelMiniButton(T), color: T.inkDim }}>
+          Remove type
+        </button>
+      </div>
+      <div style={{ display: 'grid', gap: 7 }}>
+        {items.slice(0, 6).map(note => <NoteCard key={note.id} note={note} />)}
+        {!items.length && (
+          <div style={{
+            border: `1px dashed ${T.line}`,
+            borderRadius: 7,
+            padding: 16,
+            textAlign: 'center',
+            color: T.inkDim,
+            fontFamily: 'var(--mn-body)',
+            fontSize: 12.5,
+          }}>{empty}</div>
+        )}
+      </div>
+    </section>
+  );
+
+  const LinkNoticeChip = ({ parentId }) => (
+    linkNotice && linkNotice.parentId === parentId ? (
+      <span style={{
+        fontFamily: 'var(--mn-ui)',
+        fontSize: 11.5,
+        color: T.accent,
+        background: T.accentSoft,
+        border: `1px solid color-mix(in oklab, ${T.accent} 24%, transparent)`,
+        borderRadius: 999,
+        padding: '2px 7px',
+        whiteSpace: 'nowrap',
+      }}>
+        {linkNotice.text}
+      </span>
+    ) : null
+  );
+
+  const StructureNoteButton = ({ note, label, linkedTo, extraParent, count, depth = 0 }) => (
+    <button
+      onClick={(e) => { e.stopPropagation(); onOpen && onOpen(note.id); }}
+      onContextMenu={(e) => openNoteMenu(e, note)}
+      title={`Open ${note.title}`}
+      style={{
+        border: 'none',
+        background: 'transparent',
+        color: T.ink,
+        padding: 0,
+        minWidth: 0,
+        textAlign: 'left',
+        cursor: 'pointer',
+        fontFamily: 'var(--mn-ui)',
+        flex: 1,
+      }}>
+      <div style={{
+        fontSize: depth ? 13 : 14,
+        fontWeight: depth ? 650 : 720,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        maxWidth: '100%',
+      }}>{note.title || label}</div>
+      <TypeLine label={label} linkedTo={linkedTo} extraParent={extraParent} count={count} />
+    </button>
+  );
+
+  const InlineEmpty = ({ children }) => (
+    <div style={{
+      border: `1px dashed ${T.lineSub}`,
+      borderRadius: 7,
+      color: T.inkDim,
+      background: T.bgSub,
+      padding: '7px 9px',
+      fontFamily: 'var(--mn-ui)',
+      fontSize: 12,
+    }}>{children}</div>
+  );
+
+  const ToggleButton = ({ expanded, onClick }) => (
+    <button
+      onClick={onClick}
+      title={expanded ? 'Collapse' : 'Expand'}
+      style={{
+        width: 24,
+        height: 24,
+        borderRadius: 6,
+        border: `1px solid ${T.lineSub}`,
+        background: T.bgSub,
+        color: T.inkDim,
+        cursor: 'pointer',
+        padding: 0,
+        flexShrink: 0,
+        fontFamily: 'var(--mn-ui)',
+        fontWeight: 700,
+      }}>
+      {expanded ? '-' : '+'}
+    </button>
+  );
+
+  const LinkMenu = ({ type, parent, candidates }) => {
+    const open = linkMenu?.type === type && linkMenu?.parentId === parent.id;
+    if (!open) return null;
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          marginTop: 7,
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 7,
+          background: T.bg,
+          boxShadow: `0 10px 24px color-mix(in oklab, ${T.ink} 12%, transparent)`,
+          overflow: 'hidden',
+          maxWidth: 420,
+          flexBasis: '100%',
+        }}>
+        <div style={{
+          padding: '7px 10px 6px',
+          borderBottom: `1px solid ${T.lineSub}`,
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 12,
+          color: T.inkMed,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          Link {type} to {parent.title || 'Untitled'}
+        </div>
+        {candidates.length === 0 && (
+          <div style={{ padding: '8px 10px', fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkDim }}>
+            No unlinked {type === 'chapter' ? 'chapters' : 'scenes'}
+          </div>
+        )}
+        {candidates.map(candidate => (
+          <button
+            key={candidate.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (type === 'chapter') {
+                onLinkChapter?.(parent.id, candidate.id, candidate.title);
+                showLinkNotice(`Linked ${candidate.title || 'chapter'} to ${parent.title || 'arc'}`, parent.id);
+              } else {
+                onLinkScene?.(parent.id, candidate.id, candidate.title);
+                showLinkNotice(`Linked ${candidate.title || 'scene'} to ${parent.title || 'chapter'}`, parent.id);
+              }
+              setLinkMenu(null);
+            }}
+            style={{
+              width: '100%',
+              border: 'none',
+              borderBottom: `1px solid ${T.lineSub}`,
+              background: T.bg,
+              color: T.ink,
+              padding: '8px 10px',
+              textAlign: 'left',
+              cursor: 'pointer',
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 12.5,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+            {candidate.title || 'Untitled'}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const StructureActions = ({ parent, type, onAdd, candidates }) => (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      <button
+        onClick={(e) => { e.stopPropagation(); onAdd(parent); }}
+        style={mnPanelMiniButton(T)}>
+        + {type === 'chapter' ? 'Chapter' : 'Scene'}
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setLinkMenu(current => current?.type === type && current?.parentId === parent.id ? null : { type, parentId: parent.id });
+        }}
+        style={mnPanelMiniButton(T)}>
+        Link {type}
+      </button>
+      <LinkNoticeChip parentId={parent.id} />
+      <LinkMenu type={type} parent={parent} candidates={candidates || []} />
+    </div>
+  );
+
+  const SceneRow = ({ scene }) => (
+    <div
+      onContextMenu={(e) => openNoteMenu(e, scene)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 9,
+        minHeight: 42,
+        padding: '7px 0 7px 32px',
+        borderTop: `1px solid ${T.lineSub}`,
+      }}>
+      <StructureNoteButton
+        note={scene}
+        label="Scene"
+        linkedTo={chapterForScene(scene)}
+        extraParent={arcForScene(scene)}
+        depth={2}
+      />
+    </div>
+  );
+
+  const ChapterRow = ({ chapter }) => {
+    const scenesForThisChapter = childrenForChapter(chapter);
+    const isCollapsed = collapsed[chapter.id] === true;
+    return (
+      <div
+        onContextMenu={(e) => openNoteMenu(e, chapter)}
+        style={{
+          borderTop: `1px solid ${T.lineSub}`,
+          padding: '8px 0 0 18px',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+          <ToggleButton
+            expanded={!isCollapsed}
+            onClick={(e) => { e.stopPropagation(); setCollapsed(c => ({ ...c, [chapter.id]: !isCollapsed })); }}
+          />
+          <StructureNoteButton
+            note={chapter}
+            label="Chapter"
+            linkedTo={arcForChapter(chapter)}
+            count={scenesForThisChapter.length}
+            depth={1}
+          />
+        </div>
+        {!isCollapsed && (
+          <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
+            {scenesForThisChapter.length
+              ? scenesForThisChapter.map(scene => <SceneRow key={scene.id} scene={scene} />)
+              : <div style={{ paddingLeft: 32 }}><InlineEmpty>No scenes linked</InlineEmpty></div>}
+            <div style={{ paddingLeft: 32 }}>
+              <StructureActions
+                parent={chapter}
+                type="scene"
+                onAdd={createSceneForChapter}
+                candidates={sceneCandidatesForChapter(chapter)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const ArcRow = ({ arc }) => {
+    const chaptersForThisArc = childrenForArc(arc);
+    const isCollapsed = collapsed[arc.id] === true;
+    return (
+      <div
+        onContextMenu={(e) => openNoteMenu(e, arc)}
+        style={{
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 8,
+          background: T.bg,
+          padding: 12,
+        }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+          <ToggleButton
+            expanded={!isCollapsed}
+            onClick={(e) => { e.stopPropagation(); setCollapsed(c => ({ ...c, [arc.id]: !isCollapsed })); }}
+          />
+          <StructureNoteButton
+            note={arc}
+            label="Arc"
+            count={chaptersForThisArc.length}
+          />
+        </div>
+        {!isCollapsed && (
+          <div style={{ display: 'grid', gap: 8, marginTop: 9 }}>
+            {chaptersForThisArc.length
+              ? chaptersForThisArc.map(chapter => <ChapterRow key={chapter.id} chapter={chapter} />)
+              : <div style={{ paddingLeft: 33 }}><InlineEmpty>No chapters linked</InlineEmpty></div>}
+            <div style={{ paddingLeft: 33 }}>
+              <StructureActions
+                parent={arc}
+                type="chapter"
+                onAdd={createChapterForArc}
+                candidates={chapterCandidatesForArc(arc)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const LooseStructureSection = ({ title, items, empty, render }) => (
+    <div style={{
+      border: `1px solid ${T.lineSub}`,
+      borderRadius: 8,
+      background: T.bg,
+      padding: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 700, color: T.ink }}>{title}</div>
+        <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>{items.length}</div>
+      </div>
+      <div style={{ display: 'grid', gap: 7 }}>
+        {items.map(render)}
+        {!items.length && <InlineEmpty>{empty}</InlineEmpty>}
+      </div>
+    </div>
+  );
+
+  const CreateButtonGroup = ({ items }) => (
+    <div style={{
+      display: 'flex',
+      gap: 7,
+      flexWrap: 'wrap',
+      alignItems: 'center',
+    }}>
+      <div style={{
+        fontFamily: 'var(--mn-mono)',
+        fontSize: 10,
+        color: T.inkDim,
+        textTransform: 'uppercase',
+        letterSpacing: '0.08em',
+      }}>Create</div>
+      {items.map(template => (
+        <button key={template.title} onClick={(e) => createTemplate(template, e)} style={mnPanelButton(T)}>
+          {template.title}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <div style={{
+      flex: 1,
+      height: '100%',
+      overflow: 'auto',
+      background: T.bgSub,
+      padding: '24px 32px',
+      color: T.ink,
+    }}>
+      <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+        <header style={{
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 8,
+          background: T.bg,
+          padding: 14,
+          marginBottom: 14,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 210 }}>
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 740, color: T.ink }}>Novelist</div>
+              <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap', fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkDim }}>
+                <span>{novelNotes.length} story note{novelNotes.length === 1 ? '' : 's'}</span>
+                <span>{workflowTotal} revision item{workflowTotal === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+            {linkNotice && (
+              <div style={{
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12,
+                color: T.accent,
+                background: T.accentSoft,
+                border: `1px solid color-mix(in oklab, ${T.accent} 25%, transparent)`,
+                borderRadius: 999,
+                padding: '4px 9px',
+                maxWidth: 360,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {linkNotice.text}
+              </div>
+            )}
+            <button onClick={openPlotBoard} style={mnPanelButton(T, true)}>
+              {plotBoard ? 'Open Plot Board' : 'Create Plot Board'}
+            </button>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <CreateButtonGroup items={templates} />
+          </div>
+        </header>
+
+        <section style={{
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 8,
+          background: T.bgSub,
+          padding: 12,
+          marginBottom: 14,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 750, color: T.ink }}>Story Structure</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>Arc -> Chapter -> Scene</div>
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {arcs.length
+              ? arcs.map(arc => <ArcRow key={arc.id} arc={arc} />)
+              : <InlineEmpty>Create an arc to group chapters.</InlineEmpty>}
+          </div>
+          {(unlinkedChapters.length > 0 || unlinkedScenes.length > 0) && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+              gap: 10,
+              marginTop: 10,
+            }}>
+              {unlinkedChapters.length > 0 && (
+                <LooseStructureSection
+                  title="Unlinked chapters"
+                  items={unlinkedChapters}
+                  empty="No unlinked chapters"
+                  render={chapter => (
+                    <div key={chapter.id} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <StructureNoteButton note={chapter} label="Chapter" count={childrenForChapter(chapter).length} depth={1} />
+                    </div>
+                  )}
+                />
+              )}
+              {unlinkedScenes.length > 0 && (
+                <LooseStructureSection
+                  title="Unlinked scenes"
+                  items={unlinkedScenes}
+                  empty="No unlinked scenes"
+                  render={scene => (
+                    <div key={scene.id} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <StructureNoteButton note={scene} label="Scene" depth={1} />
+                    </div>
+                  )}
+                />
+              )}
+            </div>
+          )}
+        </section>
+
+        <section style={{
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 8,
+          background: T.bgSub,
+          padding: 12,
+          marginBottom: 14,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 750, color: T.ink }}>Supporting Notes</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+              {supportingTotal} notes
+            </div>
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={() => setAddingSupportType(value => !value)}
+              style={mnPanelMiniButton(T)}>
+              Add type
+            </button>
+          </div>
+          {addingSupportType && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                display: 'flex',
+                gap: 7,
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 7,
+                background: T.bg,
+                padding: 8,
+                marginBottom: 10,
+              }}>
+              <input
+                value={supportTypeDraft}
+                onChange={(e) => setSupportTypeDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addSupportingType();
+                  if (e.key === 'Escape') {
+                    setSupportTypeDraft('');
+                    setAddingSupportType(false);
+                  }
+                }}
+                placeholder="type name, e.g. Theme"
+                style={{
+                  minWidth: 190,
+                  flex: 1,
+                  border: `1px solid ${T.lineSub}`,
+                  borderRadius: 6,
+                  background: T.bgSub,
+                  color: T.ink,
+                  padding: '6px 8px',
+                  fontFamily: 'var(--mn-ui)',
+                  fontSize: 12.5,
+                  outline: 'none',
+                }}
+              />
+              <button onClick={addSupportingType} style={mnPanelMiniButton(T)}>Add</button>
+              <button
+                onClick={() => {
+                  setSupportTypeDraft('');
+                  setAddingSupportType(false);
+                }}
+                style={{ ...mnPanelMiniButton(T), color: T.inkDim }}>
+                Cancel
+              </button>
+            </div>
+          )}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 10,
+          }}>
+            {supportingTypes.map(type => (
+              <Section
+                key={type.tag}
+                type={type}
+                items={byTag(type.tag)}
+                empty={`Create a ${type.label.toLowerCase()} note.`}
+              />
+            ))}
+            {!supportingTypes.length && <InlineEmpty>Add a supporting note type to organize story material.</InlineEmpty>}
+          </div>
+        </section>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1.1fr) minmax(260px, 0.9fr)',
+          gap: 10,
+        }}>
+          <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 10 }}>Workflow Status</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
+              {(workflowStates || []).map(state => (
+                <div key={state.id} style={{
+                  border: `1px solid ${T.lineSub}`,
+                  borderRadius: 7,
+                  background: T.bgSub,
+                  padding: 9,
+                }}>
+                  <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, fontWeight: 700, color: state.color }}>{state.id}</div>
+                  <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 20, fontWeight: 700, color: T.ink, marginTop: 4 }}>
+                    {(workflowItems?.[state.id] || []).length}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 10 }}>AI Actions</div>
+            <div style={{ display: 'grid', gap: 7 }}>
+              {aiActions.map(action => (
+                <button
+                  key={action.label}
+                  disabled={!onOpenAskAI}
+                  onClick={() => ask(action.prompt)}
+                  style={{
+                    ...mnPanelButton(T),
+                    justifyContent: 'flex-start',
+                    opacity: onOpenAskAI ? 1 : 0.55,
+                    cursor: onOpenAskAI ? 'pointer' : 'default',
+                  }}>
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+      {noteMenu && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            left: noteMenu.x,
+            top: noteMenu.y,
+            zIndex: 120,
+            minWidth: 170,
+            border: `1px solid ${T.lineSub}`,
+            borderRadius: 7,
+            background: T.bg,
+            boxShadow: `0 14px 34px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+            padding: 4,
+          }}>
+          <button
+            onClick={() => {
+              onOpen?.(noteMenu.note.id);
+              setNoteMenu(null);
+            }}
+            style={mnPanelMenuItem(T)}>
+            Open note
+          </button>
+          <button
+            onClick={() => {
+              onDeleteNote?.(noteMenu.note.id);
+              setNoteMenu(null);
+            }}
+            style={{ ...mnPanelMenuItem(T), color: T.danger || T.warn }}>
+            Delete note
+          </button>
+        </div>
+      )}
+      {createMenu && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            left: createMenu.x,
+            top: createMenu.y,
+            zIndex: 125,
+            minWidth: 230,
+            maxWidth: 320,
+            border: `1px solid ${T.lineSub}`,
+            borderRadius: 7,
+            background: T.bg,
+            boxShadow: `0 14px 34px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+            padding: 4,
+          }}>
+          <div style={{
+            padding: '7px 10px 6px',
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 12,
+            color: T.inkMed,
+            borderBottom: `1px solid ${T.lineSub}`,
+            marginBottom: 4,
+          }}>
+            {createMenu.type === 'chapter' ? 'Choose arc for new Chapter' : 'Choose chapter for new Scene'}
+          </div>
+          {(createMenu.type === 'chapter' ? arcs : chapters).map(parent => (
+            <button
+              key={parent.id}
+              onClick={() => {
+                if (createMenu.type === 'chapter') createChapterForArc(parent);
+                else createSceneForChapter(parent);
+                setCreateMenu(null);
+              }}
+              style={mnPanelMenuItem(T)}>
+              {parent.title || 'Untitled'}
+            </button>
+          ))}
+          <div style={{ height: 1, background: T.lineSub, margin: '4px 6px' }} />
+          <button
+            onClick={() => {
+              const template = createMenu.type === 'chapter'
+                ? templates.find(item => item.title === 'Chapter')
+                : templates.find(item => item.title === 'Scene');
+              if (template) {
+                const title = uniqueTitle(template.title);
+                onCreateNote && onCreateNote({ ...template, title, body: template.body.replace(new RegExp(`# ${template.title}\\b`), `# ${title}`) });
+              }
+              setCreateMenu(null);
+            }}
+            style={{ ...mnPanelMenuItem(T), color: T.inkDim }}>
+            Create standalone
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function mnPanelButton(T, primary = false) {
+  return {
+    minHeight: 34,
+    borderRadius: 7,
+    border: `1px solid ${primary ? T.ink : T.line}`,
+    background: primary ? T.ink : T.bg,
+    color: primary ? T.bg : T.inkMed,
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: 'pointer',
+    padding: '7px 11px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+}
+
+function mnPanelMiniButton(T) {
+  return {
+    minHeight: 26,
+    borderRadius: 6,
+    border: `1px solid ${T.lineSub}`,
+    background: T.bgSub,
+    color: T.inkMed,
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 11.5,
+    fontWeight: 600,
+    cursor: 'pointer',
+    padding: '4px 8px',
+  };
+}
+
+function mnPanelMenuItem(T) {
+  return {
+    width: '100%',
+    border: 'none',
+    borderRadius: 5,
+    background: 'transparent',
+    color: T.ink,
+    cursor: 'pointer',
+    padding: '8px 10px',
+    textAlign: 'left',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 12.5,
+  };
+}
+
+// ────────────────────────────────────────────────────────────
 // Workflow aggregate panel
 // ────────────────────────────────────────────────────────────
 function MnWorkflowPanel({
@@ -287,7 +1282,7 @@ function MnWorkflowPanel({
     ? window.MN_LOGSEQ.mnNormalizeWorkflowId(raw)
     : String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
   const normalizeStates = (states) => window.MN_LOGSEQ?.mnNormalizeWorkflowStates
-    ? window.MN_LOGSEQ.mnNormalizeWorkflowStates(states)
+    ? (Array.isArray(states) && states.length === 0 ? [] : window.MN_LOGSEQ.mnNormalizeWorkflowStates(states))
     : states;
   const isClosedState = (state) => window.MN_LOGSEQ?.mnWorkflowIsClosed
     ? window.MN_LOGSEQ.mnWorkflowIsClosed(state)
@@ -323,7 +1318,6 @@ function MnWorkflowPanel({
   };
 
   const removeWorkflowState = (stateId) => {
-    if ((workflowStates || []).length <= 1) return;
     onWorkflowStatesChange && onWorkflowStatesChange(
       normalizeStates((workflowStates || []).filter(state => state.id !== stateId))
     );
@@ -344,7 +1338,7 @@ function MnWorkflowPanel({
     }}>{label}</button>
   );
 
-  const WorkflowStateManager = () => (
+  const renderWorkflowStateManager = () => (
     <div style={{
       border: `1px solid ${T.lineSub}`,
       borderRadius: 8,
@@ -382,7 +1376,6 @@ function MnWorkflowPanel({
           <button
             type="button"
             title={`Remove ${state.id}`}
-            disabled={(workflowStates || []).length <= 1}
             onClick={() => removeWorkflowState(state.id)}
             style={{
               width: 16,
@@ -391,8 +1384,8 @@ function MnWorkflowPanel({
               borderRadius: 3,
               background: 'transparent',
               color: 'currentColor',
-              cursor: (workflowStates || []).length <= 1 ? 'default' : 'pointer',
-              opacity: (workflowStates || []).length <= 1 ? 0.35 : 0.75,
+              cursor: 'pointer',
+              opacity: 0.75,
               padding: 0,
               lineHeight: 1,
             }}>x</button>
@@ -866,7 +1859,7 @@ function MnWorkflowPanel({
         </div>
         {showArchived ? <ArchivedNotes /> : (
           <>
-            <WorkflowStateManager />
+            {renderWorkflowStateManager()}
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
@@ -1309,6 +2302,7 @@ function MnReminderToast({ toast, onDismiss, onSnooze, onOpen, T, variant }) {
 
 window.MnTodosPanel = MnTodosPanel;
 window.MnWorkflowPanel = MnWorkflowPanel;
+window.MnNovelistPanel = MnNovelistPanel;
 window.MnTodayPanel = MnTodayPanel;
 window.MnQuickCapture = MnQuickCapture;
 window.MnReminderToast = MnReminderToast;
