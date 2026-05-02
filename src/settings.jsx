@@ -5,15 +5,17 @@ function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVa
   const [section, setSection] = useStateS('appearance');
 
   const sections = [
-    { k: 'appearance', label: 'Appearance', icon: iconAppearance },
-    { k: 'editor', label: 'Editor', icon: iconEditor },
-    { k: 'notes', label: 'Notes & Tags', icon: iconNotes },
-    { k: 'reminders', label: 'Reminders', icon: iconBell },
-    { k: 'ai', label: 'AI', icon: iconAI },
-    { k: 'data', label: 'Data & Sync', icon: iconData },
-    { k: 'shortcuts', label: 'Shortcuts', icon: iconKey },
-    { k: 'about', label: 'About', icon: iconInfo },
+    { k: 'appearance', label: 'Appearance', group: 'Workspace', sub: 'Theme, density, fonts', icon: iconAppearance },
+    { k: 'editor', label: 'Editor', group: 'Workspace', sub: 'Writing behavior', icon: iconEditor },
+    { k: 'notes', label: 'Notes & Tags', group: 'Workspace', sub: 'Lists and rollups', icon: iconNotes },
+    { k: 'reminders', label: 'Reminders', group: 'Automation', sub: 'Alerts and snooze', icon: iconBell },
+    { k: 'ai', label: 'AI', group: 'Automation', sub: 'Models and providers', icon: iconAI },
+    { k: 'data', label: 'Data & Sync', group: 'System', sub: 'Vaults and storage', icon: iconData },
+    { k: 'shortcuts', label: 'Shortcuts', group: 'System', sub: 'Keyboard map', icon: iconKey },
+    { k: 'about', label: 'About', group: 'System', sub: 'Version and stats', icon: iconInfo },
   ];
+  const activeSection = sections.find(s => s.k === section) || sections[0];
+  const groups = [...new Set(sections.map(s => s.group))];
 
   return (
     <div onClick={onClose} style={{
@@ -23,53 +25,140 @@ function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVa
       animation: 'mnFadeIn 140ms ease', backdropFilter: 'blur(2px)',
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        width: 820, height: 600, background: T.bg, borderRadius: 12,
+        width: 'min(980px, calc(100vw - 48px))',
+        height: 'min(720px, calc(100vh - 48px))',
+        minHeight: 'min(560px, calc(100vh - 48px))',
+        background: T.bg,
+        borderRadius: 12,
         border: `1px solid ${T.line}`, overflow: 'hidden',
         boxShadow: `0 24px 60px color-mix(in oklab, ${T.ink} 28%, transparent)`,
         display: 'flex', flexDirection: 'column',
       }}>
-        {/* Title bar */}
         <div style={{
-          padding: '12px 16px', borderBottom: `1px solid ${T.lineSub}`,
+          padding: '14px 16px', borderBottom: `1px solid ${T.lineSub}`,
           display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
-          background: T.bgSub,
+          background: `linear-gradient(180deg, ${T.bgSub}, ${T.bg})`,
         }}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke={T.ink} strokeWidth="1.3">
-            <circle cx="8" cy="8" r="2.2"/>
-            <path d="M8 1.5V3M8 13V14.5M14.5 8H13M3 8H1.5M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6M12.6 12.6L11.5 11.5M4.5 4.5L3.4 3.4" strokeLinecap="round"/>
-          </svg>
-          <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 600, color: T.ink }}>Settings</div>
+          <div style={{
+            width: 30,
+            height: 30,
+            borderRadius: 7,
+            border: `1px solid ${T.lineSub}`,
+            background: T.bg,
+            color: T.inkMed,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+              <circle cx="8" cy="8" r="2.2"/>
+              <path d="M8 1.5V3M8 13V14.5M14.5 8H13M3 8H1.5M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6M12.6 12.6L11.5 11.5M4.5 4.5L3.4 3.4" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink }}>Settings</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, marginTop: 2 }}>
+              {activeSection.label} · {activeSection.sub}
+            </div>
+          </div>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: T.inkDim, fontSize: 15, padding: 2,
-          }}>✕</button>
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            border: `1px solid ${T.lineSub}`,
+            background: T.bg,
+            cursor: 'pointer',
+            color: T.inkDim,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }} title="Close settings" aria-label="Close settings">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M4 4L12 12M12 4L4 12" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
 
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-          {/* Nav */}
           <div style={{
-            width: 200, background: T.bgSub, borderRight: `1px solid ${T.lineSub}`,
-            padding: 8, overflow: 'auto', flexShrink: 0,
+            width: 230,
+            background: T.bgSub,
+            borderRight: `1px solid ${T.lineSub}`,
+            padding: '12px 10px',
+            overflow: 'auto',
+            flexShrink: 0,
           }}>
-            {sections.map(s => (
-              <div key={s.k} onClick={() => setSection(s.k)} style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '7px 10px', borderRadius: 5, cursor: 'pointer',
-                fontFamily: 'var(--mn-ui)', fontSize: 12.5,
-                background: section === s.k ? T.bg : 'transparent',
-                color: section === s.k ? T.ink : T.inkMed,
-                border: section === s.k ? `1px solid ${T.lineSub}` : '1px solid transparent',
-                fontWeight: section === s.k ? 500 : 400, marginBottom: 1,
-              }}>
-                <span style={{ width: 14, height: 14, display: 'inline-flex', alignItems: 'center', color: T.inkDim }}>{s.icon}</span>
-                {s.label}
+            {groups.map(group => (
+              <div key={group} style={{ marginBottom: 12 }}>
+                <div style={{
+                  fontFamily: 'var(--mn-mono)',
+                  fontSize: 9.5,
+                  color: T.inkDim,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  padding: '0 9px 6px',
+                }}>{group}</div>
+                {sections.filter(s => s.group === group).map(s => {
+                  const active = section === s.k;
+                  return (
+                    <button key={s.k} onClick={() => setSection(s.k)} style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 9,
+                      padding: '8px 9px',
+                      borderRadius: 7,
+                      cursor: 'pointer',
+                      fontFamily: 'var(--mn-ui)',
+                      textAlign: 'left',
+                      background: active ? T.bg : 'transparent',
+                      color: active ? T.ink : T.inkMed,
+                      border: active ? `1px solid ${T.lineSub}` : '1px solid transparent',
+                      boxShadow: active ? `0 7px 18px color-mix(in oklab, ${T.ink} 5%, transparent)` : 'none',
+                      marginBottom: 2,
+                    }}>
+                      <span style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 6,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: active ? T.accent : T.inkDim,
+                        background: active ? T.accentSoft : T.bg,
+                        border: `1px solid ${active ? T.selLine : T.lineSub}`,
+                        flexShrink: 0,
+                      }}>{s.icon}</span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 12.5, fontWeight: active ? 650 : 500 }}>{s.label}</span>
+                        <span style={{
+                          display: 'block',
+                          marginTop: 2,
+                          fontFamily: 'var(--mn-body)',
+                          fontSize: 11.5,
+                          lineHeight: 1.25,
+                          color: T.inkDim,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}>{s.sub}</span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>
 
-          {/* Body */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '20px 28px' }}>
+          <div style={{
+            flex: 1,
+            overflow: 'auto',
+            padding: '24px 32px',
+            background: `linear-gradient(180deg, ${T.bg}, color-mix(in oklab, ${T.bgSub} 38%, ${T.bg}))`,
+          }}>
             {section === 'appearance' && <SectionAppearance tweaks={tweaks} setTweak={setTweak} T={T} />}
             {section === 'editor' && <SectionEditor tweaks={tweaks} setTweak={setTweak} T={T} />}
             {section === 'notes' && <SectionNotes tweaks={tweaks} setTweak={setTweak} T={T} stats={stats} />}
@@ -101,24 +190,44 @@ function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVa
 
 function H({ T, label, sub }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 18, fontWeight: 600, color: T.ink, letterSpacing: '-0.01em' }}>{label}</div>
-      {sub && <div style={{ fontFamily: 'var(--mn-body)', fontSize: 13, color: T.inkMed, marginTop: 3 }}>{sub}</div>}
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 750, color: T.ink, letterSpacing: 0 }}>{label}</div>
+      {sub && <div style={{ fontFamily: 'var(--mn-body)', fontSize: 13.5, color: T.inkMed, marginTop: 4, lineHeight: 1.45 }}>{sub}</div>}
     </div>
   );
 }
 
-function Row({ T, label, sub, children }) {
+function SettingsCard({ T, children, style = {} }) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 16,
-      padding: '14px 0', borderBottom: `1px solid ${T.lineSub}`,
+      border: `1px solid ${T.lineSub}`,
+      borderRadius: 8,
+      background: T.bg,
+      overflow: 'hidden',
+      boxShadow: `0 12px 30px color-mix(in oklab, ${T.ink} 4%, transparent)`,
+      ...style,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function Row({ T, label, sub, children, last = false }) {
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      alignItems: 'center',
+      gap: 18,
+      padding: '14px 16px',
+      borderBottom: last ? 'none' : `1px solid ${T.lineSub}`,
+      background: T.bg,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 500, color: T.ink }}>{label}</div>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.2, fontWeight: 650, color: T.ink }}>{label}</div>
         {sub && <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12, color: T.inkMed, marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
       </div>
-      <div style={{ flexShrink: 0 }}>{children}</div>
+      <div style={{ minWidth: 0, justifySelf: 'end' }}>{children}</div>
     </div>
   );
 }
@@ -127,17 +236,19 @@ function Segmented({ T, value, onChange, options }) {
   return (
     <div style={{
       display: 'inline-flex', background: T.bgSub,
-      border: `1px solid ${T.lineSub}`, borderRadius: 6, padding: 2,
+      border: `1px solid ${T.lineSub}`, borderRadius: 7, padding: 2,
+      maxWidth: '100%',
     }}>
       {options.map(o => (
         <button key={o.value} onClick={() => onChange(o.value)} style={{
-          padding: '4px 12px', borderRadius: 4, border: 'none',
+          padding: '5px 12px', borderRadius: 5, border: 'none',
           background: value === o.value ? T.bg : 'transparent',
           color: value === o.value ? T.ink : T.inkMed,
           fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
           fontWeight: value === o.value ? 500 : 400,
           boxShadow: value === o.value ? `0 1px 2px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
           textTransform: 'capitalize',
+          whiteSpace: 'nowrap',
         }}>{o.label}</button>
       ))}
     </div>
@@ -164,9 +275,10 @@ function Toggle({ T, checked, onChange }) {
 function Select({ T, value, onChange, options }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} style={{
-      padding: '5px 10px', borderRadius: 5, border: `1px solid ${T.line}`,
+      padding: '6px 10px', borderRadius: 6, border: `1px solid ${T.line}`,
       background: T.bg, color: T.ink, fontFamily: 'var(--mn-ui)', fontSize: 12.5,
-      cursor: 'pointer', minWidth: 180,
+      cursor: 'pointer', minWidth: 190,
+      outline: 'none',
     }}>
       {options.map(o => <option key={o} value={o}>{o}</option>)}
     </select>
@@ -223,27 +335,29 @@ function SectionAppearance({ tweaks, setTweak, T }) {
   return (
     <div>
       <H T={T} label="Appearance" sub="Make OminiNote look the way you think." />
-      <Row T={T} label="Theme" sub="Light or dark color scheme.">
-        <Segmented T={T} value={tweaks.theme} onChange={v => setTweak('theme', v)}
-          options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
-      </Row>
-      <Row T={T} label="Interface density" sub="Tighter rows fit more on screen.">
-        <Segmented T={T} value={tweaks.density} onChange={v => setTweak('density', v)}
-          options={[{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }]} />
-      </Row>
-      <Row T={T} label="Typography" sub="Font pairing used across the app.">
-        <Select T={T} value={tweaks.fontChoice} onChange={v => setTweak('fontChoice', v)}
-          options={Object.keys(MN_FONTS)} />
-      </Row>
-      <Row T={T} label="App font size" sub="Scale the surrounding app interface.">
-        <FontSizeStepper T={T} value={tweaks.appFontSize || 'default'} onChange={v => setTweak('appFontSize', v)} />
-      </Row>
-      <Row T={T} label="Show note list pane" sub="Hide to give the editor full width.">
-        <Toggle T={T} checked={tweaks.showNoteList !== false} onChange={v => setTweak('showNoteList', v)} />
-      </Row>
-      <Row T={T} label="Show sidebar" sub="Tags, Today, Todos, and Graph shortcuts.">
-        <Toggle T={T} checked={tweaks.showSidebar !== false} onChange={v => setTweak('showSidebar', v)} />
-      </Row>
+      <SettingsCard T={T}>
+        <Row T={T} label="Theme" sub="Light or dark color scheme.">
+          <Segmented T={T} value={tweaks.theme} onChange={v => setTweak('theme', v)}
+            options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
+        </Row>
+        <Row T={T} label="Interface density" sub="Tighter rows fit more on screen.">
+          <Segmented T={T} value={tweaks.density} onChange={v => setTweak('density', v)}
+            options={[{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }]} />
+        </Row>
+        <Row T={T} label="Typography" sub="Font pairing used across the app.">
+          <Select T={T} value={tweaks.fontChoice} onChange={v => setTweak('fontChoice', v)}
+            options={Object.keys(MN_FONTS)} />
+        </Row>
+        <Row T={T} label="App font size" sub="Scale the surrounding app interface.">
+          <FontSizeStepper T={T} value={tweaks.appFontSize || 'default'} onChange={v => setTweak('appFontSize', v)} />
+        </Row>
+        <Row T={T} label="Show note list pane" sub="Hide to give the editor full width.">
+          <Toggle T={T} checked={tweaks.showNoteList !== false} onChange={v => setTweak('showNoteList', v)} />
+        </Row>
+        <Row T={T} label="Show sidebar" sub="Tags, Today, Todos, and Graph shortcuts." last>
+          <Toggle T={T} checked={tweaks.showSidebar !== false} onChange={v => setTweak('showSidebar', v)} />
+        </Row>
+      </SettingsCard>
     </div>
   );
 }
@@ -252,26 +366,28 @@ function SectionEditor({ tweaks, setTweak, T }) {
   return (
     <div>
       <H T={T} label="Editor" sub="Outliner behavior and block display." />
-      <Row T={T} label="Editor width" sub="Reading comfort vs. information density.">
-        <Segmented T={T} value={tweaks.editorWidth || 'medium'}
-          onChange={v => setTweak('editorWidth', v)}
-          options={[{ value: 'narrow', label: 'Narrow' }, { value: 'medium', label: 'Medium' }, { value: 'wide', label: 'Wide' }]} />
-      </Row>
-      <Row T={T} label="Font size" sub="Scale block text. Default 14.5px.">
-        <FontSizeStepper T={T} value={tweaks.fontSize || 'default'} onChange={v => setTweak('fontSize', v)} />
-      </Row>
-      <Row T={T} label="Indent guides" sub="Show vertical lines for nested bullets.">
-        <Toggle T={T} checked={tweaks.indentGuides !== false} onChange={v => setTweak('indentGuides', v)} />
-      </Row>
-      <Row T={T} label="Spell check" sub="Browser spell-check on block text.">
-        <Toggle T={T} checked={tweaks.spellCheck !== false} onChange={v => setTweak('spellCheck', v)} />
-      </Row>
-      <Row T={T} label="Auto-link notes" sub="Show [[suggestions]] as you type.">
-        <Toggle T={T} checked={tweaks.autoLink !== false} onChange={v => setTweak('autoLink', v)} />
-      </Row>
-      <Row T={T} label="Collapse new sections by default" sub="Keep long notes scannable.">
-        <Toggle T={T} checked={tweaks.collapseByDefault === true} onChange={v => setTweak('collapseByDefault', v)} />
-      </Row>
+      <SettingsCard T={T}>
+        <Row T={T} label="Editor width" sub="Reading comfort vs. information density.">
+          <Segmented T={T} value={tweaks.editorWidth || 'medium'}
+            onChange={v => setTweak('editorWidth', v)}
+            options={[{ value: 'narrow', label: 'Narrow' }, { value: 'medium', label: 'Medium' }, { value: 'wide', label: 'Wide' }]} />
+        </Row>
+        <Row T={T} label="Font size" sub="Scale block text. Default 14.5px.">
+          <FontSizeStepper T={T} value={tweaks.fontSize || 'default'} onChange={v => setTweak('fontSize', v)} />
+        </Row>
+        <Row T={T} label="Indent guides" sub="Show vertical lines for nested bullets.">
+          <Toggle T={T} checked={tweaks.indentGuides !== false} onChange={v => setTweak('indentGuides', v)} />
+        </Row>
+        <Row T={T} label="Spell check" sub="Browser spell-check on block text.">
+          <Toggle T={T} checked={tweaks.spellCheck !== false} onChange={v => setTweak('spellCheck', v)} />
+        </Row>
+        <Row T={T} label="Auto-link notes" sub="Show [[suggestions]] as you type.">
+          <Toggle T={T} checked={tweaks.autoLink !== false} onChange={v => setTweak('autoLink', v)} />
+        </Row>
+        <Row T={T} label="Collapse new sections by default" sub="Keep long notes scannable." last>
+          <Toggle T={T} checked={tweaks.collapseByDefault === true} onChange={v => setTweak('collapseByDefault', v)} />
+        </Row>
+      </SettingsCard>
     </div>
   );
 }
@@ -280,37 +396,35 @@ function SectionNotes({ tweaks, setTweak, T, stats }) {
   return (
     <div>
       <H T={T} label="Notes & Tags" sub="Default note properties and organization." />
-      <Row T={T} label="Sort notes by" sub="Applied to the All notes list.">
-        <Segmented T={T} value={tweaks.sortBy || 'modified'}
-          onChange={v => setTweak('sortBy', v)}
-          options={[{ value: 'modified', label: 'Modified' }, { value: 'created', label: 'Created' }, { value: 'title', label: 'Title' }]} />
-      </Row>
-      <Row T={T} label="Default new-note tags" sub="Tags applied automatically to every new note.">
-        <input type="text" value={tweaks.defaultTags || ''}
-          onChange={(e) => setTweak('defaultTags', e.target.value)}
-          placeholder="ideas, inbox"
-          style={{
-            padding: '5px 10px', borderRadius: 5, border: `1px solid ${T.line}`,
-            background: T.bg, color: T.ink, fontFamily: 'var(--mn-mono)', fontSize: 12,
-            minWidth: 180, outline: 'none',
-          }} />
-      </Row>
-      <Row T={T} label="Show pinned notes first" sub="Pin a note from its toolbar.">
-        <Toggle T={T} checked={tweaks.pinnedFirst !== false} onChange={v => setTweak('pinnedFirst', v)} />
-      </Row>
-      <Row T={T} label="Daily rollup heading format" sub="How Today view groups notes.">
-        <Segmented T={T} value={tweaks.rollupFormat || 'long'}
-          onChange={v => setTweak('rollupFormat', v)}
-          options={[{ value: 'long', label: 'Long' }, { value: 'short', label: 'Short' }]} />
-      </Row>
-      <Row T={T} label="Todo layout" sub="How the aggregated Todos view is arranged.">
-        <Segmented T={T} value={tweaks.todoVariant} onChange={v => setTweak('todoVariant', v)}
-          options={[{ value: 'list', label: 'List' }, { value: 'kanban', label: 'Kanban' }]} />
-      </Row>
-      <Row T={T} label="Graph style" sub="How connection overlay is drawn.">
-        <Segmented T={T} value={tweaks.graphStyle} onChange={v => setTweak('graphStyle', v)}
-          options={[{ value: 'force', label: 'Force' }, { value: 'timeline', label: 'Timeline' }, { value: 'cluster', label: 'Cluster' }]} />
-      </Row>
+      <SettingsCard T={T}>
+        <Row T={T} label="Sort notes by" sub="Applied to the All notes list.">
+          <Segmented T={T} value={tweaks.sortBy || 'modified'}
+            onChange={v => setTweak('sortBy', v)}
+            options={[{ value: 'modified', label: 'Modified' }, { value: 'created', label: 'Created' }, { value: 'title', label: 'Title' }]} />
+        </Row>
+        <Row T={T} label="Default new-note tags" sub="Tags applied automatically to every new note.">
+          <input type="text" value={tweaks.defaultTags || ''}
+            onChange={(e) => setTweak('defaultTags', e.target.value)}
+            placeholder="ideas, inbox"
+            style={mnSettingsInput(T, { minWidth: 190, fontFamily: 'var(--mn-mono)' })} />
+        </Row>
+        <Row T={T} label="Show pinned notes first" sub="Pin a note from its toolbar.">
+          <Toggle T={T} checked={tweaks.pinnedFirst !== false} onChange={v => setTweak('pinnedFirst', v)} />
+        </Row>
+        <Row T={T} label="Daily rollup heading format" sub="How Today view groups notes.">
+          <Segmented T={T} value={tweaks.rollupFormat || 'long'}
+            onChange={v => setTweak('rollupFormat', v)}
+            options={[{ value: 'long', label: 'Long' }, { value: 'short', label: 'Short' }]} />
+        </Row>
+        <Row T={T} label="Todo layout" sub="How the aggregated Todos view is arranged.">
+          <Segmented T={T} value={tweaks.todoVariant} onChange={v => setTweak('todoVariant', v)}
+            options={[{ value: 'list', label: 'List' }, { value: 'kanban', label: 'Kanban' }]} />
+        </Row>
+        <Row T={T} label="Graph style" sub="How connection overlay is drawn." last>
+          <Segmented T={T} value={tweaks.graphStyle} onChange={v => setTweak('graphStyle', v)}
+            options={[{ value: 'force', label: 'Force' }, { value: 'timeline', label: 'Timeline' }, { value: 'cluster', label: 'Cluster' }]} />
+        </Row>
+      </SettingsCard>
       <div style={{
         marginTop: 16, padding: '10px 14px', background: T.bgSub,
         border: `1px solid ${T.lineSub}`, borderRadius: 6,
@@ -324,26 +438,94 @@ function SectionReminders({ tweaks, setTweak, T }) {
   return (
     <div>
       <H T={T} label="Reminders" sub="Control how @remind directives surface." />
-      <Row T={T} label="Notification style" sub="Where reminder alerts appear.">
-        <Segmented T={T} value={tweaks.toastVariant} onChange={v => setTweak('toastVariant', v)}
-          options={[{ value: 'card', label: 'Card' }, { value: 'banner', label: 'Banner' }]} />
-      </Row>
-      <Row T={T} label="Sound" sub="Play a short chime when a reminder fires.">
-        <Toggle T={T} checked={tweaks.reminderSound === true} onChange={v => setTweak('reminderSound', v)} />
-      </Row>
-      <Row T={T} label="Show overdue on launch" sub="Surface missed reminders when the app opens.">
-        <Toggle T={T} checked={tweaks.showOverdue !== false} onChange={v => setTweak('showOverdue', v)} />
-      </Row>
-      <Row T={T} label="Default snooze duration" sub="Applied when snoozing a reminder toast.">
-        <Segmented T={T} value={tweaks.snoozeMinutes || '15'}
-          onChange={v => setTweak('snoozeMinutes', v)}
-          options={[{ value: '5', label: '5m' }, { value: '15', label: '15m' }, { value: '60', label: '1h' }, { value: '1440', label: '1d' }]} />
-      </Row>
-      <Row T={T} label="Week starts on" sub="Affects calendar picker for reminders.">
-        <StaticValue T={T}>No calendar picker yet</StaticValue>
-      </Row>
+      <SettingsCard T={T}>
+        <Row T={T} label="Notification style" sub="Where reminder alerts appear.">
+          <Segmented T={T} value={tweaks.toastVariant} onChange={v => setTweak('toastVariant', v)}
+            options={[{ value: 'card', label: 'Card' }, { value: 'banner', label: 'Banner' }]} />
+        </Row>
+        <Row T={T} label="Sound" sub="Play a short chime when a reminder fires.">
+          <Toggle T={T} checked={tweaks.reminderSound === true} onChange={v => setTweak('reminderSound', v)} />
+        </Row>
+        <Row T={T} label="Show overdue on launch" sub="Surface missed reminders when the app opens.">
+          <Toggle T={T} checked={tweaks.showOverdue !== false} onChange={v => setTweak('showOverdue', v)} />
+        </Row>
+        <Row T={T} label="Default snooze duration" sub="Applied when snoozing a reminder toast.">
+          <Segmented T={T} value={tweaks.snoozeMinutes || '15'}
+            onChange={v => setTweak('snoozeMinutes', v)}
+            options={[{ value: '5', label: '5m' }, { value: '15', label: '15m' }, { value: '60', label: '1h' }, { value: '1440', label: '1d' }]} />
+        </Row>
+        <Row T={T} label="Week starts on" sub="Affects calendar picker for reminders." last>
+          <StaticValue T={T}>No calendar picker yet</StaticValue>
+        </Row>
+      </SettingsCard>
     </div>
   );
+}
+
+const MN_AI_PROVIDERS = [
+  {
+    id: 'ollama',
+    label: 'Ollama',
+    sub: 'Local models on this machine',
+    badge: 'Local',
+    defaultModel: 'gemma3',
+    baseField: 'ollamaHost',
+    baseDefault: 'http://127.0.0.1:11434',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    sub: 'Route through many hosted models',
+    badge: 'Cloud',
+    keyField: 'openrouterApiKey',
+    baseField: 'openrouterBaseUrl',
+    baseDefault: 'https://openrouter.ai/api/v1',
+    defaultModel: 'openai/gpt-4o-mini',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    sub: 'OpenAI chat completions',
+    badge: 'Cloud',
+    keyField: 'openaiApiKey',
+    baseField: 'openaiBaseUrl',
+    baseDefault: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o-mini',
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic',
+    sub: 'Claude Messages API',
+    badge: 'Cloud',
+    keyField: 'anthropicApiKey',
+    baseField: 'anthropicBaseUrl',
+    baseDefault: 'https://api.anthropic.com',
+    defaultModel: 'claude-sonnet-4-5-20250929',
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini',
+    sub: 'Google Gemini API',
+    badge: 'Cloud',
+    keyField: 'geminiApiKey',
+    baseField: 'geminiBaseUrl',
+    baseDefault: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-2.5-flash',
+  },
+  {
+    id: 'custom',
+    label: 'Custom',
+    sub: 'OpenAI-compatible endpoint',
+    badge: 'Custom',
+    keyField: 'customApiKey',
+    baseField: 'customBaseUrl',
+    baseDefault: '',
+    defaultModel: '',
+  },
+];
+
+function mnAiProviderMeta(id) {
+  return MN_AI_PROVIDERS.find(p => p.id === id) || MN_AI_PROVIDERS[0];
 }
 
 function SectionAI({ T }) {
@@ -380,6 +562,16 @@ function SectionAI({ T }) {
     }
   };
 
+  const selectProvider = (providerId) => {
+    const meta = mnAiProviderMeta(providerId);
+    const patch = {
+      provider: providerId,
+      chatModel: meta.defaultModel || config?.chatModel || '',
+    };
+    if (meta.baseField && config?.[meta.baseField] == null && meta.baseDefault) patch[meta.baseField] = meta.baseDefault;
+    save(patch, true);
+  };
+
   const connect = async () => {
     if (!window.mn?.ai) return;
     setBusy(true);
@@ -400,55 +592,67 @@ function SectionAI({ T }) {
     }
   };
 
+  const provider = config?.provider || 'ollama';
+  const providerMeta = mnAiProviderMeta(provider);
   const models = status?.models || [];
   const chatOptions = uniqueOptions([config?.chatModel || 'gemma3', ...models]);
   const embedOptions = uniqueOptions([config?.embedModel || 'nomic-embed-text', ...models]);
   const reachable = !!status?.reachable;
-  const provider = config?.provider || 'ollama';
-  const aiStatusText = reachable
-    ? (status?.chatModelOk === false
+  const providerReady = provider === 'ollama' ? reachable : !!status?.providerReady;
+  const aiStatusText = provider === 'ollama'
+    ? (reachable
+      ? (status?.chatModelOk === false
         ? `Chat model missing: ${status?.config?.chatModel || config?.chatModel}`
         : status?.embedModelOk === false
           ? `${models.length} Ollama model${models.length === 1 ? '' : 's'} available. Ask AI will use keyword search until ${status?.config?.embedModel || config?.embedModel} is installed.`
           : `${models.length} Ollama model${models.length === 1 ? '' : 's'} available`)
-    : status?.reason || status?.connectError || 'Ollama is not responding yet.';
+      : status?.reason || status?.connectError || 'Ollama is not responding yet.')
+    : (providerReady
+      ? `${providerMeta.label} is configured. Ask AI will use hosted chat with keyword/recent-note context.`
+      : status?.reason || `${providerMeta.label} needs an API key and model.`);
+  const showApiKey = !!providerMeta.keyField;
+  const apiKeyValue = showApiKey ? (config?.[providerMeta.keyField] || '') : '';
+  const baseValue = config?.[providerMeta.baseField] || providerMeta.baseDefault || '';
 
   return (
     <div>
-      <H T={T} label="AI" sub="Connect OminiNote to a local model provider for Ask AI and note embeddings." />
-      <div style={{
+      <H T={T} label="AI" sub="Choose the model provider Ask AI uses for answers and note actions." />
+      <SettingsCard T={T} style={{
         padding: 14,
-        borderRadius: 8,
-        border: `1px solid ${reachable ? T.success : T.lineSub}`,
-        background: T.bgSub,
-        marginBottom: 12,
+        border: `1px solid ${providerReady ? T.success : T.lineSub}`,
+        background: `linear-gradient(180deg, ${T.bgSub}, ${T.bg})`,
+        marginBottom: 14,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{
             width: 9, height: 9, borderRadius: '50%',
-            background: reachable ? T.success : T.warn,
-            boxShadow: reachable ? `0 0 0 3px ${mnGetTagBg(150, 'light')}` : 'none',
+            background: providerReady ? T.success : T.warn,
+            boxShadow: providerReady ? `0 0 0 3px color-mix(in oklab, ${T.success} 14%, transparent)` : 'none',
           }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 600, color: T.ink }}>
-              {reachable ? 'Connected' : 'Not connected'}
+              {providerReady ? `${providerMeta.label} ready` : `${providerMeta.label} not ready`}
             </div>
             <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12, color: T.inkMed, marginTop: 2 }}>
               {aiStatusText}
             </div>
           </div>
-          <button onClick={connect} disabled={busy || provider !== 'ollama'} style={{
-            padding: '6px 12px',
-            borderRadius: 6,
-            border: `1px solid ${T.line}`,
-            background: provider === 'ollama' ? T.ink : T.bgSub,
-            color: provider === 'ollama' ? T.bg : T.inkDim,
-            fontFamily: 'var(--mn-ui)',
+          {provider === 'ollama' ? (
+            <button onClick={connect} disabled={busy} style={{
+              padding: '6px 12px',
+              borderRadius: 6,
+              border: `1px solid ${T.line}`,
+              background: T.ink,
+              color: T.bg,
+              fontFamily: 'var(--mn-ui)',
             fontSize: 12,
             fontWeight: 500,
-            cursor: busy || provider !== 'ollama' ? 'not-allowed' : 'pointer',
+            cursor: busy ? 'not-allowed' : 'pointer',
             opacity: busy ? 0.6 : 1,
-          }}>{busy ? 'Checking...' : 'Connect'}</button>
+            }}>{busy ? 'Checking...' : 'Connect'}</button>
+          ) : (
+            <BtnOutline T={T} onClick={load} disabled={busy}>{busy ? 'Checking...' : 'Check'}</BtnOutline>
+          )}
         </div>
         {message && (
           <div style={{
@@ -458,57 +662,146 @@ function SectionAI({ T }) {
             color: reachable ? T.success : T.inkDim,
           }}>{message}</div>
         )}
-      </div>
+      </SettingsCard>
 
-      <Row T={T} label="Enable AI" sub="When disabled, Ask AI and embedding jobs will not run.">
-        <Toggle T={T} checked={config?.enabled !== false} onChange={v => save({ enabled: v }, false)} />
-      </Row>
-      <Row T={T} label="Provider" sub="Ollama is local. Other providers can be added later.">
-        <Select T={T} value={provider} onChange={v => save({ provider: v })}
-          options={['ollama', 'openai', 'custom']} />
-      </Row>
-      <Row T={T} label="Ollama host" sub="Default local Ollama endpoint. Change only if your server uses another address.">
-        <input value={config?.ollamaHost || 'http://127.0.0.1:11434'}
-          onChange={(e) => setConfig(c => ({ ...(c || {}), ollamaHost: e.target.value }))}
-          onBlur={(e) => save({ ollamaHost: e.target.value })}
-          style={{
-            padding: '5px 10px', borderRadius: 5, border: `1px solid ${T.line}`,
-            background: T.bg, color: T.ink, fontFamily: 'var(--mn-mono)', fontSize: 12,
-            minWidth: 220, outline: 'none',
-          }} />
-      </Row>
-      <Row T={T} label="Chat model" sub="Used for answers in Ask AI. Pick your Gemma model here if installed.">
-        <Select T={T} value={config?.chatModel || 'gemma3'} onChange={v => save({ chatModel: v }, true)}
-          options={chatOptions} />
-      </Row>
-      <Row T={T} label="Embedding model" sub="Used to index notes for semantic search. nomic-embed-text is recommended.">
-        <Select T={T} value={config?.embedModel || 'nomic-embed-text'} onChange={v => save({ embedModel: v }, true)}
-          options={embedOptions} />
-      </Row>
-      <Row T={T} label="Refresh models" sub="Reload the list of models available from the selected provider.">
-        <BtnOutline T={T} onClick={load}>{busy ? 'Refreshing...' : 'Refresh'}</BtnOutline>
-      </Row>
-      {provider !== 'ollama' && (
+      <SettingsCard T={T} style={{ padding: 12, marginBottom: 12 }}>
         <div style={{
-          marginTop: 14,
-          padding: '10px 12px',
-          borderRadius: 6,
-          border: `1px solid ${T.lineSub}`,
-          background: T.bgSub,
-          color: T.inkMed,
-          fontFamily: 'var(--mn-body)',
-          fontSize: 12.5,
-          lineHeight: 1.45,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gap: 8,
         }}>
-          Provider "{provider}" is a placeholder for future support. Use Ollama for the current local AI connection.
+          {MN_AI_PROVIDERS.map(item => (
+            <button
+              key={item.id}
+              onClick={() => selectProvider(item.id)}
+              style={{
+                textAlign: 'left',
+                border: `1px solid ${provider === item.id ? T.accent : T.lineSub}`,
+                borderRadius: 7,
+                background: provider === item.id ? T.accentSoft : T.bgSub,
+                color: T.ink,
+                padding: '10px 11px',
+                cursor: 'pointer',
+                fontFamily: 'var(--mn-ui)',
+                minHeight: 70,
+              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 650, color: provider === item.id ? T.accent : T.ink }}>{item.label}</span>
+                <span style={{
+                  marginLeft: 'auto',
+                  fontFamily: 'var(--mn-mono)',
+                  fontSize: 9.5,
+                  color: provider === item.id ? T.accent : T.inkDim,
+                  border: `1px solid ${provider === item.id ? T.selLine : T.lineSub}`,
+                  borderRadius: 999,
+                  padding: '1px 6px',
+                  background: T.bg,
+                }}>{item.badge}</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: T.inkMed, lineHeight: 1.35 }}>{item.sub}</div>
+            </button>
+          ))}
         </div>
-      )}
+      </SettingsCard>
+
+      <SettingsCard T={T}>
+        <Row T={T} label="Enable AI" sub="When disabled, Ask AI and embedding jobs will not run.">
+          <Toggle T={T} checked={config?.enabled !== false} onChange={v => save({ enabled: v }, false)} />
+        </Row>
+        {showApiKey && (
+          <Row T={T} label={`${providerMeta.label} API key`} sub="Stored locally in OminiNote settings. It is used only from this app.">
+            <input
+              type="password"
+              value={apiKeyValue}
+              onChange={(e) => setConfig(c => ({ ...(c || {}), [providerMeta.keyField]: e.target.value }))}
+              onBlur={(e) => save({ [providerMeta.keyField]: e.target.value }, true)}
+              placeholder="Paste API key"
+              style={mnAiInput(T, 260)}
+            />
+          </Row>
+        )}
+        <Row T={T} label={provider === 'ollama' ? 'Ollama host' : 'Base URL'} sub={provider === 'custom' ? 'OpenAI-compatible chat completions base URL.' : provider === 'ollama' ? 'Default local Ollama endpoint. Change only if your server uses another address.' : 'Provider API base URL. Change only for proxies or gateways.'}>
+          <input value={baseValue}
+            onChange={(e) => setConfig(c => ({ ...(c || {}), [providerMeta.baseField]: e.target.value }))}
+            onBlur={(e) => save({ [providerMeta.baseField]: e.target.value }, true)}
+            placeholder={providerMeta.baseDefault || 'https://api.example.com/v1'}
+            style={mnAiInput(T, 280)} />
+        </Row>
+        <Row T={T} label="Chat model" sub={provider === 'ollama' ? 'Used for answers in Ask AI. Pick an installed local model.' : 'Used for answers, note creation, and page editing.'}>
+          {provider === 'ollama' ? (
+            <Select T={T} value={config?.chatModel || providerMeta.defaultModel || 'gemma3'} onChange={v => save({ chatModel: v }, true)}
+              options={chatOptions} />
+          ) : (
+            <input
+              value={config?.chatModel || providerMeta.defaultModel || ''}
+              onChange={(e) => setConfig(c => ({ ...(c || {}), chatModel: e.target.value }))}
+              onBlur={(e) => save({ chatModel: e.target.value }, true)}
+              placeholder={providerMeta.defaultModel || 'model name'}
+              style={mnAiInput(T, 260)}
+            />
+          )}
+        </Row>
+        <Row T={T} label="Retrieval mode" sub={provider === 'ollama' ? 'Ollama can use semantic embeddings when the embedding model is installed.' : 'Hosted providers use keyword and recent-note context. Local Ollama embeddings can still improve retrieval if indexed.'}>
+          {provider === 'ollama' ? (
+            <Select T={T} value={config?.embedModel || 'nomic-embed-text'} onChange={v => save({ embedModel: v }, true)}
+              options={embedOptions} />
+          ) : (
+            <StaticValue T={T}>Keyword + recent notes</StaticValue>
+          )}
+        </Row>
+        <Row T={T} label={provider === 'ollama' ? 'Refresh models' : 'Refresh status'} sub={provider === 'ollama' ? 'Reload the list of models available from the local provider.' : 'Re-check the saved provider configuration.'} last>
+          <BtnOutline T={T} onClick={load}>{busy ? 'Refreshing...' : 'Refresh'}</BtnOutline>
+        </Row>
+      </SettingsCard>
+      <div style={{
+        marginTop: 14,
+        padding: '10px 12px',
+        borderRadius: 6,
+        border: `1px solid ${T.lineSub}`,
+        background: T.bgSub,
+        color: T.inkMed,
+        fontFamily: 'var(--mn-body)',
+        fontSize: 12.5,
+        lineHeight: 1.45,
+      }}>
+        Cloud providers are used for chat, note creation, and editing. Note indexing stays local; without a local embedding model, Ask AI selects context with keyword search and recent notes.
+      </div>
     </div>
   );
 }
 
 function uniqueOptions(values) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function mnAiInput(T, minWidth = 220) {
+  return {
+    padding: '6px 10px',
+    borderRadius: 6,
+    border: `1px solid ${T.line}`,
+    background: T.bg,
+    color: T.ink,
+    fontFamily: 'var(--mn-mono)',
+    fontSize: 12,
+    minWidth,
+    outline: 'none',
+  };
+}
+
+function mnSettingsInput(T, options = {}) {
+  return {
+    width: options.width,
+    flex: options.flex,
+    minWidth: options.minWidth ?? 180,
+    padding: '6px 10px',
+    borderRadius: 6,
+    border: options.border || `1px solid ${T.line}`,
+    background: T.bg,
+    color: T.ink,
+    fontFamily: options.fontFamily || 'var(--mn-ui)',
+    fontSize: 12,
+    outline: 'none',
+  };
 }
 
 function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault, onCreateVault, onDeleteVault }) {
@@ -553,59 +846,51 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
   return (
     <div>
       <H T={T} label="Data & Sync" sub="Where OminiNote keeps your markdown files." />
-      <Row T={T} label="Current vault" sub="Folder on disk where this vault's markdown files are stored.">
-        <div style={{
-          fontFamily: 'var(--mn-mono)', fontSize: 11.5, color: T.inkMed,
-          padding: '5px 10px', border: `1px solid ${T.line}`, borderRadius: 5,
-          background: T.bgSub,
-          maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }} title={currentVault?.path || ''}>{currentVault?.path || '~/OminiNote/vault'}</div>
-      </Row>
-      <Row T={T} label="Create vault" sub="Start a separate local workspace with its own notes and tags.">
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            value={newVaultName}
-            onChange={e => setNewVaultName(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') submitCreateVault();
+      <SettingsCard T={T}>
+        <Row T={T} label="Current vault" sub="Folder on disk where this vault's markdown files are stored.">
+          <div style={{
+            fontFamily: 'var(--mn-mono)', fontSize: 11.5, color: T.inkMed,
+            padding: '6px 10px', border: `1px solid ${T.line}`, borderRadius: 6,
+            background: T.bgSub,
+            maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }} title={currentVault?.path || ''}>{currentVault?.path || '~/OminiNote/vault'}</div>
+        </Row>
+        <Row T={T} label="Create vault" sub="Start a separate local workspace with its own notes and tags.">
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              value={newVaultName}
+              onChange={e => setNewVaultName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') submitCreateVault();
+              }}
+              placeholder="Vault name"
+              style={mnSettingsInput(T, { width: 180 })}
+            />
+            <BtnOutline T={T} disabled={busy || !newVaultName.trim()} onClick={submitCreateVault}>Create</BtnOutline>
+          </div>
+        </Row>
+        <Row T={T} label="Auto-save" sub="Persist changes to disk as you type.">
+          <StaticValue T={T}>Always on</StaticValue>
+        </Row>
+        <Row T={T} label="Storage format" sub="Every note is saved as a standalone file.">
+          <StaticValue T={T}>Markdown</StaticValue>
+        </Row>
+        <Row T={T} label="Sync backend" sub="Keep notes in sync across devices.">
+          <StaticValue T={T}>Local only</StaticValue>
+        </Row>
+        <Row T={T} label="Delete current vault" sub={canDeleteVault ? "Permanently remove this vault and every note file inside it." : "Create another vault before deleting this one."} last>
+          <BtnOutline
+            T={T}
+            danger
+            disabled={busy || !canDeleteVault}
+            onClick={() => {
+              setError('');
+              setConfirmingDelete(v => !v);
+              setConfirmText('');
             }}
-            placeholder="Vault name"
-            style={{
-              width: 170,
-              padding: '6px 9px',
-              borderRadius: 5,
-              border: `1px solid ${T.line}`,
-              background: T.bg,
-              color: T.ink,
-              fontFamily: 'var(--mn-ui)',
-              fontSize: 12,
-              outline: 'none',
-            }}
-          />
-          <BtnOutline T={T} disabled={busy || !newVaultName.trim()} onClick={submitCreateVault}>Create</BtnOutline>
-        </div>
-      </Row>
-      <Row T={T} label="Auto-save" sub="Persist changes to disk as you type.">
-        <StaticValue T={T}>Always on</StaticValue>
-      </Row>
-      <Row T={T} label="Storage format" sub="Every note is saved as a standalone file.">
-        <StaticValue T={T}>Markdown</StaticValue>
-      </Row>
-      <Row T={T} label="Sync backend" sub="Keep notes in sync across devices.">
-        <StaticValue T={T}>Local only</StaticValue>
-      </Row>
-      <Row T={T} label="Delete current vault" sub={canDeleteVault ? "Permanently remove this vault and every note file inside it." : "Create another vault before deleting this one."}>
-        <BtnOutline
-          T={T}
-          danger
-          disabled={busy || !canDeleteVault}
-          onClick={() => {
-            setError('');
-            setConfirmingDelete(v => !v);
-            setConfirmText('');
-          }}
-        >Delete vault...</BtnOutline>
-      </Row>
+          >Delete vault...</BtnOutline>
+        </Row>
+      </SettingsCard>
       {confirmingDelete && currentVault && (
         <div style={{
           marginTop: 12,
@@ -625,18 +910,7 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
               value={confirmText}
               onChange={e => setConfirmText(e.target.value)}
               placeholder={`Type ${currentVault.name}`}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                padding: '6px 9px',
-                borderRadius: 5,
-                border: `1px solid ${deleteReady ? T.danger : T.line}`,
-                background: T.bg,
-                color: T.ink,
-                fontFamily: 'var(--mn-ui)',
-                fontSize: 12,
-                outline: 'none',
-              }}
+              style={mnSettingsInput(T, { flex: 1, minWidth: 0, border: `1px solid ${deleteReady ? T.danger : T.line}` })}
             />
             <BtnOutline T={T} danger disabled={busy || !deleteReady} onClick={submitDeleteVault}>Delete permanently</BtnOutline>
           </div>
@@ -663,8 +937,12 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
 function BtnOutline({ T, children, danger, disabled, onClick }) {
   return (
     <button disabled={disabled} onClick={onClick} style={{
-      padding: '6px 12px', borderRadius: 5, cursor: disabled ? 'default' : 'pointer',
-      background: T.bg, border: `1px solid ${danger ? T.danger : T.line}`,
+      minHeight: 30,
+      padding: '6px 12px',
+      borderRadius: 6,
+      cursor: disabled ? 'default' : 'pointer',
+      background: T.bg,
+      border: `1px solid ${danger ? T.danger : T.line}`,
       color: disabled ? T.inkDim : danger ? T.danger : T.inkMed,
       fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500,
       opacity: disabled ? 0.62 : 1,
@@ -675,8 +953,11 @@ function BtnOutline({ T, children, danger, disabled, onClick }) {
 function StaticValue({ T, children }) {
   return (
     <span style={{
+      minHeight: 28,
+      display: 'inline-flex',
+      alignItems: 'center',
       padding: '5px 10px',
-      borderRadius: 5,
+      borderRadius: 6,
       border: `1px solid ${T.lineSub}`,
       background: T.bgSub,
       color: T.inkMed,
@@ -713,9 +994,7 @@ function SectionShortcuts({ T }) {
   return (
     <div>
       <H T={T} label="Keyboard shortcuts" sub="All the ways to get around faster." />
-      <div style={{
-        border: `1px solid ${T.lineSub}`, borderRadius: 6, overflow: 'hidden',
-      }}>
+      <SettingsCard T={T}>
         {sc.map((s, i) => (
           <div key={i} style={{
             display: 'flex', alignItems: 'center',
@@ -733,7 +1012,7 @@ function SectionShortcuts({ T }) {
             }}>{s.k}</code>
           </div>
         ))}
-      </div>
+      </SettingsCard>
     </div>
   );
 }
@@ -742,10 +1021,7 @@ function SectionAbout({ T, stats }) {
   return (
     <div>
       <H T={T} label="About OminiNote" sub="Local-first, markdown-native notes." />
-      <div style={{
-        padding: 18, background: T.bgSub, border: `1px solid ${T.lineSub}`,
-        borderRadius: 8, marginBottom: 16,
-      }}>
+      <SettingsCard T={T} style={{ padding: 18, background: T.bgSub, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div style={{
             width: 34, height: 34, borderRadius: 7, background: T.ink, color: T.bg,
@@ -760,7 +1036,7 @@ function SectionAbout({ T, stats }) {
         <div style={{
           fontFamily: 'var(--mn-body)', fontSize: 13, color: T.inkMed, lineHeight: 1.55,
         }}>Notes you actually keep. Everything is a block, blocks nest, and every file on disk is plain markdown you own.</div>
-      </div>
+      </SettingsCard>
       <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <Stat T={T} label="Notes" value={stats.noteCount} />
         <Stat T={T} label="Tags" value={stats.tagCount} />

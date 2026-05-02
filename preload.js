@@ -34,9 +34,10 @@ contextBridge.exposeInMainWorld('mn', {
   ai: {
     status:    () => ipcRenderer.invoke('mn:ai.status'),
     connect:   () => ipcRenderer.invoke('mn:ai.connect'),
-    ask:       (vaultId, query) => ipcRenderer.invoke('mn:ai.ask', vaultId, query),
+    ask:       (vaultId, query, options) => ipcRenderer.invoke('mn:ai.ask', vaultId, query, options),
     edit:      (payload) => ipcRenderer.invoke('mn:ai.edit', payload),
     chat:      (payload) => ipcRenderer.invoke('mn:ai.chat', payload),
+    cancel:    (jobId) => ipcRenderer.invoke('mn:ai.cancel', jobId),
     backfill:  (vaultId) => ipcRenderer.invoke('mn:ai.backfill', vaultId),
     getConfig: () => ipcRenderer.invoke('mn:ai.getConfig'),
     setConfig: (patch) => ipcRenderer.invoke('mn:ai.setConfig', patch),

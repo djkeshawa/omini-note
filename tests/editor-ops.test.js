@@ -355,6 +355,80 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   assert.match(panels, /<button onClick=\{onSnooze \|\| onDismiss\}[\s\S]*>Snooze<\/button>/);
 });
 
+test('Ask AI can continue in background and reopen completed responses', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const ai = fs.readFileSync(path.join(__dirname, '../src/ai.jsx'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const aiLib = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+
+  assert.match(app, /const \[askAiSession, setAskAiSession\]/);
+  assert.match(app, /function MnAiNotice/);
+  assert.match(app, /AI response ready/);
+  assert.match(app, /onOpen=\{openAskAi\}/);
+  assert.match(app, /session=\{askAiSession\}/);
+  assert.match(app, /setSession=\{setAskAiSession\}/);
+  assert.match(app, /onBackgroundComplete=\{notifyAskAiComplete\}/);
+
+  assert.match(ai, /const aiSession = session \|\| localSession/);
+  assert.match(ai, /const MN_ASK_SUGGESTIONS = \[/);
+  assert.match(ai, /function mnAskStatusText/);
+  assert.match(ai, /function MnAskInfoChip/);
+  assert.match(ai, /mnAskPrimaryButton/);
+  assert.match(ai, /mnAskSecondaryButton/);
+  assert.match(ai, /Clear/);
+  assert.match(ai, /Vault context/);
+  assert.match(ai, /Current page/);
+  assert.match(ai, /Latest answer/);
+  assert.match(ai, /Semantic search ready/);
+  assert.match(ai, /Ask about the vault or ask for a page action/);
+  assert.match(ai, /backgroundRef\.current = true/);
+  assert.match(ai, /Run in background/);
+  assert.match(ai, /Stop/);
+  assert.match(ai, /const stopRun = async/);
+  assert.match(ai, /window\.mn\?\.ai\?\.cancel\?\.\(jobId\)/);
+  assert.match(ai, /Stopped\./);
+  assert.match(ai, /onBackgroundComplete && onBackgroundComplete/);
+  assert.match(ai, /completedAt: new Date\(\)\.toISOString\(\)/);
+
+  assert.match(preload, /cancel:\s+\(jobId\) => ipcRenderer\.invoke\('mn:ai\.cancel', jobId\)/);
+  assert.match(main, /ipcMain\.handle\('mn:ai\.cancel'/);
+  assert.match(aiLib, /const STATUS_CACHE_MS/);
+  assert.match(aiLib, /const OLLAMA_KEEP_ALIVE = '10m'/);
+  assert.match(aiLib, /const PROVIDERS = \{/);
+  assert.match(aiLib, /openrouterApiKey/);
+  assert.match(aiLib, /openaiApiKey/);
+  assert.match(aiLib, /anthropicApiKey/);
+  assert.match(aiLib, /geminiApiKey/);
+  assert.match(aiLib, /async function providerChat/);
+  assert.match(aiLib, /https:\/\/openrouter\.ai\/api\/v1/);
+  assert.match(aiLib, /https:\/\/api\.openai\.com\/v1/);
+  assert.match(aiLib, /https:\/\/api\.anthropic\.com/);
+  assert.match(aiLib, /https:\/\/generativelanguage\.googleapis\.com\/v1beta/);
+  assert.match(aiLib, /anthropic-version/);
+  assert.match(aiLib, /generateContent/);
+  assert.match(aiLib, /const cancellableJobs = new Map\(\)/);
+  assert.match(aiLib, /function cancelJob\(jobId\)/);
+  assert.match(aiLib, /controller\.abort\(\)/);
+  assert.match(aiLib, /cancelJob,/);
+  assert.match(aiLib, /statusCache/);
+  assert.match(aiLib, /ollama\.chat\(CONFIG\.chatModel, messages, \{ keep_alive: OLLAMA_KEEP_ALIVE, signal: options\.signal \}\)/);
+  assert.match(ollama, /async function embed\(model, text, opts = \{\}\)/);
+  assert.match(ollama, /signal: opts\.signal/);
+  assert.match(ollama, /keep_alive: opts\.keep_alive/);
+
+  assert.match(settings, /const MN_AI_PROVIDERS = \[/);
+  assert.match(settings, /id: 'openrouter'/);
+  assert.match(settings, /id: 'openai'/);
+  assert.match(settings, /id: 'anthropic'/);
+  assert.match(settings, /id: 'gemini'/);
+  assert.match(settings, /id: 'custom'/);
+  assert.match(settings, /Provider API base URL/);
+  assert.match(settings, /Cloud providers are used for chat, note creation, and editing/);
+});
+
 test('Canvas workspace is wired through storage, navigation, and note embeds', () => {
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
@@ -389,6 +463,9 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(outliner, /<MnCanvasEmbed/);
   assert.match(canvas, /const MN_CANVAS_TOOLS = \[/);
   assert.match(canvas, /function MnCanvasPanel/);
+  assert.match(canvas, /function MnCanvasCardMenu/);
+  assert.match(canvas, /onContextMenu=\{\(e\) => openCanvasCardMenu\(e, canvas\)\}/);
+  assert.match(canvas, /Delete canvas/);
   assert.match(canvas, /function MnCanvasEditor/);
   assert.match(canvas, /function MnCanvasEmbed/);
 });

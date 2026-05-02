@@ -330,9 +330,10 @@ ipcMain.handle('mn:ai.connect',     wrap(async () => {
   if (result?.config) await store.setPrefs({ aiConfig: result.config });
   return result;
 }));
-ipcMain.handle('mn:ai.ask',         wrap((vaultId, query) => ai.ask(vaultId, query)));
+ipcMain.handle('mn:ai.ask',         wrap((vaultId, query, options) => ai.ask(vaultId, query, store, options || {})));
 ipcMain.handle('mn:ai.edit',        wrap((payload) => ai.editText(payload)));
 ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(payload)));
+ipcMain.handle('mn:ai.cancel',      wrap((jobId) => ai.cancelJob(jobId)));
 ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, store)));
 ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.getConfig()));
 ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {

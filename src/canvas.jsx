@@ -75,6 +75,18 @@ function mnCanvasDate(value) {
   return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function mnCanvasPreviewElements(canvas) {
+  const elements = Array.isArray(canvas?.elements) ? canvas.elements.slice(0, 5) : [];
+  if (elements.length) return elements;
+  const count = canvas?.elementCount || 0;
+  if (!count) return [];
+  return [
+    { id: 'preview-rect', type: 'rect', x: 26, y: 24, w: 92, h: 38, stroke: '#2563eb', fill: '#dbeafe', strokeWidth: 2 },
+    { id: 'preview-sticky', type: 'sticky', x: 126, y: 22, w: 76, h: 58, stroke: '#92400e', fill: '#fef3c7', strokeWidth: 1.6 },
+    { id: 'preview-line', type: 'arrow', x: 76, y: 76, x2: 168, y2: 96, stroke: '#16a34a', fill: 'transparent', strokeWidth: 2 },
+  ].slice(0, Math.min(3, Math.max(1, count)));
+}
+
 function mnCanvasCloneElement(element, offset = 24) {
   const clone = {
     ...element,
@@ -149,17 +161,29 @@ function MnCanvasPanel({ canvases, activeCanvas, onCreate, onOpen, onBack, onSav
       canvases={canvases}
       onCreate={onCreate}
       onOpen={onOpen}
+      onDelete={onDelete}
       T={T}
     />
   );
 }
 
-function MnCanvasDashboard({ canvases, onCreate, onOpen, T }) {
+function MnCanvasDashboard({ canvases, onCreate, onOpen, onDelete, T }) {
   const [title, setTitle] = useStateC('');
+  const [cardMenu, setCardMenu] = useStateC(null);
+  const [deleteTarget, setDeleteTarget] = useStateC(null);
   const submit = () => {
     const name = title.trim() || 'Untitled canvas';
     setTitle('');
     onCreate && onCreate(name);
+  };
+  const openCanvasCardMenu = (event, canvas) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCardMenu({ x: event.clientX, y: event.clientY, canvas });
+  };
+  const requestDeleteCard = (canvas) => {
+    setCardMenu(null);
+    setDeleteTarget(canvas);
   };
   return (
     <div style={{
@@ -167,26 +191,27 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, T }) {
       minWidth: 0,
       height: '100%',
       overflow: 'auto',
-      background: T.bg,
-      padding: '28px 36px',
+      background: `linear-gradient(180deg, ${T.bg} 0%, ${T.bgSub} 100%)`,
+      padding: '32px 38px',
       color: T.ink,
     }}>
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 18, marginBottom: 26 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 24, fontWeight: 650, color: T.ink }}>Canvas</div>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkDim, marginTop: 3 }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 26, fontWeight: 700, letterSpacing: 0, color: T.ink }}>Canvas</div>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkDim, marginTop: 5 }}>
               {canvases.length} canvas{canvases.length === 1 ? '' : 'es'} in this vault
             </div>
           </div>
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
-            padding: 5,
+            gap: 7,
+            padding: 6,
             border: `1px solid ${T.line}`,
-            borderRadius: 7,
-            background: T.bgSub,
+            borderRadius: 8,
+            background: T.bg,
+            boxShadow: `0 10px 28px color-mix(in oklab, ${T.ink} 7%, transparent)`,
           }}>
             <input
               value={title}
@@ -196,14 +221,14 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, T }) {
               }}
               placeholder="Canvas name"
               style={{
-                width: 190,
+                width: 210,
                 border: 'none',
                 outline: 'none',
                 background: 'transparent',
                 color: T.ink,
                 fontFamily: 'var(--mn-ui)',
                 fontSize: 12.5,
-                padding: '5px 6px',
+                padding: '6px 8px',
               }}
             />
             <button onClick={submit} style={mnCanvasPrimaryButton(T)}>Create</button>
@@ -214,27 +239,37 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, T }) {
           <div style={{
             border: `1px dashed ${T.line}`,
             borderRadius: 8,
-            padding: '42px 24px',
+            padding: '46px 24px',
             textAlign: 'center',
-            background: T.bgSub,
+            background: T.bg,
             color: T.inkDim,
             fontFamily: 'var(--mn-ui)',
+            boxShadow: `inset 0 1px 0 color-mix(in oklab, ${T.bg} 80%, white)`,
           }}>
-            <div style={{ fontSize: 15, color: T.inkMed, marginBottom: 8 }}>No canvases yet</div>
+            <div style={{
+              width: 68,
+              height: 52,
+              margin: '0 auto 14px',
+              borderRadius: 7,
+              border: `1px solid ${T.line}`,
+              background: mnCanvasStageBackground(T, 18),
+            }} />
+            <div style={{ fontSize: 15, fontWeight: 650, color: T.inkMed, marginBottom: 10 }}>No canvases yet</div>
             <button onClick={() => onCreate && onCreate('Untitled canvas')} style={mnCanvasPrimaryButton(T)}>Create canvas</button>
           </div>
         ) : (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-            gap: 14,
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 360px), 1fr))',
+            gap: 16,
           }}>
             {canvases.map(canvas => (
               <button
                 key={canvas.id}
                 onClick={() => onOpen && onOpen(canvas.id)}
+                onContextMenu={(e) => openCanvasCardMenu(e, canvas)}
                 style={{
-                  minHeight: 150,
+                  minHeight: 132,
                   textAlign: 'left',
                   border: `1px solid ${T.line}`,
                   borderRadius: 8,
@@ -242,40 +277,245 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, T }) {
                   color: T.ink,
                   padding: 14,
                   cursor: 'pointer',
-                  boxShadow: `0 6px 18px color-mix(in oklab, ${T.ink} 6%, transparent)`,
+                  boxShadow: `0 12px 30px color-mix(in oklab, ${T.ink} 7%, transparent)`,
+                  transition: 'transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease',
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) 154px',
+                  alignItems: 'stretch',
+                  gap: 14,
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
-                onMouseLeave={e => e.currentTarget.style.background = T.bg}>
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = T.bgHover;
+                  e.currentTarget.style.borderColor = T.selLine;
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = `0 16px 38px color-mix(in oklab, ${T.ink} 10%, transparent)`;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = T.bg;
+                  e.currentTarget.style.borderColor = T.line;
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = `0 12px 30px color-mix(in oklab, ${T.ink} 7%, transparent)`;
+                }}>
                 <div style={{
-                  height: 72,
-                  borderRadius: 6,
-                  border: `1px solid ${T.lineSub}`,
-                  background:
-                    `linear-gradient(${T.lineSub} 1px, transparent 1px), linear-gradient(90deg, ${T.lineSub} 1px, transparent 1px), ${T.bgSub}`,
-                  backgroundSize: '18px 18px',
-                  marginBottom: 11,
-                }} />
-                <div style={{
-                  fontFamily: 'var(--mn-ui)',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>{canvas.title || 'Untitled canvas'}</div>
-                <div style={{
-                  fontFamily: 'var(--mn-mono)',
-                  fontSize: 10.5,
-                  color: T.inkDim,
-                  marginTop: 5,
-                }}>{canvas.elementCount || 0} item{canvas.elementCount === 1 ? '' : 's'} · {mnCanvasDate(canvas.modifiedAt)}</div>
+                  minWidth: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  padding: '3px 0',
+                }}>
+                  <div>
+                    <div style={{
+                      fontFamily: 'var(--mn-ui)',
+                      fontSize: 15,
+                      fontWeight: 700,
+                      lineHeight: 1.25,
+                      color: T.ink,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}>{canvas.title || 'Untitled canvas'}</div>
+                  </div>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    alignSelf: 'flex-start',
+                    gap: 7,
+                    fontFamily: 'var(--mn-mono)',
+                    fontSize: 10.5,
+                    color: T.inkDim,
+                    padding: '5px 8px',
+                    borderRadius: 999,
+                    border: `1px solid ${T.lineSub}`,
+                    background: T.bgSub,
+                    maxWidth: '100%',
+                  }}>
+                    <span>{canvas.elementCount || 0} item{canvas.elementCount === 1 ? '' : 's'}</span>
+                  </div>
+                </div>
+                <MnCanvasMiniPreview canvas={canvas} T={T} />
               </button>
             ))}
           </div>
         )}
       </div>
+      {cardMenu && (
+        <MnCanvasCardMenu
+          menu={cardMenu}
+          T={T}
+          onOpen={() => {
+            const id = cardMenu.canvas?.id;
+            setCardMenu(null);
+            id && onOpen && onOpen(id);
+          }}
+          onDelete={() => requestDeleteCard(cardMenu.canvas)}
+          onClose={() => setCardMenu(null)}
+        />
+      )}
+      {deleteTarget && (
+        <MnCanvasDeleteDialog
+          canvas={deleteTarget}
+          T={T}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            const id = deleteTarget.id;
+            setDeleteTarget(null);
+            id && onDelete && onDelete(id);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+function MnCanvasMiniPreview({ canvas, T }) {
+  const elements = mnCanvasPreviewElements(canvas);
+  const bounds = mnCanvasSelectionBounds(elements);
+  const scale = bounds ? Math.min(1, 184 / Math.max(1, bounds.w), 62 / Math.max(1, bounds.h)) : 1;
+  const transform = bounds ? {
+    scale,
+    x: 116 - (bounds.x + bounds.w / 2) * scale,
+    y: 46 - (bounds.y + bounds.h / 2) * scale,
+  } : { scale: 1, x: 0, y: 0 };
+  return (
+    <div style={{
+      width: '100%',
+      height: '100%',
+      minHeight: 104,
+      borderRadius: 7,
+      border: `1px solid ${T.lineSub}`,
+      background: mnCanvasStageBackground(T, 18),
+      overflow: 'hidden',
+      position: 'relative',
+    }}>
+      <svg width="100%" height="100%" viewBox="0 0 232 92" preserveAspectRatio="none" style={{ display: 'block' }}>
+        {elements.length ? elements.map((el, index) => (
+          <MnCanvasPreviewShape key={el.id || index} element={el} transform={transform} />
+        )) : (
+          <g opacity="0.58">
+            <rect x="56" y="28" width="120" height="36" rx="7" fill={T.bg} stroke={T.line} strokeWidth="1" />
+            <path d="M82 42H150M82 51H130" stroke={T.line} strokeWidth="2" strokeLinecap="round" />
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+}
+
+function MnCanvasCardMenu({ menu, T, onOpen, onDelete, onClose }) {
+  useEffectC(() => {
+    const close = (e) => {
+      if (e.target.closest?.('.mn-canvas-card-menu')) return;
+      onClose && onClose();
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose && onClose();
+    };
+    document.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  const item = (label, action, danger = false) => (
+    <button
+      onMouseDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        action && action();
+      }}
+      style={{
+        width: '100%',
+        border: 'none',
+        background: 'transparent',
+        color: danger ? T.danger : T.ink,
+        borderRadius: 5,
+        padding: '7px 9px',
+        textAlign: 'left',
+        cursor: 'pointer',
+        fontFamily: 'var(--mn-ui)',
+        fontSize: 12.5,
+      }}
+      onMouseEnter={e => (e.currentTarget.style.background = T.bgHover)}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div
+      className="mn-canvas-card-menu"
+      style={{
+        position: 'fixed',
+        left: menu.x,
+        top: menu.y,
+        zIndex: 110,
+        width: 168,
+        padding: 5,
+        borderRadius: 8,
+        border: `1px solid ${T.line}`,
+        background: T.bg,
+        boxShadow: `0 16px 42px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+        fontFamily: 'var(--mn-ui)',
+      }}>
+      <div style={{
+        padding: '6px 9px 7px',
+        borderBottom: `1px solid ${T.lineSub}`,
+        marginBottom: 4,
+        color: T.inkDim,
+        fontSize: 11,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}>{menu.canvas?.title || 'Untitled canvas'}</div>
+      {item('Open canvas', onOpen)}
+      {item('Delete canvas', onDelete, true)}
+    </div>
+  );
+}
+
+function MnCanvasPreviewShape({ element, transform }) {
+  const stroke = element.stroke || '#64748b';
+  const fill = element.fill || 'transparent';
+  const strokeWidth = Math.max(1, element.strokeWidth || 1.6);
+  const scale = transform?.scale || 1;
+  const mapPoint = (point) => ({
+    x: (point.x ?? 0) * scale + (transform?.x || 0),
+    y: (point.y ?? 0) * scale + (transform?.y || 0),
+  });
+  const origin = mapPoint({ x: element.x ?? 0, y: element.y ?? 0 });
+  const x = origin.x;
+  const y = origin.y;
+  const w = Math.max(14, (element.w || 44) * scale);
+  const h = Math.max(10, (element.h || 28) * scale);
+  if (element.type === 'ellipse') {
+    return <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
+  }
+  if (element.type === 'line' || element.type === 'arrow') {
+    const end = mapPoint({ x: element.x2 ?? element.x ?? 0, y: element.y2 ?? element.y ?? 0 });
+    return (
+      <g>
+        <line x1={x} y1={y} x2={end.x} y2={end.y} stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" />
+        {element.type === 'arrow' && <polygon points={mnCanvasArrowHead(x, y, end.x, end.y, 7)} fill={stroke} />}
+      </g>
+    );
+  }
+  if (element.type === 'pen') {
+    const points = (element.points || []).map(mapPoint);
+    const d = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+    return d ? <path d={d} fill="none" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" /> : null;
+  }
+  if (element.type === 'diamond') {
+    const points = [`${x + w / 2},${y}`, `${x + w},${y + h / 2}`, `${x + w / 2},${y + h}`, `${x},${y + h / 2}`].join(' ');
+    return <polygon points={points} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
+  }
+  if (element.type === 'triangle') {
+    const points = [`${x + w / 2},${y}`, `${x + w},${y + h}`, `${x},${y + h}`].join(' ');
+    return <polygon points={points} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
+  }
+  return <rect x={x} y={y} width={w} height={h} rx={element.type === 'sticky' ? 6 : 4} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
 }
 
 function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
@@ -843,105 +1083,136 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
       }}
       onMouseDown={() => rootRef.current?.focus()}>
       <div style={{
-        minHeight: 54,
         borderBottom: `1px solid ${T.line}`,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 18px',
-        background: T.bg,
-        flexWrap: 'wrap',
+        background: `color-mix(in oklab, ${T.bg} 94%, ${T.bgSub})`,
+        boxShadow: `0 1px 0 color-mix(in oklab, ${T.bg} 84%, white) inset`,
       }}>
-        <button
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => { saveTitle(); onBack && onBack(); }}
-          title="Back to canvases"
-          style={mnCanvasIconButton(T)}>
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
-            <path d="M10 3L5 8L10 13" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <input
-          value={draft.title || ''}
-          onMouseDown={(e) => e.stopPropagation()}
-          onChange={(e) => updateDraft(prev => ({ ...prev, title: e.target.value }), false)}
-          onBlur={saveTitle}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-            if (e.key === 'Escape') {
-              updateDraft(prev => ({ ...prev, title: canvas.title || 'Untitled canvas' }), false);
-              e.currentTarget.blur();
-            }
-          }}
-          style={{
-            width: 260,
-            border: `1px solid ${T.lineSub}`,
-            borderRadius: 6,
-            outline: 'none',
-            background: T.bgSub,
-            color: T.ink,
-            fontFamily: 'var(--mn-ui)',
-            fontSize: 15,
-            fontWeight: 600,
-            padding: '5px 8px',
-          }}
-        />
-        <div style={{ width: 1, height: 24, background: T.lineSub, margin: '0 5px' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-          {MN_CANVAS_TOOLS.map(item => (
-            <MnCanvasToolButton
-              key={item.id}
-              tool={item}
-              active={tool === item.id}
-              onClick={() => setTool(item.id)}
-              T={T}
-            />
-          ))}
-        </div>
-        <div style={{ width: 1, height: 24, background: T.lineSub, margin: '0 5px' }} />
-        <MnCanvasColorControl label="Stroke" value={activeStroke} onChange={(v) => applyColor('stroke', v)} T={T} />
-        <MnCanvasColorControl label="Fill" value={activeFill === 'transparent' ? '#ffffff' : activeFill} onChange={(v) => applyColor('fill', v)} T={T} />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
-          Width
+        <div style={{
+          minHeight: 52,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '9px 18px 7px',
+        }}>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { saveTitle(); onBack && onBack(); }}
+            title="Back to canvases"
+            aria-label="Back to canvases"
+            style={mnCanvasIconButton(T)}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
+              <path d="M10 3L5 8L10 13" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
           <input
-            type="range"
-            min="1"
-            max="10"
-            value={activeStrokeWidth}
-            onChange={(e) => applyStrokeWidth(e.target.value)}
-            style={{ width: 72 }}
+            value={draft.title || ''}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => updateDraft(prev => ({ ...prev, title: e.target.value }), false)}
+            onBlur={saveTitle}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Escape') {
+                updateDraft(prev => ({ ...prev, title: canvas.title || 'Untitled canvas' }), false);
+                e.currentTarget.blur();
+              }
+            }}
+            style={{
+              width: 330,
+              maxWidth: '38vw',
+              border: '1px solid transparent',
+              borderRadius: 6,
+              outline: 'none',
+              background: 'transparent',
+              color: T.ink,
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 16,
+              fontWeight: 700,
+              padding: '5px 7px',
+            }}
+            onFocus={e => {
+              e.currentTarget.style.background = T.bg;
+              e.currentTarget.style.borderColor = T.lineSub;
+            }}
+            onBlurCapture={e => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.borderColor = 'transparent';
+            }}
           />
-        </label>
-        <div style={{ width: 1, height: 24, background: T.lineSub, margin: '0 5px' }} />
-        <MnCanvasActionButton icon="undo" label="Undo" onClick={undoCanvas} disabled={!canUndo} T={T} />
-        <MnCanvasActionButton icon="redo" label="Redo" onClick={redoCanvas} disabled={!canRedo} T={T} />
-        <MnCanvasActionButton icon="zoom-out" label="Zoom out" onClick={() => setZoom((viewport.scale || 1) - 0.15)} T={T} />
-        <span style={{ minWidth: 38, textAlign: 'center', fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
-          {Math.round((viewport.scale || 1) * 100)}%
-        </span>
-        <MnCanvasActionButton icon="zoom-in" label="Zoom in" onClick={() => setZoom((viewport.scale || 1) + 0.15)} T={T} />
-        <MnCanvasActionButton icon="fit" label="Fit to screen" onClick={fitToScreen} disabled={!(draft.elements || []).length} T={T} />
-        <div style={{ width: 1, height: 24, background: T.lineSub, margin: '0 5px' }} />
-        <MnCanvasActionButton icon="align-left" label="Align left" onClick={() => alignSelected('left')} disabled={selectedIds.length < 2} T={T} />
-        <MnCanvasActionButton icon="align-center" label="Align center" onClick={() => alignSelected('center-x')} disabled={selectedIds.length < 2} T={T} />
-        <MnCanvasActionButton icon="align-right" label="Align right" onClick={() => alignSelected('right')} disabled={selectedIds.length < 2} T={T} />
-        <MnCanvasActionButton icon="align-top" label="Align top" onClick={() => alignSelected('top')} disabled={selectedIds.length < 2} T={T} />
-        <MnCanvasActionButton icon="align-middle" label="Align middle" onClick={() => alignSelected('center-y')} disabled={selectedIds.length < 2} T={T} />
-        <MnCanvasActionButton icon="align-bottom" label="Align bottom" onClick={() => alignSelected('bottom')} disabled={selectedIds.length < 2} T={T} />
-        <MnCanvasActionButton icon="distribute-x" label="Distribute horizontally" onClick={() => distributeSelected('x')} disabled={selectedIds.length < 3} T={T} />
-        <MnCanvasActionButton icon="distribute-y" label="Distribute vertically" onClick={() => distributeSelected('y')} disabled={selectedIds.length < 3} T={T} />
-        <div style={{ flex: 1 }} />
-        <button onClick={() => selectedIds.length && copyElements(currentSelectionIds(), true)} disabled={!selectedIds.length} style={mnCanvasToolButton(T)}>Cut</button>
-        <button onClick={() => copyElements()} disabled={!selectedIds.length} style={mnCanvasToolButton(T)}>Copy</button>
-        <button onClick={pasteElements} style={mnCanvasToolButton(T)}>Paste</button>
-        <button onClick={() => removeElements(currentSelectionIds())} disabled={!selectedIds.length} style={mnCanvasToolButton(T)}>Delete</button>
-        <button
-          onClick={() => setDeleteDialogOpen(true)}
-          style={{ ...mnCanvasToolButton(T), color: T.danger }}>
-          Delete canvas
-        </button>
+          <MnCanvasStatusPill T={T}>{(draft.elements || []).length} object{(draft.elements || []).length === 1 ? '' : 's'}</MnCanvasStatusPill>
+          <MnCanvasStatusPill T={T}>{selectedIds.length ? `${selectedIds.length} selected` : 'No selection'}</MnCanvasStatusPill>
+          <div style={{ flex: 1 }} />
+          <MnCanvasActionButton icon="canvas-trash" label="Delete canvas" onClick={() => setDeleteDialogOpen(true)} T={T} tone="danger" />
+        </div>
+        <div style={{
+          minHeight: 48,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '7px 18px 10px',
+          overflowX: 'auto',
+        }}>
+          <div style={mnCanvasToolbarGroup(T)}>
+            {MN_CANVAS_TOOLS.map(item => (
+              <MnCanvasToolButton
+                key={item.id}
+                tool={item}
+                active={tool === item.id}
+                onClick={() => setTool(item.id)}
+                T={T}
+              />
+            ))}
+          </div>
+          <div style={mnCanvasToolbarGroup(T)}>
+            <MnCanvasColorControl label="Stroke" value={activeStroke} onChange={(v) => applyColor('stroke', v)} T={T} />
+            <MnCanvasColorControl label="Fill" value={activeFill === 'transparent' ? '#ffffff' : activeFill} onChange={(v) => applyColor('fill', v)} T={T} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
+              Width
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={activeStrokeWidth}
+                onChange={(e) => applyStrokeWidth(e.target.value)}
+                style={{ width: 74, accentColor: T.accent }}
+              />
+            </label>
+          </div>
+          <div style={mnCanvasToolbarGroup(T)}>
+            <MnCanvasActionButton icon="undo" label="Undo" onClick={undoCanvas} disabled={!canUndo} T={T} />
+            <MnCanvasActionButton icon="redo" label="Redo" onClick={redoCanvas} disabled={!canRedo} T={T} />
+            <MnCanvasDivider T={T} />
+            <MnCanvasActionButton icon="zoom-out" label="Zoom out" onClick={() => setZoom((viewport.scale || 1) - 0.15)} T={T} />
+            <span style={{ minWidth: 42, textAlign: 'center', fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+              {Math.round((viewport.scale || 1) * 100)}%
+            </span>
+            <MnCanvasActionButton icon="zoom-in" label="Zoom in" onClick={() => setZoom((viewport.scale || 1) + 0.15)} T={T} />
+            <MnCanvasActionButton icon="fit" label="Fit to screen" onClick={fitToScreen} disabled={!(draft.elements || []).length} T={T} />
+          </div>
+          <div style={mnCanvasToolbarGroup(T)}>
+            <MnCanvasActionButton icon="align-left" label="Align left" onClick={() => alignSelected('left')} disabled={selectedIds.length < 2} T={T} />
+            <MnCanvasActionButton icon="align-center" label="Align center" onClick={() => alignSelected('center-x')} disabled={selectedIds.length < 2} T={T} />
+            <MnCanvasActionButton icon="align-right" label="Align right" onClick={() => alignSelected('right')} disabled={selectedIds.length < 2} T={T} />
+            <MnCanvasActionButton icon="align-top" label="Align top" onClick={() => alignSelected('top')} disabled={selectedIds.length < 2} T={T} />
+            <MnCanvasActionButton icon="align-middle" label="Align middle" onClick={() => alignSelected('center-y')} disabled={selectedIds.length < 2} T={T} />
+            <MnCanvasActionButton icon="align-bottom" label="Align bottom" onClick={() => alignSelected('bottom')} disabled={selectedIds.length < 2} T={T} />
+            <MnCanvasDivider T={T} />
+            <MnCanvasActionButton icon="distribute-x" label="Distribute horizontally" onClick={() => distributeSelected('x')} disabled={selectedIds.length < 3} T={T} />
+            <MnCanvasActionButton icon="distribute-y" label="Distribute vertically" onClick={() => distributeSelected('y')} disabled={selectedIds.length < 3} T={T} />
+          </div>
+          <div style={mnCanvasToolbarGroup(T)}>
+            <MnCanvasActionButton icon="cut" label="Cut" onClick={() => selectedIds.length && copyElements(currentSelectionIds(), true)} disabled={!selectedIds.length} T={T} />
+            <MnCanvasActionButton icon="copy" label="Copy" onClick={() => copyElements()} disabled={!selectedIds.length} T={T} />
+            <MnCanvasActionButton icon="paste" label="Paste" onClick={pasteElements} T={T} />
+            <MnCanvasActionButton icon="trash" label="Delete" onClick={() => removeElements(currentSelectionIds())} disabled={!selectedIds.length} T={T} tone="danger" />
+          </div>
+        </div>
       </div>
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: T.bgSub }}>
+      <div style={{
+        flex: 1,
+        position: 'relative',
+        overflow: 'hidden',
+        background: `linear-gradient(180deg, ${T.bgSub}, ${T.bg})`,
+      }}>
         <svg
           ref={svgRef}
           onPointerDown={onStageDown}
@@ -956,8 +1227,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
           style={{
             display: 'block',
             cursor: spaceDown ? 'grab' : tool === 'select' ? 'default' : tool === 'eraser' ? 'not-allowed' : 'crosshair',
-            backgroundImage: `linear-gradient(${T.lineSub} 1px, transparent 1px), linear-gradient(90deg, ${T.lineSub} 1px, transparent 1px)`,
-            backgroundSize: '28px 28px',
+            background: mnCanvasStageBackground(T, 28),
           }}>
           <g transform={`translate(${viewport.x || 0} ${viewport.y || 0}) scale(${viewport.scale || 1})`}>
             {(draft.elements || []).map(el => (
@@ -1051,12 +1321,13 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
           fontFamily: 'var(--mn-mono)',
           fontSize: 10,
           color: T.inkDim,
-          background: T.bg,
+          background: `color-mix(in oklab, ${T.bg} 88%, transparent)`,
           border: `1px solid ${T.lineSub}`,
-          borderRadius: 5,
-          padding: '4px 7px',
+          borderRadius: 999,
+          padding: '5px 9px',
           pointerEvents: 'none',
-        }}>Drag to draw · right-click objects for actions · wheel zoom</div>
+          boxShadow: `0 8px 22px color-mix(in oklab, ${T.ink} 7%, transparent)`,
+        }}>{MN_CANVAS_TOOLS.find(item => item.id === tool)?.label || 'Select'} · {Math.round((viewport.scale || 1) * 100)}%</div>
         {contextMenu && (
           <MnCanvasContextMenu
             menu={contextMenu}
@@ -1087,14 +1358,14 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
 
 function MnCanvasColorControl({ label, value, onChange, T }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>{label}</span>
       <input
         type="color"
         value={value || '#000000'}
         onChange={(e) => onChange && onChange(e.target.value)}
         title={`${label} color`}
-        style={{ width: 24, height: 24, padding: 0, border: `1px solid ${T.lineSub}`, borderRadius: 5, background: T.bg, cursor: 'pointer' }}
+        style={{ width: 26, height: 26, padding: 2, border: `1px solid ${T.lineSub}`, borderRadius: 6, background: T.bg, cursor: 'pointer' }}
       />
       <div style={{ display: 'flex', gap: 3 }}>
         {MN_CANVAS_COLORS.slice(0, 6).map(color => (
@@ -1103,8 +1374,8 @@ function MnCanvasColorControl({ label, value, onChange, T }) {
             onClick={() => onChange && onChange(color)}
             title={color}
             style={{
-              width: 15,
-              height: 15,
+              width: 16,
+              height: 16,
               borderRadius: 3,
               border: `1px solid ${T.lineSub}`,
               background: color,
@@ -1135,7 +1406,7 @@ function MnCanvasToolButton({ tool, active, onClick, T }) {
   );
 }
 
-function MnCanvasActionButton({ icon, label, onClick, disabled = false, T }) {
+function MnCanvasActionButton({ icon, label, onClick, disabled = false, T, tone = 'default' }) {
   return (
     <button
       onClick={onClick}
@@ -1144,7 +1415,7 @@ function MnCanvasActionButton({ icon, label, onClick, disabled = false, T }) {
       aria-label={label}
       style={{
         ...mnCanvasIconToolButton(T),
-        color: disabled ? T.inkDim : T.inkMed,
+        color: disabled ? T.inkDim : tone === 'danger' ? T.danger : T.inkMed,
         opacity: disabled ? 0.45 : 1,
         cursor: disabled ? 'default' : 'pointer',
       }}>
@@ -1168,7 +1439,35 @@ function MnCanvasActionIcon({ id }) {
   if (id === 'align-bottom') return <svg {...common}><path d="M3 13H13M5 3V10.5M10 5.5V10.5" strokeLinecap="round"/></svg>;
   if (id === 'distribute-x') return <svg {...common}><path d="M3 3V13M13 3V13M5.2 8H10.8M6 5V11M10 5V11" strokeLinecap="round"/></svg>;
   if (id === 'distribute-y') return <svg {...common}><path d="M3 3H13M3 13H13M8 5.2V10.8M5 6H11M5 10H11" strokeLinecap="round"/></svg>;
+  if (id === 'cut') return <svg {...common}><circle cx="4.4" cy="4.4" r="1.8"/><circle cx="4.4" cy="11.6" r="1.8"/><path d="M6 5.4L13 12M6 10.6L13 4" strokeLinecap="round"/></svg>;
+  if (id === 'copy') return <svg {...common}><rect x="5" y="5" width="8" height="8" rx="1.4"/><path d="M3 10.5V3H10.5" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+  if (id === 'paste') return <svg {...common}><path d="M6 3H10L10.7 4.5H12.5V13H3.5V4.5H5.3L6 3Z" strokeLinejoin="round"/><path d="M6 7.2H10M6 10H9" strokeLinecap="round"/></svg>;
+  if (id === 'trash' || id === 'canvas-trash') return <svg {...common}><path d="M3 4.5H13M6 4.5V3C6 2.5 6.5 2 7 2H9C9.5 2 10 2.5 10 3V4.5M5 4.5V13C5 13.5 5.5 14 6 14H10C10.5 14 11 13.5 11 13V4.5" strokeLinecap="round"/></svg>;
   return null;
+}
+
+function MnCanvasDivider({ T }) {
+  return <span aria-hidden="true" style={{ width: 1, height: 21, background: T.lineSub, margin: '0 2px' }} />;
+}
+
+function MnCanvasStatusPill({ children, T }) {
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      height: 24,
+      border: `1px solid ${T.lineSub}`,
+      borderRadius: 999,
+      padding: '0 9px',
+      background: T.bgSub,
+      color: T.inkDim,
+      fontFamily: 'var(--mn-mono)',
+      fontSize: 10.5,
+      whiteSpace: 'nowrap',
+    }}>
+      {children}
+    </span>
+  );
 }
 
 function MnCanvasResizeHandles({ bounds, onPointerDown, T }) {
@@ -1624,20 +1923,21 @@ function mnCanvasPrimaryButton(T) {
     border: 'none',
     background: T.ink,
     color: T.bg,
-    borderRadius: 5,
-    padding: '6px 11px',
+    borderRadius: 6,
+    padding: '7px 12px',
     cursor: 'pointer',
     fontFamily: 'var(--mn-ui)',
     fontSize: 12.5,
-    fontWeight: 600,
+    fontWeight: 650,
+    boxShadow: `0 8px 18px color-mix(in oklab, ${T.ink} 14%, transparent)`,
   };
 }
 
 function mnCanvasIconButton(T) {
   return {
-    width: 28,
-    height: 28,
-    borderRadius: 5,
+    width: 30,
+    height: 30,
+    borderRadius: 7,
     border: `1px solid ${T.lineSub}`,
     background: T.bg,
     color: T.inkMed,
@@ -1652,9 +1952,9 @@ function mnCanvasIconButton(T) {
 function mnCanvasToolButton(T) {
   return {
     border: `1px solid ${T.lineSub}`,
-    background: 'transparent',
+    background: T.bg,
     color: T.inkMed,
-    borderRadius: 5,
+    borderRadius: 6,
     padding: '5px 8px',
     cursor: 'pointer',
     fontFamily: 'var(--mn-ui)',
@@ -1664,10 +1964,10 @@ function mnCanvasToolButton(T) {
 
 function mnCanvasIconToolButton(T) {
   return {
-    width: 30,
-    height: 30,
+    width: 31,
+    height: 31,
     border: `1px solid ${T.lineSub}`,
-    background: 'transparent',
+    background: T.bg,
     color: T.inkMed,
     borderRadius: 6,
     padding: 0,
@@ -1676,6 +1976,24 @@ function mnCanvasIconToolButton(T) {
     alignItems: 'center',
     justifyContent: 'center',
   };
+}
+
+function mnCanvasToolbarGroup(T) {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: 4,
+    border: `1px solid ${T.lineSub}`,
+    borderRadius: 8,
+    background: `color-mix(in oklab, ${T.bg} 78%, ${T.bgSub})`,
+    flexShrink: 0,
+  };
+}
+
+function mnCanvasStageBackground(T, size = 28) {
+  const lineAt = Math.max(1, size - 1);
+  return `repeating-linear-gradient(0deg, transparent 0 ${lineAt}px, ${T.lineSub} ${lineAt}px ${size}px), repeating-linear-gradient(90deg, transparent 0 ${lineAt}px, ${T.lineSub} ${lineAt}px ${size}px), ${T.bgSub}`;
 }
 
 function mnCanvasDialogButton(T) {
