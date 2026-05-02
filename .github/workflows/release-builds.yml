@@ -93,7 +93,7 @@ jobs:
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: OminiNote-${{ matrix.name }}
+          name: VispNote-${{ matrix.name }}
           if-no-files-found: error
           path: |
             dist/*.AppImage
@@ -144,6 +144,6 @@ jobs:
             gh release upload "${tag}" release-artifacts/* --clobber
           else
             gh release create "${tag}" release-artifacts/* \
-              --title "OminiNote ${tag}" \
-              --notes "Automated OminiNote desktop release for macOS, Debian-compatible Linux, and Windows."
+              --title "VispNote ${tag}" \
+              --notes "Automated VispNote desktop release for macOS, Debian-compatible Linux, and Windows."
           fi

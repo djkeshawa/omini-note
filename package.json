@@ -1,13 +1,13 @@
 {
   "name": "vispnote",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "VispNote — a local-first, block-based note-taking desktop app",
   "license": "Apache-2.0",
   "author": "djkeshawa",
-  "homepage": "https://github.com/djkeshawa/omini-note#readme",
+  "homepage": "https://github.com/djkeshawa/visp-note#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/djkeshawa/omini-note.git"
+    "url": "https://github.com/djkeshawa/visp-note.git"
   },
   "main": "main.js",
   "engines": {

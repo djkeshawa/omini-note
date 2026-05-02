@@ -1,6 +1,6 @@
-# OminiNote
+# VispNote
 
-OminiNote is a local-first desktop note app for structured thinking. It combines markdown files, a block-based editor, graph navigation, task views, and optional local AI assistance in an Electron app.
+VispNote is a local-first desktop note app for structured thinking. It combines markdown files, a block-based editor, graph navigation, task views, and optional local AI assistance in an Electron app.
 
 The project is designed around a simple rule: your notes should stay usable as plain files, even if you stop using the app.
 
@@ -56,7 +56,7 @@ npm run check:main
 Run the Electron smoke test:
 
 ```bash
-HOME=/tmp/omininote-smoke npm run smoke:electron
+HOME=/tmp/vispnote-smoke npm run smoke:electron
 ```
 
 ## Project Structure
@@ -99,23 +99,23 @@ HOME=/tmp/omininote-smoke npm run smoke:electron
 New installs store vault data in:
 
 ```text
-~/OminiNote
+~/VispNote
 ```
 
-Existing development data under `~/MyNote` is still supported as a compatibility fallback when `~/OminiNote` does not exist.
+Existing data under `~/OminiNote` or `~/MyNote` is still supported as a compatibility fallback when `~/VispNote` does not exist.
 
 The repository intentionally ignores local vault data, SQLite databases, generated build output, local tool state, and environment files. Do not commit personal notes, local indexes, `.env` files, or generated app packages.
 
 ## AI Setup
 
-AI features are optional. By default, OminiNote is built for local Ollama usage.
+AI features are optional. By default, VispNote is built for local Ollama usage.
 
 Typical flow:
 
 1. Install and start Ollama.
 2. Pull a chat model, for example `gemma3`.
 3. Pull an embedding model, for example `nomic-embed-text`.
-4. Open OminiNote settings and connect the local provider.
+4. Open VispNote settings and connect the local provider.
 
 If Ollama is not available, the core note app still works.
 
@@ -145,4 +145,4 @@ Before publishing a release:
 
 ## License
 
-OminiNote is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+VispNote is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

@@ -271,6 +271,9 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 
   assert.match(store, /async function deleteVault\(id\)/);
+  assert.match(store, /const APP_DIR_NAME = 'VispNote'/);
+  assert.match(store, /const LEGACY_APP_DIR_NAMES = \['OminiNote', 'MyNote'\]/);
+  assert.match(store, /const ROOT = !fs\.existsSync\(PRIMARY_ROOT\) && LEGACY_ROOT \? LEGACY_ROOT : PRIMARY_ROOT/);
   assert.match(store, /Create another vault before deleting this one/);
   assert.match(store, /fsp\.rm\(vaultDir\(v\.slug\), \{ recursive: true, force: true \}\)/);
   assert.match(store, /deleteVault, setActiveVault/);
@@ -845,6 +848,26 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(builder, /- assets\/\*\*\/*/);
   assert.match(builder, /icon: assets\/vispnote-icon\.png/);
   assert.match(builder, /shortcutName: VispNote/);
+});
+
+test('Release metadata targets renamed VispNote repository', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+  const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '../package-lock.json'), 'utf8'));
+  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+  const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+
+  assert.equal(pkg.version, '0.1.4');
+  assert.equal(lock.version, '0.1.4');
+  assert.equal(lock.packages[''].version, '0.1.4');
+  assert.equal(pkg.homepage, 'https://github.com/djkeshawa/visp-note#readme');
+  assert.equal(pkg.repository.url, 'https://github.com/djkeshawa/visp-note.git');
+  assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
+  assert.match(workflow, /--title "VispNote \$\{tag\}"/);
+  assert.match(workflow, /Automated VispNote desktop release/);
+  assert.match(settings, /Version 0\.1\.4 · Prototype/);
+  assert.match(aiSource, /headers\['HTTP-Referer'\] = 'https:\/\/github\.com\/djkeshawa\/visp-note'/);
+  assert.match(aiSource, /headers\['X-Title'\] = 'VispNote'/);
 });
 
 test('Vault switcher uses VispNote icon instead of letter tiles', () => {
