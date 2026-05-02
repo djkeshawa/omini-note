@@ -1,7 +1,7 @@
 {
-  "name": "omini-note",
+  "name": "vispnote",
   "version": "0.1.3",
-  "description": "OminiNote — a local-first, block-based note-taking desktop app",
+  "description": "VispNote — a local-first, block-based note-taking desktop app",
   "license": "Apache-2.0",
   "author": "djkeshawa",
   "homepage": "https://github.com/djkeshawa/omini-note#readme",

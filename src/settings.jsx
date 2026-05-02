@@ -335,7 +335,7 @@ function stepBtn(T, disabled) {
 function SectionAppearance({ tweaks, setTweak, T }) {
   return (
     <div>
-      <H T={T} label="Appearance" sub="Make OminiNote look the way you think." />
+      <H T={T} label="Appearance" sub="Make VispNote look the way you think." />
       <SettingsCard T={T}>
         <Row T={T} label="Theme" sub="Light or dark color scheme.">
           <Segmented T={T} value={tweaks.theme} onChange={v => setTweak('theme', v)}
@@ -710,7 +710,7 @@ function SectionAI({ T }) {
           <Toggle T={T} checked={config?.enabled !== false} onChange={v => save({ enabled: v }, false)} />
         </Row>
         {showApiKey && (
-          <Row T={T} label={`${providerMeta.label} API key`} sub="Stored locally in OminiNote settings. It is used only from this app.">
+          <Row T={T} label={`${providerMeta.label} API key`} sub="Stored locally in VispNote settings. It is used only from this app.">
             <input
               type="password"
               value={apiKeyValue}
@@ -848,7 +848,7 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
   };
   return (
     <div>
-      <H T={T} label="Data & Sync" sub="Where OminiNote keeps your markdown files." />
+      <H T={T} label="Data & Sync" sub="Where VispNote keeps your markdown files." />
       <SettingsCard T={T}>
         <Row T={T} label="Current vault" sub="Folder on disk where this vault's markdown files are stored.">
           <div style={{
@@ -856,7 +856,7 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
             padding: '6px 10px', border: `1px solid ${T.line}`, borderRadius: 6,
             background: T.bgSub,
             maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }} title={currentVault?.path || ''}>{currentVault?.path || '~/OminiNote/vault'}</div>
+          }} title={currentVault?.path || ''}>{currentVault?.path || '~/VispNote/vault'}</div>
         </Row>
         <Row T={T} label="Create vault" sub="Start a separate local workspace with its own notes and tags.">
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -1046,16 +1046,15 @@ function SectionShortcuts({ T }) {
 function SectionAbout({ T, stats }) {
   return (
     <div>
-      <H T={T} label="About OminiNote" sub="Local-first, markdown-native notes." />
+      <H T={T} label="About VispNote" sub="Local-first, markdown-native notes." />
       <SettingsCard T={T} style={{ padding: 18, background: T.bgSub, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div style={{
-            width: 34, height: 34, borderRadius: 7, background: T.ink, color: T.bg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'var(--mn-body)', fontWeight: 600, fontSize: 20, fontStyle: 'italic',
-          }}>m</div>
+            width: 34, height: 34, borderRadius: 7, background: T.bgSub, border: `1px solid ${T.line}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4,
+          }}><img src="assets/vispnote-icon.png" alt="" aria-hidden="true" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} /></div>
           <div>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>OminiNote</div>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>VispNote</div>
             <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>Version 0.3.0 · Prototype</div>
           </div>
         </div>

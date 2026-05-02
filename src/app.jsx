@@ -488,17 +488,9 @@ const MN_LAUNCH_RIPPLES = [
 
 function MnBootLogo() {
   return (
-    <div className="mn-boot-brand" aria-label="OminiNote">
-      <svg className="mn-boot-logo" viewBox="0 0 240 170" role="img" aria-hidden="true">
-        <path className="mn-logo-aura" d="M44 58C44 32 76 23 98 44L120 65L142 44C164 23 196 32 196 58C196 84 165 94 142 73L120 51L98 73C75 94 44 84 44 58Z" stroke="#a8c7ff" pathLength="100" />
-        <path className="mn-logo-aura" d="M66 96C42 107 42 145 74 149C77 169 111 169 119 145M174 96C198 107 198 145 166 149C163 169 129 169 121 145M120 83V145" stroke="#aaa5ff" pathLength="100" />
-        <path className="mn-logo-aura" d="M142 44C164 23 196 32 196 58C196 84 165 94 142 73" stroke="#ff9c92" pathLength="100" />
-        <path className="mn-logo-line" d="M44 58C44 32 76 23 98 44L120 65L142 44C164 23 196 32 196 58C196 84 165 94 142 73L120 51L98 73C75 94 44 84 44 58Z" stroke="#9bbdff" pathLength="100" />
-        <path className="mn-logo-line mn-logo-line-soft" d="M66 96C42 107 42 145 74 149C77 169 111 169 119 145M174 96C198 107 198 145 166 149C163 169 129 169 121 145M120 83V145" stroke="#9b99ff" pathLength="100" />
-        <path className="mn-logo-line mn-logo-line-soft" d="M72 122C85 111 102 114 108 127M168 122C155 111 138 114 132 127M86 84C96 78 107 78 116 85M154 84C144 78 133 78 124 85" stroke="#8d8dff" pathLength="100" />
-        <path className="mn-logo-line" d="M142 44C164 23 196 32 196 58C196 84 165 94 142 73" stroke="#ff9c92" pathLength="100" />
-      </svg>
-      <div className="mn-boot-title mn-boot-wordmark"><span className="mn-word-omni">Omini</span><span className="mn-word-note">Note</span></div>
+    <div className="mn-boot-brand" aria-label="VispNote">
+      <img className="mn-boot-logo" src="assets/vispnote-loading-transparent.png" alt="VispNote" />
+      <div className="mn-boot-title mn-boot-wordmark">VispNote</div>
       <div className="mn-boot-tagline"><span>Capture</span><i /><span>Organize</span><i /><span>Remember</span></div>
     </div>
   );
@@ -1169,7 +1161,7 @@ function MnApp() {
           if (cancelled) return;
         setVaults([{
           id: 'v_personal', name: 'Personal', slug: 'personal',
-            path: '~/OminiNote/personal', notes: seedNotes, tags: SEED_TAGS, canvases: [], novelistMode: false,
+            path: '~/VispNote/personal', notes: seedNotes, tags: SEED_TAGS, canvases: [], novelistMode: false,
         }]);
           setActiveVaultId('v_personal');
           setTags(SEED_TAGS);
@@ -1306,14 +1298,6 @@ function MnApp() {
   const theme = tweaks.theme;
   const T = MN_THEMES[theme];
   const fonts = MN_FONTS[tweaks.fontChoice] || MN_FONTS['Editorial (Newsreader + Inter)'];
-  const appScale = tweaks.appFontSize === 'small'
-    ? 0.92
-    : tweaks.appFontSize === 'large'
-    ? 1.08
-    : tweaks.appFontSize === 'x-large'
-    ? 1.16
-    : 1;
-
   useEffectA(() => {
     const root = document.documentElement;
     root.style.setProperty('--mn-ui', fonts.ui);
@@ -1407,7 +1391,7 @@ function MnApp() {
       const newCanvases = [];
       setVaults(vs => [
         ...vs.map(v => v.id === activeVaultId ? { ...v, notes, tags, lastSelectedId: selectedId, canvases } : v),
-        { id, name, slug, path: `~/OminiNote/${slug}`, notes: setup.notes, tags: setup.tags, workflowStates: setup.workflowStates || null, canvases: newCanvases, novelistMode: vaultType === 'novelist' },
+        { id, name, slug, path: `~/VispNote/${slug}`, notes: setup.notes, tags: setup.tags, workflowStates: setup.workflowStates || null, canvases: newCanvases, novelistMode: vaultType === 'novelist' },
       ]);
       setNotes(setup.notes); setTags(setup.tags); setSelectedId(setup.notes[0]?.id || firstNoteId);
       setCanvases(newCanvases); setActiveCanvas(null);
@@ -2126,8 +2110,8 @@ function MnApp() {
     if (!HAS_DISK) return;
     const vname = vaults.find(v => v.id === activeVaultId)?.name;
     const nname = selectedNote?.title;
-    const t = [vname, nname].filter(Boolean).join(' — ') || 'OminiNote';
-    window.mn.setTitle(t === 'OminiNote' ? t : `${t} — OminiNote`);
+    const t = [vname, nname].filter(Boolean).join(' — ') || 'VispNote';
+    window.mn.setTitle(t === 'VispNote' ? t : `${t} — VispNote`);
   }, [activeVaultId, vaults, selectedNote]);
 
   const noteListVisible = view === 'notes' || view === 'graph' || view === 'workflow';
@@ -2151,13 +2135,11 @@ function MnApp() {
 
   return (
     <div style={{
-      width: `calc(100vw / ${appScale})`,
-      height: `calc(100vh / ${appScale})`,
+      width: '100vw',
+      height: '100vh',
       background: T.bg, position: 'relative',
       fontFamily: 'var(--mn-ui)', overflow: 'hidden',
       fontSize: 'var(--mn-app-font-size)',
-      transform: `scale(${appScale})`,
-      transformOrigin: 'top left',
     }}>
         <div style={{ display: 'flex', height: '100%' }}>
           {!sidebarHidden && (

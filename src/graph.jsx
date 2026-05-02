@@ -194,7 +194,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'omininote-graph.svg';
+    a.download = 'vispnote-graph.svg';
     a.click();
     URL.revokeObjectURL(url);
   };

@@ -1,5 +1,5 @@
-appId: com.omininote.app
-productName: OminiNote
+appId: com.vispnote.app
+productName: VispNote
 copyright: Copyright © 2026 djkeshawa
 
 directories:
@@ -10,6 +10,7 @@ files:
   - main.js
   - preload.js
   - package.json
+  - assets/**/*
   - lib/**/*
   - src/**/*
   - node_modules/**/*
@@ -45,6 +46,7 @@ mac:
 linux:
   category: Office
   maintainer: djkeshawa
+  icon: assets/vispnote-icon.png
   target:
     - target: AppImage
       arch:
@@ -82,4 +84,4 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: OminiNote
+  shortcutName: VispNote

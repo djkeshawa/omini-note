@@ -9,7 +9,8 @@ const ai = require('./lib/ai');
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
-const APP_ICON_PATH = path.join(__dirname, 'assets', 'omini-note-icon.svg');
+const APP_NAME = 'VispNote';
+const APP_ICON_PATH = path.join(__dirname, 'assets', 'vispnote-icon.png');
 const SPELL_DICTIONARY_PATHS = [
   '/usr/share/dict/american-english',
   '/usr/share/dict/british-english',
@@ -116,8 +117,7 @@ function createFallbackIcon() {
 
 function createAppIcon() {
   try {
-    const svg = fs.readFileSync(APP_ICON_PATH, 'utf8');
-    const image = nativeImage.createFromDataURL(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+    const image = nativeImage.createFromPath(APP_ICON_PATH);
     if (!image.isEmpty()) return image;
   } catch (e) {
     console.error('failed to load app icon', e);
@@ -140,7 +140,7 @@ function updateTrayMenu() {
   const visible = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
   tray.setContextMenu(Menu.buildFromTemplate([
     {
-      label: visible ? 'Hide OminiNote' : 'Show OminiNote',
+      label: visible ? `Hide ${APP_NAME}` : `Show ${APP_NAME}`,
       click: () => {
         if (visible) mainWindow.hide();
         else showMainWindow();
@@ -148,7 +148,7 @@ function updateTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Quit OminiNote',
+      label: `Quit ${APP_NAME}`,
       click: () => {
         isQuitting = true;
         app.quit();
@@ -160,7 +160,7 @@ function updateTrayMenu() {
 function createTray() {
   if (tray) return;
   tray = new Tray(createAppIcon());
-  tray.setToolTip('OminiNote');
+  tray.setToolTip(APP_NAME);
   tray.on('click', () => {
     if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) mainWindow.hide();
     else showMainWindow();
@@ -248,7 +248,7 @@ function createWindow() {
     minHeight: 700,
     backgroundColor: '#f6f7f9',
     icon: createAppIcon(),
-    title: 'OminiNote',
+    title: APP_NAME,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -302,6 +302,15 @@ function wrap(fn) {
   };
 }
 
+async function setPrefsFromIpc(patch) {
+  if (patch && typeof patch === 'object' && !Array.isArray(patch) &&
+      Object.prototype.hasOwnProperty.call(patch, 'aiConfig')) {
+    const config = ai.setConfig(patch.aiConfig);
+    return await store.setPrefs({ ...patch, aiConfig: config });
+  }
+  return await store.setPrefs(patch);
+}
+
 // Vault management
 ipcMain.handle('mn:listVaults',     wrap(store.listVaults));
 ipcMain.handle('mn:createVault',    wrap(async (name, options) => {
@@ -338,7 +347,7 @@ ipcMain.handle('mn:saveVaultMeta',  wrap(store.saveVaultMeta));
 
 // Prefs
 ipcMain.handle('mn:getPrefs',       wrap(store.getPrefs));
-ipcMain.handle('mn:setPrefs',       wrap(store.setPrefs));
+ipcMain.handle('mn:setPrefs',       wrap(setPrefsFromIpc));
 ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
 
 // Search / backlinks / tags (SQLite-backed)
@@ -388,13 +397,22 @@ async function rescanAllVaults() {
 
 // ── App lifecycle ────────────────────────────────────────────────────────────
 
+app.setName(APP_NAME);
+if (process.platform === 'linux') app.setDesktopName('vispnote.desktop');
+
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   if (process.platform === 'darwin') app.dock?.setIcon(createAppIcon());
   try {
-    await store.loadConfig();   // ensures the OminiNote vault folder, seeds on first run
+    await store.loadConfig();   // ensures the vault folder, seeds on first run
     const prefs = await store.getPrefs();
-    if (prefs.aiConfig) ai.setConfig(prefs.aiConfig, { rejectUnknown: false });
+    if (prefs.aiConfig) {
+      try {
+        ai.setConfig(prefs.aiConfig, { rejectUnknown: false });
+      } catch (e) {
+        console.error('saved AI config ignored', e);
+      }
+    }
     idx.init();                 // opens / creates the local search index
     await rescanAllVaults();    // sync index with disk
   } catch (e) {

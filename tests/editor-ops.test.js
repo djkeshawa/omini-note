@@ -687,12 +687,14 @@ test('Note delete confirmation uses themed in-app dialog', () => {
   assert.doesNotMatch(app, /confirm\(/);
 });
 
-test('Launch screen uses OminiNote pastel blooming light design', () => {
+test('Launch screen uses VispNote logo with pastel blooming light design', () => {
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const loadingLogo = fs.statSync(path.join(__dirname, '../assets/vispnote-loading-transparent.png'));
+  const appIcon = fs.statSync(path.join(__dirname, '../assets/vispnote-icon.png'));
 
-  assert.match(html, /<title>OminiNote<\/title>/);
-  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="assets\/omini-note-icon\.svg" \/>/);
+  assert.match(html, /<title>VispNote<\/title>/);
+  assert.match(html, /<link rel="icon" type="image\/png" href="assets\/vispnote-icon\.png" \/>/);
   assert.match(html, /@keyframes mnLightBloom/);
   assert.match(html, /@keyframes mnLightWash/);
   assert.match(html, /@keyframes mnPastelRipple/);
@@ -708,9 +710,14 @@ test('Launch screen uses OminiNote pastel blooming light design', () => {
   assert.doesNotMatch(html, /animateMotion/);
   assert.match(html, /mn-boot-brand/);
   assert.match(html, /mn-boot-logo/);
-  assert.match(html, /mn-boot-title mn-boot-wordmark/);
-  assert.match(html, /mn-word-omni">Omini/);
-  assert.match(html, /mn-word-note">Note/);
+  assert.match(html, /aria-label="VispNote"/);
+  assert.match(html, /src="assets\/vispnote-loading-transparent\.png"/);
+  assert.match(html, /alt="VispNote"/);
+  assert.match(html, /width: clamp\(340px, 54vw, 720px\)/);
+  assert.match(html, /object-fit: contain/);
+  assert.match(html, /mix-blend-mode: multiply/);
+  assert.match(html, /mn-boot-title mn-boot-wordmark">VispNote/);
+  assert.ok(loadingLogo.size > 0);
   assert.match(html, /Capture<\/span><i><\/i><span>Organize<\/span><i><\/i><span>Remember/);
   assert.doesNotMatch(html, /@keyframes mnBootLogoTrace/);
   assert.doesNotMatch(html, /@keyframes mnBootLogoGlow/);
@@ -719,9 +726,10 @@ test('Launch screen uses OminiNote pastel blooming light design', () => {
   assert.doesNotMatch(html, /mnBootWordGlow/);
   assert.match(html, /Connecting your workspace/);
   assert.match(app, /function MnBootLogo/);
-  assert.match(app, /className="mn-boot-title mn-boot-wordmark"/);
-  assert.match(app, /className="mn-word-omni">Omini/);
-  assert.match(app, /className="mn-word-note">Note/);
+  assert.match(app, /aria-label="VispNote"/);
+  assert.match(app, /src="assets\/vispnote-loading-transparent\.png"/);
+  assert.match(app, /alt="VispNote"/);
+  assert.match(app, /className="mn-boot-title mn-boot-wordmark">VispNote/);
   assert.match(app, /<MnBootLogo \/>/);
   assert.match(app, /MN_LAUNCH_BLOOMS/);
   assert.match(app, /MN_LAUNCH_RIPPLES/);
@@ -730,6 +738,7 @@ test('Launch screen uses OminiNote pastel blooming light design', () => {
   assert.match(app, /className="mn-light-ripple"/);
   assert.doesNotMatch(app, /MN_LAUNCH_FLOATS/);
   assert.doesNotMatch(app, /MN_LAUNCH_NEURAL_PATHS/);
+  assert.ok(appIcon.size > 0);
 });
 
 test('App and editor font size settings use stepper controls', () => {
@@ -741,9 +750,11 @@ test('App and editor font size settings use stepper controls', () => {
   assert.match(settings, /label="App font size"/);
   assert.match(settings, /label="Font size"/);
   assert.match(app, /"appFontSize": "default"/);
-  assert.match(app, /const appScale = tweaks\.appFontSize === 'small'/);
-  assert.match(app, /transform: `scale\(\$\{appScale\}\)`/);
-  assert.match(app, /width: `calc\(100vw \/ \$\{appScale\}\)`/);
+  assert.match(app, /--mn-app-font-size/);
+  assert.match(app, /width: '100vw'/);
+  assert.match(app, /height: '100vh'/);
+  assert.doesNotMatch(app, /transform: `scale\(\$\{appScale\}\)`/);
+  assert.doesNotMatch(app, /width: `calc\(100vw \/ \$\{appScale\}\)`/);
   assert.match(outliner, /mnEditorFontScale/);
 });
 
@@ -791,14 +802,22 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
 test('Electron installs native edit context menu for right-click copy paste cut', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
-  const icon = fs.readFileSync(path.join(__dirname, '../assets/omini-note-icon.svg'), 'utf8');
+  const builder = fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8');
+  const icon = fs.statSync(path.join(__dirname, '../assets/vispnote-icon.png'));
 
-  assert.match(main, /APP_ICON_PATH = path\.join\(__dirname, 'assets', 'omini-note-icon\.svg'\)/);
+  assert.match(main, /APP_ICON_PATH = path\.join\(__dirname, 'assets', 'vispnote-icon\.png'\)/);
+  assert.match(main, /const APP_NAME = 'VispNote'/);
+  assert.match(main, /app\.setName\(APP_NAME\)/);
+  assert.match(main, /app\.setDesktopName\('vispnote\.desktop'\)/);
+  assert.match(main, /label: visible \? `Hide \$\{APP_NAME\}` : `Show \$\{APP_NAME\}`/);
+  assert.match(main, /label: `Quit \$\{APP_NAME\}`/);
+  assert.match(main, /tray\.setToolTip\(APP_NAME\)/);
+  assert.match(main, /title: APP_NAME/);
   assert.match(main, /const fs = require\('fs'\)/);
-  assert.match(main, /fs\.readFileSync\(APP_ICON_PATH, 'utf8'\)/);
   assert.match(main, /function createAppIcon\(\)/);
   assert.match(main, /function createFallbackIcon\(\)/);
   assert.match(main, /if \(!image\.isEmpty\(\)\) return image/);
+  assert.match(main, /nativeImage\.createFromPath\(APP_ICON_PATH\)/);
   assert.match(main, /nativeImage\.createFromDataURL/);
   assert.match(main, /new Tray\(createAppIcon\(\)\)/);
   assert.match(main, /icon: createAppIcon\(\)/);
@@ -819,13 +838,25 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(main, /role: 'paste'/);
   assert.match(main, /role: 'selectAll'/);
   assert.match(main, /attachEditContextMenu\(win\)/);
-  assert.match(icon, /OminiNote app icon/);
-  assert.match(icon, /<svg[^>]+width="512"[^>]+height="512"[^>]+viewBox="0 0 512 512"/);
-  assert.match(icon, /<rect width="512" height="512"/);
-  assert.match(icon, /strokeMain/);
-  assert.match(icon, /strokeBrain/);
-  assert.match(icon, /softGlow/);
-  assert.match(html, /href="assets\/omini-note-icon\.svg"/);
+  assert.ok(icon.size > 0);
+  assert.match(html, /type="image\/png" href="assets\/vispnote-icon\.png"/);
+  assert.match(builder, /appId: com\.vispnote\.app/);
+  assert.match(builder, /productName: VispNote/);
+  assert.match(builder, /- assets\/\*\*\/*/);
+  assert.match(builder, /icon: assets\/vispnote-icon\.png/);
+  assert.match(builder, /shortcutName: VispNote/);
+});
+
+test('Vault switcher uses VispNote icon instead of letter tiles', () => {
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
+
+  assert.match(sidebar, /const VAULT_ICON_SRC = 'assets\/vispnote-icon\.png'/);
+  assert.match(sidebar, /function MnVaultIcon/);
+  assert.match(sidebar, /<img src=\{VAULT_ICON_SRC\} alt="" aria-hidden="true"/);
+  assert.match(sidebar, /<MnVaultIcon T=\{T\} size=\{22\} active \/>/);
+  assert.match(sidebar, /<MnVaultIcon T=\{T\} size=\{20\} active=\{active\} \/>/);
+  assert.doesNotMatch(sidebar, /activeVault\?\.name \|\| 'm'\)\[0\]\.toLowerCase/);
+  assert.doesNotMatch(sidebar, /v\.name\[0\]\.toLowerCase/);
 });
 
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
@@ -844,7 +875,15 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /setPermissionRequestHandler/);
   assert.match(main, /webSecurity: true/);
   assert.match(main, /allowRunningInsecureContent: false/);
+  assert.match(main, /async function setPrefsFromIpc\(patch\)/);
+  assert.match(main, /Object\.prototype\.hasOwnProperty\.call\(patch, 'aiConfig'\)/);
+  assert.match(main, /const config = ai\.setConfig\(patch\.aiConfig\)/);
+  assert.match(main, /store\.setPrefs\(\{ \.\.\.patch, aiConfig: config \}\)/);
+  assert.match(main, /ipcMain\.handle\('mn:setPrefs',\s+wrap\(setPrefsFromIpc\)\)/);
+  assert.doesNotMatch(main, /ipcMain\.handle\('mn:setPrefs',\s+wrap\(store\.setPrefs\)\)/);
   assert.match(main, /ai\.setConfig\(prefs\.aiConfig, \{ rejectUnknown: false \}\)/);
+  assert.match(main, /saved AI config ignored/);
+  assert.match(main, /idx\.init\(\)/);
   assert.match(main, /result\?\.config\?\.provider === 'ollama'/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: ai\.getConfig\(\) \}\)/);
 

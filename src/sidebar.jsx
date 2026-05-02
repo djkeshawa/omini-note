@@ -1,5 +1,22 @@
 // Sidebar pane: tags, daily rollup, todos count, settings.
 const { useMemo: useMemoS } = React;
+const VAULT_ICON_SRC = 'assets/vispnote-icon.png';
+
+function MnVaultIcon({ T, size = 22, active = false }) {
+  return (
+    <span style={{
+      width: size, height: size, borderRadius: Math.max(4, Math.round(size * 0.24)),
+      flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: active ? T.bg : T.bgSub,
+      border: `1px solid ${active ? T.line : T.lineSub}`,
+      padding: Math.max(1, Math.round(size * 0.12)),
+    }}>
+      <img src={VAULT_ICON_SRC} alt="" aria-hidden="true" style={{
+        width: '100%', height: '100%', display: 'block', objectFit: 'contain',
+      }} />
+    </span>
+  );
+}
 
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenTodos, onOpenGraph,
@@ -170,19 +187,13 @@ function MnSidebar({
           }}
           onMouseEnter={e => !vaultOpen && (e.currentTarget.style.background = T.bgHover)}
           onMouseLeave={e => !vaultOpen && (e.currentTarget.style.background = 'transparent')}>
-            <div style={{
-              width: 22, height: 22, borderRadius: 5,
-              background: T.ink, color: T.bg, flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily: 'var(--mn-body)', fontWeight: 600, fontSize: 13,
-              fontStyle: 'italic',
-            }}>{(activeVault?.name || 'm')[0].toLowerCase()}</div>
+            <MnVaultIcon T={T} size={22} active />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
                 fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 600,
                 color: T.ink, letterSpacing: '-0.01em',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{activeVault?.name || 'OminiNote'}</div>
+              }}>{activeVault?.name || 'VispNote'}</div>
               <div style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
                 marginTop: 1, letterSpacing: '0.04em',
@@ -221,13 +232,7 @@ function MnSidebar({
                   onMouseEnter={e => !active && !isRenaming && (e.currentTarget.style.background = T.bgHover)}
                   onMouseLeave={e => !active && !isRenaming && (e.currentTarget.style.background = 'transparent')}
                   onClick={() => { if (!isRenaming) { onSelectVault(v.id); setVaultOpen(false); } }}>
-                    <div style={{
-                      width: 20, height: 20, borderRadius: 4, flexShrink: 0,
-                      background: active ? T.ink : T.bgSub,
-                      color: active ? T.bg : T.inkMed,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontFamily: 'var(--mn-body)', fontWeight: 600, fontSize: 11, fontStyle: 'italic',
-                    }}>{v.name[0].toLowerCase()}</div>
+                    <MnVaultIcon T={T} size={20} active={active} />
                     {isRenaming ? (
                       <input autoFocus value={renameVal}
                         onChange={(e) => setRenameVal(e.target.value)}
