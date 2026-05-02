@@ -11,6 +11,7 @@ release/
 # Runtime data and local vaults
 OminiNote/
 MyNote/
+VispNote/
 *.db
 *.db-*
 *.sqlite

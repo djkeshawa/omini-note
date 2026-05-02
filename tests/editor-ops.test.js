@@ -806,7 +806,9 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
   const builder = fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8');
+  const linuxAfterInstall = fs.readFileSync(path.join(__dirname, '../scripts/linux-after-install.sh'), 'utf8');
   const icon = fs.statSync(path.join(__dirname, '../assets/vispnote-icon.png'));
+  const linuxIconSizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
 
   assert.match(main, /APP_ICON_PATH = path\.join\(__dirname, 'assets', 'vispnote-icon\.png'\)/);
   assert.match(main, /const APP_NAME = 'VispNote'/);
@@ -846,8 +848,14 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(builder, /appId: com\.vispnote\.app/);
   assert.match(builder, /productName: VispNote/);
   assert.match(builder, /- assets\/\*\*\/*/);
-  assert.match(builder, /icon: assets\/vispnote-icon\.png/);
+  assert.match(builder, /icon: assets\/linux-icons/);
+  assert.match(builder, /afterInstall: scripts\/linux-after-install\.sh/);
   assert.match(builder, /shortcutName: VispNote/);
+  for (const size of linuxIconSizes) {
+    assert.ok(fs.statSync(path.join(__dirname, `../assets/linux-icons/${size}x${size}.png`)).size > 0);
+  }
+  assert.match(linuxAfterInstall, /gtk-update-icon-cache -q -t -f \/usr\/share\/icons\/hicolor/);
+  assert.match(linuxAfterInstall, /xdg-icon-resource forceupdate --theme hicolor/);
 });
 
 test('Release metadata targets renamed VispNote repository', () => {
@@ -857,15 +865,15 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.4');
-  assert.equal(lock.version, '0.1.4');
-  assert.equal(lock.packages[''].version, '0.1.4');
+  assert.equal(pkg.version, '0.1.5');
+  assert.equal(lock.version, '0.1.5');
+  assert.equal(lock.packages[''].version, '0.1.5');
   assert.equal(pkg.homepage, 'https://github.com/djkeshawa/visp-note#readme');
   assert.equal(pkg.repository.url, 'https://github.com/djkeshawa/visp-note.git');
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
-  assert.match(settings, /Version 0\.1\.4 · Prototype/);
+  assert.match(settings, /Version 0\.1\.5 · Prototype/);
   assert.match(aiSource, /headers\['HTTP-Referer'\] = 'https:\/\/github\.com\/djkeshawa\/visp-note'/);
   assert.match(aiSource, /headers\['X-Title'\] = 'VispNote'/);
 });

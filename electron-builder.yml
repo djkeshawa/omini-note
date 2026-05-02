@@ -46,7 +46,7 @@ mac:
 linux:
   category: Office
   maintainer: djkeshawa
-  icon: assets/vispnote-icon.png
+  icon: assets/linux-icons
   target:
     - target: AppImage
       arch:
@@ -57,6 +57,7 @@ linux:
   artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
 deb:
+  afterInstall: scripts/linux-after-install.sh
   depends:
     - libgtk-3-0
     - libnotify4
