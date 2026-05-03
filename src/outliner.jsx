@@ -2683,6 +2683,7 @@ function MnOutliner({
   const redoActionRef = useRefOE(null);
   const selectionRef = useRefOE(null);
   const deleteSelectionRef = useRefOE(null);
+  const dismissedAiPreviewRef = useRefOE(null);
   const focusIdRef = useRefOE(null);
   const moveBlockRef = useRefOE(null);
   const duplicateBlockRef = useRefOE(null);
@@ -3476,6 +3477,24 @@ function MnOutliner({
     ].filter(Boolean).join('\n\n');
   };
 
+  const pageContinuationInstruction = (userRequest, sourceText) => {
+    const novelConfig = readNovelistAiConfig();
+    const activePrompt = (novelConfig?.prompts || []).find(item => item.id === novelConfig.defaultPromptId)
+      || (novelConfig?.prompts || []).find(item => item.prompt);
+    return [
+      novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
+      activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
+      novelConfig?.instructions ? `Vault instructions:\n${novelConfig.instructions}` : null,
+      novelConfig?.additionalContext ? `Additional context:\n${novelConfig.additionalContext}` : null,
+      novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
+      'Write new markdown that continues the existing page.',
+      `User request: ${userRequest}`,
+      sourceText?.trim()
+        ? 'Use the full existing page below as context. Continue from the end of it. Do not repeat, summarize, move, or rewrite the existing content. Return only the new markdown that should be appended below the current last block.'
+        : 'The page is empty. Return only the new markdown for the page.',
+    ].filter(Boolean).join('\n\n');
+  };
+
   const plotPointsContextText = (block) => {
     const titles = new Set(
       (block.contexts || [])
@@ -3563,6 +3582,14 @@ function MnOutliner({
   };
 
   const applyPageReplacement = (text) => replaceAllBlocks(parseAiBlocks(text));
+  const inlinePreviewKey = (actionId, blockId) => `${actionId}:${blockId}`;
+
+  const cancelAiPreview = () => {
+    if (aiPreview?.target?.kind === 'insert-after') {
+      dismissedAiPreviewRef.current = inlinePreviewKey(aiPreview.actionId, aiPreview.target.blockId);
+    }
+    setAiPreview(null);
+  };
 
   const applyAiPreview = () => {
     if (!aiPreview) return;
@@ -3572,7 +3599,10 @@ function MnOutliner({
     else if (aiPreview.target.kind === 'section') applySectionReplacement(aiPreview.target, aiPreview.text);
     else if (aiPreview.target.kind === 'insert-after') insertBlocksAfter(aiPreview.target.blockId, parseAiBlocks(aiPreview.text));
     else if (aiPreview.target.kind === 'page') applyPageReplacement(aiPreview.text);
-    onShowToast && onShowToast(`${mnAiAction(aiPreview.actionId).sectionLabel} applied`);
+    const label = aiPreview.target.kind === 'insert-after' && aiPreview.target.scopeLabel === 'page'
+      ? mnAiAction(aiPreview.actionId).pageLabel
+      : mnAiAction(aiPreview.actionId).sectionLabel;
+    onShowToast && onShowToast(`${label} applied`);
     setAiPreview(null);
     setSelection(null);
   };
@@ -3653,7 +3683,9 @@ function MnOutliner({
         const source = mnBlocksToMd([sourceBlock]);
         const isPlotPointsAi = sourceBlock.kind === 'plot-points' || payload.plotPointsAction;
         const plotContext = isPlotPointsAi ? plotPointsContextText(sourceBlock) : '';
+        const plotPreviewKey = inlinePreviewKey(actionId, blockId);
         if (isPlotPointsAi) {
+          dismissedAiPreviewRef.current = null;
           setAiPreview({ actionId, text: '', streaming: true, target: { kind: 'insert-after', blockId } });
         }
         const edited = await requestAiEdit(
@@ -3666,6 +3698,7 @@ function MnOutliner({
           isPlotPointsAi
             ? {
                 onToken: (token) => {
+                  if (dismissedAiPreviewRef.current === plotPreviewKey) return;
                   setAiPreview(prev => (
                     prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId
                       ? { ...prev, text: `${prev.text || ''}${token}` }
@@ -3676,6 +3709,7 @@ function MnOutliner({
             : {}
         );
         if (isPlotPointsAi) {
+          if (dismissedAiPreviewRef.current === plotPreviewKey) return;
           setAiPreview(prev => (
             prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId
               ? { ...prev, text: edited, streaming: false }
@@ -3699,12 +3733,52 @@ function MnOutliner({
         if (cleanLoc) cleanLoc.block.content = payload.cleanContent;
       }
       const source = mnBlocksToMd(pageBlocks);
+      const appendPageWrite = actionId === 'write' && pageBlocks.length > 0;
+      const appendTargetId = appendPageWrite ? pageBlocks[pageBlocks.length - 1].id : null;
+      const pagePreviewKey = appendTargetId ? inlinePreviewKey(actionId, appendTargetId) : null;
+      if (appendPageWrite) {
+        dismissedAiPreviewRef.current = null;
+        setAiPreview({
+          actionId,
+          text: '',
+          streaming: true,
+          target: { kind: 'insert-after', blockId: appendTargetId, scopeLabel: 'page' },
+        });
+      }
       const edited = await requestAiEdit(
         actionId,
         'page',
         source,
-        action.needsPrompt ? writeInstruction('page', userRequest, source) : null
+        appendPageWrite
+          ? pageContinuationInstruction(userRequest, source)
+          : action.needsPrompt ? writeInstruction('page', userRequest, source) : null,
+        appendPageWrite
+          ? {
+              onToken: (token) => {
+                if (dismissedAiPreviewRef.current === pagePreviewKey) return;
+                setAiPreview(prev => (
+                  prev?.target?.kind === 'insert-after' && prev.target.blockId === appendTargetId
+                    ? { ...prev, text: `${prev.text || ''}${token}` }
+                    : prev
+                ));
+              },
+            }
+          : {}
       );
+      if (appendPageWrite) {
+        if (dismissedAiPreviewRef.current === pagePreviewKey) return;
+        setAiPreview(prev => (
+          prev?.target?.kind === 'insert-after' && prev.target.blockId === appendTargetId
+            ? { ...prev, text: edited, streaming: false }
+            : {
+                actionId,
+                text: edited,
+                streaming: false,
+                target: { kind: 'insert-after', blockId: appendTargetId, scopeLabel: 'page' },
+              }
+        ));
+        return;
+      }
       if (action.preview) {
         setAiPreview({ actionId, text: edited, target: { kind: 'page' } });
         return;
@@ -3735,7 +3809,7 @@ function MnOutliner({
     onAiAction: runAiAction,
     aiPreview,
     onApplyAiPreview: applyAiPreview,
-    onCancelAiPreview: () => setAiPreview(null),
+    onCancelAiPreview: cancelAiPreview,
     aiTarget, focusId, setFocusId, T, allNotes, allCanvases, onOpenCanvas, onCreateCanvas,
     onSelectionChange: setSelection,
     onBlockMouseDown: beginBlockSelection,
