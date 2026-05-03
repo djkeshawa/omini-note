@@ -31,7 +31,7 @@
   }
   @keyframes mnLaunchFloat {
     0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
-    50% { transform: translate3d(0, -10px, 0) rotate(0.7deg); }
+    50% { transform: translate3d(0, -5px, 0) rotate(0.35deg); }
   }
   @keyframes mnLaunchScan {
     0% { transform: translateX(-120%); opacity: 0; }
@@ -47,35 +47,34 @@
     from { stroke-dashoffset: 72; }
     to { stroke-dashoffset: 0; }
   }
-  @keyframes mnLaunchBar {
-    0% { transform: translateX(-85%) scaleX(0.25); }
-    45% { transform: translateX(-10%) scaleX(0.72); }
-    100% { transform: translateX(100%) scaleX(0.35); }
+  @keyframes mnStatusBreath {
+    0%, 100% { opacity: 0.64; }
+    50% { opacity: 0.92; }
   }
   @keyframes mnLightBloom {
     0%, 100% {
-      opacity: 0.28;
-      transform: scale(0.78);
+      opacity: 0.2;
+      transform: scale(0.74);
     }
     50% {
-      opacity: 0.86;
-      transform: scale(1.04);
+      opacity: 0.58;
+      transform: scale(0.98);
     }
   }
   @keyframes mnLightWash {
-    0%, 100% { opacity: 0.34; transform: translate3d(-1%, -1%, 0); }
-    50% { opacity: 0.7; transform: translate3d(1%, 1%, 0); }
+    0%, 100% { opacity: 0.28; transform: translate3d(-0.8%, -0.8%, 0); }
+    50% { opacity: 0.58; transform: translate3d(0.8%, 0.8%, 0); }
   }
   @keyframes mnPastelRipple {
     0% {
       opacity: 0;
-      transform: translate(-50%, -50%) scale(0.18);
+      transform: translate(-50%, -50%) scale(0.08);
     }
-    18% { opacity: 0.42; }
-    78% { opacity: 0.16; }
+    14% { opacity: 0.44; }
+    64% { opacity: 0.18; }
     100% {
       opacity: 0;
-      transform: translate(-50%, -50%) scale(1);
+      transform: translate(-50%, -50%) scale(1.18);
     }
   }
   .mn-boot-splash {
@@ -86,7 +85,8 @@
     align-items: center;
     justify-content: center;
     background:
-      linear-gradient(135deg, rgba(248, 238, 247, 0.62), rgba(237, 245, 255, 0.68) 44%, rgba(241, 250, 245, 0.66));
+      radial-gradient(circle at center, rgba(255,255,255,0.8) 0%, transparent 44%),
+      linear-gradient(135deg, rgba(248, 238, 247, 0.58), rgba(237, 245, 255, 0.68) 46%, rgba(241, 250, 245, 0.62));
     color: #253044;
     font-family: 'Inter Tight', ui-sans-serif, system-ui, -apple-system, sans-serif;
     transition: opacity 220ms ease;
@@ -94,7 +94,7 @@
   .mn-boot-grid {
     position: absolute;
     inset: 0;
-    opacity: 0.24;
+    opacity: 0.16;
     background-image:
       linear-gradient(rgba(86,99,124,0.08) 1px, transparent 1px),
       linear-gradient(90deg, rgba(86,99,124,0.08) 1px, transparent 1px);
@@ -113,17 +113,17 @@
     position: absolute;
     inset: 0;
     background:
-      radial-gradient(circle at 18% 24%, rgba(243,191,216,0.58), transparent 34%),
-      radial-gradient(circle at 78% 18%, rgba(169,194,255,0.56), transparent 36%),
-      radial-gradient(circle at 76% 76%, rgba(159,226,201,0.54), transparent 38%),
-      radial-gradient(circle at 20% 78%, rgba(245,213,142,0.46), transparent 36%);
-    animation: mnLightWash 9s ease-in-out infinite;
+      radial-gradient(circle at 18% 24%, rgba(243,191,216,0.42), transparent 34%),
+      radial-gradient(circle at 78% 18%, rgba(169,194,255,0.44), transparent 36%),
+      radial-gradient(circle at 76% 76%, rgba(159,226,201,0.4), transparent 38%),
+      radial-gradient(circle at 20% 78%, rgba(245,213,142,0.34), transparent 36%);
+    animation: mnLightWash 10.5s ease-in-out infinite;
   }
   .mn-light-bloom {
     position: absolute;
     inset: 0;
     background:
-      radial-gradient(circle at center, rgba(255,255,255,0.96) 0%, color-mix(in oklab, var(--bloom-color) 22%, white) 22%, color-mix(in oklab, var(--bloom-color) 44%, transparent) 46%, transparent 68%);
+      radial-gradient(circle at center, rgba(255,255,255,0.9) 0%, color-mix(in oklab, var(--bloom-color) 18%, white) 24%, color-mix(in oklab, var(--bloom-color) 34%, transparent) 48%, transparent 70%);
     transform-origin: center;
     animation: mnLightBloom var(--bloom-duration) ease-in-out infinite;
     animation-delay: var(--bloom-delay);
@@ -131,14 +131,18 @@
   .mn-light-ripple {
     position: absolute;
     left: 50%;
-    top: 50%;
-    width: min(76vw, 76vh);
+    top: 42%;
+    z-index: 0;
+    width: max(180vw, 180vh);
     aspect-ratio: 1;
     border-radius: 999px;
-    border: 1px solid color-mix(in oklab, var(--ripple-color) 62%, transparent);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.28);
-    transform: translate(-50%, -50%) scale(0.18);
-    animation: mnPastelRipple var(--ripple-duration) ease-out infinite;
+    border: 0;
+    background:
+      radial-gradient(circle, transparent 0 30%, color-mix(in oklab, var(--ripple-color) 30%, transparent) 37%, color-mix(in oklab, var(--ripple-color) 12%, white) 45%, transparent 58%),
+      conic-gradient(from 70deg, transparent, color-mix(in oklab, var(--ripple-color) 22%, transparent), rgba(255,255,255,0.18), transparent);
+    transform: translate(-50%, -50%) scale(0.08);
+    mix-blend-mode: multiply;
+    animation: mnPastelRipple var(--ripple-duration) cubic-bezier(.2,.7,.25,1) infinite;
     animation-delay: var(--ripple-delay);
   }
   .mn-boot-title {
@@ -158,8 +162,25 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    animation: mnLaunchFloat 5.8s ease-in-out infinite;
+    isolation: isolate;
+  }
+  .mn-boot-brand::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 48%;
+    width: min(560px, 78vw);
+    height: 170px;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+    background: radial-gradient(ellipse at center, rgba(255,255,255,0.76), rgba(255,255,255,0.28) 42%, transparent 72%);
+    pointer-events: none;
+    z-index: 0;
   }
   .mn-boot-logo {
+    position: relative;
+    z-index: 1;
     display: block;
     width: clamp(340px, 54vw, 720px);
     height: auto;
@@ -167,7 +188,7 @@
     object-fit: contain;
     margin: 0 auto 18px;
     mix-blend-mode: multiply;
-    filter: drop-shadow(0 18px 34px rgba(36, 48, 71, 0.06));
+    filter: drop-shadow(0 18px 34px rgba(36, 48, 71, 0.08));
   }
   .mn-boot-wordmark {
     display: none;
@@ -185,6 +206,8 @@
     -webkit-text-fill-color: transparent;
   }
   .mn-boot-tagline {
+    position: relative;
+    z-index: 1;
     margin-top: 15px;
     display: flex;
     align-items: center;
@@ -194,7 +217,7 @@
     font-size: 12px;
     letter-spacing: 0.22em;
     text-transform: uppercase;
-    color: #26354f;
+    color: #2d3952;
   }
   .mn-boot-tagline i {
     width: 8px;
@@ -205,30 +228,22 @@
   .mn-boot-subtitle {
     position: relative;
     z-index: 1;
-    margin-top: 12px;
+    margin-top: 14px;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 10.5px;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #667187;
+    color: #5d687e;
   }
-  .mn-boot-progress {
+  .mn-boot-status {
     position: relative;
     z-index: 1;
-    margin: 26px auto 0;
-    width: 210px;
-    height: 4px;
-    border-radius: 999px;
-    background: rgba(85,98,124,0.14);
-    overflow: hidden;
-  }
-  .mn-boot-progress div {
-    width: 70%;
-    height: 100%;
-    border-radius: 999px;
-    background: linear-gradient(90deg, transparent, #8aa8ff, #91dec3, transparent);
-    transform-origin: left center;
-    animation: mnLaunchBar 1.55s cubic-bezier(.65,0,.35,1) infinite;
+    margin-top: 16px;
+    font-family: 'Inter Tight', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: #56647c;
+    animation: mnStatusBreath 2.4s ease-in-out infinite;
   }
   .mn-boot-core {
     position: relative;
@@ -241,6 +256,17 @@
     text-align: center;
     animation: mnSlideUp 420ms cubic-bezier(.2,.8,.2,1);
   }
+  @media (prefers-reduced-motion: reduce) {
+    .mn-boot-core,
+    .mn-boot-brand,
+    .mn-boot-light-field::before,
+    .mn-light-bloom,
+    .mn-light-ripple,
+    .mn-boot-status {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
 </style>
 </head>
 <body>
@@ -251,18 +277,18 @@
     <span class="mn-light-bloom" style="--bloom-color:#f3bfd8; --bloom-duration:7.6s; --bloom-delay:-1.2s;"></span>
     <span class="mn-light-bloom" style="--bloom-color:#a9c2ff; --bloom-duration:8.8s; --bloom-delay:-3.4s;"></span>
     <span class="mn-light-bloom" style="--bloom-color:#9fe2c9; --bloom-duration:9.6s; --bloom-delay:-5.1s;"></span>
-    <span class="mn-light-ripple" style="--ripple-color:#f3bfd8; --ripple-duration:4.8s; --ripple-delay:0s;"></span>
-    <span class="mn-light-ripple" style="--ripple-color:#a9c2ff; --ripple-duration:4.8s; --ripple-delay:-1.6s;"></span>
-    <span class="mn-light-ripple" style="--ripple-color:#9fe2c9; --ripple-duration:4.8s; --ripple-delay:-3.2s;"></span>
   </div>
   <div class="mn-boot-core">
     <div class="mn-boot-brand" aria-label="VispNote">
+      <span class="mn-light-ripple" style="--ripple-color:#f3bfd8; --ripple-duration:4.8s; --ripple-delay:0s;"></span>
+      <span class="mn-light-ripple" style="--ripple-color:#a9c2ff; --ripple-duration:4.8s; --ripple-delay:-1.6s;"></span>
+      <span class="mn-light-ripple" style="--ripple-color:#9fe2c9; --ripple-duration:4.8s; --ripple-delay:-3.2s;"></span>
       <img class="mn-boot-logo" src="assets/vispnote-loading-transparent.png" alt="VispNote" />
       <div class="mn-boot-title mn-boot-wordmark">VispNote</div>
       <div class="mn-boot-tagline"><span>Capture</span><i></i><span>Organize</span><i></i><span>Remember</span></div>
     </div>
     <div class="mn-boot-subtitle">Connecting your workspace</div>
-    <div class="mn-boot-progress"><div></div></div>
+    <div class="mn-boot-status">Opening vault and indexing notes</div>
   </div>
 </div>
 

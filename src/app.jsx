@@ -701,9 +701,21 @@ const MN_LAUNCH_RIPPLES = [
   { color: '#9fe2c9', duration: '4.8s', delay: '-3.2s' },
 ];
 
-function MnBootLogo() {
+function MnBootLogo({ loading = true }) {
   return (
     <div className="mn-boot-brand" aria-label="VispNote">
+      {MN_LAUNCH_RIPPLES.map((item, i) => (
+        <span
+          key={`logo-ripple-${item.color}-${i}`}
+          className="mn-light-ripple"
+          style={{
+            '--ripple-color': item.color,
+            '--ripple-duration': item.duration,
+            '--ripple-delay': item.delay,
+            animationPlayState: loading ? 'running' : 'paused',
+          }}
+        />
+      ))}
       <img className="mn-boot-logo" src="assets/vispnote-loading-transparent.png" alt="VispNote" />
       <div className="mn-boot-title mn-boot-wordmark">VispNote</div>
       <div className="mn-boot-tagline"><span>Capture</span><i /><span>Organize</span><i /><span>Remember</span></div>
@@ -729,37 +741,15 @@ function MnLaunchScreen({ state, error, T }) {
             }}
           />
         ))}
-        {MN_LAUNCH_RIPPLES.map((item, i) => (
-          <span
-            key={`ripple-${item.color}-${i}`}
-            className="mn-light-ripple"
-            style={{
-              '--ripple-color': item.color,
-              '--ripple-duration': item.duration,
-              '--ripple-delay': item.delay,
-              animationPlayState: loading ? 'running' : 'paused',
-            }}
-          />
-        ))}
       </div>
       <div className="mn-boot-core">
-        <MnBootLogo />
+        <MnBootLogo loading={loading} />
         <div className="mn-boot-subtitle" style={{ color: loading ? '#667187' : '#b84b42' }}>
           {loading ? 'Connecting your workspace' : 'Launch interrupted'}
         </div>
 
         {loading ? (
-          <>
-            <div className="mn-boot-progress"><div /></div>
-            <div style={{
-              position: 'relative',
-              zIndex: 1,
-              marginTop: 18,
-              fontFamily: 'var(--mn-ui)',
-              fontSize: 12.5,
-              color: '#56647c',
-            }}>Opening vault and indexing notes</div>
-          </>
+          <div className="mn-boot-status">Opening vault and indexing notes</div>
         ) : (
           <div style={{
             position: 'relative',
