@@ -262,15 +262,84 @@ function SectionHead({ label, count, T }) {
   );
 }
 
+const MN_NOVELIST_AI_CONFIG_KEY = 'mn_novelist_ai_config_v1';
+
+function mnNovelistAiConfigKey(vaultId = '') {
+  const cleanVaultId = String(vaultId || '').trim();
+  return cleanVaultId ? `${MN_NOVELIST_AI_CONFIG_KEY}:${cleanVaultId}` : MN_NOVELIST_AI_CONFIG_KEY;
+}
+
+function mnDefaultNovelistAiPrompts() {
+  return [
+    {
+      id: 'write-novel',
+      name: 'AI write novel',
+      prompt: 'Write polished novel prose from the selected story notes. Preserve continuity, point of view, tense, and the established character voices.',
+    },
+    {
+      id: 'continue-draft',
+      name: 'Continue draft',
+      prompt: 'Continue the current scene from the last paragraph. Keep the same voice, pacing, and emotional direction.',
+    },
+    {
+      id: 'revise-prose',
+      name: 'Revise prose',
+      prompt: 'Revise the selected prose for clarity, rhythm, and stronger sensory detail without changing story facts.',
+    },
+  ];
+}
+
+function mnNormalizeNovelistAiConfig(raw) {
+  const defaults = { wordLimit: 800, prompts: mnDefaultNovelistAiPrompts() };
+  const parsedLimit = Number(raw?.wordLimit);
+  const wordLimit = Number.isFinite(parsedLimit)
+    ? Math.min(12000, Math.max(100, Math.round(parsedLimit)))
+    : defaults.wordLimit;
+  const sourcePrompts = Array.isArray(raw?.prompts) ? raw.prompts : defaults.prompts;
+  const prompts = sourcePrompts
+    .map((item, index) => ({
+      id: String(item?.id || `prompt-${index + 1}`),
+      name: String(item?.name || '').trim(),
+      prompt: String(item?.prompt ?? item?.text ?? ''),
+    }))
+    .slice(0, 12);
+  const requestedDefault = String(raw?.defaultPromptId || '').trim();
+  const defaultPromptId = prompts.some(item => item.id === requestedDefault)
+    ? requestedDefault
+    : prompts[0]?.id || '';
+  return { wordLimit, defaultPromptId, prompts };
+}
+
+function mnReadNovelistAiConfig(vaultId = '') {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return mnNormalizeNovelistAiConfig(null);
+    const raw = window.localStorage.getItem(mnNovelistAiConfigKey(vaultId));
+    return mnNormalizeNovelistAiConfig(raw ? JSON.parse(raw) : null);
+  } catch {
+    return mnNormalizeNovelistAiConfig(null);
+  }
+}
+
+function mnWriteNovelistAiConfig(config, vaultId = '') {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    window.localStorage.setItem(mnNovelistAiConfigKey(vaultId), JSON.stringify(config));
+  } catch {}
+}
+
+if (typeof window !== 'undefined') {
+  window.mnReadNovelistAiConfig = mnReadNovelistAiConfig;
+}
+
 // ────────────────────────────────────────────────────────────
 // Novelist workspace
 // ────────────────────────────────────────────────────────────
 function MnNovelistPanel({
-  notes, novelistNotes, tags, canvases, workflowStates, workflowItems,
+  notes, novelistNotes, tags, vaultId = '', workflowStates, workflowItems,
   novelistStructure,
   onOpen, onCreateNote, onLinkChapter, onLinkScene,
   onSetOrder, onRenameNote, onConvertNoteType,
-  onDeleteNote, onOpenCanvas, onCreateCanvas, onOpenAskAI,
+  onDeleteNote,
   onCreateTag, onRemoveSupportingType, T
 }) {
   const [linkMenu, setLinkMenu] = useStateP(null);
@@ -281,8 +350,15 @@ function MnNovelistPanel({
   const [noteMenu, setNoteMenu] = useStateP(null);
   const [linkNotice, setLinkNotice] = useStateP(null);
   const [editDialog, setEditDialog] = useStateP(null);
+  const [aiConfig, setAiConfig] = useStateP(() => mnReadNovelistAiConfig(vaultId));
+  const [aiWordLimitDraft, setAiWordLimitDraft] = useStateP(() => String(mnReadNovelistAiConfig(vaultId).wordLimit));
   const editInputRef = useRefP(null);
   const linkNoticeTimer = useRefP(null);
+  useEffectP(() => {
+    const next = mnReadNovelistAiConfig(vaultId);
+    setAiConfig(next);
+    setAiWordLimitDraft(String(next.wordLimit));
+  }, [vaultId]);
   useEffectP(() => {
     if (!noteMenu && !createMenu && !linkMenu) return;
     const close = () => {
@@ -321,27 +397,27 @@ function MnNovelistPanel({
     'novel-character': {
       label: 'Character',
       sectionTitle: 'Characters',
-      body: '# Character\n- Want:: \n- Need:: \n- Secret:: \n- Change:: ',
+      body: 'want:: \nneed:: \nsecret:: \nchange:: ',
     },
     'novel-location': {
       label: 'Location',
       sectionTitle: 'Locations',
-      body: '# Location\n- Mood:: \n- Sensory details:: \n- Rules or constraints:: ',
+      body: 'mood:: \nsensory-details:: \nrules-or-constraints:: ',
     },
     'novel-plot': {
       label: 'Plot Thread',
       sectionTitle: 'Plot Threads',
-      body: '# Plot Thread\n- status:: IDEA\n- Promise\n- Setup\n- Payoff',
+      body: 'status:: IDEA\n- Promise\n- Setup\n- Payoff',
     },
     'novel-research': {
       label: 'Research',
       sectionTitle: 'Research',
-      body: '# Research\n- Source:: \n- Notes\n  - ',
+      body: 'source:: \n## Notes\n- ',
     },
     'novel-revision': {
       label: 'Revision Note',
       sectionTitle: 'Revision Notes',
-      body: '# Revision Note\n- status:: IDEA\n- Notes\n  - ',
+      body: 'status:: IDEA\n## Notes\n- ',
     },
   };
   const titleFromTag = (tagName) => String(tagName || '')
@@ -370,12 +446,10 @@ function MnNovelistPanel({
         tag: tag.name,
         label: defaults.label || fallbackLabel,
         sectionTitle: defaults.sectionTitle || pluralize(fallbackLabel),
-        body: defaults.body || `# ${fallbackLabel}\n- Notes\n  - `,
+        body: defaults.body || '## Notes\n- ',
       };
     });
   const supportingTotal = supportingTypes.reduce((sum, type) => sum + byTag(type.tag).length, 0);
-  const plotBoard = (canvases || []).find(c => (c.title || '').toLowerCase() === 'novel plot board');
-  const workflowTotal = (workflowStates || []).reduce((sum, state) => sum + ((workflowItems?.[state.id] || []).length), 0);
 
   const uniqueTitle = (base) => {
     const existing = new Set((notes || []).map(note => String(note.title || '').toLowerCase()));
@@ -394,7 +468,10 @@ function MnNovelistPanel({
   };
   const setBodyProperty = (body, key, value) => {
     if (typeof mnSetBodyProperty === 'function') return mnSetBodyProperty(body, key, value);
-    return String(body || '').replace(new RegExp(`(^\\s*-?\\s*${key}::\\s*).*$`, 'im'), `$1${value}`);
+    const source = String(body || '');
+    const re = new RegExp(`^\\s*(?:-\\s*)?${key}::\\s*.*$`, 'im');
+    if (re.test(source)) return source.replace(re, () => `${key}:: ${value}`.trimEnd());
+    return `${key}:: ${value}\n${source}`.trimEnd();
   };
   const nextOrder = (kind, parent = null) => {
     const values = (items, step, base) => {
@@ -410,7 +487,7 @@ function MnNovelistPanel({
     return values(parent ? childrenForChapter(parent) : scenes, 1, base);
   };
   const bodyWithTitleAndOrder = (template, title, order) => {
-    let body = String(template.body || '').replace(new RegExp(`# ${template.title}\\b`), `# ${title}`);
+    let body = String(template.body || '');
     if (order != null) body = setBodyProperty(body, 'order', String(order));
     return body;
   };
@@ -438,7 +515,7 @@ function MnNovelistPanel({
   const createChapterForArc = (arc) => {
     if (!arc) return;
     const title = uniqueTitle(`${arc.title || 'Arc'} Chapter`);
-    const body = `# ${title}\n- status:: OUTLINE\n- order:: ${nextOrder('chapter', arc)}\n- arc:: [[${arc.title || 'Arc'}]]\n## Scenes\n- Chapter goal\n- Scene list\n- Revision notes`;
+    const body = `status:: OUTLINE\norder:: ${nextOrder('chapter', arc)}\narc:: [[${arc.title || 'Arc'}]]\n## Scenes\n- Chapter goal\n- Scene list\n- Revision notes`;
     const id = onCreateNote?.({ title, body, tags: ['novel-chapter'] });
     if (id) onLinkChapter?.(arc.id, id, title);
     showLinkNotice(`Created and linked ${title} to ${arc.title || 'arc'}`, arc.id);
@@ -447,7 +524,7 @@ function MnNovelistPanel({
     if (!chapter) return;
     const arc = (notes || []).find(note => note.id === parentByChapterId[chapter.id]);
     const title = uniqueTitle(`${chapter.title || 'Chapter'} Scene`);
-    const body = `# ${title}\n- status:: DRAFT\n- order:: ${nextOrder('scene', chapter)}\n${arc ? `- arc:: [[${arc.title}]]\n` : ''}- chapter:: [[${chapter.title || 'Chapter'}]]\n- pov:: \n- setting:: \n- purpose:: \n- Draft the scene here.`;
+    const body = `status:: DRAFT\norder:: ${nextOrder('scene', chapter)}\n${arc ? `arc:: [[${arc.title}]]\n` : ''}chapter:: [[${chapter.title || 'Chapter'}]]\npov:: \nsetting:: \npurpose:: \nDraft the scene here.`;
     const id = onCreateNote?.({ title, body, tags: ['novel-scene'] });
     if (id) onLinkScene?.(chapter.id, id, title);
     showLinkNotice(`Created and linked ${title} to ${chapter.title || 'chapter'}`, chapter.id);
@@ -460,22 +537,22 @@ function MnNovelistPanel({
     }
     const chapterTitle = uniqueTitle(`${arc.title || 'Arc'} Chapter`);
     const sceneTitle = uniqueTitle(`${chapterTitle} Scene`);
-    const chapterBody = `# ${chapterTitle}\n- status:: OUTLINE\n- order:: ${nextOrder('chapter', arc)}\n- arc:: [[${arc.title || 'Arc'}]]\n## Scenes\n- [[${sceneTitle}]]`;
+    const chapterBody = `status:: OUTLINE\norder:: ${nextOrder('chapter', arc)}\narc:: [[${arc.title || 'Arc'}]]\n## Scenes\n- [[${sceneTitle}]]`;
     const chapterId = onCreateNote?.({ title: chapterTitle, body: chapterBody, tags: ['novel-chapter'] });
     if (!chapterId) return;
     onLinkChapter?.(arc.id, chapterId, chapterTitle);
-    const sceneBody = `# ${sceneTitle}\n- status:: DRAFT\n- order:: ${nextOrder('scene', { id: chapterId, title: chapterTitle, body: chapterBody })}\n- arc:: [[${arc.title || 'Arc'}]]\n- chapter:: [[${chapterTitle}]]\n- pov:: \n- setting:: \n- purpose:: \n- Draft the scene here.`;
+    const sceneBody = `status:: DRAFT\norder:: ${nextOrder('scene', { id: chapterId, title: chapterTitle, body: chapterBody })}\narc:: [[${arc.title || 'Arc'}]]\nchapter:: [[${chapterTitle}]]\npov:: \nsetting:: \npurpose:: \nDraft the scene here.`;
     onCreateNote?.({ title: sceneTitle, body: sceneBody, tags: ['novel-scene'] });
   };
   const createParentArcForChapter = (chapter) => {
     const title = uniqueTitle(`${chapter.title || 'Chapter'} Arc`);
-    const body = `# ${title}\n- status:: OUTLINE\n- order:: ${nextOrder('arc')}\n- purpose:: \n## Chapters`;
+    const body = `status:: OUTLINE\norder:: ${nextOrder('arc')}\npurpose:: \n## Chapters`;
     const id = onCreateNote?.({ title, body, tags: ['novel-arc'] });
     if (id) onLinkChapter?.(id, chapter.id, chapter.title);
   };
   const createParentChapterForScene = (scene) => {
     const title = uniqueTitle(`${scene.title || 'Scene'} Chapter`);
-    const body = `# ${title}\n- status:: OUTLINE\n- order:: ${nextOrder('chapter')}\n## Scenes`;
+    const body = `status:: OUTLINE\norder:: ${nextOrder('chapter')}\n## Scenes`;
     const id = onCreateNote?.({ title, body, tags: ['novel-chapter'] });
     if (id) onLinkScene?.(id, scene.id, scene.title);
   };
@@ -505,16 +582,6 @@ function MnNovelistPanel({
     onSetOrder?.(editDialog.note.id, value);
     setEditDialog(null);
   };
-  const openPlotBoard = async () => {
-    if (plotBoard?.id) {
-      onOpenCanvas && onOpenCanvas(plotBoard.id);
-      return;
-    }
-    await onCreateCanvas?.('Novel Plot Board');
-  };
-  const ask = (prompt) => {
-    onOpenAskAI && onOpenAskAI(prompt);
-  };
   const openNoteMenu = (e, note) => {
     if (!note) return;
     e.preventDefault();
@@ -523,19 +590,54 @@ function MnNovelistPanel({
   };
 
   const templates = [
-    { title: 'Manuscript', tags: ['novel-manuscript'], body: '# Manuscript\n- status:: OUTLINE\n- order:: 0\n## Arcs' },
-    { title: 'Arc', tags: ['novel-arc'], body: '# Arc\n- status:: OUTLINE\n- order:: \n- purpose:: \n## Chapters' },
-    { title: 'Chapter', tags: ['novel-chapter'], body: '# Chapter\n- status:: OUTLINE\n- order:: \n- arc:: \n## Scenes' },
-    { title: 'Scene', tags: ['novel-scene'], body: '# Scene\n- status:: DRAFT\n- order:: \n- chapter:: \n- pov:: \n- setting:: \n- purpose:: \n- Draft the scene here.' },
+    { title: 'Manuscript', tags: ['novel-manuscript'], body: 'status:: OUTLINE\norder:: 0\n## Arcs' },
+    { title: 'Arc', tags: ['novel-arc'], body: 'status:: OUTLINE\norder:: \npurpose:: \n## Chapters' },
+    { title: 'Chapter', tags: ['novel-chapter'], body: 'status:: OUTLINE\norder:: \narc:: \n## Scenes' },
+    { title: 'Scene', tags: ['novel-scene'], body: 'status:: DRAFT\norder:: \nchapter:: \npov:: \nsetting:: \npurpose:: \nDraft the scene here.' },
     ...supportingTypes.map(type => ({ title: type.label, tags: [type.tag], body: type.body })),
   ];
-  const aiActions = [
-    { label: 'Continue scene', prompt: 'Continue the current novel scene. Preserve the existing voice, point of view, and continuity from my notes.' },
-    { label: 'Improve prose', prompt: 'Improve the prose in the current novel scene. Keep the meaning, POV, tense, markdown, and story facts intact.' },
-    { label: 'Summarize chapter', prompt: 'Summarize the current chapter or scene for a novelist. Include plot movement, character changes, and open revision questions.' },
-    { label: 'Suggest next scene', prompt: 'Suggest the next scene for this novel using my manuscript, plot, character, and research notes as context.' },
-    { label: 'Extract character facts', prompt: 'Extract character facts from the current scene and suggest updates for the story bible.' },
-  ];
+  const updateAiConfig = (updater) => {
+    setAiConfig(current => {
+      const next = mnNormalizeNovelistAiConfig(typeof updater === 'function' ? updater(current) : updater);
+      mnWriteNovelistAiConfig(next, vaultId);
+      return next;
+    });
+  };
+  const commitAiWordLimit = () => {
+    const parsed = Number(aiWordLimitDraft);
+    const next = mnNormalizeNovelistAiConfig({
+      ...aiConfig,
+      wordLimit: Number.isFinite(parsed) ? parsed : aiConfig.wordLimit,
+    });
+    setAiConfig(next);
+    setAiWordLimitDraft(String(next.wordLimit));
+    mnWriteNovelistAiConfig(next, vaultId);
+  };
+  const addAiPrompt = () => {
+    updateAiConfig(current => ({
+      ...current,
+      prompts: [
+        ...(current.prompts || []),
+        {
+          id: `prompt-${Date.now().toString(36)}`,
+          name: 'New prompt',
+          prompt: '',
+        },
+      ],
+    }));
+  };
+  const updateAiPrompt = (id, patch) => {
+    updateAiConfig(current => ({
+      ...current,
+      prompts: (current.prompts || []).map(item => item.id === id ? { ...item, ...patch } : item),
+    }));
+  };
+  const removeAiPrompt = (id) => {
+    updateAiConfig(current => ({
+      ...current,
+      prompts: (current.prompts || []).filter(item => item.id !== id),
+    }));
+  };
   const noteById = new Map((notes || []).map(note => [note.id, note]));
   const childrenForArc = (arc) => (childrenByArcId[arc.id] || []).map(id => noteById.get(id)).filter(Boolean);
   const childrenForChapter = (chapter) => (childrenByChapterId[chapter.id] || []).map(id => noteById.get(id)).filter(Boolean);
@@ -580,7 +682,7 @@ function MnNovelistPanel({
     onCreateNote?.({
       title,
       tags: [type.tag],
-      body: type.body.replace(new RegExp(`# ${type.label}\\b`), `# ${title}`),
+      body: type.body,
     });
   };
 
@@ -1072,6 +1174,126 @@ function MnNovelistPanel({
     </div>
   );
 
+  const AiConfigurationSection = () => (
+    <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink }}>AI Configuration</div>
+        <div style={{ flex: 1 }} />
+        <button onClick={addAiPrompt} style={mnPanelMiniButton(T)}>+ Prompt</button>
+      </div>
+      <label style={{ display: 'grid', gap: 5, marginBottom: 10, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+        <span>Default word limit</span>
+        <input
+          type="number"
+          min="100"
+          max="12000"
+          step="50"
+          value={aiWordLimitDraft}
+          onChange={(e) => setAiWordLimitDraft(e.target.value)}
+          onBlur={commitAiWordLimit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+          style={{
+            width: 150,
+            border: `1px solid ${T.lineSub}`,
+            borderRadius: 6,
+            background: T.bgSub,
+            color: T.ink,
+            padding: '6px 8px',
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 12.5,
+            outline: 'none',
+          }}
+        />
+      </label>
+      {!!(aiConfig.prompts || []).length && (
+        <label style={{ display: 'grid', gap: 5, marginBottom: 10, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+          <span>Default writing prompt</span>
+          <select
+            value={aiConfig.defaultPromptId || ''}
+            onChange={(e) => updateAiConfig(current => ({ ...current, defaultPromptId: e.target.value }))}
+            style={{
+              maxWidth: 260,
+              border: `1px solid ${T.lineSub}`,
+              borderRadius: 6,
+              background: T.bgSub,
+              color: T.ink,
+              padding: '6px 8px',
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 12.5,
+              outline: 'none',
+            }}>
+            {(aiConfig.prompts || []).map(prompt => (
+              <option key={prompt.id} value={prompt.id}>{prompt.name || 'Untitled prompt'}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div style={{ display: 'grid', gap: 8 }}>
+        {(aiConfig.prompts || []).map(prompt => (
+          <div
+            key={prompt.id}
+            style={{
+              border: `1px solid ${T.lineSub}`,
+              borderRadius: 7,
+              background: T.bgSub,
+              padding: 8,
+            }}>
+            <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 7 }}>
+              <input
+                aria-label="Prompt name"
+                value={prompt.name}
+                onChange={(e) => updateAiPrompt(prompt.id, { name: e.target.value })}
+                placeholder="Prompt name"
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                  border: `1px solid ${T.lineSub}`,
+                  borderRadius: 6,
+                  background: T.bg,
+                  color: T.ink,
+                  padding: '6px 8px',
+                  fontFamily: 'var(--mn-ui)',
+                  fontSize: 12.5,
+                  outline: 'none',
+                }}
+              />
+              <button
+                onClick={() => removeAiPrompt(prompt.id)}
+                style={{ ...mnPanelMiniButton(T), color: T.inkDim }}>
+                Remove
+              </button>
+            </div>
+            <textarea
+              aria-label={`${prompt.name || 'Prompt'} instructions`}
+              value={prompt.prompt}
+              onChange={(e) => updateAiPrompt(prompt.id, { prompt: e.target.value })}
+              placeholder="Writing prompt"
+              rows={3}
+              style={{
+                width: '100%',
+                minHeight: 76,
+                resize: 'vertical',
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 6,
+                background: T.bg,
+                color: T.ink,
+                padding: '7px 8px',
+                fontFamily: 'var(--mn-body)',
+                fontSize: 12.5,
+                lineHeight: 1.45,
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        ))}
+        {!(aiConfig.prompts || []).length && <InlineEmpty>Add a prompt for AI writing.</InlineEmpty>}
+      </div>
+    </section>
+  );
+
   return (
     <div style={{
       flex: 1,
@@ -1094,7 +1316,9 @@ function MnNovelistPanel({
               <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 740, color: T.ink }}>Novelist</div>
               <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap', fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkDim }}>
                 <span>{novelNotes.length} story note{novelNotes.length === 1 ? '' : 's'}</span>
-                <span>{workflowTotal} workflow note{workflowTotal === 1 ? '' : 's'}</span>
+                <span>{arcs.length} arc{arcs.length === 1 ? '' : 's'}</span>
+                <span>{chapters.length} chapter{chapters.length === 1 ? '' : 's'}</span>
+                <span>{scenes.length} scene{scenes.length === 1 ? '' : 's'}</span>
               </div>
             </div>
             {linkNotice && (
@@ -1114,9 +1338,6 @@ function MnNovelistPanel({
                 {linkNotice.text}
               </div>
             )}
-            <button onClick={openPlotBoard} style={mnPanelButton(T, true)}>
-              {plotBoard ? 'Open Plot Board' : 'Create Plot Board'}
-            </button>
           </div>
           <div style={{ marginTop: 12 }}>
             <CreateButtonGroup items={templates} />
@@ -1289,7 +1510,7 @@ function MnNovelistPanel({
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.1fr) minmax(260px, 0.9fr)',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
           gap: 10,
         }}>
           <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
@@ -1311,25 +1532,7 @@ function MnNovelistPanel({
             </div>
           </section>
 
-          <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 10 }}>AI Actions</div>
-            <div style={{ display: 'grid', gap: 7 }}>
-              {aiActions.map(action => (
-                <button
-                  key={action.label}
-                  disabled={!onOpenAskAI}
-                  onClick={() => ask(action.prompt)}
-                  style={{
-                    ...mnPanelButton(T),
-                    justifyContent: 'flex-start',
-                    opacity: onOpenAskAI ? 1 : 0.55,
-                    cursor: onOpenAskAI ? 'pointer' : 'default',
-                  }}>
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          </section>
+          <AiConfigurationSection />
         </div>
       </div>
       {editDialog && (
@@ -1552,7 +1755,7 @@ function MnNovelistPanel({
                 : templates.find(item => item.title === 'Scene');
               if (template) {
                 const title = uniqueTitle(template.title);
-                onCreateNote && onCreateNote({ ...template, title, body: template.body.replace(new RegExp(`# ${template.title}\\b`), `# ${title}`) });
+                onCreateNote && onCreateNote({ ...template, title, body: template.body });
               }
               setCreateMenu(null);
             }}
@@ -1622,8 +1825,12 @@ function MnWorkflowPanel({
 }) {
   const [mode, setMode] = useStateP('kanban');
   const [dragItem, setDragItem] = useStateP(null);
+  const [dragOverState, setDragOverState] = useStateP(null);
+  const [dragPreview, setDragPreview] = useStateP(null);
   const [showArchived, setShowArchived] = useStateP(false);
   const [stateDraft, setStateDraft] = useStateP('');
+  const dragItemRef = useRefP(null);
+  const suppressCardClickRef = useRefP(false);
   const tagHue = useMemoP(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
@@ -1648,9 +1855,92 @@ function MnWorkflowPanel({
     return hues[index % hues.length];
   };
 
+  const dragTypes = (event) => Array.from(event?.dataTransfer?.types || []);
+  const hasWorkflowDropData = (event) => {
+    const types = dragTypes(event);
+    return !!dragItemRef.current || !!dragItem || types.includes('text/mn-workflow') || types.includes('text/mn-note') || types.includes('text/plain');
+  };
+  const readDropNoteId = (event) => {
+    if (dragItemRef.current?.noteId) return dragItemRef.current.noteId;
+    if (dragItem?.noteId) return dragItem.noteId;
+    for (const type of ['text/mn-workflow', 'text/mn-note']) {
+      const raw = event.dataTransfer.getData(type);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.noteId) return parsed.noteId;
+      } catch {}
+    }
+    const plain = event.dataTransfer.getData('text/plain') || '';
+    const match = plain.match(/^mn-note:(.+)$/);
+    return match ? match[1] : '';
+  };
+  const moveWorkflowNote = (noteId, itemId, stateId, currentWorkflow = null) => {
+    if (!noteId || currentWorkflow === stateId) return;
+    onSetWorkflow && onSetWorkflow(noteId, itemId || null, stateId);
+  };
   const moveItem = (item, stateId) => {
-    if (!item || item.workflow === stateId) return;
-    onSetWorkflow && onSetWorkflow(item.noteId, item.id, stateId);
+    if (!item) return;
+    moveWorkflowNote(item.noteId, item.id, stateId, item.workflow);
+  };
+  const setActiveDragItem = (item) => {
+    dragItemRef.current = item || null;
+    setDragItem(item || null);
+  };
+  const clearActiveDragItem = () => {
+    dragItemRef.current = null;
+    setDragItem(null);
+    setDragOverState(null);
+    setDragPreview(null);
+  };
+  const updateDragPreview = (item, state, event) => {
+    if (!item || !event?.clientX || !event?.clientY) return;
+    setDragPreview({
+      item,
+      stateId: state?.id || item.workflow,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+  const setTransparentDragImage = (event) => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      event.dataTransfer.setDragImage(canvas, 0, 0);
+    } catch {}
+  };
+  const workflowStateFromPoint = (clientX, clientY) => {
+    const target = document.elementFromPoint(clientX, clientY);
+    return target?.closest?.('[data-mn-workflow-state]')?.getAttribute('data-mn-workflow-state') || '';
+  };
+  const beginCardPointerDrag = (event, item) => {
+    if (event.button !== 0) return;
+    if (event.target?.closest?.('button, select, input, textarea, a')) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let active = false;
+    const onMove = (moveEvent) => {
+      const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      if (!active && distance < 5) return;
+      active = true;
+      suppressCardClickRef.current = true;
+      setActiveDragItem(item);
+      const stateId = workflowStateFromPoint(moveEvent.clientX, moveEvent.clientY);
+      setDragOverState(stateId);
+      updateDragPreview(item, stateId ? (workflowStates || []).find(state => state.id === stateId) : null, moveEvent);
+      moveEvent.preventDefault();
+    };
+    const onUp = (upEvent) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      const stateId = active ? workflowStateFromPoint(upEvent.clientX, upEvent.clientY) : '';
+      if (stateId) moveItem(item, stateId);
+      clearActiveDragItem();
+      if (active) window.setTimeout(() => { suppressCardClickRef.current = false; }, 0);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   };
 
   const archiveNote = (noteId, archived) => {
@@ -1934,12 +2224,30 @@ function MnWorkflowPanel({
     <div
       draggable
       onDragStart={(e) => {
-        setDragItem(item);
-        e.dataTransfer.setData('text/mn-workflow', JSON.stringify({ noteId: item.noteId }));
+        setActiveDragItem(item);
+        updateDragPreview(item, state, e);
+        setTransparentDragImage(e);
+        const payload = JSON.stringify({ noteId: item.noteId });
+        e.dataTransfer.setData('text/mn-workflow', payload);
+        e.dataTransfer.setData('text/mn-note', payload);
+        e.dataTransfer.setData('text/plain', `mn-note:${item.noteId}`);
         e.dataTransfer.effectAllowed = 'move';
       }}
-      onDragEnd={() => setDragItem(null)}
-      onClick={() => onOpen(item.noteId)}
+      onDrag={(e) => {
+        updateDragPreview(item, state, e);
+        const stateId = e.clientX && e.clientY ? workflowStateFromPoint(e.clientX, e.clientY) : '';
+        if (stateId) setDragOverState(stateId);
+      }}
+      onDragEnd={clearActiveDragItem}
+      onPointerDown={(e) => beginCardPointerDrag(e, item)}
+      onClick={(e) => {
+        if (suppressCardClickRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        onOpen(item.noteId);
+      }}
       style={{
         height: 116,
         padding: '10px 11px',
@@ -1947,7 +2255,7 @@ function MnWorkflowPanel({
         background: T.bg,
         border: `1px solid ${T.lineSub}`,
         borderLeft: `3px solid ${state.color}`,
-        cursor: 'pointer',
+        cursor: dragItem?.id === item.id ? 'grabbing' : 'grab',
         display: 'flex',
         flexDirection: 'column',
         gap: 7,
@@ -1972,7 +2280,6 @@ function MnWorkflowPanel({
       <div style={{
         fontFamily: 'var(--mn-body)', fontSize: 13.5,
         color: isClosedState(state) ? T.inkDim : T.ink,
-        textDecoration: isClosedState(state) ? 'line-through' : 'none',
         lineHeight: 1.42,
         display: '-webkit-box',
         WebkitLineClamp: 2,
@@ -2010,6 +2317,57 @@ function MnWorkflowPanel({
       </div>
     </div>
   );
+
+  const WorkflowDragPreview = () => {
+    if (!dragPreview?.item) return null;
+    const targetState = (workflowStates || []).find(state => state.id === (dragOverState || dragPreview.stateId))
+      || (workflowStates || []).find(state => state.id === dragPreview.item.workflow)
+      || workflowStates?.[0]
+      || { id: dragPreview.item.workflow || 'STATUS', color: T.accent, bg: T.accentSoft };
+    return (
+      <div style={{
+        position: 'fixed',
+        left: Math.max(12, Math.min(Math.max(12, window.innerWidth - 286), dragPreview.x + 14)),
+        top: Math.max(12, Math.min(Math.max(12, window.innerHeight - 128), dragPreview.y + 14)),
+        width: 272,
+        zIndex: 160,
+        pointerEvents: 'none',
+        borderRadius: 8,
+        border: `1px solid ${T.line}`,
+        borderLeft: `4px solid ${targetState.color}`,
+        background: T.bg,
+        color: T.ink,
+        boxShadow: `0 18px 48px color-mix(in oklab, ${T.ink} 22%, transparent)`,
+        padding: '10px 11px',
+        fontFamily: 'var(--mn-ui)',
+        transform: 'rotate(1deg)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <div style={{
+            flex: 1,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            fontSize: 13.5,
+            fontWeight: 700,
+          }}>{dragPreview.item.noteTitle || 'Untitled'}</div>
+          <StatePill state={targetState} />
+        </div>
+        <div style={{
+          marginTop: 7,
+          fontFamily: 'var(--mn-body)',
+          fontSize: 12.5,
+          lineHeight: 1.35,
+          color: T.inkMed,
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}>{dragPreview.item.text || 'No preview'}</div>
+      </div>
+    );
+  };
 
   const ArchivedNotes = () => (
     <div style={{
@@ -2104,19 +2462,29 @@ function MnWorkflowPanel({
 
   const DropColumn = ({ state, children, empty }) => (
     <div
+      data-mn-workflow-state={state.id}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes('text/mn-workflow')) return;
+        if (!hasWorkflowDropData(e)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
+        const activeItem = dragItemRef.current || dragItem;
+        if (activeItem) updateDragPreview(activeItem, state, e);
+        setDragOverState(state.id);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setDragOverState(null);
       }}
       onDrop={(e) => {
         e.preventDefault();
-        moveItem(dragItem, state.id);
-        setDragItem(null);
+        const noteId = readDropNoteId(e);
+        const activeItem = dragItemRef.current || dragItem;
+        if (activeItem) moveItem(activeItem, state.id);
+        else moveWorkflowNote(noteId, null, state.id);
+        clearActiveDragItem();
       }}
       style={{
-        background: dragItem && dragItem.workflow !== state.id ? T.bgHover : T.bgSub,
-        border: `1px solid ${T.lineSub}`,
+        background: dragOverState === state.id ? T.bgHover : T.bgSub,
+        border: `1px solid ${dragOverState === state.id ? T.accent : T.lineSub}`,
         borderRadius: 8,
         padding: 9,
         minHeight: mode === 'kanban' ? 'min(470px, calc(100vh - 230px))' : 0,
@@ -2129,7 +2497,7 @@ function MnWorkflowPanel({
         position: 'sticky',
         top: 0,
         zIndex: 1,
-        background: dragItem && dragItem.workflow !== state.id ? T.bgHover : T.bgSub,
+        background: dragOverState === state.id ? T.bgHover : T.bgSub,
         paddingBottom: 1,
       }}>
         <StatePill state={state} />
@@ -2143,6 +2511,20 @@ function MnWorkflowPanel({
           padding: '1px 6px',
         }}>{countFor(state.id)}</span>
       </div>
+      {dragOverState === state.id && (
+        <div style={{
+          margin: '-2px 0 8px',
+          border: `1px dashed ${state.color}`,
+          borderRadius: 6,
+          background: `color-mix(in oklab, ${state.bg} 55%, ${T.bg})`,
+          color: state.color,
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 12,
+          fontWeight: 650,
+          textAlign: 'center',
+          padding: '7px 8px',
+        }}>Release to move to {state.id}</div>
+      )}
       {children}
       {empty && (
         <div style={{
@@ -2191,6 +2573,7 @@ function MnWorkflowPanel({
             display: 'flex',
             gap: 2,
             padding: 3,
+            marginRight: 54,
             border: `1px solid ${T.lineSub}`,
             borderRadius: 7,
             background: T.bgSub,
@@ -2301,7 +2684,6 @@ function MnWorkflowPanel({
                     </div>
                     <span onClick={() => onOpen(item.noteId)} style={{
                       color: T.ink, cursor: 'pointer',
-                      textDecoration: isClosedState(state) ? 'line-through' : 'none',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'normal',
@@ -2369,6 +2751,7 @@ function MnWorkflowPanel({
                 </div>
               );
             })}
+            <WorkflowDragPreview />
           </>
         )}
       </div>

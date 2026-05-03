@@ -9,7 +9,10 @@
 
 const { useState: useStateOE, useRef: useRefOE, useEffect: useEffectOE,
         useMemo: useMemoOE, useLayoutEffect: useLayoutEffectOE } = React;
-const { mkBlock, mnLocate, mnCloneBlocks, mnFlatten, mnIsListLike, mnBlocksToMd, mnMdToBlocks } = window.MN_OUTLINE;
+const {
+  mkBlock, mnLocate, mnCloneBlocks, mnFlatten, mnIsListLike,
+  mnBlocksToMd, mnMdToBlocks, mnNormalizeBlockLabels,
+} = window.MN_OUTLINE;
 const MnInline = window.MnInline;
 const {
   clearAnnotationRange: mnClearAnnotationRange,
@@ -536,6 +539,7 @@ const MN_SLASH_CMDS = [
   { id: 'canvas', label: 'Attach canvas', hint: 'Embed an existing or new canvas', kbd: '/canvas', icon: '□', canvasAction: true },
   { id: 'link',   label: 'Link to note', hint: 'Wiki-link to a note', kbd: '[[', icon: '⇉', insert: '[[' },
   { id: 'tag',    label: 'Tag',        hint: 'Categorize',           kbd: '#tag', icon: '#', insert: '#' },
+  { id: 'block-label', label: 'Label',  hint: 'Add attention label to this block', kbd: '/label', icon: 'Lbl', blockLabelAction: true },
   { id: 'date',   label: "Today's date", hint: 'Insert YYYY-MM-DD',  kbd: '@today', icon: '☉',
     insertFn: () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }},
   { id: 'remind', label: 'Reminder',   hint: 'Schedule reminder',   kbd: '@remind', icon: '⏰', insertFn: () => window.MN_REMIND?.defaultText?.() || '@remind 2026-04-30 09:00 ' },
@@ -551,8 +555,8 @@ function mnWorkflowSlashCommands() {
   const states = window.MN_LOGSEQ?.WORKFLOW_STATES || [];
   return states.map(state => ({
     id: `wf-${String(state.id || '').toLowerCase()}`,
-    label: state.id,
-    hint: `Workflow: ${state.id.toLowerCase()}`,
+    label: `Status: ${state.id}`,
+    hint: `Set block status to ${state.id.toLowerCase()}`,
     kbd: `/${state.id}`,
     icon: String(state.id || '?').slice(0, 1),
     workflow: state.id,
@@ -587,6 +591,27 @@ function mnSlashCommandScore(cmd, query) {
   if (hint.includes(q)) return 50;
   if (label.includes(q) || id.includes(q)) return 60;
   return Infinity;
+}
+
+const MN_BLOCK_LABEL_COLORS = [
+  { id: 'yellow', label: 'Yellow', bg: 'oklch(0.96 0.08 95)', border: 'oklch(0.78 0.13 85)', ink: 'oklch(0.38 0.09 75)' },
+  { id: 'pink', label: 'Pink', bg: 'oklch(0.96 0.06 350)', border: 'oklch(0.76 0.13 350)', ink: 'oklch(0.42 0.12 350)' },
+  { id: 'blue', label: 'Blue', bg: 'oklch(0.95 0.05 245)', border: 'oklch(0.72 0.12 245)', ink: 'oklch(0.38 0.12 245)' },
+  { id: 'green', label: 'Green', bg: 'oklch(0.94 0.06 150)', border: 'oklch(0.70 0.12 150)', ink: 'oklch(0.34 0.10 150)' },
+  { id: 'purple', label: 'Purple', bg: 'oklch(0.95 0.05 300)', border: 'oklch(0.72 0.13 300)', ink: 'oklch(0.38 0.12 300)' },
+  { id: 'red', label: 'Red', bg: 'oklch(0.95 0.06 25)', border: 'oklch(0.72 0.14 25)', ink: 'oklch(0.40 0.13 25)' },
+];
+
+function mnBlockLabelPalette(color = '') {
+  return MN_BLOCK_LABEL_COLORS.find(item => item.id === color) || MN_BLOCK_LABEL_COLORS[0];
+}
+
+function mnCreateBlockLabel() {
+  return {
+    id: `lbl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+    text: '',
+    color: 'yellow',
+  };
 }
 
 const MN_BLOCK_CLIPBOARD_TYPE = 'application/x-omininote-blocks';
@@ -784,6 +809,8 @@ function MnBlockRow({
   const [dropPos, setDropPos] = useStateOE(null); // 'before' | 'after' | 'child' | null
   const [spellIssues, setSpellIssues] = useStateOE({});
   const [spellMenu, setSpellMenu] = useStateOE(null);
+  const [editingLabelId, setEditingLabelId] = useStateOE(null);
+  const [labelMenu, setLabelMenu] = useStateOE(null);
   const [ignoredSpellWords, setIgnoredSpellWords] = useStateOE(() => new Set());
   const inputRef = useRefOE(null);
   const displayTextRef = useRefOE(null);
@@ -845,6 +872,19 @@ function MnBlockRow({
     (aiTarget?.scope === 'section' && aiTarget.blockId === block.id) ||
     (aiTarget?.scope === 'selection' && (aiTarget.blockIds || []).includes(block.id));
   const selectedAsArea = selectedBlockIds?.has(block.id);
+  const blockLabels = mnNormalizeBlockLabels ? mnNormalizeBlockLabels(block.labels || []) : (block.labels || []);
+
+  useEffectOE(() => {
+    if (!labelMenu) return;
+    const close = () => setLabelMenu(null);
+    const closeOnEscape = (e) => { if (e.key === 'Escape') close(); };
+    setTimeout(() => document.addEventListener('mousedown', close), 0);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [labelMenu]);
 
   const slashMatches = useMemoOE(() => {
     if (slashQ == null) return [];
@@ -1114,6 +1154,27 @@ function MnBlockRow({
     }, 0);
   };
 
+  const setBlockLabels = (labels) => {
+    onChangeKind(block.id, { labels: mnNormalizeBlockLabels ? mnNormalizeBlockLabels(labels) : labels });
+  };
+
+  const addBlockLabel = () => {
+    const label = mnCreateBlockLabel();
+    setBlockLabels([...blockLabels, label]);
+    setEditingLabelId(label.id);
+    return label;
+  };
+
+  const updateBlockLabel = (labelId, patch) => {
+    setBlockLabels(blockLabels.map(label => label.id === labelId ? { ...label, ...patch } : label));
+  };
+
+  const removeBlockLabel = (labelId) => {
+    setBlockLabels(blockLabels.filter(label => label.id !== labelId));
+    if (editingLabelId === labelId) setEditingLabelId(null);
+    if (labelMenu?.labelId === labelId) setLabelMenu(null);
+  };
+
   const applySpellSuggestion = (suggestion) => {
     if (!spellMenu) return;
     const value = String(block.content || '');
@@ -1167,6 +1228,14 @@ function MnBlockRow({
       setSlashIdx(0);
       setEditing(false);
       setCanvasPicker(true);
+      return;
+    }
+    if (cmd.blockLabelAction) {
+      const label = mnCreateBlockLabel();
+      onChangeKind(block.id, { content: cleanContent, labels: [...blockLabels, label] });
+      setEditingLabelId(label.id);
+      setSlashQ(null);
+      setSlashIdx(0);
       return;
     }
     if (cmd.kind) {
@@ -1449,6 +1518,133 @@ function MnBlockRow({
               fontFamily: 'var(--mn-mono)', fontSize: 10,
               color: T.inkDim,
             }}>{mnCodeLanguageLabel(block.language)}</span>
+          </div>
+        )}
+        {(blockLabels.length > 0 || labelMenu) && (
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 4,
+              margin: blockLabels.length ? '0 0 3px' : 0,
+            }}>
+            {blockLabels.map(label => {
+              const palette = mnBlockLabelPalette(label.color);
+              const editingLabel = editingLabelId === label.id || !String(label.text || '').trim();
+              const inputWidth = Math.max(42, Math.min(170, (String(label.text || '').length || 5) * 7 + 22));
+              return (
+                <span
+                  key={label.id}
+                  onClick={(e) => { e.stopPropagation(); setEditingLabelId(label.id); }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setLabelMenu({ labelId: label.id, x: e.clientX, y: e.clientY });
+                  }}
+                  title="Click to edit label · Right-click to change color"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    minHeight: 20,
+                    borderRadius: 4,
+                    border: `1px solid ${palette.border}`,
+                    background: palette.bg,
+                    color: palette.ink,
+                    padding: '1px 4px',
+                    fontFamily: 'var(--mn-mono)',
+                    fontSize: 10.5,
+                    lineHeight: 1.2,
+                    cursor: 'text',
+                  }}>
+                  {editingLabel ? (
+                    <input
+                      value={label.text || ''}
+                      autoFocus
+                      onChange={(e) => updateBlockLabel(label.id, { text: e.target.value })}
+                      onBlur={() => setEditingLabelId(current => current === label.id ? null : current)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); setEditingLabelId(null); }
+                        if (e.key === 'Escape') { e.preventDefault(); setEditingLabelId(null); }
+                      }}
+                      placeholder="label"
+                      spellCheck={false}
+                      style={{
+                        width: inputWidth,
+                        border: 'none',
+                        outline: 'none',
+                        background: 'transparent',
+                        color: palette.ink,
+                        fontFamily: 'var(--mn-mono)',
+                        fontSize: 10.5,
+                        padding: 0,
+                      }}
+                    />
+                  ) : (
+                    <span>{label.text}</span>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeBlockLabel(label.id); }}
+                    title="Remove label"
+                    style={{
+                      width: 14,
+                      height: 14,
+                      border: 'none',
+                      background: 'transparent',
+                      color: palette.ink,
+                      opacity: 0.72,
+                      cursor: 'pointer',
+                      padding: 0,
+                      fontFamily: 'var(--mn-mono)',
+                      fontSize: 10,
+                      lineHeight: 1,
+                    }}>x</button>
+                </span>
+              );
+            })}
+            {labelMenu && (
+              <div
+                className="mn-label-color-menu"
+                onMouseDown={(e) => e.stopPropagation()}
+                style={{
+                  position: 'fixed',
+                  left: Math.min(labelMenu.x, window.innerWidth - 174),
+                  top: Math.min(labelMenu.y, window.innerHeight - 94),
+                  zIndex: 260,
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: 4,
+                  width: 166,
+                  padding: 6,
+                  borderRadius: 7,
+                  border: `1px solid ${T.line}`,
+                  background: T.bg,
+                  boxShadow: `0 10px 28px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+                }}>
+                {MN_BLOCK_LABEL_COLORS.map(color => (
+                  <button
+                    key={color.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateBlockLabel(labelMenu.labelId, { color: color.id });
+                      setLabelMenu(null);
+                    }}
+                    title={color.label}
+                    style={{
+                      height: 24,
+                      borderRadius: 5,
+                      border: `1px solid ${color.border}`,
+                      background: color.bg,
+                      color: color.ink,
+                      cursor: 'pointer',
+                      fontFamily: 'var(--mn-mono)',
+                      fontSize: 9.5,
+                    }}>{color.label}</button>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {editing ? (
@@ -2124,7 +2320,7 @@ function MnOutlineTree({ blocks, depth, ...handlers }) {
 // ── Main outliner component ────────────────────────────────────────────
 function MnOutliner({
   blocks, setBlocks, allNotes, allCanvases = [], onOpen, onTagClick, onOpenCanvas, onCreateCanvas, T, zoomBlockId,
-  onZoomBlock, onShowToast, noteTitle, fontSize,
+  onZoomBlock, onShowToast, noteTitle, noteTags = [], vaultId = '', fontSize,
   indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
 }) {
   const [focusId, setFocusId] = useStateOE(null);
@@ -2890,14 +3086,30 @@ function MnOutliner({
     return res.value.text;
   };
 
+  const readNovelistAiConfig = () => {
+    if (!(noteTags || []).some(tag => String(tag || '').startsWith('novel-'))) return null;
+    const config = window.mnReadNovelistAiConfig?.(vaultId);
+    if (!config) return null;
+    return {
+      wordLimit: config.wordLimit,
+      defaultPromptId: config.defaultPromptId,
+      prompts: Array.isArray(config.prompts) ? config.prompts : [],
+    };
+  };
+
   const writeInstruction = (scope, userRequest, sourceText) => {
+    const novelConfig = readNovelistAiConfig();
+    const activePrompt = (novelConfig?.prompts || []).find(item => item.id === novelConfig.defaultPromptId)
+      || (novelConfig?.prompts || []).find(item => item.prompt);
     return [
+      novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
+      activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
       mnAiAction('write').instruction,
       `User request: ${userRequest}`,
       sourceText?.trim()
         ? 'Use the existing text below as local context. Replace it with the newly written text.'
         : 'Write new text for this empty location.',
-    ].join('\n\n');
+    ].filter(Boolean).join('\n\n');
   };
 
   const applyTextReplacement = (target, text) => {
@@ -3302,6 +3514,12 @@ function MnOutliner({
           onMoveUp={() => onMove(ctxBlock.id, ctxBlock.id, 'up')}
           onMoveDown={() => onMove(ctxBlock.id, ctxBlock.id, 'down')}
           onDuplicate={() => onDuplicate(ctxBlock.id)}
+          onAddLabel={() => onChangeKind(ctxBlock.id, {
+            labels: [
+              ...((mnNormalizeBlockLabels ? mnNormalizeBlockLabels(ctxBlock.labels || []) : (ctxBlock.labels || []))),
+              mnCreateBlockLabel(),
+            ],
+          })}
           onDelete={() => onDelete(ctxBlock.id)}
           onSetWorkflow={(state) => onChangeKind(ctxBlock.id, { workflow: state })}
           onChangeKind={(patch) => onChangeKind(ctxBlock.id, patch)}

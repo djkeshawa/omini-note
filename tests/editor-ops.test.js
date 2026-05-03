@@ -1,11 +1,29 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 
 const ops = require('../src/editorOps.js');
 const tableOps = require('../src/tableOps.js');
+
+async function withIsolatedStore(fn) {
+  const previousHome = process.env.HOME;
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-store-'));
+  const storePath = require.resolve('../lib/store');
+  delete require.cache[storePath];
+  process.env.HOME = tmpHome;
+  try {
+    const store = require('../lib/store');
+    return await fn(store, tmpHome);
+  } finally {
+    delete require.cache[storePath];
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }
+}
 
 function loadOutlineForTest() {
   const code = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
@@ -264,7 +282,7 @@ test('Note tag picker can create new tags from the editor', () => {
   assert.match(sidebar, /Remove tag/);
   assert.match(sidebar, /if \(newTagName\.trim\(\)\) return/);
   assert.match(sidebar, /tagCreatorRef\.current\?\.contains\(e\.target\)/);
-  assert.match(sidebar, /top: 42/);
+  assert.match(sidebar, /top: 50/);
   assert.match(app, /const removeTag = \(name\) =>/);
   assert.match(app, /onDeleteTag=\{removeTag\}/);
   assert.match(app, /const taggedNotes = notes\.filter\(n => \(n\.tags \|\| \[\]\)\.includes\(clean\)\)/);
@@ -282,6 +300,9 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(store, /const APP_DIR_NAME = 'VispNote'/);
   assert.match(store, /const LEGACY_APP_DIR_NAMES = \['OminiNote', 'MyNote'\]/);
   assert.match(store, /const ROOT = !fs\.existsSync\(PRIMARY_ROOT\) && LEGACY_ROOT \? LEGACY_ROOT : PRIMARY_ROOT/);
+  assert.match(store, /async function repairConfigVaults\(cfg\)/);
+  assert.match(store, /async function vaultDirectoryExists\(slug\)/);
+  assert.match(store, /cfg\.vaults = validVaults/);
   assert.match(store, /Create another vault before deleting this one/);
   assert.match(store, /fsp\.rm\(vaultDir\(v\.slug\), \{ recursive: true, force: true \}\)/);
   assert.match(store, /deleteVault, setActiveVault/);
@@ -289,13 +310,18 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(main, /idx\.removeVault\(vaultId\)/);
   assert.match(preload, /deleteVault: \(id\) => ipcRenderer\.invoke\('mn:deleteVault', id\)/);
   assert.match(app, /const deleteVault = useCallbackA\(async \(id\) =>/);
+  assert.match(app, /const refreshVaultRegistry = useCallbackA/);
+  assert.match(app, /refreshVaultRegistry\(\{ reloadActive: true, reason: 'focus' \}\)/);
+  assert.match(app, /onRefreshVaults=\{refreshVaultRegistry\}/);
   assert.match(app, /onCreateVault=\{createVault\}/);
   assert.match(app, /onDeleteVault=\{deleteVault\}/);
   assert.match(settings, /label="Create vault"/);
   assert.match(settings, /label="Delete current vault"/);
-  assert.match(settings, /Type \$\{currentVault\.name\}/);
+  assert.match(settings, /role="dialog"/);
+  assert.match(settings, /aria-labelledby="mn-delete-vault-title"/);
+  assert.match(settings, /Type vault name to confirm/);
   assert.match(settings, /Delete permanently/);
-  assert.match(settings, /This cannot be undone/);
+  assert.match(settings, /This permanently removes the current vault folder/);
 });
 
 test('Visible block context menu options are wired to real operations', () => {
@@ -354,6 +380,12 @@ test('Markdown round-trip preserves heading children used by novelist links', ()
   assert.match(roundTrip, /arc:: \[\[Act One\]\]/);
   assert.match(roundTrip, /\[\[Chapter 1\]\]/);
   assert.match(roundTrip, /\[\[Scene 1\]\]/);
+
+  const labelled = outlineApi.mnMdToBlocks('{{label:blue|Needs+work}} Important block');
+  assert.equal(labelled[0].labels[0].color, 'blue');
+  assert.equal(labelled[0].labels[0].text, 'Needs work');
+  assert.equal(labelled[0].content, 'Important block');
+  assert.match(outlineApi.mnBlocksToMd(labelled), /\{\{label:blue\|Needs\+work\}\}Important block/);
 });
 
 test('Reminder center and spellcheck wiring are visible in app shell', () => {
@@ -476,7 +508,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(sidebar, /canvasActive/);
   assert.match(app, /const \[canvases, setCanvases\]/);
   assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
-  assert.match(app, /window\.mn\.listCanvases\(activeId\)/);
+  assert.match(app, /window\.mn\.listCanvases\(vaultId\)/);
   assert.match(app, /view === 'canvas'/);
   assert.match(app, /<MnCanvasPanel/);
   assert.match(editor, /allCanvases=\{canvases\}/);
@@ -502,6 +534,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
   const graph = fs.readFileSync(path.join(__dirname, '../src/graph.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
   const ai = fs.readFileSync(path.join(__dirname, '../src/ai.jsx'), 'utf8');
@@ -509,6 +542,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(store, /novelistMode: !!meta\.novelistMode/);
   assert.match(store, /workflowStates: Array\.isArray\(meta\.workflowStates\) \? normalizeWorkflowStates\(meta\.workflowStates\) : null/);
   assert.match(store, /async function createVault\(name, options = \{\}\)/);
+  assert.match(store, /fs\.existsSync\(vaultDir\(finalSlug\)\)/);
   assert.match(main, /store\.createVault\(name, options\)/);
   assert.match(preload, /createVault: \(name, options\) => ipcRenderer\.invoke\('mn:createVault', name, options\)/);
   assert.match(app, /const MN_NOVELIST_TAGS = \[/);
@@ -518,7 +552,19 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /\[\[Scene 1\]\]/);
   assert.match(app, /const MN_NOVELIST_WORKFLOW_STATES = \[/);
   assert.match(app, /sourceWorkflowStates = null/);
+  assert.match(app, /includeStarterNotes: false/);
   assert.match(app, /workflowStates: nextWorkflowStates/);
+  assert.match(app, /mnBuildNovelistStarterNotes\(sourceNotes, mnMdToBlocks, vaultId\)/);
+  assert.match(app, /function mnDirtyNoteKey\(vaultId, noteId\)/);
+  assert.match(app, /const vaultActivationSeq = useRefA\(0\)/);
+  assert.match(app, /const activationSeq = \+\+vaultActivationSeq\.current/);
+  assert.match(app, /if \(activationSeq !== vaultActivationSeq\.current\) return/);
+  assert.match(app, /n\.set\(mnDirtyNoteKey\(activeVaultId, id\), \{ id, vaultId: activeVaultId \}\)/);
+  assert.match(app, /saveDirtyNotesNow\(\[\.\.\.dirtyNotes\.values\(\)\]\)/);
+  assert.match(app, /entry\.vaultId === activeVaultId/);
+  assert.match(app, /notes: targetNotes, tags: targetTags/);
+  assert.match(app, /saveVaultMeta\(activeVaultId, \{ novelistMode: false, workflowStates: null \}\)/);
+  assert.match(app, /novelistMode: false, workflowStates: null/);
   assert.match(app, /workflowStates: vaultType === 'novelist' \? MN_NOVELIST_WORKFLOW_STATES : null/);
   assert.match(app, /const normalWorkflowStates = useMemoA/);
   assert.match(app, /const novelistWorkflowStates = useMemoA/);
@@ -554,6 +600,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /const setActiveVaultNovelistMode = useCallbackA/);
   assert.match(app, /view === 'novelist'/);
   assert.match(app, /<MnNovelistPanel/);
+  assert.match(app, /vaultId=\{activeVaultId\}/);
   assert.match(app, /createNote\(\{ title, body, tags: noteTags \|\| \[\] \}, \{ open: false \}\)/);
   assert.match(app, /onLinkChapter=\{linkNovelistChapter\}/);
   assert.match(app, /onLinkScene=\{linkNovelistScene\}/);
@@ -620,11 +667,21 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(editor, /workflowStatus = ''/);
   assert.match(editor, /onSetWorkflowStatus/);
   assert.match(editor, /onCreateLinkedNote/);
+  assert.match(editor, /noteTags=\{note\.tags \|\| \[\]\}/);
+  assert.match(editor, /vaultId=\{vaultId\}/);
+  assert.match(outliner, /noteTags = \[\]/);
+  assert.match(outliner, /vaultId = ''/);
+  assert.match(outliner, /window\.mnReadNovelistAiConfig\?\.\(vaultId\)/);
+  assert.match(outliner, /defaultPromptId: config\.defaultPromptId/);
+  assert.match(outliner, /Target length: up to \$\{novelConfig\.wordLimit\} words/);
+  assert.match(outliner, /Novelist writing prompt \(\$\{activePrompt\.name \|\| 'Default'\}\):/);
   assert.match(graph, /All novelist notes/);
   assert.match(graph, /Manuscript structure/);
   assert.match(graph, /Characters \+ scenes/);
   assert.match(graph, /Plot threads \+ scenes/);
   assert.match(graph, /Research \+ scenes/);
+  assert.match(graph, /padding: '0 88px 0 24px'/);
+  assert.match(graph, /right: 64/);
   assert.match(notelist, /function MnNoteList[\s\S]*novelistStructure = null/);
   assert.match(notelist, /allNotes = null/);
   assert.match(notelist, /const sourceNotes = allNotes \|\| notes \|\| \[\]/);
@@ -638,11 +695,79 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(notelist, /parentBySceneId/);
   assert.match(notelist, /Unlinked chapters/);
   assert.match(notelist, /looseScenes/);
-  assert.match(panels, /Novel Plot Board/);
-  assert.match(panels, /Continue scene/);
   assert.match(panels, /Supporting Notes/);
   assert.match(panels, /Workflow Status/);
+  assert.match(panels, /AI Configuration/);
+  assert.match(panels, /Default word limit/);
+  assert.match(panels, /Default writing prompt/);
+  assert.match(panels, /AI write novel/);
+  assert.match(panels, /defaultPromptId/);
+  assert.match(panels, /mn_novelist_ai_config_v1/);
+  assert.match(panels, /function mnNovelistAiConfigKey\(vaultId = ''\)/);
+  assert.match(panels, /mnReadNovelistAiConfig\(vaultId\)/);
+  assert.match(panels, /window\.mnReadNovelistAiConfig = mnReadNovelistAiConfig/);
+  assert.match(panels, /addAiPrompt/);
+  assert.match(panels, /updateAiPrompt/);
+  assert.doesNotMatch(panels, /AI Actions/);
+  assert.doesNotMatch(panels, /const aiActions = \[/);
+  assert.doesNotMatch(panels, /Novel Plot Board/);
   assert.match(ai, /initialQuery/);
+});
+
+test('New vault creation never reuses stale vault folders', async () => {
+  await withIsolatedStore(async (store) => {
+    const staleDir = path.join(store.ROOT, 'novel');
+    fs.mkdirSync(staleDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(staleDir, 'n_old.md'),
+      '---\nid: n_old\ntitle: Previous Novel\ntags: [novel-scene]\n---\n\nOld scene\n',
+      'utf8'
+    );
+
+    const vault = await store.createVault('Novel', { type: 'novelist' });
+    assert.equal(vault.slug, 'novel-2');
+
+    const loaded = await store.loadVault(vault.id);
+    assert.equal(loaded.novelistMode, true);
+    assert.equal(loaded.notes.some(note => note.id === 'n_old'), false);
+    assert.equal(loaded.notes.length, 1);
+    assert.equal(loaded.notes[0].title, 'Manuscript');
+    assert.deepEqual(loaded.notes[0].tags, ['novel-manuscript']);
+    assert.match(loaded.notes[0].body, /Start drafting the story here/);
+  });
+});
+
+test('Vault registry repairs externally deleted vault folders', async () => {
+  await withIsolatedStore(async (store) => {
+    const vaults = await store.listVaults();
+    assert.ok(vaults.length >= 2);
+    const deleted = vaults[0];
+    fs.rmSync(path.join(store.ROOT, deleted.slug), { recursive: true, force: true });
+
+    const repaired = await store.listVaults();
+    assert.equal(repaired.some(v => v.id === deleted.id), false);
+    assert.ok(repaired.length >= 1);
+
+    await assert.rejects(
+      () => store.loadVault(deleted.id),
+      /Vault not found/
+    );
+    assert.equal(fs.existsSync(path.join(store.ROOT, deleted.slug)), false);
+  });
+});
+
+test('Vault registry creates one fallback vault if every folder is externally deleted', async () => {
+  await withIsolatedStore(async (store) => {
+    const vaults = await store.listVaults();
+    vaults.forEach(v => fs.rmSync(path.join(store.ROOT, v.slug), { recursive: true, force: true }));
+
+    const repaired = await store.listVaults();
+    assert.equal(repaired.length, 1);
+    assert.equal(repaired[0].name, 'Personal');
+    assert.equal(fs.existsSync(path.join(store.ROOT, repaired[0].slug)), true);
+    const loaded = await store.loadVault(repaired[0].id);
+    assert.equal(loaded.notes.length, 1);
+  });
 });
 
 test('Novelist hierarchy is inferred from manuscript links and properties without structure tags', () => {
@@ -696,7 +821,12 @@ test('Novelist order and note-level status properties drive visible workflow', (
   assert.equal(sandbox.mnBodyPropertyValue(body, 'status'), 'REVISE');
   body = sandbox.mnRemoveBodyProperty(body, 'status');
   assert.equal(sandbox.mnBodyPropertyValue(body, 'status'), '');
-  assert.match(sandbox.mnSetBodyProperty('# Note\nBody', 'order', '100'), /- order:: 100\nBody/);
+  assert.match(sandbox.mnSetBodyProperty('# Note\nBody', 'order', '100'), /order:: 100\nBody/);
+  assert.doesNotMatch(sandbox.mnSetBodyProperty('# Note\nBody', 'order', '100'), /- order::/);
+  assert.equal(
+    sandbox.mnNormalizeNoteBody('# Scene\n- status:: DRAFT\n- order:: 200\nDraft text', 'Scene'),
+    'status:: DRAFT\norder:: 200\nDraft text'
+  );
 
   const structure = sandbox.mnBuildNovelistStructure([
     { id: 'a', title: 'Arc', tags: ['novel-arc'], body: '# Arc\n- order:: 100' },
@@ -722,8 +852,24 @@ test('Novelist order and note-level status properties drive visible workflow', (
   assert.deepEqual(Array.from(converted.scenes, note => note.id), ['s']);
 
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
   assert.doesNotMatch(panels, /## Chapters\\n- '\s*}/);
   assert.doesNotMatch(panels, /## Scenes\\n- '\s*}/);
+  assert.doesNotMatch(panels, /body: '# (Manuscript|Arc|Chapter|Scene|Character|Location|Plot Thread|Research|Revision Note)/);
+  assert.match(editor, /function mnEditorSplitPropertyBlocks/);
+  assert.match(editor, /blocks=\{contentBlocks\}/);
+  assert.match(editor, /status::/);
+  assert.match(editor, /function mnEditorCleanPropertyKey/);
+  assert.match(editor, /\+ property/);
+  assert.match(editor, /removeMetadataProperty/);
+  assert.doesNotMatch(editor, /borderTop: `1px solid \$\{T\.lineSub\}`,[\s\S]*borderBottom: `1px solid \$\{T\.lineSub\}`/);
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
+  assert.match(outliner, /id: 'block-label'/);
+  assert.match(outliner, /blockLabelAction/);
+  assert.match(outliner, /Status: \$\{state\.id\}/);
+  assert.match(outliner, /setLabelMenu/);
+  assert.match(blockFeatures, /label="Add label"/);
 });
 
 test('Canvas editor supports expected drawing, color, clipboard, and delete interactions', () => {
@@ -828,17 +974,19 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
   assert.match(html, /<link rel="icon" type="image\/png" href="assets\/vispnote-icon\.png" \/>/);
   assert.match(html, /@keyframes mnLightBloom/);
   assert.match(html, /@keyframes mnLightWash/);
-  assert.match(html, /@keyframes mnPastelRipple/);
+  assert.match(html, /@keyframes mnBootProgress/);
   assert.match(html, /@keyframes mnStatusBreath/);
   assert.match(html, /mn-boot-light-field/);
   assert.match(html, /mn-light-bloom/);
-  assert.match(html, /mn-light-ripple/);
-  assert.match(html, /width: max\(180vw, 180vh\)/);
-  assert.match(html, /conic-gradient\(from 70deg/);
   assert.match(html, /radial-gradient\(circle at center/);
+  assert.match(html, /linear-gradient\(90deg, #f3bfd8 0%, #a9c2ff 48%, #9fe2c9 100%\)/);
   assert.doesNotMatch(html, /filter: blur/);
-  assert.doesNotMatch(html, /mn-boot-progress/);
-  assert.doesNotMatch(html, /@keyframes mnLaunchBar/);
+  assert.doesNotMatch(html, /mn-light-ripple/);
+  assert.doesNotMatch(html, /@keyframes mnPastelRipple/);
+  assert.doesNotMatch(html, /@property --mn-ripple-radius/);
+  assert.doesNotMatch(html, /--mn-ripple-radius/);
+  assert.doesNotMatch(html, /width: max\(180vw, 180vh\)/);
+  assert.doesNotMatch(html, /conic-gradient\(from 70deg/);
   assert.doesNotMatch(html, /@keyframes mnProgressGlow/);
   assert.doesNotMatch(html, /mn-pastel-float/);
   assert.doesNotMatch(html, /mn-boot-neural-field/);
@@ -855,6 +1003,7 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
   assert.ok(loadingLogo.size > 0);
   assert.match(html, /Capture<\/span><i><\/i><span>Organize<\/span><i><\/i><span>Remember/);
   assert.match(html, /class="mn-boot-status">Opening vault and indexing notes/);
+  assert.match(html, /class="mn-boot-progress"><div><\/div><\/div>/);
   assert.match(html, /prefers-reduced-motion: reduce/);
   assert.doesNotMatch(html, /@keyframes mnBootLogoTrace/);
   assert.doesNotMatch(html, /@keyframes mnBootLogoGlow/);
@@ -867,14 +1016,14 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
   assert.match(app, /src="assets\/vispnote-loading-transparent\.png"/);
   assert.match(app, /alt="VispNote"/);
   assert.match(app, /className="mn-boot-title mn-boot-wordmark">VispNote/);
-  assert.match(app, /<MnBootLogo loading=\{loading\} \/>/);
+  assert.match(app, /<MnBootLogo \/>/);
   assert.match(app, /MN_LAUNCH_BLOOMS/);
-  assert.match(app, /MN_LAUNCH_RIPPLES/);
+  assert.doesNotMatch(app, /MN_LAUNCH_RIPPLES/);
   assert.match(app, /className="mn-boot-light-field"/);
   assert.match(app, /className="mn-light-bloom"/);
-  assert.match(app, /className="mn-light-ripple"/);
+  assert.doesNotMatch(app, /className="mn-light-ripple"/);
   assert.match(app, /className="mn-boot-status"/);
-  assert.doesNotMatch(app, /mn-boot-progress/);
+  assert.match(app, /className="mn-boot-progress"/);
   assert.doesNotMatch(app, /MN_LAUNCH_FLOATS/);
   assert.doesNotMatch(app, /MN_LAUNCH_NEURAL_PATHS/);
   assert.ok(appIcon.size > 0);
@@ -1001,15 +1150,15 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.7');
-  assert.equal(lock.version, '0.1.7');
-  assert.equal(lock.packages[''].version, '0.1.7');
+  assert.equal(pkg.version, '0.1.8');
+  assert.equal(lock.version, '0.1.8');
+  assert.equal(lock.packages[''].version, '0.1.8');
   assert.equal(pkg.homepage, 'https://github.com/djkeshawa/visp-note#readme');
   assert.equal(pkg.repository.url, 'https://github.com/djkeshawa/visp-note.git');
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
-  assert.match(settings, /Version 0\.1\.7 · Prototype/);
+  assert.match(settings, /Version 0\.1\.8 · Prototype/);
   assert.match(aiSource, /headers\['HTTP-Referer'\] = 'https:\/\/github\.com\/djkeshawa\/visp-note'/);
   assert.match(aiSource, /headers\['X-Title'\] = 'VispNote'/);
 });
@@ -1022,6 +1171,13 @@ test('Vault switcher uses VispNote icon instead of letter tiles', () => {
   assert.match(sidebar, /<img src=\{VAULT_ICON_SRC\} alt="" aria-hidden="true"/);
   assert.match(sidebar, /<MnVaultIcon T=\{T\} size=\{22\} active \/>/);
   assert.match(sidebar, /<MnVaultIcon T=\{T\} size=\{20\} active=\{active\} \/>/);
+  assert.match(sidebar, /Switch vault/);
+  assert.match(sidebar, /vaultKindLabel/);
+  assert.match(sidebar, /vaultNoteLabel/);
+  assert.match(sidebar, /maxHeight: 260/);
+  assert.match(sidebar, /aria-haspopup="menu"/);
+  assert.match(sidebar, /onRefreshVaults\(\{ reloadActive: false, reason: 'vault-dropdown' \}\)/);
+  assert.match(sidebar, /Rename vault/);
   assert.doesNotMatch(sidebar, /activeVault\?\.name \|\| 'm'\)\[0\]\.toLowerCase/);
   assert.doesNotMatch(sidebar, /v\.name\[0\]\.toLowerCase/);
 });
@@ -1198,6 +1354,30 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(panels, /addWorkflowState/);
   assert.match(panels, /removeWorkflowState/);
   assert.match(panels, /onWorkflowStatesChange && onWorkflowStatesChange/);
+  assert.match(panels, /const \[dragOverState, setDragOverState\] = useStateP\(null\)/);
+  assert.match(panels, /const \[dragPreview, setDragPreview\] = useStateP\(null\)/);
+  assert.match(panels, /const dragItemRef = useRefP\(null\)/);
+  assert.match(panels, /setActiveDragItem/);
+  assert.match(panels, /clearActiveDragItem/);
+  assert.match(panels, /updateDragPreview/);
+  assert.match(panels, /setTransparentDragImage/);
+  assert.match(panels, /const WorkflowDragPreview = \(\) =>/);
+  assert.match(panels, /suppressCardClickRef/);
+  assert.match(panels, /workflowStateFromPoint/);
+  assert.match(panels, /beginCardPointerDrag/);
+  assert.match(panels, /data-mn-workflow-state=\{state\.id\}/);
+  assert.match(panels, /window\.addEventListener\('pointermove', onMove\)/);
+  assert.match(panels, /onDragStart=\{\(e\) =>/);
+  assert.match(panels, /e\.dataTransfer\.setData\('text\/mn-workflow', payload\)/);
+  assert.match(panels, /onDrag=\{\(e\) =>/);
+  assert.match(panels, /Release to move to \{state\.id\}/);
+  assert.match(panels, /types\.includes\('text\/mn-note'\)/);
+  assert.match(panels, /types\.includes\('text\/plain'\)/);
+  assert.match(panels, /readDropNoteId/);
+  assert.match(panels, /moveWorkflowNote\(noteId, null, state\.id\)/);
+  assert.match(panels, /marginRight: 54/);
+  assert.match(notelist, /draggable/);
+  assert.match(notelist, /e\.dataTransfer\.setData\('text\/mn-note', payload\)/);
   assert.match(panels, /SummaryStat label="Columns"/);
   assert.match(panels, /SummaryStat label="Active cols"/);
   assert.doesNotMatch(panels, /const waitingCount = countFor\('WAIT'\) \+ countFor\('LATER'\)/);
@@ -1217,7 +1397,8 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(blockFeatures, /setWorkflowStates: mnSetWorkflowStates/);
   assert.match(blockFeatures, /DEFAULT_WORKFLOW_STATES/);
   assert.match(panels, /const isClosedState = \(state\) => window\.MN_LOGSEQ\?\.mnWorkflowIsClosed/);
-  assert.match(panels, /textDecoration: isClosedState\(state\) \? 'line-through' : 'none'/);
+  assert.doesNotMatch(panels, /textDecoration: isClosedState\(state\) \? 'line-through' : 'none'/);
+  assert.doesNotMatch(panels, /textDecoration:[\s\S]{0,80}line-through[\s\S]{0,80}No preview/);
   assert.doesNotMatch(panels, /state\.id === 'DONE' \|\| state\.id === 'CANCELLED'/);
   assert.match(outliner, /function mnWorkflowSlashCommands/);
   assert.match(outliner, /return \[\.\.\.MN_SLASH_CMDS, \.\.\.mnWorkflowSlashCommands\(\)\]/);
@@ -1225,4 +1406,8 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(notelist, /const workflowPattern = states/);
   assert.doesNotMatch(notelist, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
+  assert.match(app, /function MnReminderCenter\(\{ open, items, dueCount, onToggle, onClose, onOpenNote, topOffset = 13, T \}\)/);
+  assert.match(app, /top: topOffset/);
+  assert.match(app, /const reminderCenterTop = view === 'workflow' \? 30 : view === 'graph' \? 12 : 13/);
+  assert.match(app, /topOffset=\{reminderCenterTop\}/);
 });

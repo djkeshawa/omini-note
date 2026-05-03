@@ -27,7 +27,7 @@ function MnSidebar({
   onOpenCanvas, canvasActive, canvasCount = 0,
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
-  vaults, activeVaultId, onSelectVault, onCreateVault, onRenameVault, onDeleteVault,
+  vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
   T, density, theme
 }) {
   const [vaultOpen, setVaultOpen] = React.useState(false);
@@ -70,6 +70,9 @@ function MnSidebar({
   }, 0);
 
   const rollupCount = notes.length;
+  const vaultKindLabel = (v) => v?.novelistMode ? 'Novelist' : 'Notes';
+  const vaultNoteLabel = (v) => `${v?.noteCount ?? 0} note${(v?.noteCount ?? 0) === 1 ? '' : 's'}`;
+  const vaultCanvasLabel = (v) => `${v?.canvasCount ?? 0} canvas${(v?.canvasCount ?? 0) === 1 ? '' : 'es'}`;
 
   const submitTag = () => {
     const name = newTagName.trim();
@@ -108,6 +111,11 @@ function MnSidebar({
     setCreating(false);
     setVaultOpen(false);
   };
+
+  React.useEffect(() => {
+    if (!vaultOpen || !onRefreshVaults) return;
+    onRefreshVaults({ reloadActive: false, reason: 'vault-dropdown' });
+  }, [vaultOpen, onRefreshVaults]);
 
   React.useEffect(() => {
     if (!creatingTag) return;
@@ -211,12 +219,18 @@ function MnSidebar({
         padding: '4px 10px 14px', position: 'relative',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button onClick={() => setVaultOpen(v => !v)} style={{
-            flex: 1, display: 'flex', alignItems: 'center', gap: 8,
-            padding: '6px 8px', borderRadius: 6, cursor: 'pointer',
+          <button
+            onClick={() => setVaultOpen(v => !v)}
+            aria-haspopup="menu"
+            aria-expanded={vaultOpen}
+            title={activeVault?.path || '~/vault'}
+            style={{
+            flex: 1, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', alignItems: 'center', gap: 9,
+            padding: '8px 9px', borderRadius: 8, cursor: 'pointer',
             background: vaultOpen ? T.bg : 'transparent',
             border: `1px solid ${vaultOpen ? T.line : 'transparent'}`,
             color: T.ink, textAlign: 'left',
+            boxShadow: vaultOpen ? `0 8px 24px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
           }}
           onMouseEnter={e => !vaultOpen && (e.currentTarget.style.background = T.bgHover)}
           onMouseLeave={e => !vaultOpen && (e.currentTarget.style.background = 'transparent')}>
@@ -227,10 +241,19 @@ function MnSidebar({
                 color: T.ink, letterSpacing: '-0.01em',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{activeVault?.name || 'VispNote'}</div>
-              <div style={{
-                fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
-                marginTop: 1, letterSpacing: '0.04em',
-              }}>{activeVault?.path || '~/vault'}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, minWidth: 0 }}>
+                <span style={{
+                  fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: activeVault?.novelistMode ? T.accent : T.inkDim,
+                  background: activeVault?.novelistMode ? T.accentSoft : T.bg,
+                  border: `1px solid ${activeVault?.novelistMode ? T.selLine : T.lineSub}`,
+                  borderRadius: 999, padding: '1px 5px', lineHeight: 1.2,
+                  whiteSpace: 'nowrap',
+                }}>{activeVault ? vaultKindLabel(activeVault) : 'Notes'}</span>
+                <span style={{
+                  fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>{activeVault ? vaultNoteLabel(activeVault) : `${notes.length} notes`}</span>
+              </div>
             </div>
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" style={{ color: T.inkDim, flexShrink: 0, transform: vaultOpen ? 'rotate(180deg)' : 'none', transition: 'transform 140ms' }}>
               <path d="M3 4.5L6 7.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -243,84 +266,141 @@ function MnSidebar({
             <div onClick={() => { setVaultOpen(false); setCreating(false); setRenameId(null); }}
               style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
             <div style={{
-              position: 'absolute', top: 42, left: 10, right: 10,
+              position: 'absolute', top: 50, left: 10,
+              width: 'min(336px, calc(100vw - 24px))',
               background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
-              padding: 5, zIndex: 50,
+              padding: 6, zIndex: 50,
               boxShadow: `0 10px 28px color-mix(in oklab, ${T.ink} 18%, transparent)`,
               animation: 'mnSlideDown 140ms ease',
             }}>
               <div style={{
-                padding: '6px 9px 4px', fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-                letterSpacing: '0.12em', textTransform: 'uppercase', color: T.inkDim,
-              }}>Vaults</div>
-              {vaults.map(v => {
-                const active = v.id === activeVaultId;
-                const isRenaming = renameId === v.id;
-                return (
-                  <div key={v.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '7px 9px', borderRadius: 5, cursor: 'pointer',
-                    background: active ? T.selBg : 'transparent',
-                  }}
-                  onMouseEnter={e => !active && !isRenaming && (e.currentTarget.style.background = T.bgHover)}
-                  onMouseLeave={e => !active && !isRenaming && (e.currentTarget.style.background = 'transparent')}
-                  onClick={() => { if (!isRenaming) { onSelectVault(v.id); setVaultOpen(false); } }}>
-                    <MnVaultIcon T={T} size={20} active={active} />
-                    {isRenaming ? (
-                      <input autoFocus value={renameVal}
-                        onChange={(e) => setRenameVal(e.target.value)}
-                        onBlur={() => { if (renameVal.trim()) onRenameVault(v.id, renameVal.trim()); setRenameId(null); }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') { if (renameVal.trim()) onRenameVault(v.id, renameVal.trim()); setRenameId(null); }
-                          if (e.key === 'Escape') setRenameId(null);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          flex: 1, border: `1px solid ${T.accent}`, borderRadius: 4,
-                          padding: '2px 5px', background: T.bg, color: T.ink,
-                          outline: 'none', fontFamily: 'var(--mn-ui)', fontSize: 12.5,
-                        }} />
-                    ) : (
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{
-                          fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.ink,
-                          fontWeight: active ? 500 : 400,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}>{v.name}</div>
-                        <div style={{
-                          fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
-                        }}>{v.noteCount} note{v.noteCount === 1 ? '' : 's'}</div>
-                      </div>
-                    )}
-                    {active && !isRenaming && (
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke={T.accent} strokeWidth="1.6" style={{ flexShrink: 0 }}>
-                        <path d="M3.5 8.5L6.5 11.5L12.5 5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    )}
-                    {!isRenaming && (
-                      <button onClick={(e) => { e.stopPropagation(); setRenameId(v.id); setRenameVal(v.name); }}
-                        title="Rename" style={{
-                          width: 20, height: 20, border: 'none', background: 'transparent',
-                          color: T.inkDim, cursor: 'pointer', padding: 0, flexShrink: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.6,
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                        onMouseLeave={e => e.currentTarget.style.opacity = 0.6}>
-                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-                          <path d="M3 12L12 3L13.5 4.5L4.5 13.5L2.5 14L3 12Z"/>
-                        </svg>
-                      </button>
-                    )}
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 9px 6px',
+                borderBottom: `1px solid ${T.lineSub}`,
+                marginBottom: 5,
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: 'var(--mn-mono)', fontSize: 9.5,
+                    letterSpacing: '0.12em', textTransform: 'uppercase', color: T.inkDim,
+                  }}>Switch vault</div>
+                  <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.ink, marginTop: 2 }}>
+                    {vaults.length} workspace{vaults.length === 1 ? '' : 's'}
                   </div>
-                );
-              })}
+                </div>
+                <button type="button" onClick={() => setCreating(v => !v)} title="New vault" style={{
+                  width: 28, height: 28, borderRadius: 6,
+                  border: `1px solid ${T.lineSub}`,
+                  background: creating ? T.accentSoft : T.bgSub,
+                  color: creating ? T.accent : T.inkMed,
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: 0, flexShrink: 0,
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M6 2V10M2 6H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+              <div style={{ maxHeight: 260, overflowY: 'auto', paddingRight: 1 }}>
+                {vaults.map(v => {
+                  const active = v.id === activeVaultId;
+                  const isRenaming = renameId === v.id;
+                  return (
+                    <div key={v.id} style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'auto minmax(0, 1fr) auto auto',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 8px',
+                      borderRadius: 7,
+                      cursor: isRenaming ? 'default' : 'pointer',
+                      background: active ? T.selBg : 'transparent',
+                      border: `1px solid ${active ? T.selLine : 'transparent'}`,
+                    }}
+                    onMouseEnter={e => !active && !isRenaming && (e.currentTarget.style.background = T.bgHover)}
+                    onMouseLeave={e => !active && !isRenaming && (e.currentTarget.style.background = 'transparent')}
+                    onClick={() => { if (!isRenaming) { onSelectVault(v.id); setVaultOpen(false); } }}>
+                      <MnVaultIcon T={T} size={20} active={active} />
+                      {isRenaming ? (
+                        <input autoFocus value={renameVal}
+                          onChange={(e) => setRenameVal(e.target.value)}
+                          onBlur={() => { if (renameVal.trim()) onRenameVault(v.id, renameVal.trim()); setRenameId(null); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { if (renameVal.trim()) onRenameVault(v.id, renameVal.trim()); setRenameId(null); }
+                            if (e.key === 'Escape') setRenameId(null);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            minWidth: 0, border: `1px solid ${T.accent}`, borderRadius: 5,
+                            padding: '5px 7px', background: T.bg, color: T.ink,
+                            outline: 'none', fontFamily: 'var(--mn-ui)', fontSize: 12.5,
+                          }} />
+                      ) : (
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{
+                            fontFamily: 'var(--mn-ui)', fontSize: 12.8, color: T.ink,
+                            fontWeight: active ? 650 : 500,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>{v.name}</div>
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 5, marginTop: 3,
+                            minWidth: 0,
+                          }}>
+                            <span style={{
+                              fontFamily: 'var(--mn-mono)', fontSize: 9.5,
+                              color: v.novelistMode ? T.accent : T.inkDim,
+                              background: v.novelistMode ? T.accentSoft : T.bgSub,
+                              border: `1px solid ${v.novelistMode ? T.selLine : T.lineSub}`,
+                              borderRadius: 999, padding: '1px 5px',
+                              whiteSpace: 'nowrap',
+                            }}>{vaultKindLabel(v)}</span>
+                            <span style={{
+                              fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
+                              whiteSpace: 'nowrap',
+                            }}>{vaultNoteLabel(v)}</span>
+                            {!!v.canvasCount && (
+                              <span style={{
+                                fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
+                                whiteSpace: 'nowrap',
+                              }}>{vaultCanvasLabel(v)}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {active && !isRenaming && (
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={T.accent} strokeWidth="1.7" style={{ flexShrink: 0 }}>
+                          <path d="M3.5 8.5L6.5 11.5L12.5 5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                      {!active && !isRenaming && <span />}
+                      {!isRenaming && (
+                        <button onClick={(e) => { e.stopPropagation(); setRenameId(v.id); setRenameVal(v.name); }}
+                          title="Rename vault" aria-label={`Rename ${v.name}`} style={{
+                            width: 24, height: 24, borderRadius: 5,
+                            border: `1px solid transparent`, background: 'transparent',
+                            color: T.inkDim, cursor: 'pointer', padding: 0, flexShrink: 0,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.72,
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.background = T.bgSub; e.currentTarget.style.borderColor = T.lineSub; }}
+                          onMouseLeave={e => { e.currentTarget.style.opacity = 0.72; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}>
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+                            <path d="M3 12L12 3L13.5 4.5L4.5 13.5L2.5 14L3 12Z"/>
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
 
               {creating ? (
                 <>
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '7px 9px', borderRadius: 5,
-                    border: `1px solid ${T.accent}`, marginTop: 4,
+                    padding: '8px 9px', borderRadius: 7,
+                    border: `1px solid ${T.accent}`, marginTop: 7,
+                    background: T.bgSub,
                   }}>
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke={T.accent} strokeWidth="1.3" style={{ flexShrink: 0 }}>
                       <path d="M3 4H13V13H3V4Z"/>
@@ -359,7 +439,7 @@ function MnSidebar({
                     display: 'grid',
                     gridTemplateColumns: '1fr 1fr',
                     gap: 5,
-                    margin: '5px 0 0 29px',
+                    margin: '6px 0 0 29px',
                   }}>
                     {[
                       { id: 'notes', label: 'Notes vault' },
@@ -385,8 +465,8 @@ function MnSidebar({
               ) : (
                 <div onClick={() => setCreating(true)} style={{
                   display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '7px 9px', borderRadius: 5, cursor: 'pointer',
-                  color: T.inkMed, marginTop: 4,
+                  padding: '8px 9px', borderRadius: 7, cursor: 'pointer',
+                  color: T.inkMed, marginTop: 7,
                   borderTop: `1px solid ${T.lineSub}`,
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = T.bgHover}

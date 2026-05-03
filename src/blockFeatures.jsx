@@ -287,7 +287,7 @@ function MnBlockEmbed({ refId, allNotes, T, onOpenBlock }) {
 function MnBlockContextMenu({
   block, x, y, onClose, onCopyRef, onCopyEmbed, onCopyBlock, onCutBlock,
   onPasteAfter, onZoom, onIndent, onOutdent, onMoveUp, onMoveDown,
-  onDelete, onDuplicate, onSetWorkflow, onChangeKind, T
+  onDelete, onDuplicate, onAddLabel, onSetWorkflow, onChangeKind, T
 }) {
   React.useEffect(() => {
     const onDown = (e) => {
@@ -360,6 +360,7 @@ function MnBlockContextMenu({
       <Item icon="↓"  label="Move down"            kbd="⌥↓"   onClick={onMoveDown} />
       <Item divider />
       <Item icon="⊕"  label="Duplicate"            kbd="⌘D"   onClick={onDuplicate} />
+      <Item icon="L"  label="Add label"            kbd="/label" onClick={onAddLabel} />
       <Item divider />
       <div style={{
         padding: '4px 10px 4px',

@@ -32,8 +32,60 @@ function mkBlock(opts = {}) {
     collapsed: !!opts.collapsed,
     annotations: opts.annotations || [],
     workflow: opts.workflow || null,
+    labels: mnNormalizeBlockLabels(opts.labels || []),
     language: opts.language || '',
   };
+}
+
+const MN_BLOCK_LABEL_COLOR_IDS = ['yellow', 'pink', 'blue', 'green', 'purple', 'red'];
+
+function mnNormalizeBlockLabelColor(color = '') {
+  const clean = String(color || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '');
+  return MN_BLOCK_LABEL_COLOR_IDS.includes(clean) ? clean : 'yellow';
+}
+
+function mnNormalizeBlockLabels(labels = []) {
+  return (Array.isArray(labels) ? labels : [])
+    .map(label => ({
+      id: String(label?.id || `lbl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`),
+      text: String(label?.text || ''),
+      color: mnNormalizeBlockLabelColor(label?.color),
+    }))
+    .slice(0, 6);
+}
+
+function mnEncodeBlockLabelText(text = '') {
+  return encodeURIComponent(String(text || '')).replace(/%20/g, '+');
+}
+
+function mnDecodeBlockLabelText(text = '') {
+  try {
+    return decodeURIComponent(String(text || '').replace(/\+/g, '%20'));
+  } catch (e) {
+    return String(text || '');
+  }
+}
+
+function mnExtractBlockLabels(content = '') {
+  let rest = String(content || '');
+  const labels = [];
+  let match = rest.match(/^\s*\{\{label:([a-z0-9_-]+)\|([^}]*)\}\}\s*/i);
+  while (match) {
+    labels.push({
+      id: `lbl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}_${labels.length}`,
+      color: mnNormalizeBlockLabelColor(match[1]),
+      text: mnDecodeBlockLabelText(match[2]),
+    });
+    rest = rest.slice(match[0].length);
+    match = rest.match(/^\s*\{\{label:([a-z0-9_-]+)\|([^}]*)\}\}\s*/i);
+  }
+  return { labels: mnNormalizeBlockLabels(labels), content: rest };
+}
+
+function mnSerializeBlockLabels(labels = []) {
+  return mnNormalizeBlockLabels(labels)
+    .map(label => `{{label:${mnNormalizeBlockLabelColor(label.color)}|${mnEncodeBlockLabelText(label.text)}}}`)
+    .join('');
 }
 
 function mnCleanCodeLanguage(value) {
@@ -86,12 +138,17 @@ function mnMdToBlocks(md) {
     if (m) return { workflow: m[1], content: m[2] };
     return { workflow: null, content };
   };
+  const splitBlockMeta = (content) => {
+    const labelled = mnExtractBlockLabels(content);
+    const workflow = splitWorkflow(labelled.content);
+    return { ...workflow, labels: labelled.labels };
+  };
 
   const flushPara = () => {
     if (paraBuf.length) {
       const text = paraBuf.join(' ');
-      const { workflow, content } = splitWorkflow(text);
-      currentParentList().push(mkBlock({ kind: 'paragraph', content, workflow }));
+      const { workflow, content, labels } = splitBlockMeta(text);
+      currentParentList().push(mkBlock({ kind: 'paragraph', content, workflow, labels }));
       paraBuf = [];
     }
   };
@@ -115,8 +172,8 @@ function mnMdToBlocks(md) {
     if (h) {
       flushPara(); bulletStack = [];
       const level = h[1].length;
-      const { workflow, content } = splitWorkflow(h[2]);
-      const blk = mkBlock({ kind: 'heading', level, content, workflow });
+      const { workflow, content, labels } = splitBlockMeta(h[2]);
+      const blk = mkBlock({ kind: 'heading', level, content, workflow, labels });
       // Pop heading stack to this level's parent
       headingStack = headingStack.slice(0, level - 1);
       // Append under nearest enclosing heading (or top-level)
@@ -127,7 +184,8 @@ function mnMdToBlocks(md) {
     }
     if (line.startsWith('> ')) {
       flushPara(); bulletStack = [];
-      currentParentList().push(mkBlock({ kind: 'quote', content: line.slice(2) }));
+      const { workflow, content, labels } = splitBlockMeta(line.slice(2));
+      currentParentList().push(mkBlock({ kind: 'quote', content, workflow, labels }));
       continue;
     }
     if (/^---+$/.test(line)) {
@@ -142,10 +200,15 @@ function mnMdToBlocks(md) {
       i = table.endIndex;
       continue;
     }
-    // Property line: key:: value — flush as standalone paragraph block (renderer detects and special-cases)
-    if (/^[a-zA-Z][a-zA-Z0-9_-]*::\s/.test(line)) {
+    // Property line: key:: value. Legacy "- key:: value" bullets are normalized
+    // here so metadata does not appear as ordinary list content.
+    const propertyLine = line.match(/^\s*(?:-\s*)?([a-zA-Z][a-zA-Z0-9_-]*)::\s*(.*)$/);
+    if (propertyLine) {
       flushPara(); bulletStack = [];
-      currentParentList().push(mkBlock({ kind: 'paragraph', content: line }));
+      currentParentList().push(mkBlock({
+        kind: 'paragraph',
+        content: `${propertyLine[1]}:: ${propertyLine[2] || ''}`.trimEnd(),
+      }));
       continue;
     }
     // Bullet or todo
@@ -155,12 +218,13 @@ function mnMdToBlocks(md) {
       const indent = bm[1].length;
       const isTodo = !!bm[2];
       const checked = bm[3] && /[xX]/.test(bm[3]);
-      const { workflow, content } = splitWorkflow(bm[4]);
+      const { workflow, content, labels } = splitBlockMeta(bm[4]);
       const blk = mkBlock({
         kind: isTodo ? 'todo' : 'bullet',
         content,
         checked: isTodo ? checked : null,
         workflow,
+        labels,
       });
       while (bulletStack.length && bulletStack[bulletStack.length - 1].indent >= indent) bulletStack.pop();
       if (bulletStack.length === 0) currentParentList().push(blk);
@@ -182,12 +246,13 @@ function mnMdToBlocks(md) {
 function mnBlocksToMd(blocks, depth = 0) {
   let out = [];
   const wfPrefix = (b) => b.workflow ? b.workflow + ' ' : '';
+  const labelPrefix = (b) => mnSerializeBlockLabels(b.labels || []);
   for (const b of blocks) {
     if (b.kind === 'heading') {
-      out.push('#'.repeat(b.level || 1) + ' ' + wfPrefix(b) + b.content);
+      out.push('#'.repeat(b.level || 1) + ' ' + labelPrefix(b) + wfPrefix(b) + b.content);
       if (b.children.length) out.push(mnBlocksToMd(b.children, depth + 1));
     } else if (b.kind === 'quote') {
-      out.push('> ' + wfPrefix(b) + b.content);
+      out.push('> ' + labelPrefix(b) + wfPrefix(b) + b.content);
     } else if (b.kind === 'divider') {
       out.push('---');
     } else if (b.kind === 'code') {
@@ -198,11 +263,11 @@ function mnBlocksToMd(blocks, depth = 0) {
     } else if (b.kind === 'bullet' || b.kind === 'todo') {
       const pad = '  '.repeat(depth);
       const chk = b.kind === 'todo' ? (b.checked ? '[x] ' : '[ ] ') : '';
-      out.push(pad + '- ' + chk + wfPrefix(b) + b.content);
+      out.push(pad + '- ' + chk + labelPrefix(b) + wfPrefix(b) + b.content);
       if (b.children.length) out.push(mnBlocksToMd(b.children, depth + 1));
     } else {
       // paragraph
-      out.push(wfPrefix(b) + b.content);
+      out.push(labelPrefix(b) + wfPrefix(b) + b.content);
     }
   }
   return out.filter(Boolean).join('\n');
@@ -240,6 +305,7 @@ function mnCloneBlocks(blocks) {
   return blocks.map(b => ({
     ...b,
     annotations: (b.annotations || []).map(a => ({ ...a })),
+    labels: mnNormalizeBlockLabels(b.labels || []).map(label => ({ ...label })),
     children: mnCloneBlocks(b.children || []),
   }));
 }
@@ -263,4 +329,5 @@ window.MN_OUTLINE = {
   mkBlock, mnMdToBlocks, mnBlocksToMd, mnWalk,
   mnFindBlock, mnLocate, mnCloneBlocks, mnFlatten,
   mnIsListLike, mnCanHaveChildren,
+  mnNormalizeBlockLabels, mnSerializeBlockLabels, mnExtractBlockLabels,
 };

@@ -65,17 +65,10 @@
     0%, 100% { opacity: 0.28; transform: translate3d(-0.8%, -0.8%, 0); }
     50% { opacity: 0.58; transform: translate3d(0.8%, 0.8%, 0); }
   }
-  @keyframes mnPastelRipple {
-    0% {
-      opacity: 0;
-      transform: translate(-50%, -50%) scale(0.08);
-    }
-    14% { opacity: 0.44; }
-    64% { opacity: 0.18; }
-    100% {
-      opacity: 0;
-      transform: translate(-50%, -50%) scale(1.18);
-    }
+  @keyframes mnBootProgress {
+    0% { transform: translateX(-78%) scaleX(0.34); opacity: 0.48; }
+    42% { transform: translateX(-8%) scaleX(0.86); opacity: 0.96; }
+    100% { transform: translateX(118%) scaleX(0.42); opacity: 0.44; }
   }
   .mn-boot-splash {
     position: fixed;
@@ -127,23 +120,6 @@
     transform-origin: center;
     animation: mnLightBloom var(--bloom-duration) ease-in-out infinite;
     animation-delay: var(--bloom-delay);
-  }
-  .mn-light-ripple {
-    position: absolute;
-    left: 50%;
-    top: 42%;
-    z-index: 0;
-    width: max(180vw, 180vh);
-    aspect-ratio: 1;
-    border-radius: 999px;
-    border: 0;
-    background:
-      radial-gradient(circle, transparent 0 30%, color-mix(in oklab, var(--ripple-color) 30%, transparent) 37%, color-mix(in oklab, var(--ripple-color) 12%, white) 45%, transparent 58%),
-      conic-gradient(from 70deg, transparent, color-mix(in oklab, var(--ripple-color) 22%, transparent), rgba(255,255,255,0.18), transparent);
-    transform: translate(-50%, -50%) scale(0.08);
-    mix-blend-mode: multiply;
-    animation: mnPastelRipple var(--ripple-duration) cubic-bezier(.2,.7,.25,1) infinite;
-    animation-delay: var(--ripple-delay);
   }
   .mn-boot-title {
     position: relative;
@@ -245,6 +221,26 @@
     color: #56647c;
     animation: mnStatusBreath 2.4s ease-in-out infinite;
   }
+  .mn-boot-progress {
+    position: relative;
+    z-index: 1;
+    width: min(230px, calc(100vw - 96px));
+    height: 5px;
+    margin-top: 18px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(84, 98, 126, 0.13);
+    border: 1px solid rgba(255,255,255,0.62);
+    box-shadow: 0 8px 20px rgba(78, 91, 122, 0.1);
+  }
+  .mn-boot-progress div {
+    width: 62%;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #f3bfd8 0%, #a9c2ff 48%, #9fe2c9 100%);
+    transform-origin: left center;
+    animation: mnBootProgress 1.65s cubic-bezier(.65,0,.35,1) infinite;
+  }
   .mn-boot-core {
     position: relative;
     width: min(620px, calc(100vw - 48px));
@@ -261,8 +257,8 @@
     .mn-boot-brand,
     .mn-boot-light-field::before,
     .mn-light-bloom,
-    .mn-light-ripple,
-    .mn-boot-status {
+    .mn-boot-status,
+    .mn-boot-progress div {
       animation-duration: 1ms !important;
       animation-iteration-count: 1 !important;
     }
@@ -280,15 +276,13 @@
   </div>
   <div class="mn-boot-core">
     <div class="mn-boot-brand" aria-label="VispNote">
-      <span class="mn-light-ripple" style="--ripple-color:#f3bfd8; --ripple-duration:4.8s; --ripple-delay:0s;"></span>
-      <span class="mn-light-ripple" style="--ripple-color:#a9c2ff; --ripple-duration:4.8s; --ripple-delay:-1.6s;"></span>
-      <span class="mn-light-ripple" style="--ripple-color:#9fe2c9; --ripple-duration:4.8s; --ripple-delay:-3.2s;"></span>
       <img class="mn-boot-logo" src="assets/vispnote-loading-transparent.png" alt="VispNote" />
       <div class="mn-boot-title mn-boot-wordmark">VispNote</div>
       <div class="mn-boot-tagline"><span>Capture</span><i></i><span>Organize</span><i></i><span>Remember</span></div>
     </div>
     <div class="mn-boot-subtitle">Connecting your workspace</div>
     <div class="mn-boot-status">Opening vault and indexing notes</div>
+    <div class="mn-boot-progress"><div></div></div>
   </div>
 </div>
 

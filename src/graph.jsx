@@ -211,7 +211,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
       <div style={{
         height: 54, flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 12,
-        padding: '0 24px',
+        padding: '0 88px 0 24px',
         borderBottom: `1px solid ${T.lineSub}`,
         background: T.bg,
       }}>
@@ -457,7 +457,7 @@ function MnGraphControls({
     <div style={{
       position: 'absolute',
       top: 22,
-      right: 24,
+      right: 64,
       width: 214,
       zIndex: 3,
       background: `color-mix(in oklab, ${T.bg} 94%, transparent)`,

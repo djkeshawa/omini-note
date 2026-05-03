@@ -815,6 +815,18 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
   const currentVault = activeVault || vaults.find(v => v.id === activeVaultId) || null;
   const canDeleteVault = !!currentVault && vaults.length > 1;
   const deleteReady = canDeleteVault && confirmText.trim() === currentVault.name;
+  useEffectS(() => {
+    if (!confirmingDelete) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setConfirmingDelete(false);
+        setConfirmText('');
+        setError('');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [confirmingDelete]);
   const submitCreateVault = async () => {
     const name = newVaultName.trim();
     if (!name || !onCreateVault) return;
@@ -905,7 +917,7 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
             disabled={busy || !canDeleteVault}
             onClick={() => {
               setError('');
-              setConfirmingDelete(v => !v);
+              setConfirmingDelete(true);
               setConfirmText('');
             }}
           >Delete vault...</BtnOutline>
@@ -918,34 +930,151 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
         color: T.danger,
       }}>{error}</div>}
       {confirmingDelete && currentVault && (
-        <div style={{
-          marginTop: 12,
-          padding: '12px 14px',
-          borderRadius: 6,
-          border: `1px solid color-mix(in oklab, ${T.danger} 35%, ${T.lineSub})`,
-          background: `color-mix(in oklab, ${T.danger} 8%, ${T.bg})`,
-        }}>
-          <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 650, color: T.danger }}>
-            Delete "{currentVault.name}" permanently
+        <div
+          onClick={() => {
+            if (busy) return;
+            setConfirmingDelete(false);
+            setConfirmText('');
+            setError('');
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 90,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+            background: `color-mix(in oklab, ${T.ink} 34%, transparent)`,
+            backdropFilter: 'blur(2px)',
+            animation: 'mnFadeIn 120ms ease',
+          }}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mn-delete-vault-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 440,
+              maxWidth: 'calc(100vw - 40px)',
+              background: T.bg,
+              color: T.ink,
+              border: `1px solid ${T.line}`,
+              borderRadius: 10,
+              boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 26%, transparent)`,
+              overflow: 'hidden',
+              fontFamily: 'var(--mn-ui)',
+            }}>
+            <div style={{
+              display: 'flex',
+              gap: 12,
+              padding: '18px 18px 14px',
+              borderBottom: `1px solid ${T.lineSub}`,
+              background: T.bgSub,
+            }}>
+              <div style={{
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                color: T.danger,
+                background: `color-mix(in oklab, ${T.danger} 12%, transparent)`,
+                border: `1px solid color-mix(in oklab, ${T.danger} 24%, ${T.lineSub})`,
+              }}>
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.45">
+                  <path d="M3 4.5H13M6 4.5V3C6 2.5 6.5 2 7 2H9C9.5 2 10 2.5 10 3V4.5M5 4.5V13C5 13.5 5.5 14 6 14H10C10.5 14 11 13.5 11 13V4.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div id="mn-delete-vault-title" style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: T.ink,
+                  marginBottom: 4,
+                }}>Delete vault?</div>
+                <div style={{
+                  fontFamily: 'var(--mn-body)',
+                  fontSize: 13,
+                  lineHeight: 1.45,
+                  color: T.inkMed,
+                }}>This permanently removes the current vault folder and every note file inside it.</div>
+              </div>
+            </div>
+            <div style={{ padding: '16px 18px 10px' }}>
+              <div style={{
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 8,
+                background: T.bgSub,
+                padding: '11px 12px',
+              }}>
+                <div style={{
+                  fontSize: 13.5,
+                  fontWeight: 650,
+                  color: T.ink,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}>{currentVault.name}</div>
+                <div style={{
+                  marginTop: 5,
+                  fontFamily: 'var(--mn-mono)',
+                  fontSize: 10.5,
+                  color: T.inkDim,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }} title={currentVault.path || ''}>{currentVault.path || '~/VispNote/vault'}</div>
+              </div>
+              <label style={{
+                display: 'block',
+                marginTop: 12,
+                fontFamily: 'var(--mn-mono)',
+                fontSize: 10.5,
+                color: T.inkDim,
+                textTransform: 'uppercase',
+              }}>Type vault name to confirm</label>
+              <input
+                autoFocus
+                value={confirmText}
+                onChange={e => setConfirmText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && deleteReady && !busy) submitDeleteVault();
+                }}
+                placeholder={currentVault.name}
+                style={mnSettingsInput(T, {
+                  width: '100%',
+                  marginTop: 6,
+                  border: `1px solid ${deleteReady ? T.danger : T.line}`,
+                })}
+              />
+              {error && <div style={{
+                marginTop: 8,
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12,
+                color: T.danger,
+              }}>{error}</div>}
+            </div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 8,
+              padding: '12px 18px 16px',
+            }}>
+              <BtnOutline
+                T={T}
+                disabled={busy}
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  setConfirmText('');
+                  setError('');
+                }}
+              >Cancel</BtnOutline>
+              <BtnOutline T={T} danger disabled={busy || !deleteReady} onClick={submitDeleteVault}>Delete permanently</BtnOutline>
+            </div>
           </div>
-          <div style={{ marginTop: 4, fontFamily: 'var(--mn-body)', fontSize: 12.5, lineHeight: 1.45, color: T.inkMed }}>
-            This removes the vault folder, its markdown files, tags, and search index entries. This cannot be undone.
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-            <input
-              value={confirmText}
-              onChange={e => setConfirmText(e.target.value)}
-              placeholder={`Type ${currentVault.name}`}
-              style={mnSettingsInput(T, { flex: 1, minWidth: 0, border: `1px solid ${deleteReady ? T.danger : T.line}` })}
-            />
-            <BtnOutline T={T} danger disabled={busy || !deleteReady} onClick={submitDeleteVault}>Delete permanently</BtnOutline>
-          </div>
-          {error && <div style={{
-            marginTop: 8,
-            fontFamily: 'var(--mn-ui)',
-            fontSize: 12,
-            color: T.danger,
-          }}>{error}</div>}
         </div>
       )}
       <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
@@ -1055,7 +1184,7 @@ function SectionAbout({ T, stats }) {
           }}><img src="assets/vispnote-icon.png" alt="" aria-hidden="true" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} /></div>
           <div>
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>VispNote</div>
-            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>Version 0.1.7 · Prototype</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>Version 0.1.8 · Prototype</div>
           </div>
         </div>
         <div style={{

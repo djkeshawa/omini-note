@@ -2,6 +2,59 @@
 
 const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useEffectE } = React;
 
+function mnEditorPropertyParts(content = '') {
+  const match = String(content || '').match(/^\s*([a-zA-Z][a-zA-Z0-9_-]*)::\s*(.*)$/);
+  return match ? { key: match[1], value: match[2] || '' } : null;
+}
+
+function mnEditorSplitPropertyBlocks(blocks = []) {
+  const safeBlocks = Array.isArray(blocks) ? blocks : [];
+  let index = 0;
+  const propertyBlocks = [];
+  while (index < safeBlocks.length) {
+    const block = safeBlocks[index];
+    const prop = block?.kind === 'paragraph' ? mnEditorPropertyParts(block.content) : null;
+    if (!prop) break;
+    propertyBlocks.push(block);
+    index++;
+  }
+  return {
+    propertyBlocks,
+    contentBlocks: safeBlocks.slice(index),
+    properties: propertyBlocks.map(block => ({
+      ...mnEditorPropertyParts(block.content),
+      block,
+    })),
+  };
+}
+
+function mnEditorCleanPropertyKey(raw = '') {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]+/g, '')
+    .replace(/^[^a-z]+/, '')
+    .slice(0, 40);
+}
+
+function mnEditorCreatePropertyBlock(key = '', value = '') {
+  const content = `${key}:: ${value || ''}`.trimEnd();
+  if (typeof mkBlock === 'function') return mkBlock({ kind: 'paragraph', content });
+  return {
+    id: `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    kind: 'paragraph',
+    content,
+    level: 0,
+    checked: null,
+    children: [],
+    collapsed: false,
+    annotations: [],
+    workflow: null,
+    language: '',
+  };
+}
+
 function MnEditor({
   note, notes, tags, links, vaultId,
   canvases = [], onOpenCanvas, onCreateCanvas,
@@ -21,6 +74,19 @@ function MnEditor({
   const [tagDraft, setTagDraft] = useStateE('');
   const [zoomBlockId, setZoomBlockId] = useStateE(null);
   const [toast, setToast] = useStateE(null);
+  const propertySplit = useMemoE(
+    () => mnEditorSplitPropertyBlocks(note.blocks || []),
+    [note.blocks]
+  );
+  const metadataProperties = propertySplit.properties || [];
+  const contentBlocks = propertySplit.contentBlocks || [];
+  const visibleMetadataProperties = metadataProperties.filter(prop => String(prop.key || '').toLowerCase() !== 'status');
+  const hasStatusProperty = metadataProperties.some(prop => String(prop.key || '').toLowerCase() === 'status');
+  const hasStatusRow = workflowStates.length > 0 || hasStatusProperty;
+  const hasMetadataRows = hasStatusRow || visibleMetadataProperties.length > 0;
+  const [addingProperty, setAddingProperty] = useStateE(false);
+  const [propertyKeyDraft, setPropertyKeyDraft] = useStateE('');
+  const [propertyValueDraft, setPropertyValueDraft] = useStateE('');
 
   // Reset zoom when note changes
   useEffectE(() => { setZoomBlockId(null); }, [note.id]);
@@ -75,14 +141,80 @@ function MnEditor({
   // Word count from blocks
   const wordCount = useMemoE(() => {
     let count = 0;
-    mnWalk(note.blocks || [], (b) => {
+    mnWalk(contentBlocks || [], (b) => {
       count += b.content.split(/\s+/).filter(Boolean).length;
     });
     return count;
-  }, [note.blocks]);
+  }, [contentBlocks]);
 
   const setBlocks = (updater) => {
-    onBlocksChange(updater);
+    onBlocksChange(prevBlocks => {
+      const prevSplit = mnEditorSplitPropertyBlocks(prevBlocks || []);
+      const nextContent = typeof updater === 'function'
+        ? updater(prevSplit.contentBlocks || [])
+        : updater;
+      return [...(prevSplit.propertyBlocks || []), ...(nextContent || [])];
+    });
+  };
+
+  const updateMetadataProperty = (key, value) => {
+    onBlocksChange(prevBlocks => {
+      const prevSplit = mnEditorSplitPropertyBlocks(prevBlocks || []);
+      const lowerKey = String(key || '').toLowerCase();
+      const nextPropertyBlocks = (prevSplit.propertyBlocks || []).map(block => {
+        const prop = mnEditorPropertyParts(block.content);
+        if (!prop || prop.key.toLowerCase() !== lowerKey) return block;
+        return { ...block, content: `${prop.key}:: ${value || ''}`.trimEnd() };
+      });
+      return [...nextPropertyBlocks, ...(prevSplit.contentBlocks || [])];
+    });
+  };
+
+  const removeMetadataProperty = (key) => {
+    const lowerKey = String(key || '').toLowerCase();
+    if (lowerKey === 'status') {
+      onSetWorkflowStatus && onSetWorkflowStatus(null);
+      return;
+    }
+    onBlocksChange(prevBlocks => {
+      const prevSplit = mnEditorSplitPropertyBlocks(prevBlocks || []);
+      const nextPropertyBlocks = (prevSplit.propertyBlocks || []).filter(block => {
+        const prop = mnEditorPropertyParts(block.content);
+        return !prop || prop.key.toLowerCase() !== lowerKey;
+      });
+      return [...nextPropertyBlocks, ...(prevSplit.contentBlocks || [])];
+    });
+  };
+
+  const addMetadataProperty = () => {
+    const cleanKey = mnEditorCleanPropertyKey(propertyKeyDraft);
+    if (!cleanKey) return;
+    const cleanValue = String(propertyValueDraft || '').trim();
+    if (cleanKey === 'status') {
+      onSetWorkflowStatus && onSetWorkflowStatus(cleanValue || null);
+      setPropertyKeyDraft('');
+      setPropertyValueDraft('');
+      setAddingProperty(false);
+      return;
+    }
+    onBlocksChange(prevBlocks => {
+      const prevSplit = mnEditorSplitPropertyBlocks(prevBlocks || []);
+      const exists = (prevSplit.propertyBlocks || []).some(block => {
+        const prop = mnEditorPropertyParts(block.content);
+        return prop && prop.key.toLowerCase() === cleanKey;
+      });
+      const nextPropertyBlocks = exists
+        ? (prevSplit.propertyBlocks || []).map(block => {
+          const prop = mnEditorPropertyParts(block.content);
+          if (!prop || prop.key.toLowerCase() !== cleanKey) return block;
+          return { ...block, content: `${prop.key}:: ${cleanValue}`.trimEnd() };
+        })
+        : [...(prevSplit.propertyBlocks || []), mnEditorCreatePropertyBlock(cleanKey, cleanValue)];
+      return [...nextPropertyBlocks, ...(prevSplit.contentBlocks || [])];
+    });
+    setPropertyKeyDraft('');
+    setPropertyValueDraft('');
+    setAddingProperty(false);
   };
 
   const createAndApplyTag = () => {
@@ -110,7 +242,59 @@ function MnEditor({
             </svg>
           </button>
         )}
+        {Array.isArray(novelistPath) && novelistPath.length > 1 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            flexWrap: 'wrap',
+            minWidth: 0,
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 11.5,
+            color: T.inkDim,
+          }}>
+            {novelistPath.map((item, index) => (
+              <React.Fragment key={item.id}>
+                {index > 0 && <span style={{ color: T.line }}>›</span>}
+                <button
+                  onClick={() => onOpen && onOpen(item.id)}
+                  disabled={item.id === note.id}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    color: item.id === note.id ? T.inkDim : T.inkMed,
+                    cursor: item.id === note.id ? 'default' : 'pointer',
+                    padding: '1px 2px',
+                    fontFamily: 'var(--mn-ui)',
+                    fontSize: 11.5,
+                    maxWidth: 170,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                  {item.title || 'Untitled'}
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
         <div style={{ flex: 1 }} />
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          fontFamily: 'var(--mn-mono)',
+          fontSize: 10.5,
+          color: T.inkDim,
+          textTransform: 'uppercase',
+          whiteSpace: 'nowrap',
+        }}>
+          <span>{dateText}</span>
+          <span style={{ color: T.lineSub }}>·</span>
+          <span>{timeText}</span>
+          <span style={{ color: T.lineSub }}>·</span>
+          <span>{wordCount} words</span>
+        </div>
 
         <button onClick={onPinToggle} title="Pin" style={iconBtn(T, note.pinned)}>
           <svg width="12" height="12" viewBox="0 0 16 16" fill={note.pinned ? T.accent : 'none'} stroke={note.pinned ? T.accent : 'currentColor'} strokeWidth="1.3">
@@ -140,84 +324,6 @@ function MnEditor({
           margin: '0 auto', paddingTop: 12,
           fontSize: fontSize === 'small' ? '13px' : fontSize === 'large' ? '16px' : '14.5px',
         }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-            letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10,
-          }}>
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-              <rect x="2" y="3" width="12" height="11" rx="1.5"/>
-              <path d="M5 2V4M11 2V4M2 7H14" strokeLinecap="round"/>
-            </svg>
-            <span>{dateText}</span>
-            <span style={{ color: T.lineSub }}>·</span>
-            <span>{timeText}</span>
-            <span style={{ color: T.lineSub }}>·</span>
-            <span>{wordCount} words</span>
-            {workflowStates.length > 0 && (
-              <>
-                <span style={{ color: T.lineSub }}>·</span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span>Status</span>
-                  <select
-                    value={workflowStatus || ''}
-                    onChange={(e) => onSetWorkflowStatus && onSetWorkflowStatus(e.target.value || null)}
-                    style={{
-                      border: `1px solid ${T.lineSub}`,
-                      borderRadius: 4,
-                      background: T.bg,
-                      color: T.inkMed,
-                      fontFamily: 'var(--mn-mono)',
-                      fontSize: 10,
-                      textTransform: 'uppercase',
-                      padding: '2px 5px',
-                      outline: 'none',
-                    }}>
-                    <option value="">None</option>
-                    {workflowStates.map(state => <option key={state.id} value={state.id}>{state.id}</option>)}
-                  </select>
-                </label>
-              </>
-            )}
-          </div>
-
-          {Array.isArray(novelistPath) && novelistPath.length > 1 && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              flexWrap: 'wrap',
-              margin: '-3px 0 10px',
-              fontFamily: 'var(--mn-ui)',
-              fontSize: 11.5,
-              color: T.inkDim,
-            }}>
-              {novelistPath.map((item, index) => (
-                <React.Fragment key={item.id}>
-                  {index > 0 && <span style={{ color: T.line }}>›</span>}
-                  <button
-                    onClick={() => onOpen && onOpen(item.id)}
-                    disabled={item.id === note.id}
-                    style={{
-                      border: 'none',
-                      background: 'transparent',
-                      color: item.id === note.id ? T.inkDim : T.inkMed,
-                      cursor: item.id === note.id ? 'default' : 'pointer',
-                      padding: '1px 2px',
-                      fontFamily: 'var(--mn-ui)',
-                      fontSize: 11.5,
-                      maxWidth: 180,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}>
-                    {item.title || 'Untitled'}
-                  </button>
-                </React.Fragment>
-              ))}
-            </div>
-          )}
-
           <input
             value={note.title}
             onChange={(e) => onTitleChange(e.target.value)}
@@ -241,13 +347,13 @@ function MnEditor({
             style={{
               width: '100%', border: 'none', outline: 'none', background: 'transparent',
               fontFamily: 'var(--mn-body)', fontSize: 30, fontWeight: 600,
-              color: T.ink, letterSpacing: '-0.02em', marginBottom: 14,
+              color: T.ink, letterSpacing: '-0.02em', marginBottom: 12,
               padding: 0,
             }}
           />
 
           <div style={{
-            display: 'flex', gap: 6, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap'
+            display: 'flex', gap: 6, marginBottom: 9, alignItems: 'center', flexWrap: 'wrap'
           }}>
             {note.tags.map(t => (
               <span key={t} onClick={() => onRemoveTag(t)} style={{
@@ -325,13 +431,114 @@ function MnEditor({
             </div>
           </div>
 
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(86px, max-content) minmax(0, 1fr) 24px',
+            columnGap: 8,
+            rowGap: 3,
+            alignItems: 'center',
+            margin: hasMetadataRows || addingProperty ? '0 0 18px' : '-2px 0 18px',
+            padding: 0,
+          }}>
+            {hasStatusRow && (
+              <>
+                <div style={mnMetadataKeyStyle(T)}>status::</div>
+                <select
+                  value={workflowStatus || ''}
+                  onChange={(e) => onSetWorkflowStatus && onSetWorkflowStatus(e.target.value || null)}
+                  spellCheck={false}
+                  style={{
+                    ...mnMetadataValueStyle(T),
+                    width: 'auto',
+                    minWidth: 110,
+                    maxWidth: 180,
+                    border: `1px solid ${T.lineSub}`,
+                    borderRadius: 4,
+                    padding: '2px 24px 2px 6px',
+                    color: T.inkMed,
+                  }}>
+                  <option value="">None</option>
+                  {workflowStates.map(state => <option key={state.id} value={state.id}>{state.id}</option>)}
+                </select>
+                <button
+                  onClick={() => removeMetadataProperty('status')}
+                  title="Remove status"
+                  style={mnMetadataIconButton(T)}>x</button>
+              </>
+            )}
+            {visibleMetadataProperties.map(prop => (
+              <React.Fragment key={`${prop.block.id}:${prop.key}`}>
+                <div style={mnMetadataKeyStyle(T)}>{prop.key}::</div>
+                <input
+                  value={prop.value || ''}
+                  onChange={(e) => updateMetadataProperty(prop.key, e.target.value)}
+                  spellCheck={spellCheck}
+                  style={mnMetadataValueStyle(T)}
+                />
+                <button
+                  onClick={() => removeMetadataProperty(prop.key)}
+                  title={`Remove ${prop.key}`}
+                  style={mnMetadataIconButton(T)}>x</button>
+              </React.Fragment>
+            ))}
+            {addingProperty && (
+              <>
+                <input
+                  value={propertyKeyDraft}
+                  onChange={(e) => setPropertyKeyDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); addMetadataProperty(); }
+                    if (e.key === 'Escape') { e.preventDefault(); setAddingProperty(false); setPropertyKeyDraft(''); setPropertyValueDraft(''); }
+                  }}
+                  autoFocus
+                  placeholder="property"
+                  spellCheck={false}
+                  style={{ ...mnMetadataValueStyle(T), color: T.inkDim }}
+                />
+                <input
+                  value={propertyValueDraft}
+                  onChange={(e) => setPropertyValueDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); addMetadataProperty(); }
+                    if (e.key === 'Escape') { e.preventDefault(); setAddingProperty(false); setPropertyKeyDraft(''); setPropertyValueDraft(''); }
+                  }}
+                  placeholder="value"
+                  spellCheck={spellCheck}
+                  style={mnMetadataValueStyle(T)}
+                />
+                <button
+                  onClick={addMetadataProperty}
+                  disabled={!mnEditorCleanPropertyKey(propertyKeyDraft)}
+                  title="Add property"
+                  style={mnMetadataIconButton(T)}>+</button>
+              </>
+            )}
+            {!addingProperty && (
+              <button
+                onClick={() => setAddingProperty(true)}
+                style={{
+                  gridColumn: '1 / span 2',
+                  width: 'fit-content',
+                  border: 'none',
+                  background: 'transparent',
+                  color: T.inkDim,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--mn-mono)',
+                  fontSize: 10.5,
+                  padding: '2px 0',
+                }}>+ property</button>
+            )}
+          </div>
+
           {/* Outliner */}
           <MnOutliner
-            blocks={note.blocks || []}
+            blocks={contentBlocks}
             setBlocks={setBlocks}
             allNotes={notes}
             allCanvases={canvases}
             noteTitle={note.title}
+            noteTags={note.tags || []}
+            vaultId={vaultId}
             zoomBlockId={zoomBlockId}
             onZoomBlock={setZoomBlockId}
             onShowToast={onShowToast}
@@ -417,6 +624,45 @@ function iconBtn(T, active) {
     color: active ? T.accent : T.inkMed,
     cursor: 'pointer', padding: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
+  };
+}
+
+function mnMetadataKeyStyle(T) {
+  return {
+    fontFamily: 'var(--mn-mono)',
+    fontSize: 10.5,
+    color: T.inkDim,
+    textTransform: 'lowercase',
+    padding: '2px 0',
+  };
+}
+
+function mnMetadataValueStyle(T) {
+  return {
+    minWidth: 0,
+    border: 'none',
+    outline: 'none',
+    background: 'transparent',
+    color: T.inkMed,
+    fontFamily: 'var(--mn-mono)',
+    fontSize: 11.5,
+    padding: '2px 0',
+  };
+}
+
+function mnMetadataIconButton(T) {
+  return {
+    width: 20,
+    height: 20,
+    border: 'none',
+    borderRadius: 4,
+    background: 'transparent',
+    color: T.inkDim,
+    cursor: 'pointer',
+    fontFamily: 'var(--mn-mono)',
+    fontSize: 11,
+    lineHeight: 1,
+    padding: 0,
   };
 }
 

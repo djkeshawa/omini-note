@@ -146,11 +146,21 @@ function MnNoteList({
   const NoteRow = ({ n, depth = 0, compact = false, meta = '' }) => {
     const active = n.id === selectedId;
     return (
-      <div key={n.id} onClick={() => onSelect(n.id)} style={{
+      <div
+        key={n.id}
+        draggable
+        onDragStart={(e) => {
+          const payload = JSON.stringify({ noteId: n.id });
+          e.dataTransfer.setData('text/mn-note', payload);
+          e.dataTransfer.setData('text/plain', `mn-note:${n.id}`);
+          e.dataTransfer.effectAllowed = 'copyMove';
+        }}
+        onClick={() => onSelect(n.id)}
+        style={{
         padding: density === 'compact' || compact ? '9px 18px' : '14px 20px',
         paddingLeft: 20 + depth * 16,
         borderBottom: `1px solid ${T.lineSub}`,
-        cursor: 'pointer',
+        cursor: 'grab',
         background: active ? T.selBg : 'transparent',
         borderLeft: active ? `2px solid ${T.accent}` : '2px solid transparent',
         position: 'relative',
