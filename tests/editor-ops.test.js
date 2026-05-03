@@ -238,6 +238,8 @@ test('Block area selection can delete as one undoable operation and redo it', ()
   assert.match(outliner, /const currentSelection = selectionRef\.current/);
   assert.match(outliner, /const isAreaDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && currentSelection\?\.kind === 'blocks' && !isMod/);
   assert.doesNotMatch(outliner, /const isAreaDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && selectionRef\.current && !isMod/);
+  assert.match(outliner, /if \(\(isBlockShortcut \|\| isBlockEditCommand \|\| isOutlinerSelectAll\) && !insideOutliner && !activeInsideOutliner\) return/);
+  assert.doesNotMatch(outliner, /if \(\(isAreaDelete \|\| isBlockShortcut \|\| isBlockEditCommand \|\| isOutlinerSelectAll\) && !insideOutliner && !activeInsideOutliner\) return/);
   assert.match(outliner, /deleteSelectionRef\.current && deleteSelectionRef\.current\(\)/);
   assert.match(outliner, /onUndo=\{undo\}/);
   assert.match(outliner, /onRedo=\{redo\}/);

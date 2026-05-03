@@ -2786,7 +2786,7 @@ function MnOutliner({
       if ((isUndo || isRedo) && isFormField && !target.closest?.('.mn-block-row')) return;
       const insideOutliner = !!target.closest?.('.mn-outliner');
       const activeInsideOutliner = !!document.activeElement?.closest?.('.mn-outliner');
-      if ((isAreaDelete || isBlockShortcut || isBlockEditCommand || isOutlinerSelectAll) && !insideOutliner && !activeInsideOutliner) return;
+      if ((isBlockShortcut || isBlockEditCommand || isOutlinerSelectAll) && !insideOutliner && !activeInsideOutliner) return;
       const activeBlockId = () => {
         const currentSelection = selectionRef.current;
         if (currentSelection?.kind === 'blocks' && currentSelection.blockIds?.length) return currentSelection.blockIds[0];
