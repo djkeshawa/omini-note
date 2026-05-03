@@ -20,7 +20,7 @@ function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVa
   return (
     <div onClick={onClose} style={{
       position: 'absolute', inset: 0, zIndex: 60,
-      background: `color-mix(in oklab, ${T.ink} 32%, transparent)`,
+      background: T.overlay || `color-mix(in oklab, ${T.ink} 32%, transparent)`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       animation: 'mnFadeIn 140ms ease', backdropFilter: 'blur(2px)',
     }}>
@@ -28,10 +28,12 @@ function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVa
         width: 'min(980px, calc(100vw - 48px))',
         height: 'min(720px, calc(100vh - 48px))',
         minHeight: 'min(560px, calc(100vh - 48px))',
-        background: T.bg,
+        background: T.bgElevated || T.bg,
         borderRadius: 12,
         border: `1px solid ${T.line}`, overflow: 'hidden',
-        boxShadow: `0 24px 60px color-mix(in oklab, ${T.ink} 28%, transparent)`,
+        boxShadow: typeof mnShadow === 'function'
+          ? mnShadow(T, 'elevated')
+          : `0 24px 60px color-mix(in oklab, ${T.ink} 28%, transparent)`,
         display: 'flex', flexDirection: 'column',
       }}>
         <div style={{
@@ -203,9 +205,11 @@ function SettingsCard({ T, children, style = {} }) {
     <div style={{
       border: `1px solid ${T.lineSub}`,
       borderRadius: 8,
-      background: T.bg,
+      background: T.bgElevated || T.bg,
       overflow: 'hidden',
-      boxShadow: `0 12px 30px color-mix(in oklab, ${T.ink} 4%, transparent)`,
+      boxShadow: typeof mnShadow === 'function'
+        ? mnShadow(T, 'soft')
+        : `0 12px 30px color-mix(in oklab, ${T.ink} 4%, transparent)`,
       ...style,
     }}>
       {children}
@@ -217,7 +221,7 @@ function Row({ T, label, sub, children, last = false }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      gridTemplateColumns: 'minmax(0, 1fr) minmax(210px, max-content)',
       alignItems: 'center',
       gap: 18,
       padding: '14px 16px',
@@ -1184,7 +1188,7 @@ function SectionAbout({ T, stats }) {
           }}><img src="assets/vispnote-icon.png" alt="" aria-hidden="true" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} /></div>
           <div>
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>VispNote</div>
-            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>Version 0.1.8 · Prototype</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>Version 0.1.10 · Prototype</div>
           </div>
         </div>
         <div style={{

@@ -1447,6 +1447,7 @@ function MnApp() {
   const [toast, setToast] = useStateA(null);
   const [reminderCenterOpen, setReminderCenterOpen] = useStateA(false);
   const dismissedReminderKeys = useRefA(new Set());
+  const quietedReminderKeys = useRefA(new Set());
   const [query, setQuery] = useStateA('');
 
   useEffectA(() => {
@@ -1818,6 +1819,7 @@ function MnApp() {
     root.style.setProperty('--mn-body', fonts.body);
     root.style.setProperty('--mn-mono', fonts.mono);
     root.style.setProperty('--mn-bg', T.bg);
+    root.style.setProperty('--mn-focus', T.focus || T.accent);
     root.style.setProperty('--mn-app-font-size', tweaks.appFontSize === 'small' ? '12px' : tweaks.appFontSize === 'large' ? '14px' : tweaks.appFontSize === 'x-large' ? '15px' : '13px');
   }, [fonts, T, tweaks.appFontSize]);
 
@@ -2301,6 +2303,7 @@ function MnApp() {
 
   const selectedNote = notes.find(n => n.id === selectedId);
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
+  const blockingOverlayOpen = captureOpen || settingsOpen || askAiOpen || !!deleteTargetNote || !!appNotice;
 
   const reminderCenterItems = useMemoA(() => {
     const now = Date.now();
@@ -2806,6 +2809,20 @@ function MnApp() {
     return () => window.removeEventListener('keydown', h);
   }, [createNote, view, navigateView]);
 
+  useEffectA(() => {
+    if (!toast?.key) return;
+    if (blockingOverlayOpen) {
+      quietedReminderKeys.current.add(toast.key);
+      setToast(null);
+      return;
+    }
+    const handle = setTimeout(() => {
+      quietedReminderKeys.current.add(toast.key);
+      setToast(current => current?.key === toast.key ? null : current);
+    }, 9000);
+    return () => clearTimeout(handle);
+  }, [toast?.key, blockingOverlayOpen]);
+
   // Runtime reminder scan over @remind directives in the active vault.
   useEffectA(() => {
     if (bootState !== 'ready') return;
@@ -2820,6 +2837,7 @@ function MnApp() {
           if (!dueTime || dueTime > now) return false;
           if (tweaks.showOverdue === false && item.remindAt.at.toDateString() !== today) return false;
           if (dismissedReminderKeys.current.has(item.key)) return false;
+          if (quietedReminderKeys.current.has(item.key)) return false;
           if ((Number(snoozed[item.key]) || 0) > now) return false;
           return true;
         })
@@ -3121,7 +3139,7 @@ function MnApp() {
           />
         )}
         <MnReminderToast
-          toast={toast}
+          toast={blockingOverlayOpen ? null : toast}
           onDismiss={() => {
             if (toast?.key) dismissedReminderKeys.current.add(toast.key);
             setToast(null);

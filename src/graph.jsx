@@ -215,7 +215,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
         borderBottom: `1px solid ${T.lineSub}`,
         background: T.bg,
       }}>
-        <div>
+        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
           <div style={{
             fontFamily: 'var(--mn-mono)', fontSize: 10.5,
             letterSpacing: '0.12em', textTransform: 'uppercase',
@@ -224,9 +224,12 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
           <div style={{
             fontFamily: 'var(--mn-ui)', fontSize: 12.5,
             color: T.inkMed, marginTop: 2,
-          }}>{graphFilter ? 'Filtered for novelist notes' : 'Filtered by the All notes search'}</div>
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>{graphFilter ? 'Novelist graph filter' : 'Uses the current note-list search'}</div>
         </div>
-        <div style={{ flex: 1 }} />
+        <div style={{ flex: '0 0 4px' }} />
         {graphFilter && (
           <select
             value={graphFilter}
@@ -253,6 +256,8 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
         <div style={{
           fontFamily: 'var(--mn-mono)', fontSize: 11,
           color: T.inkDim,
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
         }}>{notes.length} notes · {edges.length} links · {style}</div>
       </div>
 
@@ -310,7 +315,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
                 ? `color-mix(in oklab, ${raw} 48%, ${T.inkDim} 52%)`
                 : T.inkDim;
               const label = n.title.length > 34 ? n.title.slice(0, 32) + '…' : n.title;
-              const showLabel = active && (opts.labels || focus || hoverId === n.id);
+              const showLabel = active && (opts.labels || notes.length <= 6 || focus || hoverId === n.id);
               return (
                 <g key={n.id}
                   onMouseEnter={() => setHoverId(n.id)}
@@ -398,11 +403,12 @@ function MnGraphControls({
   const Row = ({ id, title, children }) => (
     <div>
       <button onClick={() => toggle(id)} style={{
-        width: '100%', height: 44,
+        width: '100%', height: 38,
         border: 'none', background: 'transparent',
         display: 'flex', alignItems: 'center',
-        padding: '0 14px',
-        fontFamily: 'var(--mn-ui)', fontSize: 16,
+        padding: '0 12px',
+        fontFamily: 'var(--mn-ui)', fontSize: 13.5,
+        fontWeight: 600,
         color: T.ink, cursor: 'pointer',
         textAlign: 'left',
       }}>
@@ -417,7 +423,7 @@ function MnGraphControls({
       </button>
       {open[id] && (
         <div style={{
-          padding: '0 14px 12px',
+          padding: '0 12px 12px',
           fontFamily: 'var(--mn-ui)', fontSize: 12,
           color: T.inkMed,
         }}>
@@ -458,12 +464,14 @@ function MnGraphControls({
       position: 'absolute',
       top: 22,
       right: 64,
-      width: 214,
+      width: 190,
       zIndex: 3,
-      background: `color-mix(in oklab, ${T.bg} 94%, transparent)`,
+      background: `color-mix(in oklab, ${T.bgElevated || T.bg} 90%, transparent)`,
       border: `1px solid ${T.lineSub}`,
       borderRadius: 6,
-      boxShadow: `0 18px 42px color-mix(in oklab, ${T.ink} 12%, transparent)`,
+      boxShadow: typeof mnShadow === 'function'
+        ? mnShadow(T, 'soft')
+        : `0 18px 42px color-mix(in oklab, ${T.ink} 12%, transparent)`,
       overflow: 'hidden',
     }}>
       <Row id="nodes" title="Nodes">

@@ -3181,6 +3181,7 @@ function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
 // ────────────────────────────────────────────────────────────
 function MnReminderToast({ toast, onDismiss, onSnooze, onOpen, T, variant }) {
   if (!toast) return null;
+  const compact = typeof window !== 'undefined' && window.innerWidth <= 1180;
 
   if (variant === 'banner') {
     return (
@@ -3215,18 +3216,23 @@ function MnReminderToast({ toast, onDismiss, onSnooze, onOpen, T, variant }) {
   // Default: card toast bottom-right
   return (
     <div style={{
-      position: 'absolute', bottom: 18, right: 18, zIndex: 50,
-      width: 300, background: T.bg, borderRadius: 10,
+      position: 'absolute', bottom: compact ? 12 : 18, right: compact ? 12 : 18, zIndex: 50,
+      width: compact ? 280 : 300,
+      maxWidth: 'calc(100vw - 28px)',
+      background: T.bgElevated || T.bg,
+      borderRadius: 9,
       border: `1px solid ${T.line}`,
-      boxShadow: `0 12px 40px color-mix(in oklab, ${T.ink} 18%, transparent)`,
-      padding: 14,
+      boxShadow: typeof mnShadow === 'function'
+        ? mnShadow(T, 'elevated')
+        : `0 12px 40px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+      padding: compact ? 11 : 13,
       animation: 'mnSlideUp 220ms cubic-bezier(.2,.8,.2,1)',
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
         fontFamily: 'var(--mn-mono)', fontSize: 9.5,
         color: T.warn, letterSpacing: '0.1em', textTransform: 'uppercase',
-        marginBottom: 8, fontWeight: 600,
+        marginBottom: compact ? 6 : 8, fontWeight: 600,
       }}>
         <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
           <circle cx="8" cy="9" r="5.5"/><path d="M8 6V9L10 10" strokeLinecap="round"/>
@@ -3239,21 +3245,21 @@ function MnReminderToast({ toast, onDismiss, onSnooze, onOpen, T, variant }) {
         }}>✕</button>
       </div>
       <div style={{
-        fontFamily: 'var(--mn-body)', fontSize: 14, color: T.ink,
+        fontFamily: 'var(--mn-body)', fontSize: compact ? 13.2 : 14, color: T.ink,
         lineHeight: 1.5, marginBottom: 4,
       }}>{toast.text}</div>
       <div style={{
         fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-        marginBottom: 10,
+        marginBottom: compact ? 8 : 10,
       }}>from {toast.noteTitle}</div>
       <div style={{ display: 'flex', gap: 6 }}>
         <button onClick={() => onOpen(toast.noteId)} style={{
-          flex: 1, padding: '5px 10px', borderRadius: 5, cursor: 'pointer',
+          flex: 1, padding: compact ? '4px 10px' : '5px 10px', borderRadius: 5, cursor: 'pointer',
           background: T.ink, color: T.bg, border: 'none',
           fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500,
         }}>Open note</button>
         <button onClick={onSnooze || onDismiss} style={{
-          padding: '5px 10px', borderRadius: 5, cursor: 'pointer',
+          padding: compact ? '4px 9px' : '5px 10px', borderRadius: 5, cursor: 'pointer',
           background: T.bg, color: T.inkMed, border: `1px solid ${T.line}`,
           fontFamily: 'var(--mn-ui)', fontSize: 12,
         }}>Snooze</button>

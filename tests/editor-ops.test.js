@@ -413,10 +413,11 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   assert.match(app, /setReminderCenterOpen\(false\)/);
   assert.match(app, /const visibleItems = items/);
   assert.doesNotMatch(app, /items\.slice\(0, 12\)/);
-  assert.match(editor, /padding: '14px 76px 10px 28px'/);
+  assert.match(editor, /padding: '14px clamp\(18px, 4vw, 76px\) 8px clamp\(18px, 3vw, 28px\)'/);
 
   assert.match(editor, /spellCheck=\{spellCheck\}/);
   assert.match(outliner, /spellCheck=\{block\.kind === 'code' \? false : spellCheck\}/);
+  assert.match(outliner, /spellCheck=\{false\}/);
   assert.match(panels, /<button onClick=\{onDismiss\}[\s\S]*>✕<\/button>/);
   assert.match(panels, /<button onClick=\{onSnooze \|\| onDismiss\}[\s\S]*>Snooze<\/button>/);
 });
@@ -1210,15 +1211,15 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.9');
-  assert.equal(lock.version, '0.1.9');
-  assert.equal(lock.packages[''].version, '0.1.9');
+  assert.equal(pkg.version, '0.1.10');
+  assert.equal(lock.version, '0.1.10');
+  assert.equal(lock.packages[''].version, '0.1.10');
   assert.equal(pkg.homepage, 'https://github.com/djkeshawa/visp-note#readme');
   assert.equal(pkg.repository.url, 'https://github.com/djkeshawa/visp-note.git');
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
-  assert.match(settings, /Version 0\.1\.8 · Prototype/);
+  assert.match(settings, /Version 0\.1\.10 · Prototype/);
   assert.match(aiSource, /headers\['HTTP-Referer'\] = 'https:\/\/github\.com\/djkeshawa\/visp-note'/);
   assert.match(aiSource, /headers\['X-Title'\] = 'VispNote'/);
 });

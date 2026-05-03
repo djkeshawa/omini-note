@@ -1771,6 +1771,7 @@ function MnBlockRow({
           <div
             onClick={startEdit}
             onCopy={handleCopy}
+            spellCheck={false}
             style={{
               ...fontStyle,
               lineHeight: fontStyle.lineHeight || 1.55,

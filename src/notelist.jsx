@@ -202,7 +202,7 @@ function MnNoteList({
         borderBottom: `1px solid ${T.lineSub}`,
         cursor: 'grab',
         background: active ? T.selBg : 'transparent',
-        borderLeft: active ? `2px solid ${T.accent}` : '2px solid transparent',
+        borderLeft: active ? `3px solid ${T.accent}` : '3px solid transparent',
         position: 'relative',
         transition: 'background 80ms',
       }}
@@ -452,7 +452,7 @@ function MnNoteList({
         <div style={{
           marginTop: 12, position: 'relative',
           display: 'flex', alignItems: 'center',
-          background: T.bgSub, borderRadius: 6,
+          background: T.bgInput || T.bgSub, borderRadius: 6,
           border: `1px solid ${query ? T.line : 'transparent'}`,
           transition: 'border 120ms',
         }}>

@@ -46,7 +46,7 @@ function MnSidebar({
       const raw = localStorage.getItem('mn:sidebarSections');
       if (raw) return JSON.parse(raw);
     } catch (e) {}
-    return { allnotes: true, vaults: true, workflow: true, tags: true };
+    return { allnotes: true, vaults: true, workflow: false, tags: true };
   });
   const toggleSection = (key) => {
     setOpenSections(prev => {
@@ -179,6 +179,7 @@ function MnSidebar({
       padding: `${pad.py}px 10px`, margin: '0 6px', borderRadius: 6,
       cursor: 'pointer', userSelect: 'none',
       background: active ? T.selBg : 'transparent',
+      border: `1px solid ${active ? T.selLine : 'transparent'}`,
       color: active ? T.ink : T.inkMed,
       fontFamily: 'var(--mn-ui)', fontSize: 13,
       fontWeight: active ? 500 : 400,
@@ -491,7 +492,7 @@ function MnSidebar({
         <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
           <button onClick={onNew} title="New note (⌘N)" style={{
             flex: 1, padding: '6px 10px', borderRadius: 5, cursor: 'pointer',
-            background: T.bg, border: `1px solid ${T.line}`,
+            background: T.bgElevated || T.bg, border: `1px solid ${T.line}`,
             color: T.inkMed, fontFamily: 'var(--mn-ui)', fontSize: 12,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
           }}>
@@ -559,6 +560,7 @@ function MnSidebar({
                 padding: `${pad.py}px 10px`, margin: '0 6px', borderRadius: 6,
                 cursor: 'pointer', userSelect: 'none',
                 background: active ? T.selBg : 'transparent',
+                border: `1px solid ${active ? T.selLine : 'transparent'}`,
                 color: active ? T.ink : T.inkMed,
                 fontFamily: 'var(--mn-ui)', fontSize: 13,
                 transition: 'background 80ms',
@@ -777,7 +779,7 @@ function MnSidebar({
         <span style={{
           width: 6, height: 6, borderRadius: '50%', background: T.success, flexShrink: 0,
         }} />
-        <span style={{ flexShrink: 0 }}>synced</span>
+        <span style={{ flexShrink: 0 }}>local</span>
         <button onClick={onOpenSettings} title="Settings" style={{
           marginLeft: 2, width: 26, height: 26, borderRadius: 6,
           background: 'transparent', border: 'none', color: T.inkMed, cursor: 'pointer',

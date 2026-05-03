@@ -233,7 +233,11 @@ function MnEditor({
     }}>
       {/* Toolbar */}
       <div style={{
-        padding: '14px 76px 10px 28px', display: 'flex', alignItems: 'center', gap: 8,
+        padding: '14px clamp(18px, 4vw, 76px) 8px clamp(18px, 3vw, 28px)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        minHeight: 52,
       }}>
         {onBack && (
           <button onClick={onBack} title="Back to previous view" style={iconBtn(T)}>
@@ -288,6 +292,9 @@ function MnEditor({
           color: T.inkDim,
           textTransform: 'uppercase',
           whiteSpace: 'nowrap',
+          maxWidth: 'min(48vw, 560px)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}>
           <span>{dateText}</span>
           <span style={{ color: T.lineSub }}>·</span>
@@ -321,7 +328,7 @@ function MnEditor({
         </button>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 56px 40px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '0 clamp(18px, 4.5vw, 56px) 40px' }}>
         <div style={{
           maxWidth: editorWidth === 'narrow' ? 720
                   : editorWidth === 'wide' ? 1280
@@ -352,8 +359,8 @@ function MnEditor({
             placeholder="Untitled"
             style={{
               width: '100%', border: 'none', outline: 'none', background: 'transparent',
-              fontFamily: 'var(--mn-body)', fontSize: 30, fontWeight: 600,
-              color: T.ink, letterSpacing: '-0.02em', marginBottom: 12,
+              fontFamily: 'var(--mn-body)', fontSize: 'clamp(25px, 2.1vw, 30px)', fontWeight: 600,
+              color: T.ink, letterSpacing: 0, marginBottom: 12,
               padding: 0,
             }}
           />
@@ -439,12 +446,14 @@ function MnEditor({
 
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(86px, max-content) minmax(0, 1fr) 24px',
+            gridTemplateColumns: 'minmax(72px, max-content) minmax(150px, 360px) 22px',
             columnGap: 8,
             rowGap: 3,
             alignItems: 'center',
             margin: hasMetadataRows || addingProperty ? '0 0 18px' : '-2px 0 18px',
             padding: 0,
+            width: 'fit-content',
+            maxWidth: '100%',
           }}>
             {hasStatusRow && (
               <>
@@ -626,12 +635,17 @@ function MnEditor({
 
 function iconBtn(T, active) {
   return {
-    width: 28, height: 26, borderRadius: 5,
-    border: `1px solid ${active ? T.accent : T.lineSub}`,
-    background: active ? T.accentSoft : T.bg,
+    ...(typeof mnIconButtonStyle === 'function' ? mnIconButtonStyle(T, active, 28) : {}),
+    height: 26,
+    borderRadius: 6,
+    border: `1px solid ${active ? T.selLine || T.accent : T.lineSub}`,
+    background: active ? T.accentSoft : (T.bgElevated || T.bg),
     color: active ? T.accent : T.inkMed,
-    cursor: 'pointer', padding: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer',
+    padding: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   };
 }
 
@@ -662,8 +676,8 @@ function mnMetadataIconButton(T) {
   return {
     width: 20,
     height: 20,
-    border: 'none',
-    borderRadius: 4,
+    border: `1px solid transparent`,
+    borderRadius: 5,
     background: 'transparent',
     color: T.inkDim,
     cursor: 'pointer',
