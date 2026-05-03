@@ -34,6 +34,9 @@ function mkBlock(opts = {}) {
     workflow: opts.workflow || null,
     labels: mnNormalizeBlockLabels(opts.labels || []),
     language: opts.language || '',
+    beats: Array.isArray(opts.beats) ? opts.beats : [],
+    contexts: Array.isArray(opts.contexts) ? opts.contexts : [],
+    hidden: !!opts.hidden,
   };
 }
 
@@ -155,6 +158,21 @@ function mnMdToBlocks(md) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (/^:::\s*plot-points\s*$/i.test(line)) {
+      flushPara(); bulletStack = [];
+      const beats = [];
+      const contexts = [];
+      i++;
+      while (i < lines.length && !/^:::\s*$/.test(lines[i])) {
+        const context = lines[i].match(/^\s{2,}-\s*context::\s*(.*)$/i) || lines[i].match(/^\s*context::\s*(.*)$/i);
+        const beat = lines[i].match(/^\s*-\s+(.*)$/);
+        if (context) contexts.push(context[1].trim());
+        else if (beat) beats.push(beat[1].trim());
+        i++;
+      }
+      currentParentList().push(mkBlock({ kind: 'plot-points', content: 'Plot Points', beats, contexts }));
+      continue;
+    }
     const codeFence = line.match(/^```\s*([A-Za-z0-9_+#.-]*)\s*$/);
     if (codeFence) {
       flushPara(); bulletStack = [];
@@ -260,6 +278,11 @@ function mnBlocksToMd(blocks, depth = 0) {
       out.push('```' + language + '\n' + b.content + '\n```');
     } else if (b.kind === 'table') {
       out.push(b.content);
+    } else if (b.kind === 'plot-points') {
+      out.push('::: plot-points');
+      (b.beats && b.beats.length ? b.beats : ['']).forEach(beat => out.push('- ' + String(beat || '')));
+      (b.contexts || []).forEach(context => out.push('  - context:: ' + String(context || '')));
+      out.push(':::');
     } else if (b.kind === 'bullet' || b.kind === 'todo') {
       const pad = '  '.repeat(depth);
       const chk = b.kind === 'todo' ? (b.checked ? '[x] ' : '[ ] ') : '';
@@ -306,6 +329,9 @@ function mnCloneBlocks(blocks) {
     ...b,
     annotations: (b.annotations || []).map(a => ({ ...a })),
     labels: mnNormalizeBlockLabels(b.labels || []).map(label => ({ ...label })),
+    beats: Array.isArray(b.beats) ? [...b.beats] : [],
+    contexts: Array.isArray(b.contexts) ? [...b.contexts] : [],
+    hidden: !!b.hidden,
     children: mnCloneBlocks(b.children || []),
   }));
 }

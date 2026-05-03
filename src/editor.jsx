@@ -65,7 +65,7 @@ function MnEditor({
   onToggleNoteList, noteListHidden,
   editorWidth = 'medium', fontSize = 'default',
   indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
-  novelistPath = null,
+  novelistPath = null, novelistMode = false,
   workflowStates = [], workflowStatus = '', onSetWorkflowStatus,
   theme, T,
 }) {
@@ -564,6 +564,7 @@ function MnEditor({
             spellCheck={spellCheck}
             autoLink={autoLink}
             collapseByDefault={collapseByDefault}
+            novelistMode={novelistMode}
             T={T}
           />
 

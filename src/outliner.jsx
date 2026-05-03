@@ -551,6 +551,10 @@ const MN_SLASH_CMDS = [
   { id: 'ai-write-section', label: 'AI: Write in this section', hint: 'Preview generated text before applying', kbd: '/ai write', icon: '+', aiAction: 'write', aiScope: 'section' },
 ];
 
+const MN_NOVELIST_SLASH_CMDS = [
+  { id: 'plot-points', label: 'Plot Points', hint: 'Scene beats and context', kbd: '/plot points', icon: '~', kind: 'plot-points', content: 'Plot Points', beats: ['Opening beat'], contexts: [] },
+];
+
 function mnWorkflowSlashCommands() {
   const states = window.MN_LOGSEQ?.WORKFLOW_STATES || [];
   return states.map(state => ({
@@ -563,8 +567,12 @@ function mnWorkflowSlashCommands() {
   }));
 }
 
-function mnSlashCommands() {
-  return [...MN_SLASH_CMDS, ...mnWorkflowSlashCommands()];
+function mnSlashCommands(options = {}) {
+  return [
+    ...MN_SLASH_CMDS,
+    ...(options.novelistMode ? MN_NOVELIST_SLASH_CMDS : []),
+    ...mnWorkflowSlashCommands(),
+  ];
 }
 
 function mnFindSlashCommandTrigger(text, cursor) {
@@ -799,6 +807,7 @@ function MnBlockRow({
   autoLink = true,
   collapseByDefault = false,
   parseClipboardBlocks,
+  novelistMode = false,
 }) {
   const [editing, setEditing] = useStateOE(focusId === block.id);
   const [autoQ, setAutoQ] = useStateOE(null);   // wiki autocomplete query
@@ -888,12 +897,12 @@ function MnBlockRow({
 
   const slashMatches = useMemoOE(() => {
     if (slashQ == null) return [];
-    return mnSlashCommands()
+    return mnSlashCommands({ novelistMode })
       .map((cmd, index) => ({ cmd, index, score: mnSlashCommandScore(cmd, slashQ.query) }))
       .filter(x => x.score !== Infinity)
       .sort((a, b) => a.score - b.score || a.index - b.index)
       .map(x => x.cmd);
-  }, [slashQ]);
+  }, [slashQ, novelistMode]);
 
   const wikiSuggestions = useMemoOE(() => {
     if (!autoLink) return [];
@@ -1248,6 +1257,8 @@ function MnBlockRow({
         checked: cmd.checked != null ? cmd.checked : null,
         content: cleanContent || cmd.content || '',
         language: '',
+        beats: cmd.beats || block.beats || [],
+        contexts: cmd.contexts || block.contexts || [],
         collapsed: collapseByDefault && cmd.kind === 'heading',
       });
     } else if (cmd.workflow !== undefined) {
@@ -1312,6 +1323,20 @@ function MnBlockRow({
 
   // ── visual params per kind ──────────────────────────────────────
   const fontStyle = mnGetFontStyle(block, T, editorFontSize);
+
+  if (block.kind === 'plot-points') {
+    return (
+      <MnPlotPointsBlock
+        block={block}
+        depth={depth}
+        T={T}
+        indentPx={indentPx}
+        onChangeKind={onChangeKind}
+        onDelete={onDelete}
+        onAiAction={onAiAction}
+      />
+    );
+  }
 
   // ── special render: divider ────────────────────────────────────
   if (block.kind === 'divider') {
@@ -1851,6 +1876,130 @@ function MnBlockRow({
   );
 }
 
+function MnPlotPointsBlock({ block, depth, T, indentPx, onChangeKind, onDelete, onAiAction }) {
+  const beats = Array.isArray(block.beats) && block.beats.length ? block.beats : [''];
+  const contexts = Array.isArray(block.contexts) ? block.contexts : [];
+  const updateBeat = (index, value) => {
+    const next = [...beats];
+    next[index] = value;
+    onChangeKind(block.id, { beats: next });
+  };
+  const removeBeat = (index) => {
+    const next = beats.filter((_, i) => i !== index);
+    onChangeKind(block.id, { beats: next.length ? next : [''] });
+  };
+  return (
+    <div
+      className="mn-block-row mn-plot-points"
+      data-block-id={block.id}
+      style={{ paddingLeft: indentPx, marginTop: 10, position: 'relative' }}>
+      <div style={{ width: 18, flexShrink: 0 }} />
+      <div style={{
+        flex: 1,
+        border: `1px solid ${T.lineSub}`,
+        borderRadius: 8,
+        background: T.bgSub,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '9px 10px',
+          borderBottom: block.hidden ? 'none' : `1px solid ${T.lineSub}`,
+          fontFamily: 'var(--mn-mono)',
+          fontSize: 10,
+          color: T.inkDim,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+            <path d="M1.5 8C3 3.5 5 3.5 6.5 8S10 12.5 11.5 8 14 3.5 15 8" strokeLinecap="round"/>
+          </svg>
+          <span style={{ color: T.ink }}>PLOT POINTS</span>
+          <span style={{ opacity: 0.75 }}>Depth {depth}</span>
+          <div style={{ flex: 1 }} />
+          <button onClick={() => onChangeKind(block.id, { hidden: !block.hidden })} style={mnTinyIconButton(T)}>{block.hidden ? 'Show' : 'Hide'}</button>
+          <button onClick={() => onAiAction?.('summarize', 'section', { blockId: block.id })} style={mnTinyIconButton(T)}>Summarize</button>
+          <button onClick={() => onAiAction?.('write', 'section', { blockId: block.id })} style={mnTinyIconButton(T)}>Write Scene</button>
+          <button onClick={() => onAiAction?.('improve', 'section', { blockId: block.id })} style={mnTinyIconButton(T)}>Improve</button>
+          <button onClick={() => onDelete(block.id)} style={{ ...mnTinyIconButton(T), color: T.danger || T.warn }}>x</button>
+        </div>
+        {!block.hidden && (
+          <div style={{ display: 'grid', gap: 7, padding: 10 }}>
+            {beats.map((beat, index) => (
+              <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ width: 6, height: 6, borderRadius: 999, background: T.accent, flexShrink: 0 }} />
+                <input
+                  value={beat}
+                  onChange={(e) => updateBeat(index, e.target.value)}
+                  placeholder="Scene beat"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    border: `1px solid ${T.lineSub}`,
+                    borderRadius: 6,
+                    background: T.bg,
+                    color: T.ink,
+                    padding: '6px 8px',
+                    fontFamily: 'var(--mn-ui)',
+                    fontSize: 12.5,
+                    outline: 'none',
+                  }}
+                />
+                <button onClick={() => removeBeat(index)} style={mnTinyIconButton(T)}>Remove beat</button>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+              <button onClick={() => onChangeKind(block.id, { beats: [...beats, ''] })} style={mnTinyIconButton(T)}>Add beat</button>
+              <button onClick={() => onChangeKind(block.id, { contexts: [...contexts, '[[Context note]]'] })} style={mnTinyIconButton(T)}>Add context</button>
+            </div>
+            {contexts.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {contexts.map((context, index) => (
+                  <input
+                    key={index}
+                    value={context}
+                    onChange={(e) => {
+                      const next = [...contexts];
+                      next[index] = e.target.value;
+                      onChangeKind(block.id, { contexts: next });
+                    }}
+                    style={{
+                      border: `1px solid ${T.lineSub}`,
+                      borderRadius: 999,
+                      background: T.bg,
+                      color: T.inkMed,
+                      padding: '4px 9px',
+                      fontFamily: 'var(--mn-mono)',
+                      fontSize: 10.5,
+                      outline: 'none',
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function mnTinyIconButton(T) {
+  return {
+    minHeight: 23,
+    borderRadius: 5,
+    border: `1px solid ${T.lineSub}`,
+    background: T.bg,
+    color: T.inkMed,
+    cursor: 'pointer',
+    padding: '3px 7px',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 11,
+  };
+}
+
 function MnInlineAiButton({ block, T, onAiAction }) {
   return (
     <button
@@ -2321,7 +2470,7 @@ function MnOutlineTree({ blocks, depth, ...handlers }) {
 function MnOutliner({
   blocks, setBlocks, allNotes, allCanvases = [], onOpen, onTagClick, onOpenCanvas, onCreateCanvas, T, zoomBlockId,
   onZoomBlock, onShowToast, noteTitle, noteTags = [], vaultId = '', fontSize,
-  indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
+  indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false, novelistMode = false,
 }) {
   const [focusId, setFocusId] = useStateOE(null);
   const [selection, setSelection] = useStateOE(null); // { blockId, start, end, rect }
@@ -3075,11 +3224,16 @@ function MnOutliner({
 
   const requestAiEdit = async (actionId, scope, sourceText, instructionOverride) => {
     const action = mnAiAction(actionId);
+    const novelConfig = readNovelistAiConfig();
+    const maxTokens = Number(novelConfig?.advanced?.maxTokens);
     if (!window.mn?.ai?.edit) throw new Error('AI editing is not available');
     const res = await window.mn.ai.edit({
       text: sourceText,
       instruction: instructionOverride || action.instruction,
       scope,
+      systemMessage: novelConfig?.systemMessage || '',
+      model: novelConfig?.model || '',
+      maxTokens: Number.isFinite(maxTokens) ? maxTokens : null,
     });
     if (!res.ok) throw new Error(res.error || 'AI edit failed');
     if (res.value && !res.value.ok) throw new Error(res.value.error || 'AI edit failed');
@@ -3093,6 +3247,13 @@ function MnOutliner({
     return {
       wordLimit: config.wordLimit,
       defaultPromptId: config.defaultPromptId,
+      model: config.model || '',
+      systemMessage: config.systemMessage || '',
+      userMessage: config.userMessage || '',
+      instructions: config.instructions || '',
+      additionalContext: config.additionalContext || '',
+      includedComponents: config.includedComponents || {},
+      advanced: config.advanced || {},
       prompts: Array.isArray(config.prompts) ? config.prompts : [],
     };
   };
@@ -3104,6 +3265,9 @@ function MnOutliner({
     return [
       novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
       activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
+      novelConfig?.instructions ? `Vault instructions:\n${novelConfig.instructions}` : null,
+      novelConfig?.additionalContext ? `Additional context:\n${novelConfig.additionalContext}` : null,
+      novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
       mnAiAction('write').instruction,
       `User request: ${userRequest}`,
       sourceText?.trim()
@@ -3312,6 +3476,7 @@ function MnOutliner({
     spellCheck,
     autoLink,
     collapseByDefault,
+    novelistMode,
     parseClipboardBlocks,
   };
 

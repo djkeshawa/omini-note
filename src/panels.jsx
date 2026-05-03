@@ -262,11 +262,17 @@ function SectionHead({ label, count, T }) {
   );
 }
 
-const MN_NOVELIST_AI_CONFIG_KEY = 'mn_novelist_ai_config_v1';
+const MN_NOVELIST_AI_CONFIG_KEY = 'mn_novelist_ai_config_v2';
+const MN_NOVELIST_AI_CONFIG_LEGACY_KEY = 'mn_novelist_ai_config_v1';
 
 function mnNovelistAiConfigKey(vaultId = '') {
   const cleanVaultId = String(vaultId || '').trim();
   return cleanVaultId ? `${MN_NOVELIST_AI_CONFIG_KEY}:${cleanVaultId}` : MN_NOVELIST_AI_CONFIG_KEY;
+}
+
+function mnNovelistLegacyAiConfigKey(vaultId = '') {
+  const cleanVaultId = String(vaultId || '').trim();
+  return cleanVaultId ? `${MN_NOVELIST_AI_CONFIG_LEGACY_KEY}:${cleanVaultId}` : MN_NOVELIST_AI_CONFIG_LEGACY_KEY;
 }
 
 function mnDefaultNovelistAiPrompts() {
@@ -290,11 +296,45 @@ function mnDefaultNovelistAiPrompts() {
 }
 
 function mnNormalizeNovelistAiConfig(raw) {
-  const defaults = { wordLimit: 800, prompts: mnDefaultNovelistAiPrompts() };
+  const defaults = {
+    version: 2,
+    preset: 'Balanced draft',
+    modelCollections: [
+      { id: 'local', name: 'Local', models: ['gemma3', 'llama3.1', 'mistral'] },
+      { id: 'cloud', name: 'Cloud', models: ['gpt-4o-mini', 'openai/gpt-4o-mini', 'claude-3-5-haiku-latest'] },
+    ],
+    activeModelCollectionId: 'local',
+    model: '',
+    promptType: 'draft',
+    moderation: true,
+    wordLimit: 800,
+    instructions: '',
+    additionalContext: '',
+    includedComponents: { plotPoints: true, selectedContext: true, noteBody: true, storyStructure: true },
+    systemMessage: 'You are a careful novelist assistant. Preserve continuity, point of view, tense, and established character voices.',
+    userMessage: 'Use the current scene, plot points, and selected context to help draft or revise the novel text.',
+    advanced: { temperature: '', maxTokens: '' },
+    prompts: mnDefaultNovelistAiPrompts(),
+  };
   const parsedLimit = Number(raw?.wordLimit);
   const wordLimit = Number.isFinite(parsedLimit)
     ? Math.min(12000, Math.max(100, Math.round(parsedLimit)))
     : defaults.wordLimit;
+  const included = raw?.includedComponents && typeof raw.includedComponents === 'object'
+    ? { ...defaults.includedComponents, ...raw.includedComponents }
+    : defaults.includedComponents;
+  const advanced = raw?.advanced && typeof raw.advanced === 'object'
+    ? { ...defaults.advanced, ...raw.advanced }
+    : defaults.advanced;
+  const modelCollections = Array.isArray(raw?.modelCollections) && raw.modelCollections.length
+    ? raw.modelCollections.map((collection, index) => ({
+      id: String(collection?.id || `collection-${index + 1}`),
+      name: String(collection?.name || `Collection ${index + 1}`),
+      models: Array.isArray(collection?.models)
+        ? collection.models.map(model => String(model || '').trim()).filter(Boolean).slice(0, 24)
+        : [],
+    })).slice(0, 8)
+    : defaults.modelCollections;
   const sourcePrompts = Array.isArray(raw?.prompts) ? raw.prompts : defaults.prompts;
   const prompts = sourcePrompts
     .map((item, index) => ({
@@ -307,14 +347,33 @@ function mnNormalizeNovelistAiConfig(raw) {
   const defaultPromptId = prompts.some(item => item.id === requestedDefault)
     ? requestedDefault
     : prompts[0]?.id || '';
-  return { wordLimit, defaultPromptId, prompts };
+  return {
+    version: 2,
+    preset: String(raw?.preset || defaults.preset),
+    modelCollections,
+    activeModelCollectionId: String(raw?.activeModelCollectionId || modelCollections[0]?.id || ''),
+    model: String(raw?.model || ''),
+    promptType: String(raw?.promptType || 'draft'),
+    moderation: raw?.moderation === false ? false : true,
+    wordLimit,
+    instructions: String(raw?.instructions ?? ''),
+    additionalContext: String(raw?.additionalContext ?? ''),
+    includedComponents: included,
+    systemMessage: String(raw?.systemMessage || defaults.systemMessage),
+    userMessage: String(raw?.userMessage || defaults.userMessage),
+    advanced,
+    defaultPromptId,
+    prompts,
+  };
 }
 
 function mnReadNovelistAiConfig(vaultId = '') {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return mnNormalizeNovelistAiConfig(null);
     const raw = window.localStorage.getItem(mnNovelistAiConfigKey(vaultId));
-    return mnNormalizeNovelistAiConfig(raw ? JSON.parse(raw) : null);
+    if (raw) return mnNormalizeNovelistAiConfig(JSON.parse(raw));
+    const legacy = window.localStorage.getItem(mnNovelistLegacyAiConfigKey(vaultId));
+    return mnNormalizeNovelistAiConfig(legacy ? JSON.parse(legacy) : null);
   } catch {
     return mnNormalizeNovelistAiConfig(null);
   }
@@ -344,6 +403,7 @@ function MnNovelistPanel({
 }) {
   const [linkMenu, setLinkMenu] = useStateP(null);
   const [createMenu, setCreateMenu] = useStateP(null);
+  const [activeTab, setActiveTab] = useStateP('plan');
   const [addingSupportType, setAddingSupportType] = useStateP(false);
   const [supportTypeDraft, setSupportTypeDraft] = useStateP('');
   const [collapsed, setCollapsed] = useStateP({});
@@ -383,16 +443,14 @@ function MnNovelistPanel({
   }, [editDialog]);
   const novelNotes = novelistNotes || (notes || []).filter(n => (n.tags || []).some(t => t.startsWith('novel-')));
   const byTag = (tag) => novelNotes.filter(n => (n.tags || []).includes(tag));
-  const arcs = novelistStructure?.arcs || byTag('novel-arc');
+  const acts = novelistStructure?.acts || byTag('novel-act');
   const chapters = novelistStructure?.chapters || byTag('novel-chapter');
   const scenes = novelistStructure?.scenes || byTag('novel-scene');
-  const manuscripts = novelistStructure?.manuscripts || byTag('novel-manuscript');
-  const manuscript = novelistStructure?.manuscript || manuscripts[0] || null;
-  const childrenByArcId = novelistStructure?.childrenByArcId || {};
+  const childrenByActId = novelistStructure?.childrenByActId || {};
   const childrenByChapterId = novelistStructure?.childrenByChapterId || {};
   const parentByChapterId = novelistStructure?.parentByChapterId || {};
   const parentBySceneId = novelistStructure?.parentBySceneId || {};
-  const structureTagNames = new Set(['novel-manuscript', 'novel-arc', 'novel-chapter', 'novel-scene']);
+  const structureTagNames = new Set(['novel-act', 'novel-chapter', 'novel-scene']);
   const supportTypeDefaults = {
     'novel-character': {
       label: 'Character',
@@ -478,10 +536,10 @@ function MnNovelistPanel({
       const ordered = items.map(readOrder).filter(value => value != null);
       return ordered.length ? Math.max(...ordered) + step : base + step;
     };
-    if (kind === 'arc') return values(arcs, 100, 0);
+    if (kind === 'act') return values(acts, 100, 0);
     if (kind === 'chapter') {
       const base = readOrder(parent) ?? 100;
-      return values(parent ? childrenForArc(parent) : chapters, 10, base);
+      return values(parent ? childrenForAct(parent) : chapters, 10, base);
     }
     const base = readOrder(parent) ?? 100;
     return values(parent ? childrenForChapter(parent) : scenes, 1, base);
@@ -492,9 +550,9 @@ function MnNovelistPanel({
     return body;
   };
   const createTemplate = (template, e) => {
-    if ((template.tags || []).includes('novel-chapter') && arcs.length) {
-      if (arcs.length === 1) {
-        createChapterForArc(arcs[0]);
+    if ((template.tags || []).includes('novel-chapter') && acts.length) {
+      if (acts.length === 1) {
+        createChapterForAct(acts[0]);
         return;
       }
       setCreateMenu({ type: 'chapter', x: e?.clientX || 0, y: e?.clientY || 0 });
@@ -509,45 +567,45 @@ function MnNovelistPanel({
       return;
     }
     const title = uniqueTitle(template.title);
-    const order = (template.tags || []).includes('novel-arc') ? nextOrder('arc') : null;
+    const order = (template.tags || []).includes('novel-act') ? nextOrder('act') : null;
     onCreateNote && onCreateNote({ ...template, title, body: bodyWithTitleAndOrder(template, title, order) });
   };
-  const createChapterForArc = (arc) => {
-    if (!arc) return;
-    const title = uniqueTitle(`${arc.title || 'Arc'} Chapter`);
-    const body = `status:: OUTLINE\norder:: ${nextOrder('chapter', arc)}\narc:: [[${arc.title || 'Arc'}]]\n## Scenes\n- Chapter goal\n- Scene list\n- Revision notes`;
+  const createChapterForAct = (act) => {
+    if (!act) return;
+    const title = uniqueTitle(`${act.title || 'Act'} Chapter`);
+    const body = `status:: OUTLINE\norder:: ${nextOrder('chapter', act)}\nact:: [[${act.title || 'Act'}]]\n## Scenes\n- Chapter goal\n- Scene list\n- Revision notes`;
     const id = onCreateNote?.({ title, body, tags: ['novel-chapter'] });
-    if (id) onLinkChapter?.(arc.id, id, title);
-    showLinkNotice(`Created and linked ${title} to ${arc.title || 'arc'}`, arc.id);
+    if (id) onLinkChapter?.(act.id, id, title);
+    showLinkNotice(`Created and linked ${title} to ${act.title || 'act'}`, act.id);
   };
   const createSceneForChapter = (chapter) => {
     if (!chapter) return;
-    const arc = (notes || []).find(note => note.id === parentByChapterId[chapter.id]);
+    const act = (notes || []).find(note => note.id === parentByChapterId[chapter.id]);
     const title = uniqueTitle(`${chapter.title || 'Chapter'} Scene`);
-    const body = `status:: DRAFT\norder:: ${nextOrder('scene', chapter)}\n${arc ? `arc:: [[${arc.title}]]\n` : ''}chapter:: [[${chapter.title || 'Chapter'}]]\npov:: \nsetting:: \npurpose:: \nDraft the scene here.`;
+    const body = `status:: DRAFT\norder:: ${nextOrder('scene', chapter)}\n${act ? `act:: [[${act.title}]]\n` : ''}chapter:: [[${chapter.title || 'Chapter'}]]\npov:: \nsetting:: \npurpose:: \n::: plot-points\n- Opening beat\n:::\nDraft the scene here.`;
     const id = onCreateNote?.({ title, body, tags: ['novel-scene'] });
     if (id) onLinkScene?.(chapter.id, id, title);
     showLinkNotice(`Created and linked ${title} to ${chapter.title || 'chapter'}`, chapter.id);
   };
-  const createSceneForArc = (arc) => {
-    const chaptersForThisArc = childrenForArc(arc);
+  const createSceneForAct = (act) => {
+    const chaptersForThisArc = childrenForAct(act);
     if (chaptersForThisArc[0]) {
       createSceneForChapter(chaptersForThisArc[0]);
       return;
     }
-    const chapterTitle = uniqueTitle(`${arc.title || 'Arc'} Chapter`);
+    const chapterTitle = uniqueTitle(`${act.title || 'Act'} Chapter`);
     const sceneTitle = uniqueTitle(`${chapterTitle} Scene`);
-    const chapterBody = `status:: OUTLINE\norder:: ${nextOrder('chapter', arc)}\narc:: [[${arc.title || 'Arc'}]]\n## Scenes\n- [[${sceneTitle}]]`;
+    const chapterBody = `status:: OUTLINE\norder:: ${nextOrder('chapter', act)}\nact:: [[${act.title || 'Act'}]]\n## Scenes\n- [[${sceneTitle}]]`;
     const chapterId = onCreateNote?.({ title: chapterTitle, body: chapterBody, tags: ['novel-chapter'] });
     if (!chapterId) return;
-    onLinkChapter?.(arc.id, chapterId, chapterTitle);
-    const sceneBody = `status:: DRAFT\norder:: ${nextOrder('scene', { id: chapterId, title: chapterTitle, body: chapterBody })}\narc:: [[${arc.title || 'Arc'}]]\nchapter:: [[${chapterTitle}]]\npov:: \nsetting:: \npurpose:: \nDraft the scene here.`;
+    onLinkChapter?.(act.id, chapterId, chapterTitle);
+    const sceneBody = `status:: DRAFT\norder:: ${nextOrder('scene', { id: chapterId, title: chapterTitle, body: chapterBody })}\nact:: [[${act.title || 'Act'}]]\nchapter:: [[${chapterTitle}]]\npov:: \nsetting:: \npurpose:: \n::: plot-points\n- Opening beat\n:::\nDraft the scene here.`;
     onCreateNote?.({ title: sceneTitle, body: sceneBody, tags: ['novel-scene'] });
   };
-  const createParentArcForChapter = (chapter) => {
-    const title = uniqueTitle(`${chapter.title || 'Chapter'} Arc`);
-    const body = `status:: OUTLINE\norder:: ${nextOrder('arc')}\npurpose:: \n## Chapters`;
-    const id = onCreateNote?.({ title, body, tags: ['novel-arc'] });
+  const createParentActForChapter = (chapter) => {
+    const title = uniqueTitle(`${chapter.title || 'Chapter'} Act`);
+    const body = `status:: OUTLINE\norder:: ${nextOrder('act')}\npurpose:: \n## Chapters`;
+    const id = onCreateNote?.({ title, body, tags: ['novel-act'] });
     if (id) onLinkChapter?.(id, chapter.id, chapter.title);
   };
   const createParentChapterForScene = (scene) => {
@@ -590,10 +648,9 @@ function MnNovelistPanel({
   };
 
   const templates = [
-    { title: 'Manuscript', tags: ['novel-manuscript'], body: 'status:: OUTLINE\norder:: 0\n## Arcs' },
-    { title: 'Arc', tags: ['novel-arc'], body: 'status:: OUTLINE\norder:: \npurpose:: \n## Chapters' },
-    { title: 'Chapter', tags: ['novel-chapter'], body: 'status:: OUTLINE\norder:: \narc:: \n## Scenes' },
-    { title: 'Scene', tags: ['novel-scene'], body: 'status:: DRAFT\norder:: \nchapter:: \npov:: \nsetting:: \npurpose:: \nDraft the scene here.' },
+    { title: 'Act', tags: ['novel-act'], body: 'status:: OUTLINE\norder:: \npurpose:: \n## Chapters' },
+    { title: 'Chapter', tags: ['novel-chapter'], body: 'status:: OUTLINE\norder:: \nact:: \n## Scenes' },
+    { title: 'Scene', tags: ['novel-scene'], body: 'status:: DRAFT\norder:: \nchapter:: \npov:: \nsetting:: \npurpose:: \n::: plot-points\n- Opening beat\n:::\nDraft the scene here.' },
     ...supportingTypes.map(type => ({ title: type.label, tags: [type.tag], body: type.body })),
   ];
   const updateAiConfig = (updater) => {
@@ -639,15 +696,15 @@ function MnNovelistPanel({
     }));
   };
   const noteById = new Map((notes || []).map(note => [note.id, note]));
-  const childrenForArc = (arc) => (childrenByArcId[arc.id] || []).map(id => noteById.get(id)).filter(Boolean);
+  const childrenForAct = (act) => (childrenByActId[act.id] || []).map(id => noteById.get(id)).filter(Boolean);
   const childrenForChapter = (chapter) => (childrenByChapterId[chapter.id] || []).map(id => noteById.get(id)).filter(Boolean);
   const unlinkedChapters = chapters.filter(chapter => !parentByChapterId[chapter.id]);
   const unlinkedScenes = scenes.filter(scene => !parentBySceneId[scene.id]);
   const isNonStructureNovel = (note) => (note?.tags || []).some(tag =>
     tag.startsWith('novel-') && !['novel-chapter', 'novel-scene'].includes(tag)
   );
-  const chapterCandidatesForArc = (arc) => (notes || []).filter(note =>
-    note.id !== arc.id &&
+  const chapterCandidatesForAct = (act) => (notes || []).filter(note =>
+    note.id !== act.id &&
     !parentByChapterId[note.id] &&
     !parentBySceneId[note.id] &&
     !isNonStructureNovel(note) &&
@@ -659,11 +716,11 @@ function MnNovelistPanel({
     !isNonStructureNovel(note) &&
     !(note.tags || []).includes('novel-chapter')
   );
-  const arcForChapter = (chapter) => noteById.get(parentByChapterId[chapter?.id]);
+  const actForChapter = (chapter) => noteById.get(parentByChapterId[chapter?.id]);
   const chapterForScene = (scene) => noteById.get(parentBySceneId[scene?.id]);
-  const arcForScene = (scene) => {
+  const actForScene = (scene) => {
     const chapter = chapterForScene(scene);
-    return chapter ? arcForChapter(chapter) : null;
+    return chapter ? actForChapter(chapter) : null;
   };
   const showLinkNotice = (text, parentId = null) => {
     setLinkNotice({ text, parentId, at: Date.now() });
@@ -891,7 +948,7 @@ function MnNovelistPanel({
               e.stopPropagation();
               if (type === 'chapter') {
                 onLinkChapter?.(parent.id, candidate.id, candidate.title);
-                showLinkNotice(`Linked ${candidate.title || 'chapter'} to ${parent.title || 'arc'}`, parent.id);
+                showLinkNotice(`Linked ${candidate.title || 'chapter'} to ${parent.title || 'act'}`, parent.id);
               } else {
                 onLinkScene?.(parent.id, candidate.id, candidate.title);
                 showLinkNotice(`Linked ${candidate.title || 'scene'} to ${parent.title || 'chapter'}`, parent.id);
@@ -924,7 +981,7 @@ function MnNovelistPanel({
     if (!linkMenu?.type?.startsWith('attach-')) return null;
     const isChapter = linkMenu.type === 'attach-chapter';
     const child = noteById.get(linkMenu.childId);
-    const parents = isChapter ? arcs : chapters;
+    const parents = isChapter ? acts : chapters;
     return (
       <div
         onClick={(e) => e.stopPropagation()}
@@ -965,7 +1022,7 @@ function MnNovelistPanel({
         ))}
         {!parents.length && (
           <div style={{ padding: 10, color: T.inkDim, fontFamily: 'var(--mn-ui)', fontSize: 12 }}>
-            No {isChapter ? 'arcs' : 'chapters'} available
+            No {isChapter ? 'acts' : 'chapters'} available
           </div>
         )}
       </div>
@@ -1026,7 +1083,7 @@ function MnNovelistPanel({
         note={scene}
         label="Scene"
         linkedTo={chapterForScene(scene)}
-        extraParent={arcForScene(scene)}
+        extraParent={actForScene(scene)}
         depth={2}
       />
     </div>
@@ -1039,8 +1096,16 @@ function MnNovelistPanel({
       <div
         onContextMenu={(e) => openNoteMenu(e, chapter)}
         style={{
-          borderTop: `1px solid ${T.lineSub}`,
-          padding: '8px 0 0 18px',
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 7,
+          background: T.bgSub,
+          padding: 10,
+          height: 220,
+          minHeight: 220,
+          display: 'flex',
+          flexDirection: 'column',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
         }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
           <ToggleButton
@@ -1050,16 +1115,18 @@ function MnNovelistPanel({
           <StructureNoteButton
             note={chapter}
             label="Chapter"
-            linkedTo={arcForChapter(chapter)}
+            linkedTo={actForChapter(chapter)}
             count={scenesForThisChapter.length}
             depth={1}
           />
         </div>
         {!isCollapsed && (
-          <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
+          <div style={{ display: 'grid', gap: 7, marginTop: 8, minHeight: 0, flex: 1 }}>
+            <div style={{ display: 'grid', gap: 7, overflowY: 'auto', minHeight: 0, paddingRight: 2 }}>
             {scenesForThisChapter.length
               ? scenesForThisChapter.map(scene => <SceneRow key={scene.id} scene={scene} />)
               : <div style={{ paddingLeft: 32 }}><InlineEmpty>No scenes linked</InlineEmpty></div>}
+            </div>
             <div style={{ paddingLeft: 32 }}>
               <StructureActions
                 parent={chapter}
@@ -1074,12 +1141,12 @@ function MnNovelistPanel({
     );
   };
 
-  const ArcRow = ({ arc }) => {
-    const chaptersForThisArc = childrenForArc(arc);
-    const isCollapsed = collapsed[arc.id] === true;
+  const ActRow = ({ act }) => {
+    const chaptersForThisArc = childrenForAct(act);
+    const isCollapsed = collapsed[act.id] === true;
     return (
       <div
-        onContextMenu={(e) => openNoteMenu(e, arc)}
+        onContextMenu={(e) => openNoteMenu(e, act)}
         style={{
           border: `1px solid ${T.lineSub}`,
           borderRadius: 8,
@@ -1089,26 +1156,28 @@ function MnNovelistPanel({
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
           <ToggleButton
             expanded={!isCollapsed}
-            onClick={(e) => { e.stopPropagation(); setCollapsed(c => ({ ...c, [arc.id]: !isCollapsed })); }}
+            onClick={(e) => { e.stopPropagation(); setCollapsed(c => ({ ...c, [act.id]: !isCollapsed })); }}
           />
           <StructureNoteButton
-            note={arc}
-            label="Arc"
+            note={act}
+            label="Act"
             count={chaptersForThisArc.length}
           />
         </div>
         {!isCollapsed && (
           <div style={{ display: 'grid', gap: 8, marginTop: 9 }}>
             {chaptersForThisArc.length
-              ? chaptersForThisArc.map(chapter => <ChapterRow key={chapter.id} chapter={chapter} />)
+              ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8 }}>
+                  {chaptersForThisArc.map(chapter => <ChapterRow key={chapter.id} chapter={chapter} />)}
+                </div>
               : <div style={{ paddingLeft: 33 }}><InlineEmpty>No chapters linked</InlineEmpty></div>}
             <div style={{ paddingLeft: 33 }}>
               <StructureActions
-                parent={arc}
+                parent={act}
                 type="chapter"
-                onAdd={createChapterForArc}
-                onAddScene={createSceneForArc}
-                candidates={chapterCandidatesForArc(arc)}
+                onAdd={createChapterForAct}
+                onAddScene={createSceneForAct}
+                candidates={chapterCandidatesForAct(act)}
               />
             </div>
           </div>
@@ -1116,23 +1185,6 @@ function MnNovelistPanel({
       </div>
     );
   };
-
-  const ManuscriptRoot = ({ note }) => (
-    <div style={{
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: 9,
-      padding: '4px 0 10px',
-      borderBottom: `1px solid ${T.lineSub}`,
-      marginBottom: 10,
-    }}>
-      <StructureNoteButton
-        note={note}
-        label="Manuscript"
-        count={arcs.length}
-      />
-    </div>
-  );
 
   const LooseStructureSection = ({ title, items, empty, render }) => (
     <div style={{
@@ -1174,56 +1226,239 @@ function MnNovelistPanel({
     </div>
   );
 
+  const plainNoteText = (note) => String(note?.body || '')
+    .replace(/::: plot-points[\s\S]*?:::/g, ' ')
+    .split('\n')
+    .filter(line => !/^\s*-?\s*[a-zA-Z][a-zA-Z0-9_-]*::\s*/.test(line))
+    .join(' ')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    .replace(/[#*_`>|-]/g, ' ');
+  const wordCountForNote = (note) => plainNoteText(note).trim().split(/\s+/).filter(Boolean).length;
+  const statusForNote = (note) => String((typeof mnBodyPropertyValue === 'function' ? mnBodyPropertyValue(note?.body || '', 'status') : '') || '').trim().toUpperCase() || 'NONE';
+  const statRows = acts.map(act => {
+    const actChapters = childrenForAct(act);
+    const actScenes = actChapters.flatMap(chapter => childrenForChapter(chapter));
+    return {
+      act,
+      chapters: actChapters,
+      scenes: actScenes,
+      words: wordCountForNote(act) + actChapters.reduce((sum, chapter) => sum + wordCountForNote(chapter), 0) + actScenes.reduce((sum, scene) => sum + wordCountForNote(scene), 0),
+    };
+  });
+  const totalDraftWords = [...acts, ...chapters, ...scenes].reduce((sum, note) => sum + wordCountForNote(note), 0);
+  const averageWordsPerScene = scenes.length ? Math.round(scenes.reduce((sum, scene) => sum + wordCountForNote(scene), 0) / scenes.length) : 0;
+  const statusCounts = [...acts, ...chapters, ...scenes].reduce((acc, note) => {
+    const key = statusForNote(note);
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const characterNotes = byTag('novel-character');
+  const characterAliases = characterNotes.map(note => {
+    const readProp = (key) => (typeof mnBodyPropertyValue === 'function' ? mnBodyPropertyValue(note.body || '', key) : '')
+      .split(',')
+      .map(value => value.replace(/\[\[([^\]]+)\]\]/g, '$1').trim())
+      .filter(Boolean);
+    const aliases = [...readProp('names'), ...readProp('name'), note.title || 'Untitled']
+      .filter((value, index, arr) => arr.findIndex(item => item.toLowerCase() === value.toLowerCase()) === index);
+    return { note, aliases };
+  });
+  const characterSceneCounts = characterAliases.map(character => ({
+    ...character,
+    sceneCounts: scenes.map(scene => {
+      const haystack = plainNoteText(scene).toLowerCase();
+      return character.aliases.reduce((sum, alias) => {
+        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return sum + ((haystack.match(new RegExp(`\\b${escaped}\\b`, 'gi')) || []).length);
+      }, 0);
+    }),
+  }));
+  const maxCharacterHits = Math.max(1, ...characterSceneCounts.flatMap(row => row.sceneCounts));
+  const completionCoverage = scenes.length
+    ? Math.round((scenes.filter(scene => statusForNote(scene) === 'FINAL').length / scenes.length) * 100)
+    : 0;
+
+  const StatusSection = () => (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+          {[
+            ['Draft words', totalDraftWords],
+            ['Avg words / scene', averageWordsPerScene],
+            ['Unlinked items', unlinkedChapters.length + unlinkedScenes.length],
+            ['Scene completion', `${completionCoverage}%`],
+          ].map(([label, value]) => (
+            <div key={label} style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bgSub, padding: 10 }}>
+              <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase' }}>{label}</div>
+              <div style={{ marginTop: 5, fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 740, color: T.ink }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720, color: T.ink, marginBottom: 10 }}>Word Count by Act</div>
+        <div style={{ display: 'grid', gap: 8 }}>
+          {statRows.map(row => (
+            <div key={row.act.id} style={{ display: 'grid', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontFamily: 'var(--mn-ui)', fontSize: 12.5 }}>
+                <strong style={{ color: T.ink, flex: 1 }}>{row.act.title}</strong>
+                <span style={{ color: T.inkDim }}>{row.words} words</span>
+              </div>
+              <div style={{ height: 7, borderRadius: 999, background: T.bgSub, overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min(100, totalDraftWords ? (row.words / totalDraftWords) * 100 : 0)}%`, height: '100%', background: T.accent }} />
+              </div>
+              {row.chapters.map(chapter => (
+                <div key={chapter.id} style={{ marginLeft: 12, display: 'flex', justifyContent: 'space-between', gap: 10, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+                  <span>{chapter.title}</span>
+                  <span>{wordCountForNote(chapter) + childrenForChapter(chapter).reduce((sum, scene) => sum + wordCountForNote(scene), 0)} words</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {!statRows.length && <InlineEmpty>Create acts to start status tracking.</InlineEmpty>}
+        </div>
+      </section>
+      <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720, color: T.ink, marginBottom: 10 }}>Workflow Status Counts</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
+          {Object.entries(statusCounts).map(([status, count]) => (
+            <div key={status} style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bgSub, padding: 9 }}>
+              <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>{status}</div>
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 20, fontWeight: 700, color: T.ink, marginTop: 4 }}>{count}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720, color: T.ink, marginBottom: 10 }}>Character Appearance Heat Map</div>
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `140px repeat(${Math.max(1, scenes.length)}, 42px)`, gap: 3, alignItems: 'center' }}>
+            <div />
+            {scenes.map(scene => <div key={scene.id} title={scene.title} style={{ fontFamily: 'var(--mn-mono)', fontSize: 9, color: T.inkDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{scene.title}</div>)}
+            {characterSceneCounts.map(row => (
+              <React.Fragment key={row.note.id}>
+                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.note.title}</div>
+                {row.sceneCounts.map((count, index) => (
+                  <div key={`${row.note.id}:${index}`} title={`${count} mention${count === 1 ? '' : 's'}`} style={{
+                    height: 24,
+                    borderRadius: 4,
+                    border: `1px solid ${T.lineSub}`,
+                    background: count ? `color-mix(in oklab, ${T.accent} ${Math.min(85, 18 + (count / maxCharacterHits) * 67)}%, ${T.bgSub})` : T.bgSub,
+                    fontFamily: 'var(--mn-mono)',
+                    fontSize: 10,
+                    color: count ? T.bg : T.inkDim,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>{count || ''}</div>
+                ))}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+        {!characterSceneCounts.length && <div style={{ marginTop: 8 }}><InlineEmpty>Create character notes with names:: aliases to populate the heat map.</InlineEmpty></div>}
+      </section>
+    </div>
+  );
+
   const AiConfigurationSection = () => (
     <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink }}>AI Configuration</div>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink }}>AIconfig</div>
+        <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>v{aiConfig.version || 2}</div>
         <div style={{ flex: 1 }} />
         <button onClick={addAiPrompt} style={mnPanelMiniButton(T)}>+ Prompt</button>
       </div>
-      <label style={{ display: 'grid', gap: 5, marginBottom: 10, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
-        <span>Default word limit</span>
-        <input
-          type="number"
-          min="100"
-          max="12000"
-          step="50"
-          value={aiWordLimitDraft}
-          onChange={(e) => setAiWordLimitDraft(e.target.value)}
-          onBlur={commitAiWordLimit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-          }}
-          style={{
-            width: 150,
-            border: `1px solid ${T.lineSub}`,
-            borderRadius: 6,
-            background: T.bgSub,
-            color: T.ink,
-            padding: '6px 8px',
-            fontFamily: 'var(--mn-ui)',
-            fontSize: 12.5,
-            outline: 'none',
-          }}
-        />
-      </label>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bgSub, padding: 10 }}>
+          <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase', marginBottom: 8 }}>General</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+            <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span>Preset</span>
+              <select value={aiConfig.preset || ''} onChange={(e) => updateAiConfig(current => ({ ...current, preset: e.target.value }))} style={mnPanelInputStyle(T)}>
+                {['Balanced draft', 'Fast outline', 'Line edit', 'Continuity pass'].map(preset => <option key={preset} value={preset}>{preset}</option>)}
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span>Model collection</span>
+              <select value={aiConfig.activeModelCollectionId || ''} onChange={(e) => updateAiConfig(current => ({ ...current, activeModelCollectionId: e.target.value }))} style={mnPanelInputStyle(T)}>
+                {(aiConfig.modelCollections || []).map(collection => <option key={collection.id} value={collection.id}>{collection.name}</option>)}
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span>Model override</span>
+              <input value={aiConfig.model || ''} onChange={(e) => updateAiConfig(current => ({ ...current, model: e.target.value }))} placeholder="Use global AI model" style={mnPanelInputStyle(T)} />
+            </label>
+            <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span>Prompt type</span>
+              <select value={aiConfig.promptType || 'draft'} onChange={(e) => updateAiConfig(current => ({ ...current, promptType: e.target.value }))} style={mnPanelInputStyle(T)}>
+                <option value="draft">Draft</option>
+                <option value="revise">Revise</option>
+                <option value="summarize">Summarize</option>
+                <option value="analyze">Analyze</option>
+              </select>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <input type="checkbox" checked={aiConfig.moderation !== false} onChange={(e) => updateAiConfig(current => ({ ...current, moderation: e.target.checked }))} />
+              <span>Moderation enabled</span>
+            </label>
+          </div>
+        </div>
+        <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bgSub, padding: 10 }}>
+          <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase', marginBottom: 8 }}>Instructions</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span>Words</span>
+              <input type="number" min="100" max="12000" step="50" value={aiWordLimitDraft} onChange={(e) => setAiWordLimitDraft(e.target.value)} onBlur={commitAiWordLimit} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} style={{ ...mnPanelInputStyle(T), width: 150 }} />
+            </label>
+            <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span>Instructions</span>
+              <textarea value={aiConfig.instructions || ''} onChange={(e) => updateAiConfig(current => ({ ...current, instructions: e.target.value }))} rows={3} style={mnPanelTextareaStyle(T)} />
+            </label>
+            <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span>Additional Context</span>
+              <textarea value={aiConfig.additionalContext || ''} onChange={(e) => updateAiConfig(current => ({ ...current, additionalContext: e.target.value }))} rows={3} style={mnPanelTextareaStyle(T)} />
+            </label>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              {Object.keys(aiConfig.includedComponents || {}).map(key => (
+                <label key={key} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                  <input type="checkbox" checked={!!aiConfig.includedComponents?.[key]} onChange={(e) => updateAiConfig(current => ({ ...current, includedComponents: { ...(current.includedComponents || {}), [key]: e.target.checked } }))} />
+                  <span>{key.replace(/([A-Z])/g, ' $1')}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bgSub, padding: 10 }}>
+          <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase', marginBottom: 8 }}>Advanced</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span>System message</span>
+              <textarea value={aiConfig.systemMessage || ''} onChange={(e) => updateAiConfig(current => ({ ...current, systemMessage: e.target.value }))} rows={3} style={mnPanelTextareaStyle(T)} />
+            </label>
+            <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span>User message</span>
+              <textarea value={aiConfig.userMessage || ''} onChange={(e) => updateAiConfig(current => ({ ...current, userMessage: e.target.value }))} rows={3} style={mnPanelTextareaStyle(T)} />
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+              <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+                <span>Temperature</span>
+                <input value={aiConfig.advanced?.temperature || ''} onChange={(e) => updateAiConfig(current => ({ ...current, advanced: { ...(current.advanced || {}), temperature: e.target.value } }))} placeholder="provider default" style={mnPanelInputStyle(T)} />
+              </label>
+              <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+                <span>Max tokens</span>
+                <input value={aiConfig.advanced?.maxTokens || ''} onChange={(e) => updateAiConfig(current => ({ ...current, advanced: { ...(current.advanced || {}), maxTokens: e.target.value } }))} placeholder="provider default" style={mnPanelInputStyle(T)} />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
       {!!(aiConfig.prompts || []).length && (
-        <label style={{ display: 'grid', gap: 5, marginBottom: 10, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+        <label style={{ display: 'grid', gap: 5, margin: '12px 0 10px', fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
           <span>Default writing prompt</span>
           <select
             value={aiConfig.defaultPromptId || ''}
             onChange={(e) => updateAiConfig(current => ({ ...current, defaultPromptId: e.target.value }))}
-            style={{
-              maxWidth: 260,
-              border: `1px solid ${T.lineSub}`,
-              borderRadius: 6,
-              background: T.bgSub,
-              color: T.ink,
-              padding: '6px 8px',
-              fontFamily: 'var(--mn-ui)',
-              fontSize: 12.5,
-              outline: 'none',
-            }}>
+            style={{ ...mnPanelInputStyle(T), maxWidth: 260 }}>
             {(aiConfig.prompts || []).map(prompt => (
               <option key={prompt.id} value={prompt.id}>{prompt.name || 'Untitled prompt'}</option>
             ))}
@@ -1316,7 +1551,7 @@ function MnNovelistPanel({
               <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 740, color: T.ink }}>Novelist</div>
               <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap', fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkDim }}>
                 <span>{novelNotes.length} story note{novelNotes.length === 1 ? '' : 's'}</span>
-                <span>{arcs.length} arc{arcs.length === 1 ? '' : 's'}</span>
+                <span>{acts.length} act{acts.length === 1 ? '' : 's'}</span>
                 <span>{chapters.length} chapter{chapters.length === 1 ? '' : 's'}</span>
                 <span>{scenes.length} scene{scenes.length === 1 ? '' : 's'}</span>
               </div>
@@ -1342,8 +1577,29 @@ function MnNovelistPanel({
           <div style={{ marginTop: 12 }}>
             <CreateButtonGroup items={templates} />
           </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 12, borderTop: `1px solid ${T.lineSub}`, paddingTop: 10 }}>
+            {[
+              ['plan', 'Plan'],
+              ['status', 'Status'],
+              ['aiconfig', 'AIconfig'],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                style={{
+                  ...mnPanelMiniButton(T),
+                  background: activeTab === id ? T.ink : T.bgSub,
+                  color: activeTab === id ? T.bg : T.inkMed,
+                  border: `1px solid ${activeTab === id ? T.ink : T.lineSub}`,
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
         </header>
 
+        {activeTab === 'plan' && (
+          <>
         <section style={{
           border: `1px solid ${T.lineSub}`,
           borderRadius: 8,
@@ -1353,13 +1609,12 @@ function MnNovelistPanel({
         }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 750, color: T.ink }}>Story Structure</div>
-            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>Manuscript -> Arc -> Chapter -> Scene</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>Act -> Chapter -> Scene</div>
           </div>
-          {manuscript && <ManuscriptRoot note={manuscript} />}
           <div style={{ display: 'grid', gap: 10 }}>
-            {arcs.length
-              ? arcs.map(arc => <ArcRow key={arc.id} arc={arc} />)
-              : <InlineEmpty>Create an arc to group chapters.</InlineEmpty>}
+            {acts.length
+              ? acts.map(act => <ActRow key={act.id} act={act} />)
+              : <InlineEmpty>Create an act to group chapters.</InlineEmpty>}
           </div>
           {(unlinkedChapters.length > 0 || unlinkedScenes.length > 0) && (
             <div style={{
@@ -1382,10 +1637,10 @@ function MnNovelistPanel({
                           setLinkMenu({ type: 'attach-chapter', childId: chapter.id, x: e.clientX, y: e.clientY });
                         }}
                         style={mnPanelMiniButton(T)}>
-                        Attach to arc
+                        Attach to act
                       </button>
-                      <button onClick={() => createParentArcForChapter(chapter)} style={mnPanelMiniButton(T)}>
-                        Create parent arc
+                      <button onClick={() => createParentActForChapter(chapter)} style={mnPanelMiniButton(T)}>
+                        Create parent act
                       </button>
                       <button
                         onClick={() => onConvertNoteType?.(chapter.id, 'novel-scene')}
@@ -1507,33 +1762,10 @@ function MnNovelistPanel({
             {!supportingTypes.length && <InlineEmpty>Add a supporting note type to organize story material.</InlineEmpty>}
           </div>
         </section>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
-          gap: 10,
-        }}>
-          <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 10 }}>Workflow Status</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
-              {(workflowStates || []).map(state => (
-                <div key={state.id} style={{
-                  border: `1px solid ${T.lineSub}`,
-                  borderRadius: 7,
-                  background: T.bgSub,
-                  padding: 9,
-                }}>
-                  <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, fontWeight: 700, color: state.color }}>{state.id}</div>
-                  <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 20, fontWeight: 700, color: T.ink, marginTop: 4 }}>
-                    {(workflowItems?.[state.id] || []).length}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <AiConfigurationSection />
-        </div>
+          </>
+        )}
+        {activeTab === 'status' && <StatusSection />}
+        {activeTab === 'aiconfig' && <AiConfigurationSection />}
       </div>
       {editDialog && (
         <div
@@ -1733,13 +1965,13 @@ function MnNovelistPanel({
             borderBottom: `1px solid ${T.lineSub}`,
             marginBottom: 4,
           }}>
-            {createMenu.type === 'chapter' ? 'Choose arc for new Chapter' : 'Choose chapter for new Scene'}
+            {createMenu.type === 'chapter' ? 'Choose act for new Chapter' : 'Choose chapter for new Scene'}
           </div>
-          {(createMenu.type === 'chapter' ? arcs : chapters).map(parent => (
+          {(createMenu.type === 'chapter' ? acts : chapters).map(parent => (
             <button
               key={parent.id}
               onClick={() => {
-                if (createMenu.type === 'chapter') createChapterForArc(parent);
+                if (createMenu.type === 'chapter') createChapterForAct(parent);
                 else createSceneForChapter(parent);
                 setCreateMenu(null);
               }}
@@ -1798,6 +2030,39 @@ function mnPanelMiniButton(T) {
     fontWeight: 600,
     cursor: 'pointer',
     padding: '4px 8px',
+  };
+}
+
+function mnPanelInputStyle(T) {
+  return {
+    minHeight: 32,
+    border: `1px solid ${T.lineSub}`,
+    borderRadius: 6,
+    background: T.bg,
+    color: T.ink,
+    padding: '6px 8px',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 12.5,
+    outline: 'none',
+    boxSizing: 'border-box',
+  };
+}
+
+function mnPanelTextareaStyle(T) {
+  return {
+    width: '100%',
+    minHeight: 76,
+    resize: 'vertical',
+    border: `1px solid ${T.lineSub}`,
+    borderRadius: 6,
+    background: T.bg,
+    color: T.ink,
+    padding: '7px 8px',
+    fontFamily: 'var(--mn-body)',
+    fontSize: 12.5,
+    lineHeight: 1.45,
+    outline: 'none',
+    boxSizing: 'border-box',
   };
 }
 

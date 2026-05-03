@@ -372,12 +372,12 @@ test('Code blocks preserve language metadata and expose syntax UI', () => {
 
 test('Markdown round-trip preserves heading children used by novelist links', () => {
   const outlineApi = loadOutlineForTest();
-  const md = '# Arc 1\n- arc:: [[Act One]]\n- [[Chapter 1]]\n  - [[Scene 1]]';
+  const md = '# Act 1\n- act:: [[Act One]]\n- [[Chapter 1]]\n  - [[Scene 1]]';
   const blocks = outlineApi.mnMdToBlocks(md);
   const roundTrip = outlineApi.mnBlocksToMd(blocks);
 
-  assert.match(roundTrip, /# Arc 1/);
-  assert.match(roundTrip, /arc:: \[\[Act One\]\]/);
+  assert.match(roundTrip, /# Act 1/);
+  assert.match(roundTrip, /act:: \[\[Act One\]\]/);
   assert.match(roundTrip, /\[\[Chapter 1\]\]/);
   assert.match(roundTrip, /\[\[Scene 1\]\]/);
 
@@ -386,6 +386,12 @@ test('Markdown round-trip preserves heading children used by novelist links', ()
   assert.equal(labelled[0].labels[0].text, 'Needs work');
   assert.equal(labelled[0].content, 'Important block');
   assert.match(outlineApi.mnBlocksToMd(labelled), /\{\{label:blue\|Needs\+work\}\}Important block/);
+
+  const plotBlocks = outlineApi.mnMdToBlocks('::: plot-points\n- Find the key\n  - context:: [[Alice]]\n:::\nDraft text');
+  assert.equal(plotBlocks[0].kind, 'plot-points');
+  assert.deepEqual(Array.from(plotBlocks[0].beats), ['Find the key']);
+  assert.deepEqual(Array.from(plotBlocks[0].contexts), ['[[Alice]]']);
+  assert.match(outlineApi.mnBlocksToMd(plotBlocks), /::: plot-points\n- Find the key\n  - context:: \[\[Alice\]\]\n:::/);
 });
 
 test('Reminder center and spellcheck wiring are visible in app shell', () => {
@@ -469,7 +475,8 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(aiLib, /controller\.abort\(\)/);
   assert.match(aiLib, /cancelJob,/);
   assert.match(aiLib, /statusCache/);
-  assert.match(aiLib, /ollama\.chat\(CONFIG\.chatModel, messages, \{ keep_alive: OLLAMA_KEEP_ALIVE, signal: options\.signal \}\)/);
+  assert.match(aiLib, /ollama\.chat\(options\.model \|\| CONFIG\.chatModel, messages, \{ keep_alive: OLLAMA_KEEP_ALIVE, signal: options\.signal \}\)/);
+  assert.match(aiLib, /String\(systemMessage \|\| ''\)\.trim\(\) \|\| EDIT_SYSTEM_PROMPT/);
   assert.match(ollama, /async function embed\(model, text, opts = \{\}\)/);
   assert.match(ollama, /signal: opts\.signal/);
   assert.match(ollama, /keep_alive: opts\.keep_alive/);
@@ -546,15 +553,15 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(main, /store\.createVault\(name, options\)/);
   assert.match(preload, /createVault: \(name, options\) => ipcRenderer\.invoke\('mn:createVault', name, options\)/);
   assert.match(app, /const MN_NOVELIST_TAGS = \[/);
-  assert.match(app, /novel-arc/);
-  assert.match(app, /\[\[Arc 1\]\]/);
+  assert.match(app, /novel-act/);
+  assert.match(app, /\[\[Act 1\]\]/);
   assert.match(app, /\[\[Chapter 1\]\]/);
   assert.match(app, /\[\[Scene 1\]\]/);
   assert.match(app, /const MN_NOVELIST_WORKFLOW_STATES = \[/);
   assert.match(app, /sourceWorkflowStates = null/);
   assert.match(app, /includeStarterNotes: false/);
   assert.match(app, /workflowStates: nextWorkflowStates/);
-  assert.match(app, /mnBuildNovelistStarterNotes\(sourceNotes, mnMdToBlocks, vaultId\)/);
+  assert.match(app, /mnBuildNovelistStarterNotes\(normalizedSourceNotes, mnMdToBlocks, vaultId\)/);
   assert.match(app, /function mnDirtyNoteKey\(vaultId, noteId\)/);
   assert.match(app, /const vaultActivationSeq = useRefA\(0\)/);
   assert.match(app, /const activationSeq = \+\+vaultActivationSeq\.current/);
@@ -583,9 +590,10 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /mnBodyPropertyTitle\(body, key\)/);
   assert.match(app, /addStage\('chapter', chapter\)/);
   assert.match(app, /addStage\('scene', scene\)/);
-  assert.match(app, /isManuscriptNote/);
-  assert.match(app, /Manuscript/);
-  assert.match(app, /selectedStage === 'arc'/);
+  assert.match(app, /mnNormalizeNovelistLegacyTags/);
+  assert.match(app, /mnNormalizeNovelistLegacyBody/);
+  assert.match(app, /mnEnsureScenePlotPoints/);
+  assert.match(app, /selectedStage === 'act'/);
   assert.match(app, /selectedStage === 'chapter'/);
   assert.match(app, /stageByNoteId/);
   assert.match(app, /mnNovelEnsureWikiLink/);
@@ -620,9 +628,16 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(settings, /Vault mode/);
   assert.match(settings, /Novelist vault/);
   assert.match(panels, /function MnNovelistPanel/);
+  assert.match(panels, /activeTab/);
+  assert.match(panels, /Plan/);
+  assert.match(panels, /Status/);
+  assert.match(panels, /AIconfig/);
   assert.match(panels, /Story Structure/);
-  assert.match(panels, /Manuscript -> Arc -> Chapter -> Scene/);
-  assert.match(panels, /function MnNovelistPanel[\s\S]*childrenByArcId/);
+  assert.match(panels, /Act -> Chapter -> Scene/);
+  assert.match(panels, /function MnNovelistPanel[\s\S]*childrenByActId/);
+  assert.match(panels, /Word Count by Act/);
+  assert.match(panels, /Character Appearance Heat Map/);
+  assert.match(panels, /mn_novelist_ai_config_v2/);
   assert.match(panels, /supportingTypes = \(tags \|\| \[\]\)/);
   assert.match(panels, /normalizeSupportingTypeTag/);
   assert.match(panels, /onCreateTag\?\.\(tagName\)/);
@@ -638,8 +653,8 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panels, /\+ \{type === 'chapter' \? 'Chapter' : 'Scene'\}/);
   assert.match(panels, /Link existing chapter/);
   assert.match(panels, /Link existing scene/);
-  assert.match(panels, /Attach to arc/);
-  assert.match(panels, /Create parent arc/);
+  assert.match(panels, /Attach to act/);
+  assert.match(panels, /Create parent act/);
   assert.match(panels, /Convert to scene/);
   assert.match(panels, /Attach to chapter/);
   assert.match(panels, /Create parent chapter/);
@@ -659,9 +674,9 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panels, /onContextMenu=\{\(e\) => openNoteMenu\(e, note\)\}/);
   assert.match(panels, /closeOnEscape/);
   assert.match(panels, /Delete note/);
-  assert.match(panels, /Choose arc for new Chapter/);
+  assert.match(panels, /Choose act for new Chapter/);
   assert.match(panels, /Create standalone/);
-  assert.match(panels, /createChapterForArc/);
+  assert.match(panels, /createChapterForAct/);
   assert.match(panels, /createSceneForChapter/);
   assert.match(editor, /novelistPath = null/);
   assert.match(editor, /workflowStatus = ''/);
@@ -676,7 +691,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(outliner, /Target length: up to \$\{novelConfig\.wordLimit\} words/);
   assert.match(outliner, /Novelist writing prompt \(\$\{activePrompt\.name \|\| 'Default'\}\):/);
   assert.match(graph, /All novelist notes/);
-  assert.match(graph, /Manuscript structure/);
+  assert.match(graph, /Act structure/);
   assert.match(graph, /Characters \+ scenes/);
   assert.match(graph, /Plot threads \+ scenes/);
   assert.match(graph, /Research \+ scenes/);
@@ -687,22 +702,22 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(notelist, /const sourceNotes = allNotes \|\| notes \|\| \[\]/);
   assert.match(notelist, /const GroupHeader/);
   assert.match(notelist, /const CollectionHeader/);
-  assert.match(notelist, /chaptersForArc/);
+  assert.match(notelist, /chaptersForAct/);
   assert.match(notelist, /scenesForChapter/);
   assert.match(notelist, /const chapterIds = new Set/);
-  assert.match(notelist, /linkedTo=\{`Linked to \$\{arc\.title/);
+  assert.match(notelist, /linkedTo=\{`Linked to \$\{act\.title/);
   assert.match(notelist, /parentByChapterId/);
   assert.match(notelist, /parentBySceneId/);
   assert.match(notelist, /Unlinked chapters/);
   assert.match(notelist, /looseScenes/);
   assert.match(panels, /Supporting Notes/);
-  assert.match(panels, /Workflow Status/);
-  assert.match(panels, /AI Configuration/);
-  assert.match(panels, /Default word limit/);
+  assert.match(panels, /Workflow Status Counts/);
+  assert.match(panels, /AIconfig/);
+  assert.match(panels, /Words/);
   assert.match(panels, /Default writing prompt/);
   assert.match(panels, /AI write novel/);
   assert.match(panels, /defaultPromptId/);
-  assert.match(panels, /mn_novelist_ai_config_v1/);
+  assert.match(panels, /mn_novelist_ai_config_v2/);
   assert.match(panels, /function mnNovelistAiConfigKey\(vaultId = ''\)/);
   assert.match(panels, /mnReadNovelistAiConfig\(vaultId\)/);
   assert.match(panels, /window\.mnReadNovelistAiConfig = mnReadNovelistAiConfig/);
@@ -730,10 +745,12 @@ test('New vault creation never reuses stale vault folders', async () => {
     const loaded = await store.loadVault(vault.id);
     assert.equal(loaded.novelistMode, true);
     assert.equal(loaded.notes.some(note => note.id === 'n_old'), false);
-    assert.equal(loaded.notes.length, 1);
-    assert.equal(loaded.notes[0].title, 'Manuscript');
-    assert.deepEqual(loaded.notes[0].tags, ['novel-manuscript']);
-    assert.match(loaded.notes[0].body, /Start drafting the story here/);
+    assert.equal(loaded.notes.length, 3);
+    assert.deepEqual(loaded.notes.map(note => note.title).sort(), ['Act 1', 'Chapter 1', 'Scene 1']);
+    assert.equal(loaded.notes.some(note => (note.tags || []).includes('novel-manuscript')), false);
+    assert.equal(loaded.notes.some(note => (note.tags || []).includes('novel-arc')), false);
+    assert.match(loaded.notes.find(note => note.title === 'Chapter 1').body, /act:: \[\[Act 1\]\]/);
+    assert.match(loaded.notes.find(note => note.title === 'Scene 1').body, /::: plot-points/);
   });
 });
 
@@ -770,7 +787,7 @@ test('Vault registry creates one fallback vault if every folder is externally de
   });
 });
 
-test('Novelist hierarchy is inferred from manuscript links and properties without structure tags', () => {
+test('Novelist hierarchy is inferred from act properties and explicit structure tags', () => {
   const Babel = require('@babel/standalone');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   const code = Babel.transform(app, { presets: ['react'] }).code;
@@ -782,20 +799,19 @@ test('Novelist hierarchy is inferred from manuscript links and properties withou
   vm.runInNewContext(code, sandbox);
 
   const structure = sandbox.mnBuildNovelistStructure([
-    { id: 'm', title: 'Manuscript', tags: [], body: '# Manuscript\n- [[Act One]]\n  - [[Chapter 1]]\n    - [[Opening Scene]]' },
-    { id: 'a', title: 'Act One', tags: [], body: '# Act One\n- [[Chapter 1]]' },
-    { id: 'c', title: 'Chapter 1', tags: [], body: '# Chapter 1\n- arc:: [[Act One]]\n- [[Opening Scene]]' },
-    { id: 's', title: 'Opening Scene', tags: [], body: '# Opening Scene\n- chapter:: [[Chapter 1]]' },
+    { id: 'm', title: 'Old Manuscript', tags: [], body: '# Old Manuscript\n- [[Act One]]\n  - [[Chapter 1]]\n    - [[Opening Scene]]' },
+    { id: 'a', title: 'Act One', tags: ['novel-act'], body: '# Act One\n- [[Chapter 1]]' },
+    { id: 'c', title: 'Chapter 1', tags: ['novel-chapter'], body: '# Chapter 1\n- act:: [[Act One]]\n- [[Opening Scene]]' },
+    { id: 's', title: 'Opening Scene', tags: ['novel-scene'], body: '# Opening Scene\n- chapter:: [[Chapter 1]]' },
   ]);
   const ids = (items) => Array.from(items, note => note.id);
 
-  assert.deepEqual(ids(structure.manuscripts), ['m']);
-  assert.deepEqual(ids(structure.arcs), ['a']);
+  assert.deepEqual(ids(structure.acts), ['a']);
   assert.deepEqual(ids(structure.chapters), ['c']);
   assert.deepEqual(ids(structure.scenes), ['s']);
   assert.equal(structure.parentByChapterId.c, 'a');
   assert.equal(structure.parentBySceneId.s, 'c');
-  assert.deepEqual(ids(structure.pathByNoteId.s), ['m', 'a', 'c', 's']);
+  assert.deepEqual(ids(structure.pathByNoteId.s), ['a', 'c', 's']);
 });
 
 test('Novelist order and note-level status properties drive visible workflow', () => {
@@ -829,12 +845,12 @@ test('Novelist order and note-level status properties drive visible workflow', (
   );
 
   const structure = sandbox.mnBuildNovelistStructure([
-    { id: 'a', title: 'Arc', tags: ['novel-arc'], body: '# Arc\n- order:: 100' },
-    { id: 'c2', title: 'Chapter B', tags: ['novel-chapter'], body: '# Chapter B\n- order:: 120\n- arc:: [[Arc]]', modifiedAt: '2026-01-02T00:00:00.000Z' },
-    { id: 'c1', title: 'Chapter A', tags: ['novel-chapter'], body: '# Chapter A\n- order:: 110\n- arc:: [[Arc]]', modifiedAt: '2026-01-01T00:00:00.000Z' },
-    { id: 'c3', title: 'Chapter C', tags: ['novel-chapter'], body: '# Chapter C\n- arc:: [[Arc]]', modifiedAt: '2026-01-03T00:00:00.000Z' },
+    { id: 'a', title: 'Act', tags: ['novel-act'], body: '# Act\n- order:: 100' },
+    { id: 'c2', title: 'Chapter B', tags: ['novel-chapter'], body: '# Chapter B\n- order:: 120\n- act:: [[Act]]', modifiedAt: '2026-01-02T00:00:00.000Z' },
+    { id: 'c1', title: 'Chapter A', tags: ['novel-chapter'], body: '# Chapter A\n- order:: 110\n- act:: [[Act]]', modifiedAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'c3', title: 'Chapter C', tags: ['novel-chapter'], body: '# Chapter C\n- act:: [[Act]]', modifiedAt: '2026-01-03T00:00:00.000Z' },
   ]);
-  assert.deepEqual(Array.from(structure.childrenByArcId.a), ['c1', 'c2', 'c3']);
+  assert.deepEqual(Array.from(structure.childrenByActId.a), ['c1', 'c2', 'c3']);
 
   const workflow = sandbox.collectWorkflowNotes([
     { id: 'n1', title: 'Note status', tags: [], body: '# Note\n- status:: DRAFT\nBody', blocks: [{ id: 'b1', workflow: 'DONE', content: 'Block marker' }] },
@@ -845,17 +861,22 @@ test('Novelist order and note-level status properties drive visible workflow', (
   assert.deepEqual([...workflow.noteIdsByState.DRAFT], ['n1']);
 
   const converted = sandbox.mnBuildNovelistStructure([
-    { id: 'a', title: 'Arc', tags: ['novel-arc'], body: '# Arc\n- order:: 100' },
-    { id: 's', title: 'Converted', tags: ['novel-scene'], body: '# Converted\n- arc:: [[Arc]]' },
+    { id: 'a', title: 'Act', tags: ['novel-act'], body: '# Act\n- order:: 100' },
+    { id: 's', title: 'Converted', tags: ['novel-scene'], body: '# Converted\n- act:: [[Act]]' },
   ]);
   assert.deepEqual(Array.from(converted.chapters, note => note.id), []);
   assert.deepEqual(Array.from(converted.scenes, note => note.id), ['s']);
+  assert.deepEqual(sandbox.mnNormalizeNovelistLegacyTags(['novel-manuscript', 'novel-arc', 'novel-scene']), ['novel-act', 'novel-scene']);
+  assert.equal(
+    sandbox.mnNormalizeNovelistLegacyBody('arc:: [[Arc 1]]\n## Arcs'),
+    'act:: [[Arc 1]]\n## Acts'
+  );
 
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
   assert.doesNotMatch(panels, /## Chapters\\n- '\s*}/);
   assert.doesNotMatch(panels, /## Scenes\\n- '\s*}/);
-  assert.doesNotMatch(panels, /body: '# (Manuscript|Arc|Chapter|Scene|Character|Location|Plot Thread|Research|Revision Note)/);
+  assert.doesNotMatch(panels, /body: '# (Story Root|Act|Chapter|Scene|Character|Location|Plot Thread|Research|Revision Note)/);
   assert.match(editor, /function mnEditorSplitPropertyBlocks/);
   assert.match(editor, /blocks=\{contentBlocks\}/);
   assert.match(editor, /status::/);
@@ -1401,7 +1422,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.doesNotMatch(panels, /textDecoration:[\s\S]{0,80}line-through[\s\S]{0,80}No preview/);
   assert.doesNotMatch(panels, /state\.id === 'DONE' \|\| state\.id === 'CANCELLED'/);
   assert.match(outliner, /function mnWorkflowSlashCommands/);
-  assert.match(outliner, /return \[\.\.\.MN_SLASH_CMDS, \.\.\.mnWorkflowSlashCommands\(\)\]/);
+  assert.match(outliner, /MN_NOVELIST_SLASH_CMDS/);
+  assert.match(outliner, /options\.novelistMode \? MN_NOVELIST_SLASH_CMDS : \[\]/);
+  assert.match(outliner, /plot-points/);
   assert.match(outline, /window\.MN_LOGSEQ\?\.WORKFLOW_STATES/);
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(notelist, /const workflowPattern = states/);

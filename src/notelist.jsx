@@ -95,19 +95,19 @@ function MnNoteList({
     const noteById = new Map(sourceNotes.map(note => [note.id, note]));
     const visibleIds = new Set((notes || []).map(note => note.id));
     const used = new Set();
-    const arcs = (novelistStructure.arcs || []).filter(note => visibleIds.has(note.id));
-    const chapterIdsByArc = {};
+    const acts = (novelistStructure.acts || []).filter(note => visibleIds.has(note.id));
+    const chapterIdsByAct = {};
     const sceneIdsByChapter = {};
     const addUnique = (bucket, parentId, childId) => {
       if (!parentId || !childId) return;
       if (!bucket[parentId]) bucket[parentId] = [];
       if (!bucket[parentId].includes(childId)) bucket[parentId].push(childId);
     };
-    Object.entries(novelistStructure.childrenByArcId || {}).forEach(([arcId, chapterIds]) => {
-      (chapterIds || []).forEach(chapterId => addUnique(chapterIdsByArc, arcId, chapterId));
+    Object.entries(novelistStructure.childrenByActId || {}).forEach(([actId, chapterIds]) => {
+      (chapterIds || []).forEach(chapterId => addUnique(chapterIdsByAct, actId, chapterId));
     });
-    Object.entries(novelistStructure.parentByChapterId || {}).forEach(([chapterId, arcId]) => {
-      addUnique(chapterIdsByArc, arcId, chapterId);
+    Object.entries(novelistStructure.parentByChapterId || {}).forEach(([chapterId, actId]) => {
+      addUnique(chapterIdsByAct, actId, chapterId);
     });
     Object.entries(novelistStructure.childrenByChapterId || {}).forEach(([chapterId, sceneIds]) => {
       (sceneIds || []).forEach(sceneId => addUnique(sceneIdsByChapter, chapterId, sceneId));
@@ -117,15 +117,15 @@ function MnNoteList({
     });
     const chapterIds = new Set((novelistStructure.chapters || []).map(note => note.id));
     const sceneIds = new Set((novelistStructure.scenes || []).map(note => note.id));
-    const chaptersForArc = (arc) => (chapterIdsByArc[arc.id] || [])
+    const chaptersForAct = (act) => (chapterIdsByAct[act.id] || [])
       .map(id => noteById.get(id))
       .filter(note => note && chapterIds.has(note.id) && visibleIds.has(note.id));
     const scenesForChapter = (chapter) => (sceneIdsByChapter[chapter.id] || [])
       .map(id => noteById.get(id))
       .filter(note => note && sceneIds.has(note.id) && visibleIds.has(note.id));
-    arcs.forEach(arc => {
-      used.add(arc.id);
-      chaptersForArc(arc).forEach(chapter => {
+    acts.forEach(act => {
+      used.add(act.id);
+      chaptersForAct(act).forEach(chapter => {
         used.add(chapter.id);
         scenesForChapter(chapter).forEach(scene => used.add(scene.id));
       });
@@ -140,7 +140,7 @@ function MnNoteList({
       .filter(note => visibleIds.has(note.id) && !used.has(note.id));
     looseScenes.forEach(scene => used.add(scene.id));
     const other = (notes || []).filter(note => !used.has(note.id));
-    return { arcs, looseChapters, looseScenes, chaptersForArc, scenesForChapter, other };
+    return { acts, looseChapters, looseScenes, chaptersForAct, scenesForChapter, other };
   }, [notes, allNotes, novelistStructure]);
 
   const NoteRow = ({ n, depth = 0, compact = false, meta = '' }) => {
@@ -431,18 +431,18 @@ function MnNoteList({
         )}
         {novelistList ? (
           <>
-            {novelistList.arcs.map(arc => {
-              const chapters = novelistList.chaptersForArc(arc);
-              const arcCollapsed = collapsed[arc.id] === true;
+            {novelistList.acts.map(act => {
+              const chapters = novelistList.chaptersForAct(act);
+              const actCollapsed = collapsed[act.id] === true;
               return (
-                <React.Fragment key={arc.id}>
-                  <GroupHeader note={arc} count={chapters.length} type="arc" />
-                  {!arcCollapsed && chapters.map(chapter => {
+                <React.Fragment key={act.id}>
+                  <GroupHeader note={act} count={chapters.length} type="act" />
+                  {!actCollapsed && chapters.map(chapter => {
                     const scenes = novelistList.scenesForChapter(chapter);
                     const chapterCollapsed = collapsed[chapter.id] === true;
                     return (
                       <React.Fragment key={chapter.id}>
-                        <GroupHeader note={chapter} depth={1} count={scenes.length} type="chapter" linkedTo={`Linked to ${arc.title || 'arc'}`} />
+                        <GroupHeader note={chapter} depth={1} count={scenes.length} type="chapter" linkedTo={`Linked to ${act.title || 'act'}`} />
                         {!chapterCollapsed && scenes.map(scene => <NoteRow key={scene.id} n={scene} depth={2} compact meta={`Linked to ${chapter.title || 'chapter'}`} />)}
                       </React.Fragment>
                     );
