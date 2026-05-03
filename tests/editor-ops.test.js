@@ -631,7 +631,8 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panels, /activeTab/);
   assert.match(panels, /Plan/);
   assert.match(panels, /Status/);
-  assert.match(panels, /AIconfig/);
+  assert.match(panels, /AI Config/);
+  assert.doesNotMatch(panels, /CreateButtonGroup/);
   assert.match(panels, /Story Structure/);
   assert.match(panels, /Act -> Chapter -> Scene/);
   assert.match(panels, /function MnNovelistPanel[\s\S]*childrenByActId/);
@@ -712,7 +713,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(notelist, /looseScenes/);
   assert.match(panels, /Supporting Notes/);
   assert.match(panels, /Workflow Status Counts/);
-  assert.match(panels, /AIconfig/);
+  assert.match(panels, /AI Config/);
   assert.match(panels, /Words/);
   assert.match(panels, /Default writing prompt/);
   assert.match(panels, /AI write novel/);

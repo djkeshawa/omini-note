@@ -544,32 +544,6 @@ function MnNovelistPanel({
     const base = readOrder(parent) ?? 100;
     return values(parent ? childrenForChapter(parent) : scenes, 1, base);
   };
-  const bodyWithTitleAndOrder = (template, title, order) => {
-    let body = String(template.body || '');
-    if (order != null) body = setBodyProperty(body, 'order', String(order));
-    return body;
-  };
-  const createTemplate = (template, e) => {
-    if ((template.tags || []).includes('novel-chapter') && acts.length) {
-      if (acts.length === 1) {
-        createChapterForAct(acts[0]);
-        return;
-      }
-      setCreateMenu({ type: 'chapter', x: e?.clientX || 0, y: e?.clientY || 0 });
-      return;
-    }
-    if ((template.tags || []).includes('novel-scene') && chapters.length) {
-      if (chapters.length === 1) {
-        createSceneForChapter(chapters[0]);
-        return;
-      }
-      setCreateMenu({ type: 'scene', x: e?.clientX || 0, y: e?.clientY || 0 });
-      return;
-    }
-    const title = uniqueTitle(template.title);
-    const order = (template.tags || []).includes('novel-act') ? nextOrder('act') : null;
-    onCreateNote && onCreateNote({ ...template, title, body: bodyWithTitleAndOrder(template, title, order) });
-  };
   const createChapterForAct = (act) => {
     if (!act) return;
     const title = uniqueTitle(`${act.title || 'Act'} Chapter`);
@@ -1204,28 +1178,6 @@ function MnNovelistPanel({
     </div>
   );
 
-  const CreateButtonGroup = ({ items }) => (
-    <div style={{
-      display: 'flex',
-      gap: 7,
-      flexWrap: 'wrap',
-      alignItems: 'center',
-    }}>
-      <div style={{
-        fontFamily: 'var(--mn-mono)',
-        fontSize: 10,
-        color: T.inkDim,
-        textTransform: 'uppercase',
-        letterSpacing: '0.08em',
-      }}>Create</div>
-      {items.map(template => (
-        <button key={template.title} onClick={(e) => createTemplate(template, e)} style={mnPanelButton(T)}>
-          {template.title}
-        </button>
-      ))}
-    </div>
-  );
-
   const plainNoteText = (note) => String(note?.body || '')
     .replace(/::: plot-points[\s\S]*?:::/g, ' ')
     .split('\n')
@@ -1363,7 +1315,7 @@ function MnNovelistPanel({
   const AiConfigurationSection = () => (
     <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, background: T.bg, padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink }}>AIconfig</div>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink }}>AI Config</div>
         <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>v{aiConfig.version || 2}</div>
         <div style={{ flex: 1 }} />
         <button onClick={addAiPrompt} style={mnPanelMiniButton(T)}>+ Prompt</button>
@@ -1574,14 +1526,11 @@ function MnNovelistPanel({
               </div>
             )}
           </div>
-          <div style={{ marginTop: 12 }}>
-            <CreateButtonGroup items={templates} />
-          </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 12, borderTop: `1px solid ${T.lineSub}`, paddingTop: 10 }}>
             {[
               ['plan', 'Plan'],
               ['status', 'Status'],
-              ['aiconfig', 'AIconfig'],
+              ['aiconfig', 'AI Config'],
             ].map(([id, label]) => (
               <button
                 key={id}
