@@ -1432,6 +1432,13 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /Find page to link/);
   assert.match(outliner, /No available pages/);
   assert.match(outliner, /contexts: \[\.\.\.contexts, `\[\[\$\{title\}\]\]`\]/);
+  assert.match(outliner, /aiActive=\{aiActive\}/);
+  assert.match(outliner, /AI working\.\.\./);
+  assert.match(outliner, /plotPointsAction: 'write-scene'/);
+  assert.match(outliner, /function[^\n]*plotPointsInstruction|const plotPointsInstruction/);
+  assert.match(outliner, /Linked context pages/);
+  assert.match(outliner, /kind: 'insert-after'/);
+  assert.match(outliner, /insertBlocksAfter\(aiPreview\.target\.blockId, parseAiBlocks\(aiPreview\.text\)\)/);
   assert.match(outline, /window\.MN_LOGSEQ\?\.WORKFLOW_STATES/);
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(notelist, /const workflowPattern = states/);

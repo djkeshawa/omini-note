@@ -1335,6 +1335,7 @@ function MnBlockRow({
         onChangeKind={onChangeKind}
         onDelete={onDelete}
         onAiAction={onAiAction}
+        aiActive={aiActive}
       />
     );
   }
@@ -1877,7 +1878,7 @@ function MnBlockRow({
   );
 }
 
-function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeKind, onDelete, onAiAction }) {
+function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeKind, onDelete, onAiAction, aiActive = false }) {
   const [contextPickerOpen, setContextPickerOpen] = useStateOE(false);
   const [contextQuery, setContextQuery] = useStateOE('');
   const beats = Array.isArray(block.beats) && block.beats.length ? block.beats : [''];
@@ -1905,6 +1906,11 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeK
   const removeContext = (index) => {
     onChangeKind(block.id, { contexts: contexts.filter((_, i) => i !== index) });
   };
+  const aiButtonStyle = {
+    ...mnTinyIconButton(T),
+    cursor: aiActive ? 'wait' : 'pointer',
+    opacity: aiActive ? 0.56 : 1,
+  };
   return (
     <div
       className="mn-block-row mn-plot-points"
@@ -1917,6 +1923,7 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeK
         borderRadius: 8,
         background: T.bgSub,
         overflow: 'hidden',
+        boxShadow: aiActive ? `0 0 0 2px ${T.accentSoft || T.accent || T.lineSub}` : 'none',
       }}>
         <div style={{
           display: 'flex',
@@ -1936,10 +1943,28 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeK
           <span style={{ color: T.ink }}>PLOT POINTS</span>
           <span style={{ opacity: 0.75 }}>Depth {depth}</span>
           <div style={{ flex: 1 }} />
+          {aiActive && (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              border: `1px solid ${T.lineSub}`,
+              borderRadius: 999,
+              background: T.bg,
+              color: T.accent || T.ink,
+              padding: '3px 7px',
+              textTransform: 'none',
+              letterSpacing: 0,
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 11,
+            }}>
+              <MnAiIcon size={11} /> AI working...
+            </span>
+          )}
           <button onClick={() => onChangeKind(block.id, { hidden: !block.hidden })} style={mnTinyIconButton(T)}>{block.hidden ? 'Show' : 'Hide'}</button>
-          <button onClick={() => onAiAction?.('summarize', 'section', { blockId: block.id })} style={mnTinyIconButton(T)}>Summarize</button>
-          <button onClick={() => onAiAction?.('write', 'section', { blockId: block.id })} style={mnTinyIconButton(T)}>Write Scene</button>
-          <button onClick={() => onAiAction?.('improve', 'section', { blockId: block.id })} style={mnTinyIconButton(T)}>Improve</button>
+          <button disabled={aiActive} onClick={() => onAiAction?.('summarize', 'section', { blockId: block.id, plotPointsAction: 'summarize' })} style={aiButtonStyle}>Summarize</button>
+          <button disabled={aiActive} onClick={() => onAiAction?.('write', 'section', { blockId: block.id, plotPointsAction: 'write-scene' })} style={aiButtonStyle}>Write Scene</button>
+          <button disabled={aiActive} onClick={() => onAiAction?.('improve', 'section', { blockId: block.id, plotPointsAction: 'improve' })} style={aiButtonStyle}>Improve</button>
           <button onClick={() => onDelete(block.id)} style={{ ...mnTinyIconButton(T), color: T.danger || T.warn }}>x</button>
         </div>
         {!block.hidden && (
@@ -3357,6 +3382,45 @@ function MnOutliner({
     ].filter(Boolean).join('\n\n');
   };
 
+  const plotPointsContextText = (block) => {
+    const titles = new Set(
+      (block.contexts || [])
+        .map(context => String(context || '').replace(/^\[\[|\]\]$/g, '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+    if (!titles.size) return '';
+    return (allNotes || [])
+      .filter(note => titles.has(String(note?.title || '').trim().toLowerCase()))
+      .slice(0, 8)
+      .map(note => `[[${note.title}]]\n${String(note.body || '').slice(0, 2500)}`)
+      .join('\n\n');
+  };
+
+  const plotPointsInstruction = (plotAction, userRequest, sourceText, contextText = '') => {
+    const novelConfig = readNovelistAiConfig();
+    const activePrompt = (novelConfig?.prompts || []).find(item => item.id === novelConfig.defaultPromptId)
+      || (novelConfig?.prompts || []).find(item => item.prompt);
+    const task =
+      plotAction === 'write-scene'
+        ? 'Write the scene prose from these plot points.'
+        : plotAction === 'improve'
+          ? 'Turn these plot points into a clearer, more useful scene plan.'
+          : 'Summarize these plot points into concise scene planning notes.';
+    return [
+      novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
+      activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
+      novelConfig?.instructions ? `Vault instructions:\n${novelConfig.instructions}` : null,
+      novelConfig?.additionalContext ? `Additional context:\n${novelConfig.additionalContext}` : null,
+      novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
+      task,
+      'Use the beat lines and linked context pages as source material. Do not rewrite the Plot Points block itself.',
+      userRequest?.trim() ? `User request: ${userRequest.trim()}` : null,
+      'Return only markdown that should be inserted below the Plot Points block after the user approves it.',
+      sourceText?.trim() ? `Plot Points source:\n${sourceText}` : null,
+      contextText?.trim() ? `Linked context pages:\n${contextText}` : null,
+    ].filter(Boolean).join('\n\n');
+  };
+
   const applyTextReplacement = (target, text) => {
     mutate(bs => {
       const loc = mnLocate(bs, target.blockId);
@@ -3411,6 +3475,7 @@ function MnOutliner({
     if (aiPreview.target.kind === 'text') applyTextReplacement(aiPreview.target, aiPreview.text);
     else if (aiPreview.target.kind === 'blocks') applyBlocksReplacement(aiPreview.target, aiPreview.text);
     else if (aiPreview.target.kind === 'section') applySectionReplacement(aiPreview.target, aiPreview.text);
+    else if (aiPreview.target.kind === 'insert-after') insertBlocksAfter(aiPreview.target.blockId, parseAiBlocks(aiPreview.text));
     else if (aiPreview.target.kind === 'page') applyPageReplacement(aiPreview.text);
     onShowToast && onShowToast(`${mnAiAction(aiPreview.actionId).sectionLabel} applied`);
     setAiPreview(null);
@@ -3424,7 +3489,8 @@ function MnOutliner({
     }
     const action = mnAiAction(actionId);
     let userRequest = null;
-    if (action.needsPrompt) {
+    const needsPrompt = action.needsPrompt && !(scope === 'section' && payload.plotPointsAction === 'write-scene');
+    if (needsPrompt) {
       userRequest = window.prompt(
         scope === 'page' ? 'What should AI write on this page?' :
         scope === 'section' ? 'What should AI write in this section?' :
@@ -3490,12 +3556,20 @@ function MnOutliner({
         const sourceBlock = mnCloneBlocks([loc.block])[0];
         if (payload.cleanContent != null) sourceBlock.content = payload.cleanContent;
         const source = mnBlocksToMd([sourceBlock]);
+        const isPlotPointsAi = sourceBlock.kind === 'plot-points' || payload.plotPointsAction;
+        const plotContext = isPlotPointsAi ? plotPointsContextText(sourceBlock) : '';
         const edited = await requestAiEdit(
           actionId,
           'section',
           source,
-          action.needsPrompt ? writeInstruction('section', userRequest, source) : null
+          isPlotPointsAi
+            ? plotPointsInstruction(payload.plotPointsAction || actionId, userRequest, source, plotContext)
+            : action.needsPrompt ? writeInstruction('section', userRequest, source) : null
         );
+        if (isPlotPointsAi) {
+          setAiPreview({ actionId, text: edited, target: { kind: 'insert-after', blockId } });
+          return;
+        }
         if (action.preview) {
           setAiPreview({ actionId, text: edited, target: { kind: 'section', blockId } });
           return;
