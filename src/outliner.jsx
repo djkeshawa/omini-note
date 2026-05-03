@@ -551,6 +551,10 @@ const MN_SLASH_CMDS = [
   { id: 'ai-write-section', label: 'AI: Write in this section', hint: 'Preview generated text before applying', kbd: '/ai write', icon: '+', aiAction: 'write', aiScope: 'section' },
 ];
 
+const MN_NOVELIST_SLASH_CMDS = [
+  { id: 'plot-points', label: 'Plot Points', hint: 'Scene beats and context', kbd: '/plot points', icon: '~', kind: 'plot-points', content: 'Plot Points', beats: ['Opening beat'], contexts: [] },
+];
+
 function mnWorkflowSlashCommands() {
   const states = window.MN_LOGSEQ?.WORKFLOW_STATES || [];
   return states.map(state => ({
@@ -563,8 +567,12 @@ function mnWorkflowSlashCommands() {
   }));
 }
 
-function mnSlashCommands() {
-  return [...MN_SLASH_CMDS, ...mnWorkflowSlashCommands()];
+function mnSlashCommands(options = {}) {
+  return [
+    ...MN_SLASH_CMDS,
+    ...(options.novelistMode ? MN_NOVELIST_SLASH_CMDS : []),
+    ...mnWorkflowSlashCommands(),
+  ];
 }
 
 function mnFindSlashCommandTrigger(text, cursor) {
@@ -799,6 +807,7 @@ function MnBlockRow({
   autoLink = true,
   collapseByDefault = false,
   parseClipboardBlocks,
+  novelistMode = false,
 }) {
   const [editing, setEditing] = useStateOE(focusId === block.id);
   const [autoQ, setAutoQ] = useStateOE(null);   // wiki autocomplete query
@@ -888,12 +897,12 @@ function MnBlockRow({
 
   const slashMatches = useMemoOE(() => {
     if (slashQ == null) return [];
-    return mnSlashCommands()
+    return mnSlashCommands({ novelistMode })
       .map((cmd, index) => ({ cmd, index, score: mnSlashCommandScore(cmd, slashQ.query) }))
       .filter(x => x.score !== Infinity)
       .sort((a, b) => a.score - b.score || a.index - b.index)
       .map(x => x.cmd);
-  }, [slashQ]);
+  }, [slashQ, novelistMode]);
 
   const wikiSuggestions = useMemoOE(() => {
     if (!autoLink) return [];
@@ -1248,6 +1257,8 @@ function MnBlockRow({
         checked: cmd.checked != null ? cmd.checked : null,
         content: cleanContent || cmd.content || '',
         language: '',
+        beats: cmd.beats || block.beats || [],
+        contexts: cmd.contexts || block.contexts || [],
         collapsed: collapseByDefault && cmd.kind === 'heading',
       });
     } else if (cmd.workflow !== undefined) {
@@ -1312,6 +1323,22 @@ function MnBlockRow({
 
   // ── visual params per kind ──────────────────────────────────────
   const fontStyle = mnGetFontStyle(block, T, editorFontSize);
+
+  if (block.kind === 'plot-points') {
+    return (
+      <MnPlotPointsBlock
+        block={block}
+        depth={depth}
+        T={T}
+        indentPx={indentPx}
+        allNotes={allNotes}
+        onChangeKind={onChangeKind}
+        onDelete={onDelete}
+        onAiAction={onAiAction}
+        aiActive={aiActive}
+      />
+    );
+  }
 
   // ── special render: divider ────────────────────────────────────
   if (block.kind === 'divider') {
@@ -1851,6 +1878,237 @@ function MnBlockRow({
   );
 }
 
+function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeKind, onDelete, onAiAction, aiActive = false }) {
+  const [contextPickerOpen, setContextPickerOpen] = useStateOE(false);
+  const [contextQuery, setContextQuery] = useStateOE('');
+  const beats = Array.isArray(block.beats) && block.beats.length ? block.beats : [''];
+  const contexts = Array.isArray(block.contexts) ? block.contexts : [];
+  const linkedTitles = new Set(contexts.map(context => String(context || '').replace(/^\[\[|\]\]$/g, '').trim().toLowerCase()));
+  const pageOptions = (allNotes || [])
+    .filter(note => String(note?.title || '').trim())
+    .filter(note => !linkedTitles.has(String(note.title || '').trim().toLowerCase()))
+    .filter(note => {
+      const query = contextQuery.trim().toLowerCase();
+      return !query || String(note.title || '').toLowerCase().includes(query);
+    })
+    .slice(0, 8);
+  const updateBeatsText = (value) => {
+    const next = String(value || '').split('\n');
+    onChangeKind(block.id, { beats: next.length ? next : [''] });
+  };
+  const addContextPage = (note) => {
+    const title = String(note?.title || '').trim();
+    if (!title) return;
+    onChangeKind(block.id, { contexts: [...contexts, `[[${title}]]`] });
+    setContextPickerOpen(false);
+    setContextQuery('');
+  };
+  const removeContext = (index) => {
+    onChangeKind(block.id, { contexts: contexts.filter((_, i) => i !== index) });
+  };
+  const aiButtonStyle = {
+    ...mnTinyIconButton(T),
+    cursor: aiActive ? 'wait' : 'pointer',
+    opacity: aiActive ? 0.56 : 1,
+  };
+  return (
+    <div
+      className="mn-block-row mn-plot-points"
+      data-block-id={block.id}
+      style={{ paddingLeft: indentPx, marginTop: 10, position: 'relative' }}>
+      <div style={{ width: 18, flexShrink: 0 }} />
+      <div style={{
+        flex: 1,
+        border: `1px solid ${T.lineSub}`,
+        borderRadius: 8,
+        background: T.bgSub,
+        overflow: 'hidden',
+        boxShadow: aiActive ? `0 0 0 2px ${T.accentSoft || T.accent || T.lineSub}` : 'none',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '9px 10px',
+          borderBottom: block.hidden ? 'none' : `1px solid ${T.lineSub}`,
+          fontFamily: 'var(--mn-mono)',
+          fontSize: 10,
+          color: T.inkDim,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+            <path d="M1.5 8C3 3.5 5 3.5 6.5 8S10 12.5 11.5 8 14 3.5 15 8" strokeLinecap="round"/>
+          </svg>
+          <span style={{ color: T.ink }}>PLOT POINTS</span>
+          <span style={{ opacity: 0.75 }}>Depth {depth}</span>
+          <div style={{ flex: 1 }} />
+          {aiActive && (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              border: `1px solid ${T.lineSub}`,
+              borderRadius: 999,
+              background: T.bg,
+              color: T.accent || T.ink,
+              padding: '3px 7px',
+              textTransform: 'none',
+              letterSpacing: 0,
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 11,
+            }}>
+              <MnAiIcon size={11} /> AI working
+              <span className="mn-ai-live-dots" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <span /> <span /> <span />
+              </span>
+            </span>
+          )}
+          <button onClick={() => onChangeKind(block.id, { hidden: !block.hidden })} style={mnTinyIconButton(T)}>{block.hidden ? 'Show' : 'Hide'}</button>
+          <button disabled={aiActive} onClick={() => onAiAction?.('summarize', 'section', { blockId: block.id, plotPointsAction: 'summarize' })} style={aiButtonStyle}>Summarize</button>
+          <button disabled={aiActive} onClick={() => onAiAction?.('write', 'section', { blockId: block.id, plotPointsAction: 'write-scene' })} style={aiButtonStyle}>Write Scene</button>
+          <button disabled={aiActive} onClick={() => onAiAction?.('improve', 'section', { blockId: block.id, plotPointsAction: 'improve' })} style={aiButtonStyle}>Improve</button>
+          <button onClick={() => onDelete(block.id)} style={{ ...mnTinyIconButton(T), color: T.danger || T.warn }}>x</button>
+        </div>
+        {!block.hidden && (
+          <div style={{ display: 'grid', gap: 7, padding: 10 }}>
+            <textarea
+              value={beats.join('\n')}
+              onChange={(e) => updateBeatsText(e.target.value)}
+              placeholder="One plot point per line"
+              rows={Math.max(4, Math.min(12, beats.length + 1))}
+              style={{
+                width: '100%',
+                minHeight: 104,
+                resize: 'vertical',
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 7,
+                background: T.bg,
+                color: T.ink,
+                padding: '8px 9px',
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12.5,
+                lineHeight: 1.5,
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+              <button onClick={() => setContextPickerOpen(value => !value)} style={mnTinyIconButton(T)}>Add context</button>
+            </div>
+            {contextPickerOpen && (
+              <div style={{
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 7,
+                background: T.bg,
+                padding: 7,
+                display: 'grid',
+                gap: 5,
+              }}>
+                <input
+                  value={contextQuery}
+                  onChange={(e) => setContextQuery(e.target.value)}
+                  autoFocus
+                  placeholder="Find page to link"
+                  style={{
+                    border: `1px solid ${T.lineSub}`,
+                    borderRadius: 6,
+                    background: T.bgSub,
+                    color: T.ink,
+                    padding: '6px 8px',
+                    fontFamily: 'var(--mn-ui)',
+                    fontSize: 12.5,
+                    outline: 'none',
+                  }}
+                />
+                <div style={{ display: 'grid', gap: 3, maxHeight: 180, overflow: 'auto' }}>
+                  {pageOptions.map(note => (
+                    <button
+                      key={note.id}
+                      onClick={() => addContextPage(note)}
+                      style={{
+                        border: 'none',
+                        borderRadius: 5,
+                        background: 'transparent',
+                        color: T.ink,
+                        cursor: 'pointer',
+                        padding: '6px 7px',
+                        textAlign: 'left',
+                        fontFamily: 'var(--mn-ui)',
+                        fontSize: 12.5,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      {note.title}
+                    </button>
+                  ))}
+                  {!pageOptions.length && (
+                    <div style={{ padding: '8px 7px', fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkDim }}>
+                      No available pages
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {contexts.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {contexts.map((context, index) => (
+                  <span
+                    key={index}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      border: `1px solid ${T.lineSub}`,
+                      borderRadius: 999,
+                      background: T.bg,
+                      color: T.inkMed,
+                      padding: '4px 9px',
+                      fontFamily: 'var(--mn-mono)',
+                      fontSize: 10.5,
+                    }}>
+                    {context}
+                    <button
+                      onClick={() => removeContext(index)}
+                      title="Remove context"
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        color: T.inkDim,
+                        cursor: 'pointer',
+                        padding: 0,
+                        fontFamily: 'var(--mn-mono)',
+                        fontSize: 10,
+                        lineHeight: 1,
+                      }}>x</button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function mnTinyIconButton(T) {
+  return {
+    minHeight: 23,
+    borderRadius: 5,
+    border: `1px solid ${T.lineSub}`,
+    background: T.bg,
+    color: T.inkMed,
+    cursor: 'pointer',
+    padding: '3px 7px',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 11,
+  };
+}
+
 function MnInlineAiButton({ block, T, onAiAction }) {
   return (
     <button
@@ -2301,6 +2559,85 @@ function mnAiDialogBtn(T, primary) {
   };
 }
 
+function MnInlineAiPreview({ preview, depth, T, onApply, onCancel }) {
+  if (!preview) return null;
+  const text = String(preview.text || '');
+  const canApply = !!text.trim() && !preview.streaming && !preview.error;
+  return (
+    <div
+      className={`mn-inline-ai-preview${preview.streaming ? ' mn-inline-ai-preview-streaming' : ''}`}
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{
+        marginLeft: depth * 24,
+        paddingLeft: 18,
+        marginTop: 7,
+        marginBottom: 8,
+        display: 'flex',
+        gap: 8,
+        color: T.inkDim,
+      }}>
+      <div style={{ width: 14, flexShrink: 0, display: 'flex', justifyContent: 'center', paddingTop: 7 }}>
+        <MnAiIcon size={12} />
+      </div>
+      <div style={{
+        flex: 1,
+        minWidth: 0,
+        border: `1px dashed ${T.lineSub}`,
+        borderRadius: 8,
+        background: `color-mix(in oklab, ${T.bgSub} 74%, ${T.bg})`,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '7px 9px',
+          borderBottom: `1px solid ${T.lineSub}`,
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 11.5,
+          color: T.inkDim,
+        }}>
+          <span style={{ fontWeight: 600, color: T.inkMed }}>AI preview</span>
+          {preview.streaming && (
+            <span className="mn-ai-live-dots" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <span /> <span /> <span />
+            </span>
+          )}
+          {preview.error && <span style={{ color: T.danger || T.warn }}>{preview.error}</span>}
+          <div style={{ flex: 1 }} />
+          <button onClick={onCancel} style={mnAiInlineBtn(T, false)}>Discard</button>
+          <button disabled={!canApply} onClick={onApply} style={mnAiInlineBtn(T, true, !canApply)}>Apply</button>
+        </div>
+        <div style={{
+          padding: '9px 10px 11px',
+          whiteSpace: 'pre-wrap',
+          fontFamily: 'var(--mn-body)',
+          fontSize: 14,
+          lineHeight: 1.6,
+          color: T.inkDim,
+          minHeight: 34,
+        }}>
+          {text || (preview.streaming ? 'Writing preview...' : 'No preview text returned.')}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function mnAiInlineBtn(T, primary, disabled = false) {
+  return {
+    border: `1px solid ${primary ? T.ink : T.lineSub}`,
+    background: primary ? T.ink : T.bg,
+    color: primary ? T.bg : T.inkMed,
+    borderRadius: 6,
+    padding: '4px 8px',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 11.5,
+    cursor: disabled ? 'default' : 'pointer',
+    opacity: disabled ? 0.45 : 1,
+  };
+}
+
 // ── Recursive tree renderer ────────────────────────────────────────────
 function MnOutlineTree({ blocks, depth, ...handlers }) {
   return (
@@ -2308,6 +2645,15 @@ function MnOutlineTree({ blocks, depth, ...handlers }) {
       {blocks.map(b => (
         <React.Fragment key={b.id}>
           <MnBlockRow block={b} depth={depth} {...handlers} />
+          {handlers.aiPreview?.target?.kind === 'insert-after' && handlers.aiPreview.target.blockId === b.id && (
+            <MnInlineAiPreview
+              preview={handlers.aiPreview}
+              depth={depth}
+              T={handlers.T}
+              onApply={handlers.onApplyAiPreview}
+              onCancel={handlers.onCancelAiPreview}
+            />
+          )}
           {b.children && b.children.length > 0 && !b.collapsed && (
             <MnOutlineTree blocks={b.children} depth={depth + 1} {...handlers} />
           )}
@@ -2320,8 +2666,8 @@ function MnOutlineTree({ blocks, depth, ...handlers }) {
 // ── Main outliner component ────────────────────────────────────────────
 function MnOutliner({
   blocks, setBlocks, allNotes, allCanvases = [], onOpen, onTagClick, onOpenCanvas, onCreateCanvas, T, zoomBlockId,
-  onZoomBlock, onShowToast, noteTitle, noteTags = [], vaultId = '', fontSize,
-  indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
+  onZoomBlock, onShowToast, noteId = '', noteTitle, noteTags = [], vaultId = '', fontSize,
+  indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false, novelistMode = false,
 }) {
   const [focusId, setFocusId] = useStateOE(null);
   const [selection, setSelection] = useStateOE(null); // { blockId, start, end, rect }
@@ -2337,6 +2683,8 @@ function MnOutliner({
   const redoActionRef = useRefOE(null);
   const selectionRef = useRefOE(null);
   const deleteSelectionRef = useRefOE(null);
+  const dismissedAiPreviewRef = useRefOE(null);
+  const noteIdRef = useRefOE(noteId || '');
   const focusIdRef = useRefOE(null);
   const moveBlockRef = useRefOE(null);
   const duplicateBlockRef = useRefOE(null);
@@ -2351,7 +2699,11 @@ function MnOutliner({
   useEffectOE(() => {
     undoStack.current = [];
     redoStack.current = [];
-  }, [noteTitle]);
+  }, [noteId, noteTitle]);
+
+  useEffectOE(() => {
+    noteIdRef.current = noteId || '';
+  }, [noteId]);
 
   const mutate = (fn, options = {}) => {
     setBlocks(prev => {
@@ -2423,6 +2775,7 @@ function MnOutliner({
       const isSelectAll = isMod && lowerKey === 'a' && !e.altKey && !e.shiftKey;
       const isBlockEditCommand = currentSelection?.kind === 'blocks' && (isCopy || isCut || isPaste);
       const isOutlinerSelectAll = isSelectAll && !isFormField;
+      const isTextDelete = (key === 'Backspace' || key === 'Delete') && currentSelection?.kind === 'text' && !isMod;
       const isAreaDelete = (key === 'Backspace' || key === 'Delete') && currentSelection?.kind === 'blocks' && !isMod;
       const isBlockZoom = isMod && key === 'Enter';
       const isBlockMoveUp = e.altKey && !isMod && key === 'ArrowUp';
@@ -2430,11 +2783,11 @@ function MnOutliner({
       const isBlockDuplicate = isMod && lowerKey === 'd';
       const isBlockDelete = isMod && (key === 'Backspace' || key === 'Delete') && !isFormField;
       const isBlockShortcut = isBlockZoom || isBlockMoveUp || isBlockMoveDown || isBlockDuplicate || isBlockDelete;
-      if (!isUndo && !isRedo && !isAreaDelete && !isBlockShortcut && !isBlockEditCommand && !isOutlinerSelectAll) return;
+      if (!isUndo && !isRedo && !isTextDelete && !isAreaDelete && !isBlockShortcut && !isBlockEditCommand && !isOutlinerSelectAll) return;
       if ((isUndo || isRedo) && isFormField && !target.closest?.('.mn-block-row')) return;
       const insideOutliner = !!target.closest?.('.mn-outliner');
       const activeInsideOutliner = !!document.activeElement?.closest?.('.mn-outliner');
-      if ((isAreaDelete || isBlockShortcut || isBlockEditCommand || isOutlinerSelectAll) && !insideOutliner && !activeInsideOutliner) return;
+      if ((isTextDelete || isBlockShortcut || isBlockEditCommand || isOutlinerSelectAll) && !insideOutliner && !activeInsideOutliner) return;
       const activeBlockId = () => {
         const currentSelection = selectionRef.current;
         if (currentSelection?.kind === 'blocks' && currentSelection.blockIds?.length) return currentSelection.blockIds[0];
@@ -2444,7 +2797,7 @@ function MnOutliner({
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation && e.stopImmediatePropagation();
-      if (isAreaDelete) deleteSelectionRef.current && deleteSelectionRef.current();
+      if (isTextDelete || isAreaDelete) deleteSelectionRef.current && deleteSelectionRef.current();
       else if (isCopy) keyboardEditActionsRef.current?.copySelectedBlocks?.();
       else if (isCut) keyboardEditActionsRef.current?.cutSelectedBlocks?.();
       else if (isPaste) keyboardEditActionsRef.current?.pasteForKeyboard?.();
@@ -3073,14 +3426,22 @@ function MnOutliner({
     return parsed.length ? parsed : [mkBlock({ kind: 'paragraph', content: String(text || '').trim() })];
   };
 
-  const requestAiEdit = async (actionId, scope, sourceText, instructionOverride) => {
+  const requestAiEdit = async (actionId, scope, sourceText, instructionOverride, options = {}) => {
     const action = mnAiAction(actionId);
+    const novelConfig = readNovelistAiConfig();
+    const maxTokens = Number(novelConfig?.advanced?.maxTokens);
     if (!window.mn?.ai?.edit) throw new Error('AI editing is not available');
-    const res = await window.mn.ai.edit({
+    const payload = {
       text: sourceText,
       instruction: instructionOverride || action.instruction,
       scope,
-    });
+      systemMessage: novelConfig?.systemMessage || '',
+      model: novelConfig?.model || '',
+      maxTokens: Number.isFinite(maxTokens) ? maxTokens : null,
+    };
+    const res = options.onToken && window.mn.ai.editStream
+      ? await window.mn.ai.editStream(payload, options.onToken)
+      : await window.mn.ai.edit(payload);
     if (!res.ok) throw new Error(res.error || 'AI edit failed');
     if (res.value && !res.value.ok) throw new Error(res.value.error || 'AI edit failed');
     return res.value.text;
@@ -3093,6 +3454,13 @@ function MnOutliner({
     return {
       wordLimit: config.wordLimit,
       defaultPromptId: config.defaultPromptId,
+      model: config.model || '',
+      systemMessage: config.systemMessage || '',
+      userMessage: config.userMessage || '',
+      instructions: config.instructions || '',
+      additionalContext: config.additionalContext || '',
+      includedComponents: config.includedComponents || {},
+      advanced: config.advanced || {},
       prompts: Array.isArray(config.prompts) ? config.prompts : [],
     };
   };
@@ -3104,11 +3472,77 @@ function MnOutliner({
     return [
       novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
       activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
+      novelConfig?.instructions ? `Vault instructions:\n${novelConfig.instructions}` : null,
+      novelConfig?.additionalContext ? `Additional context:\n${novelConfig.additionalContext}` : null,
+      novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
       mnAiAction('write').instruction,
       `User request: ${userRequest}`,
       sourceText?.trim()
         ? 'Use the existing text below as local context. Replace it with the newly written text.'
         : 'Write new text for this empty location.',
+    ].filter(Boolean).join('\n\n');
+  };
+
+  const pageContinuationInstruction = (userRequest, sourceText) => {
+    const novelConfig = readNovelistAiConfig();
+    const activePrompt = (novelConfig?.prompts || []).find(item => item.id === novelConfig.defaultPromptId)
+      || (novelConfig?.prompts || []).find(item => item.prompt);
+    return [
+      novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
+      activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
+      novelConfig?.instructions ? `Vault instructions:\n${novelConfig.instructions}` : null,
+      novelConfig?.additionalContext ? `Additional context:\n${novelConfig.additionalContext}` : null,
+      novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
+      'Write new markdown that continues the existing page.',
+      `User request: ${userRequest}`,
+      sourceText?.trim()
+        ? 'Use the full existing page below as context. Continue from the end of it. Do not repeat, summarize, move, or rewrite the existing content. Return only the new markdown that should be appended below the current last block.'
+        : 'The page is empty. Return only the new markdown for the page.',
+    ].filter(Boolean).join('\n\n');
+  };
+
+  const plotPointsContextText = (block) => {
+    const titles = new Set(
+      (block.contexts || [])
+        .map(context => String(context || '').replace(/^\[\[|\]\]$/g, '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+    if (!titles.size) return '';
+    return (allNotes || [])
+      .filter(note => titles.has(String(note?.title || '').trim().toLowerCase()))
+      .slice(0, 8)
+      .map(note => `[[${note.title}]]\n${String(note.body || '').slice(0, 2500)}`)
+      .join('\n\n');
+  };
+
+  const plotPointsInstruction = (plotAction, userRequest, sourceText, contextText = '', pageText = '') => {
+    const novelConfig = readNovelistAiConfig();
+    const activePrompt = (novelConfig?.prompts || []).find(item => item.id === novelConfig.defaultPromptId)
+      || (novelConfig?.prompts || []).find(item => item.prompt);
+    const task =
+      plotAction === 'write-scene'
+        ? 'Write the scene prose from these plot points.'
+        : plotAction === 'improve'
+          ? 'Turn these plot points into a clearer, more useful scene plan.'
+          : 'Summarize these plot points into concise scene planning notes.';
+    return [
+      novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
+      activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
+      novelConfig?.instructions ? `Vault instructions:\n${novelConfig.instructions}` : null,
+      novelConfig?.additionalContext ? `Additional context:\n${novelConfig.additionalContext}` : null,
+      novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
+      task,
+      'Use the beat lines and linked context pages as source material. Do not rewrite the Plot Points block itself.',
+      plotAction === 'write-scene' && pageText?.trim()
+        ? 'Continue from the end of the existing page. Do not insert content above existing draft text, repeat existing prose, summarize it, or rewrite it.'
+        : null,
+      userRequest?.trim() ? `User request: ${userRequest.trim()}` : null,
+      plotAction === 'write-scene'
+        ? 'Return only markdown that should be appended to the bottom of the page after the user approves it.'
+        : 'Return only markdown that should be inserted below the Plot Points block after the user approves it.',
+      sourceText?.trim() ? `Plot Points source:\n${sourceText}` : null,
+      contextText?.trim() ? `Linked context pages:\n${contextText}` : null,
+      pageText?.trim() ? `Existing page context:\n${pageText}` : null,
     ].filter(Boolean).join('\n\n');
   };
 
@@ -3159,15 +3593,45 @@ function MnOutliner({
     });
   };
 
+  const appendPageBlocks = (text) => {
+    const replacement = parseAiBlocks(text);
+    mutate(bs => {
+      bs.push(...mnCloneBlocks(replacement));
+    });
+    setFocusId(replacement[0]?.id || null);
+  };
+
   const applyPageReplacement = (text) => replaceAllBlocks(parseAiBlocks(text));
+  const inlinePreviewKey = (actionId, blockId = 'page') => `${actionId}:${blockId}`;
+  const currentNoteId = noteId || noteIdRef.current || '';
+  const isPreviewForCurrentNote = (preview) => (
+    !preview?.noteId || !currentNoteId || preview.noteId === currentNoteId
+  );
+  const previewForCurrentNote = isPreviewForCurrentNote(aiPreview) ? aiPreview : null;
+  const makeAiPreview = (requestNoteId, preview) => ({ ...preview, noteId: requestNoteId || noteIdRef.current || '' });
+
+  const cancelAiPreview = () => {
+    const preview = previewForCurrentNote;
+    if (preview?.target?.kind === 'insert-after' || preview?.target?.kind === 'append-page') {
+      dismissedAiPreviewRef.current = inlinePreviewKey(preview.actionId, preview.target.blockId);
+    }
+    setAiPreview(null);
+  };
 
   const applyAiPreview = () => {
-    if (!aiPreview) return;
-    if (aiPreview.target.kind === 'text') applyTextReplacement(aiPreview.target, aiPreview.text);
-    else if (aiPreview.target.kind === 'blocks') applyBlocksReplacement(aiPreview.target, aiPreview.text);
-    else if (aiPreview.target.kind === 'section') applySectionReplacement(aiPreview.target, aiPreview.text);
-    else if (aiPreview.target.kind === 'page') applyPageReplacement(aiPreview.text);
-    onShowToast && onShowToast(`${mnAiAction(aiPreview.actionId).sectionLabel} applied`);
+    const preview = previewForCurrentNote;
+    if (!preview) return;
+    if (preview.streaming || preview.error || !String(preview.text || '').trim()) return;
+    if (preview.target.kind === 'text') applyTextReplacement(preview.target, preview.text);
+    else if (preview.target.kind === 'blocks') applyBlocksReplacement(preview.target, preview.text);
+    else if (preview.target.kind === 'section') applySectionReplacement(preview.target, preview.text);
+    else if (preview.target.kind === 'insert-after') insertBlocksAfter(preview.target.blockId, parseAiBlocks(preview.text));
+    else if (preview.target.kind === 'append-page') appendPageBlocks(preview.text);
+    else if (preview.target.kind === 'page') applyPageReplacement(preview.text);
+    const label = preview.target.kind === 'append-page'
+      ? mnAiAction(preview.actionId).pageLabel
+      : mnAiAction(preview.actionId).sectionLabel;
+    onShowToast && onShowToast(`${label} applied`);
     setAiPreview(null);
     setSelection(null);
   };
@@ -3179,7 +3643,8 @@ function MnOutliner({
     }
     const action = mnAiAction(actionId);
     let userRequest = null;
-    if (action.needsPrompt) {
+    const needsPrompt = action.needsPrompt && !(scope === 'section' && payload.plotPointsAction === 'write-scene');
+    if (needsPrompt) {
       userRequest = window.prompt(
         scope === 'page' ? 'What should AI write on this page?' :
         scope === 'section' ? 'What should AI write in this section?' :
@@ -3189,8 +3654,10 @@ function MnOutliner({
       if (!userRequest || !userRequest.trim()) return;
     }
     if (aiBusy) return;
+    const requestNoteId = noteIdRef.current || '';
     setAiBusy(true);
     setAiTarget({
+      noteId: requestNoteId,
       scope: scope === 'selection' ? 'selection' : scope === 'section' ? 'section' : 'page',
       blockId: scope === 'selection' ? selection?.blockId : payload.blockId,
       blockIds: scope === 'selection' && selection?.kind === 'blocks' ? selection.blockIds : null,
@@ -3211,7 +3678,7 @@ function MnOutliner({
             action.needsPrompt ? writeInstruction('selected blocks', userRequest, source) : null
           );
           if (action.preview) {
-            setAiPreview({ actionId, text: edited, target: { kind: 'blocks', blockIds: ids } });
+            setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'blocks', blockIds: ids } }));
             return;
           }
           applyBlocksReplacement({ blockIds: ids }, edited);
@@ -3229,7 +3696,7 @@ function MnOutliner({
           action.needsPrompt ? writeInstruction('selected text', userRequest, source) : null
         );
         if (action.preview) {
-          setAiPreview({ actionId, text: edited, target: { kind: 'text', blockId: selection.blockId, start: selection.start, end: selection.end } });
+          setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'text', blockId: selection.blockId, start: selection.start, end: selection.end } }));
           return;
         }
         applyTextReplacement({ blockId: selection.blockId, start: selection.start, end: selection.end }, edited);
@@ -3245,14 +3712,64 @@ function MnOutliner({
         const sourceBlock = mnCloneBlocks([loc.block])[0];
         if (payload.cleanContent != null) sourceBlock.content = payload.cleanContent;
         const source = mnBlocksToMd([sourceBlock]);
+        const isPlotPointsAi = sourceBlock.kind === 'plot-points' || payload.plotPointsAction;
+        const appendPlotWrite = payload.plotPointsAction === 'write-scene';
+        const plotContext = isPlotPointsAi ? plotPointsContextText(sourceBlock) : '';
+        const pageSource = appendPlotWrite ? mnBlocksToMd(blocks) : '';
+        const plotPreviewKey = appendPlotWrite ? inlinePreviewKey(actionId) : inlinePreviewKey(actionId, blockId);
+        if (isPlotPointsAi) {
+          dismissedAiPreviewRef.current = null;
+          setAiPreview({
+            noteId: requestNoteId,
+            actionId,
+            text: '',
+            streaming: true,
+            target: appendPlotWrite ? { kind: 'append-page' } : { kind: 'insert-after', blockId },
+          });
+        }
         const edited = await requestAiEdit(
           actionId,
           'section',
           source,
-          action.needsPrompt ? writeInstruction('section', userRequest, source) : null
+          isPlotPointsAi
+            ? plotPointsInstruction(payload.plotPointsAction || actionId, userRequest, source, plotContext, pageSource)
+            : action.needsPrompt ? writeInstruction('section', userRequest, source) : null,
+          isPlotPointsAi
+            ? {
+                onToken: (token) => {
+                  if (dismissedAiPreviewRef.current === plotPreviewKey) return;
+                  setAiPreview(prev => (
+                    prev?.noteId === requestNoteId && (
+                      (appendPlotWrite && prev?.target?.kind === 'append-page') ||
+                      (!appendPlotWrite && prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId)
+                    )
+                      ? { ...prev, text: `${prev.text || ''}${token}` }
+                      : prev
+                  ));
+                },
+              }
+            : {}
         );
+        if (isPlotPointsAi) {
+          if (dismissedAiPreviewRef.current === plotPreviewKey) return;
+          setAiPreview(prev => (
+            prev?.noteId === requestNoteId && (
+              (appendPlotWrite && prev?.target?.kind === 'append-page') ||
+              (!appendPlotWrite && prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId)
+            )
+              ? { ...prev, text: edited, streaming: false }
+              : {
+                  noteId: requestNoteId,
+                  actionId,
+                  text: edited,
+                  streaming: false,
+                  target: appendPlotWrite ? { kind: 'append-page' } : { kind: 'insert-after', blockId },
+                }
+          ));
+          return;
+        }
         if (action.preview) {
-          setAiPreview({ actionId, text: edited, target: { kind: 'section', blockId } });
+          setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'section', blockId } }));
           return;
         }
         applySectionReplacement({ blockId }, edited);
@@ -3267,20 +3784,64 @@ function MnOutliner({
         if (cleanLoc) cleanLoc.block.content = payload.cleanContent;
       }
       const source = mnBlocksToMd(pageBlocks);
+      const appendPageWrite = actionId === 'write' && pageBlocks.length > 0;
+      const pagePreviewKey = inlinePreviewKey(actionId);
+      if (appendPageWrite) {
+        dismissedAiPreviewRef.current = null;
+        setAiPreview({
+          noteId: requestNoteId,
+          actionId,
+          text: '',
+          streaming: true,
+          target: { kind: 'append-page' },
+        });
+      }
       const edited = await requestAiEdit(
         actionId,
         'page',
         source,
-        action.needsPrompt ? writeInstruction('page', userRequest, source) : null
+        appendPageWrite
+          ? pageContinuationInstruction(userRequest, source)
+          : action.needsPrompt ? writeInstruction('page', userRequest, source) : null,
+        appendPageWrite
+          ? {
+              onToken: (token) => {
+                if (dismissedAiPreviewRef.current === pagePreviewKey) return;
+                setAiPreview(prev => (
+                  prev?.noteId === requestNoteId && prev?.target?.kind === 'append-page'
+                    ? { ...prev, text: `${prev.text || ''}${token}` }
+                    : prev
+                ));
+              },
+            }
+          : {}
       );
+      if (appendPageWrite) {
+        if (dismissedAiPreviewRef.current === pagePreviewKey) return;
+        setAiPreview(prev => (
+          prev?.noteId === requestNoteId && prev?.target?.kind === 'append-page'
+            ? { ...prev, text: edited, streaming: false }
+            : {
+                noteId: requestNoteId,
+                actionId,
+                text: edited,
+                streaming: false,
+                target: { kind: 'append-page' },
+              }
+        ));
+        return;
+      }
       if (action.preview) {
-        setAiPreview({ actionId, text: edited, target: { kind: 'page' } });
+        setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'page' } }));
         return;
       }
       applyPageReplacement(edited);
       onShowToast && onShowToast(`${mnAiAction(actionId).pageLabel} applied`);
     } catch (e) {
       console.error('AI edit failed', e);
+      setAiPreview(prev => prev?.streaming && (!requestNoteId || prev.noteId === requestNoteId)
+        ? { ...prev, streaming: false, error: e.message || 'AI edit failed' }
+        : prev);
       onShowToast && onShowToast(e.message || 'AI edit failed');
     } finally {
       setAiBusy(false);
@@ -3300,7 +3861,11 @@ function MnOutliner({
     onMove,
     onContextMenu, onZoom,
     onAiAction: runAiAction,
-    aiTarget, focusId, setFocusId, T, allNotes, allCanvases, onOpenCanvas, onCreateCanvas,
+    aiPreview: previewForCurrentNote,
+    onApplyAiPreview: applyAiPreview,
+    onCancelAiPreview: cancelAiPreview,
+    aiTarget: (!aiTarget?.noteId || !noteId || aiTarget.noteId === noteId) ? aiTarget : null,
+    focusId, setFocusId, T, allNotes, allCanvases, onOpenCanvas, onCreateCanvas,
     onSelectionChange: setSelection,
     onBlockMouseDown: beginBlockSelection,
     onBlockMouseEnter: extendBlockSelection,
@@ -3312,6 +3877,7 @@ function MnOutliner({
     spellCheck,
     autoLink,
     collapseByDefault,
+    novelistMode,
     parseClipboardBlocks,
   };
 
@@ -3322,6 +3888,7 @@ function MnOutliner({
   // and its children become the editable list.
   const renderBlocks = zoomBlock ? (zoomBlock.children || []) : blocks;
   const ctxBlock = ctxMenu ? mnLocate(blocks, ctxMenu.blockId)?.block : null;
+  const currentAiTarget = (!aiTarget?.noteId || !noteId || aiTarget.noteId === noteId) ? aiTarget : null;
 
   return (
     <div className="mn-outliner" style={{ color: T.ink, position: 'relative' }}>
@@ -3346,9 +3913,30 @@ function MnOutliner({
           animation: mnAiTextShimmer 1.35s ease-in-out infinite;
           background-size: 220% 100%;
         }
+        .mn-inline-ai-preview-streaming {
+          animation: mnInlineAiPreviewPulse 1.3s ease-in-out infinite;
+        }
+        .mn-ai-live-dots span {
+          width: 4px;
+          height: 4px;
+          border-radius: 999px;
+          background: ${T.accent || T.ink};
+          opacity: 0.35;
+          animation: mnAiLiveDot 900ms ease-in-out infinite;
+        }
+        .mn-ai-live-dots span:nth-child(2) { animation-delay: 130ms; }
+        .mn-ai-live-dots span:nth-child(3) { animation-delay: 260ms; }
         @keyframes mnAiPulse {
           0%, 100% { opacity: 0.34; transform: scale(0.998); }
           50% { opacity: 0.72; transform: scale(1.001); }
+        }
+        @keyframes mnAiLiveDot {
+          0%, 100% { opacity: 0.28; transform: translateY(1px); }
+          50% { opacity: 0.92; transform: translateY(-1px); }
+        }
+        @keyframes mnInlineAiPreviewPulse {
+          0%, 100% { filter: saturate(1); }
+          50% { filter: saturate(1.12); }
         }
         @keyframes mnAiPagePulse {
           0%, 100% {
@@ -3368,7 +3956,7 @@ function MnOutliner({
           }
         }
       `}</style>
-      {aiTarget?.scope === 'page' && (
+      {currentAiTarget?.scope === 'page' && (
         <div className="mn-ai-page-working" style={{
           position: 'absolute',
           inset: '-4px -6px 24px',
@@ -3378,7 +3966,7 @@ function MnOutliner({
           zIndex: 0,
         }} />
       )}
-      {aiTarget && (
+      {currentAiTarget && (
         <div style={{
           position: 'fixed',
           right: 24,
@@ -3406,7 +3994,7 @@ function MnOutliner({
             justifyContent: 'center',
             color: T.accent || T.ink,
           }}><MnAiIcon size={13} /></span>
-          {mnAiAction(aiTarget.actionId).selectionLabel.replace('selected text', aiTarget.scope === 'page' ? 'page' : aiTarget.scope === 'section' ? 'section' : 'selected text')}...
+          {mnAiAction(currentAiTarget.actionId).selectionLabel.replace('selected text', currentAiTarget.scope === 'page' ? 'page' : currentAiTarget.scope === 'section' ? 'section' : 'selected text')}
         </div>
       )}
       {zoomBlock && (
@@ -3429,6 +4017,15 @@ function MnOutliner({
         />
       )}
       <MnOutlineTree blocks={renderBlocks} depth={0} {...handlers} />
+      {previewForCurrentNote?.target?.kind === 'append-page' && (
+        <MnInlineAiPreview
+          preview={previewForCurrentNote}
+          depth={0}
+          T={T}
+          onApply={applyAiPreview}
+          onCancel={cancelAiPreview}
+        />
+      )}
       {/* Add new top-level block (or child of zoomed block) */}
       <div onClick={() => {
         const nb = mkBlock({ kind: 'paragraph' });
@@ -3480,9 +4077,9 @@ function MnOutliner({
           T={T}
         />
       )}
-      {aiPreview && (
+      {previewForCurrentNote && !['insert-after', 'append-page'].includes(previewForCurrentNote.target?.kind) && (
         <MnAiPreviewDialog
-          preview={aiPreview}
+          preview={previewForCurrentNote}
           onCancel={() => setAiPreview(null)}
           onApply={applyAiPreview}
           T={T}

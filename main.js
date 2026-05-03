@@ -365,6 +365,23 @@ ipcMain.handle('mn:ai.connect',     wrap(async () => {
 }));
 ipcMain.handle('mn:ai.ask',         wrap((vaultId, query, options) => ai.ask(vaultId, query, store, options || {})));
 ipcMain.handle('mn:ai.edit',        wrap((payload) => ai.editText(payload)));
+ipcMain.handle('mn:ai.editStream',  async (evt, payload = {}) => {
+  try {
+    const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+    const cleanPayload = { ...payload };
+    delete cleanPayload.requestId;
+    const value = await ai.editTextStream({
+      ...cleanPayload,
+      onToken: (token) => {
+        if (requestId) evt.sender.send(`mn:ai.editStream.chunk:${requestId}`, String(token || ''));
+      },
+    });
+    return { ok: true, value };
+  } catch (e) {
+    console.error('[ipc]', 'editTextStream', e);
+    return { ok: false, error: e.message || String(e) };
+  }
+});
 ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(payload)));
 ipcMain.handle('mn:ai.cancel',      wrap((jobId) => ai.cancelJob(jobId)));
 ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, store)));

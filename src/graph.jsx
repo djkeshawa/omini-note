@@ -244,7 +244,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
               outline: 'none',
             }}>
             <option value="all-novelist">All novelist notes</option>
-            <option value="structure">Manuscript structure</option>
+            <option value="structure">Act structure</option>
             <option value="characters-scenes">Characters + scenes</option>
             <option value="plot-scenes">Plot threads + scenes</option>
             <option value="research-scenes">Research + scenes</option>

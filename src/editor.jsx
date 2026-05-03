@@ -65,7 +65,7 @@ function MnEditor({
   onToggleNoteList, noteListHidden,
   editorWidth = 'medium', fontSize = 'default',
   indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
-  novelistPath = null,
+  novelistPath = null, novelistMode = false,
   workflowStates = [], workflowStatus = '', onSetWorkflowStatus,
   theme, T,
 }) {
@@ -536,6 +536,7 @@ function MnEditor({
             setBlocks={setBlocks}
             allNotes={notes}
             allCanvases={canvases}
+            noteId={note.id}
             noteTitle={note.title}
             noteTags={note.tags || []}
             vaultId={vaultId}
@@ -564,6 +565,7 @@ function MnEditor({
             spellCheck={spellCheck}
             autoLink={autoLink}
             collapseByDefault={collapseByDefault}
+            novelistMode={novelistMode}
             T={T}
           />
 
