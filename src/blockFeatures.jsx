@@ -1,6 +1,6 @@
 // OminiNote block features: workflow markers, block refs, embeds, properties, context menu.
 //
-// Workflow markers: TODO, DOING, DONE, LATER, NOW, CANCELLED, WAIT
+// Block markers: legacy workflow tokens kept for markdown compatibility.
 //   - stored in block.workflow (string | null)
 //   - rendered as colored pill at start of block content
 //   - slash command sets it; clicking pill cycles through states
@@ -85,7 +85,7 @@ function MnWorkflowPill({ state, onClick, T }) {
   return (
     <button
       onClick={onClick}
-      title={`Click to cycle (next: ${s.next || 'remove'})`}
+      title={`Click to cycle block marker (next: ${s.next || 'remove'})`}
       style={{
         fontFamily: 'var(--mn-mono)', fontSize: 9.5,
         fontWeight: 700, letterSpacing: '0.06em',
@@ -385,7 +385,7 @@ function MnBlockContextMenu({
         padding: '4px 10px 4px',
         fontFamily: 'var(--mn-mono)', fontSize: 9, color: T.inkDim,
         letterSpacing: '0.1em', textTransform: 'uppercase',
-      }}>Workflow state</div>
+      }}>Block marker</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '0 10px 6px' }}>
         {MN_WORKFLOW_STATES.map(s => (
           <button key={s.id}

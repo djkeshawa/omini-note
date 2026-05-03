@@ -179,6 +179,21 @@ function mnNovelWikiTitles(body = '') {
     .filter(Boolean);
 }
 
+function mnReplaceWikiLinkTitle(body = '', oldTitle = '', newTitle = '') {
+  const oldKey = mnNovelTitleKey(oldTitle);
+  const cleanNewTitle = String(newTitle || '').trim();
+  if (!oldKey || !cleanNewTitle) return body || '';
+  return String(body || '').replace(/\[\[([^\]]+)\]\]/g, (match, rawTarget) => {
+    const target = String(rawTarget || '');
+    const [targetAndAnchor, alias] = target.split('|');
+    const anchorIndex = targetAndAnchor.indexOf('#');
+    const targetTitle = anchorIndex >= 0 ? targetAndAnchor.slice(0, anchorIndex) : targetAndAnchor;
+    const anchor = anchorIndex >= 0 ? targetAndAnchor.slice(anchorIndex) : '';
+    if (mnNovelTitleKey(targetTitle) !== oldKey) return match;
+    return `[[${cleanNewTitle}${anchor}${alias != null ? `|${alias}` : ''}]]`;
+  });
+}
+
 function mnBodyPropertyLineRe(key = '') {
   const safeKey = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`^\\s*(?:-\\s*)?${safeKey}::\\s*(.*)$`, 'im');
@@ -979,6 +994,126 @@ function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
   );
 }
 
+function MnAppNoticeDialog({ notice, T, onClose }) {
+  const closeRef = useRefA(null);
+
+  useEffectA(() => {
+    if (!notice) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape' || e.key === 'Enter') onClose && onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const handle = setTimeout(() => closeRef.current?.focus(), 0);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      clearTimeout(handle);
+    };
+  }, [notice, onClose]);
+
+  if (!notice) return null;
+  const title = notice.title || 'Something went wrong';
+  const message = notice.message || notice.error || 'The operation could not be completed.';
+
+  return (
+    <div
+      className="mn-app-notice-dialog"
+      onClick={onClose}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 92,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `color-mix(in oklab, ${T.ink} 26%, transparent)`,
+        backdropFilter: 'blur(2px)',
+        animation: 'mnFadeIn 120ms ease',
+      }}>
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="mn-app-notice-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 400,
+          maxWidth: 'calc(100vw - 40px)',
+          background: T.bg,
+          color: T.ink,
+          border: `1px solid ${T.line}`,
+          borderRadius: 10,
+          boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 24%, transparent)`,
+          overflow: 'hidden',
+          fontFamily: 'var(--mn-ui)',
+        }}>
+        <div style={{
+          display: 'flex',
+          gap: 12,
+          padding: '17px 18px 14px',
+          borderBottom: `1px solid ${T.lineSub}`,
+          background: T.bgSub,
+        }}>
+          <div style={{
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            color: notice.tone === 'warn' ? T.warn : T.danger,
+            background: `color-mix(in oklab, ${notice.tone === 'warn' ? T.warn : T.danger} 12%, transparent)`,
+            border: `1px solid color-mix(in oklab, ${notice.tone === 'warn' ? T.warn : T.danger} 24%, ${T.lineSub})`,
+          }}>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.45">
+              <path d="M8 2L14 13H2L8 2Z" strokeLinejoin="round"/>
+              <path d="M8 6V9M8 11.7V11.8" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div id="mn-app-notice-title" style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: T.ink,
+              marginBottom: 4,
+            }}>{title}</div>
+            <div style={{
+              fontFamily: 'var(--mn-body)',
+              fontSize: 13,
+              lineHeight: 1.45,
+              color: T.inkMed,
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+            }}>{message}</div>
+          </div>
+        </div>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          padding: '12px 18px 16px',
+        }}>
+          <button
+            ref={closeRef}
+            onClick={onClose}
+            style={{
+              height: 32,
+              padding: '0 14px',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 12.5,
+              fontWeight: 650,
+              background: T.ink,
+              color: T.bg,
+              border: `1px solid ${T.ink}`,
+            }}>
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote, topOffset = 13, T }) {
   const visibleItems = items;
   return (
@@ -1308,6 +1443,7 @@ function MnApp() {
   const [aiNotice, setAiNotice] = useStateA(null);
   const [captureOpen, setCaptureOpen] = useStateA(false);
   const [deleteTargetId, setDeleteTargetId] = useStateA(null);
+  const [appNotice, setAppNotice] = useStateA(null);
   const [toast, setToast] = useStateA(null);
   const [reminderCenterOpen, setReminderCenterOpen] = useStateA(false);
   const dismissedReminderKeys = useRefA(new Set());
@@ -1339,6 +1475,14 @@ function MnApp() {
     setView(current => {
       lastViewRef.current = current === target ? 'notes' : current;
       return target;
+    });
+  }, []);
+
+  const showAppNotice = useCallbackA((title, message, tone = 'error') => {
+    setAppNotice({
+      title,
+      message: message || 'The operation could not be completed.',
+      tone,
     });
   }, []);
 
@@ -1413,6 +1557,7 @@ function MnApp() {
       lastSelectedId: validSelectedId,
       novelistMode: !!vault.novelistMode,
       workflowStates: vault.workflowStates || null,
+      novelistAiConfig: vault.novelistAiConfig || null,
     };
   }, [mnMdToBlocks]);
 
@@ -1460,7 +1605,7 @@ function MnApp() {
 
         if (cancelled) return;
         setVaults(vlist.map(meta => meta.id === activeId
-          ? { ...meta, novelistMode: loaded.novelistMode, workflowStates: loaded.workflowStates || meta.workflowStates || null, notes: loaded.notes, tags: loaded.tags, lastSelectedId: loaded.lastSelectedId, canvases: loaded.canvases }
+          ? { ...meta, novelistMode: loaded.novelistMode, workflowStates: loaded.workflowStates || meta.workflowStates || null, novelistAiConfig: loaded.novelistAiConfig || meta.novelistAiConfig || null, notes: loaded.notes, tags: loaded.tags, lastSelectedId: loaded.lastSelectedId, canvases: loaded.canvases }
           : { ...meta, notes: null, tags: null, canvases: null }));
         setActiveVaultId(activeId);
         setTags(loaded.tags || []);
@@ -1580,6 +1725,7 @@ function MnApp() {
             canvases: activeBundle.canvases,
             novelistMode: activeBundle.novelistMode,
             workflowStates: activeBundle.workflowStates || meta.workflowStates || null,
+            novelistAiConfig: activeBundle.novelistAiConfig || meta.novelistAiConfig || null,
           };
         }
         if (!activeChanged && meta.id === activeVaultId) {
@@ -1591,6 +1737,7 @@ function MnApp() {
             canvases,
             novelistMode: !!meta.novelistMode,
             workflowStates: meta.workflowStates || cached.workflowStates || null,
+            novelistAiConfig: meta.novelistAiConfig || cached.novelistAiConfig || null,
           };
         }
         return {
@@ -1601,6 +1748,7 @@ function MnApp() {
           canvases: cached.canvases || null,
           novelistMode: !!meta.novelistMode,
           workflowStates: meta.workflowStates || cached.workflowStates || null,
+          novelistAiConfig: meta.novelistAiConfig || cached.novelistAiConfig || null,
         };
       }));
 
@@ -1690,6 +1838,7 @@ function MnApp() {
     let targetNotes = target.notes, targetTags = target.tags, targetSel = target.lastSelectedId;
     let targetNovelistMode = !!target.novelistMode;
     let targetWorkflowStates = target.workflowStates || null;
+    let targetNovelistAiConfig = target.novelistAiConfig || null;
     let targetCanvases = target.canvases;
     if (!targetNotes && HAS_DISK) {
       try {
@@ -1702,6 +1851,7 @@ function MnApp() {
           : targetNotes[0]?.id || null;
         targetNovelistMode = !!res.value.novelistMode;
         targetWorkflowStates = res.value.workflowStates || null;
+        targetNovelistAiConfig = res.value.novelistAiConfig || null;
       } catch (e) {
         console.error('loadVault failed', id, e);
         await refreshVaultRegistry({ reloadActive: true, reason: 'selectVault-load-failed' });
@@ -1726,7 +1876,7 @@ function MnApp() {
     setSelectedId(targetSel || targetNotes[0]?.id || null);
     setActiveVaultId(id);
     setVaults(vs => vs.map(v => v.id === id
-      ? { ...v, notes: targetNotes, tags: targetTags, lastSelectedId: targetSel || targetNotes[0]?.id || null, canvases: targetCanvases, novelistMode: targetNovelistMode, workflowStates: targetWorkflowStates }
+      ? { ...v, notes: targetNotes, tags: targetTags, lastSelectedId: targetSel || targetNotes[0]?.id || null, canvases: targetCanvases, novelistMode: targetNovelistMode, workflowStates: targetWorkflowStates, novelistAiConfig: targetNovelistAiConfig }
       : v));
     setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
     if (HAS_DISK) window.mn.setPrefs({ activeVaultId: id });
@@ -1784,7 +1934,7 @@ function MnApp() {
       const newCanvases = [];
       setVaults(vs => [
         ...vs.map(v => v.id === activeVaultId ? { ...v, notes, tags, lastSelectedId: selectedId, canvases } : v),
-        { id, name, slug, path: `~/VispNote/${slug}`, notes: setup.notes, tags: setup.tags, workflowStates: setup.workflowStates || null, canvases: newCanvases, novelistMode: vaultType === 'novelist' },
+        { id, name, slug, path: `~/VispNote/${slug}`, notes: setup.notes, tags: setup.tags, workflowStates: setup.workflowStates || null, novelistAiConfig: null, canvases: newCanvases, novelistMode: vaultType === 'novelist' },
       ]);
       setNotes(setup.notes); setTags(setup.tags); setSelectedId(setup.notes[0]?.id || firstNoteId);
       tagsDirty.current = false;
@@ -1796,23 +1946,9 @@ function MnApp() {
       const res = await window.mn.createVault(name, { type: vaultType, workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null });
       if (!res.ok) throw new Error(res.error);
       const v = res.value;
-      // stash current
-      setVaults(vs => [
-        ...vs.map(x => x.id === activeVaultId ? { ...x, notes, tags, lastSelectedId: selectedId, canvases } : x),
-        { ...v, notes: null, tags: null, canvases: [], novelistMode: vaultType === 'novelist', workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null },
-      ]);
-      if (activationSeq !== vaultActivationSeq.current) return;
-      setActiveVaultId(v.id);
-      setNotes([]);
-      setTags([]);
-      setCanvases([]);
-      setActiveCanvas(null);
-      setSelectedId(null);
-      setSelectedTag(null);
-      setSelectedWorkflow(null);
-      setQuery('');
-      navigateView('notes');
-      // load the new vault from disk (it has the seeded welcome note)
+
+      // Load first, then switch atomically. This prevents the previous vault's
+      // notes from appearing under the newly-created vault if disk IO is slow.
       const loadRes = await window.mn.loadVault(v.id);
       if (!loadRes.ok) throw new Error(loadRes.error);
       const loaded = loadRes.value;
@@ -1830,14 +1966,20 @@ function MnApp() {
       setCanvases([]); setActiveCanvas(null);
       setSelectedId(loaded.lastSelectedId || loadedNotes[0]?.id || null);
       setActiveVaultId(v.id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
-      setVaults(vs => vs.map(x => x.id === v.id
-        ? { ...x, notes: loadedNotes, tags: loadedTags, lastSelectedId: loaded.lastSelectedId || loadedNotes[0]?.id || null, canvases: [], workflowStates: loaded.workflowStates || null, novelistMode: vaultType === 'novelist' }
-        : x));
+      setQuery('');
+      setVaults(vs => [
+        ...vs
+          .filter(x => x.id !== v.id)
+          .map(x => x.id === activeVaultId ? { ...x, notes, tags, lastSelectedId: selectedId, canvases } : x),
+        { ...v, notes: loadedNotes, tags: loadedTags, lastSelectedId: loaded.lastSelectedId || loadedNotes[0]?.id || null, canvases: [], workflowStates: loaded.workflowStates || null, novelistAiConfig: loaded.novelistAiConfig || null, novelistMode: vaultType === 'novelist' },
+      ]);
       window.mn.setPrefs({ activeVaultId: v.id });
     } catch (e) {
-      console.error('createVault failed', e); alert('Could not create vault: ' + e.message);
+      console.error('createVault failed', e);
+      showAppNotice('Could not create vault', e.message || String(e));
+      await refreshVaultRegistry({ reloadActive: false, reason: 'createVault-failed' });
     }
-  }, [activeVaultId, notes, vaults, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks, mnBlocksToMd]);
+  }, [activeVaultId, notes, vaults, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks, mnBlocksToMd, showAppNotice, refreshVaultRegistry]);
 
   const setActiveVaultNovelistMode = useCallbackA(async (enabled) => {
     if (!activeVaultId) return { ok: false, error: 'No active vault.' };
@@ -1869,12 +2011,24 @@ function MnApp() {
   }, [activeVaultId, notes, tags, view, navigateView]);
 
   const renameVault = useCallbackA(async (id, name) => {
-    setVaults(vs => vs.map(v => v.id === id ? { ...v, name } : v));
+    const cleanName = String(name || '').trim();
+    if (!cleanName) return { ok: false, error: 'Vault name is required.' };
+    const previous = vaults.find(v => v.id === id)?.name || '';
+    setVaults(vs => vs.map(v => v.id === id ? { ...v, name: cleanName } : v));
     if (HAS_DISK) {
-      try { await window.mn.renameVault(id, name); }
-      catch (e) { console.error('renameVault failed', e); }
+      try {
+        const res = await window.mn.renameVault(id, cleanName);
+        if (!res.ok) throw new Error(res.error);
+      }
+      catch (e) {
+        console.error('renameVault failed', e);
+        setVaults(vs => vs.map(v => v.id === id ? { ...v, name: previous } : v));
+        showAppNotice('Could not rename vault', e.message || String(e));
+        return { ok: false, error: e.message || String(e) };
+      }
     }
-  }, []);
+    return { ok: true };
+  }, [vaults, showAppNotice]);
 
   const deleteVault = useCallbackA(async (id) => {
     const target = vaults.find(v => v.id === id);
@@ -1898,7 +2052,7 @@ function MnApp() {
         if (!res.ok) throw new Error(res.error);
         nextVaults = (res.value?.vaults || localRemaining).map(meta => {
           const cached = localRemaining.find(v => v.id === meta.id) || {};
-          return { ...meta, notes: cached.notes || null, tags: cached.tags || null, lastSelectedId: cached.lastSelectedId || null, canvases: cached.canvases || null, novelistMode: !!(meta.novelistMode ?? cached.novelistMode), workflowStates: meta.workflowStates || cached.workflowStates || null };
+          return { ...meta, notes: cached.notes || null, tags: cached.tags || null, lastSelectedId: cached.lastSelectedId || null, canvases: cached.canvases || null, novelistMode: !!(meta.novelistMode ?? cached.novelistMode), workflowStates: meta.workflowStates || cached.workflowStates || null, novelistAiConfig: meta.novelistAiConfig || cached.novelistAiConfig || null };
         });
         nextActiveId = deletingActive ? (res.value?.activeVaultId || nextVaults[0]?.id) : activeVaultId;
       } catch (e) {
@@ -1937,6 +2091,7 @@ function MnApp() {
         nextSelectedId = loaded.lastSelectedId || nextNotes[0]?.id || null;
         nextMeta.novelistMode = !!loaded.novelistMode;
         nextMeta.workflowStates = loaded.workflowStates || nextMeta.workflowStates || null;
+        nextMeta.novelistAiConfig = loaded.novelistAiConfig || nextMeta.novelistAiConfig || null;
         const canvasRes = await window.mn.listCanvases(nextMeta.id);
         nextCanvases = canvasRes.ok ? (canvasRes.value || []) : [];
       } catch (e) {
@@ -1946,7 +2101,7 @@ function MnApp() {
     }
 
     setVaults(nextVaults.map(v => v.id === nextMeta.id
-      ? { ...v, notes: nextNotes, tags: nextTags, lastSelectedId: nextSelectedId, canvases: nextCanvases, novelistMode: !!nextMeta.novelistMode, workflowStates: nextMeta.workflowStates || null }
+      ? { ...v, notes: nextNotes, tags: nextTags, lastSelectedId: nextSelectedId, canvases: nextCanvases, novelistMode: !!nextMeta.novelistMode, workflowStates: nextMeta.workflowStates || null, novelistAiConfig: nextMeta.novelistAiConfig || null }
       : v));
     setNotes(nextNotes);
     setTags(nextTags);
@@ -1969,6 +2124,24 @@ function MnApp() {
     canvasCount: v.id === activeVaultId ? canvases.length : (v.canvases?.length ?? 0),
   })), [vaults, activeVaultId, notes, canvases]);
   const activeVault = useMemoA(() => vaults.find(v => v.id === activeVaultId) || null, [vaults, activeVaultId]);
+
+  const updateNovelistAiConfig = useCallbackA((config) => {
+    if (!activeVaultId) return;
+    window.mnWriteNovelistAiConfig?.(config || null, activeVaultId);
+    setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, novelistAiConfig: config || null } : v));
+    if (HAS_DISK) {
+      window.mn.saveVaultMeta(activeVaultId, { novelistAiConfig: config || null })
+        .catch(e => {
+          console.error('save novelist AI config failed', e);
+          showAppNotice('Could not save novelist AI configuration', e.message || String(e));
+        });
+    }
+  }, [activeVaultId, showAppNotice]);
+
+  useEffectA(() => {
+    if (!activeVaultId || !activeVault?.novelistAiConfig) return;
+    window.mnWriteNovelistAiConfig?.(activeVault.novelistAiConfig, activeVaultId);
+  }, [activeVaultId, activeVault?.novelistAiConfig]);
 
   const sidebarHidden = tweaks.showSidebar === false;
   const setSidebarHidden = (v) => {
@@ -2046,7 +2219,9 @@ function MnApp() {
   // searchHits = []    → query active but zero matches
   // searchHits = [...] → matched note ids in rank order
   const [searchHits, setSearchHits] = useStateA(null);
+  const searchSeq = useRefA(0);
   useEffectA(() => {
+    const seq = ++searchSeq.current;
     const q = query.trim();
     if (!q) { setSearchHits(null); return; }
     const activeVaultHasUnsaved = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
@@ -2058,13 +2233,13 @@ function MnApp() {
         (n.body || '').toLowerCase().includes(lc) ||
         n.tags.some(t => t.toLowerCase().includes(lc))
       ).map(n => n.id);
-      setSearchHits(ids);
+      if (seq === searchSeq.current) setSearchHits(ids);
       return;
     }
     const handle = setTimeout(async () => {
       try {
         const res = await window.mn.search(activeVaultId, q, 100);
-        if (res.ok) setSearchHits(res.value.map(r => r.id));
+        if (seq === searchSeq.current && res.ok) setSearchHits(res.value.map(r => r.id));
       } catch (e) { console.error('search failed', e); }
     }, 150);
     return () => clearTimeout(handle);
@@ -2171,8 +2346,22 @@ function MnApp() {
     return values(items, 1, base);
   }, [notesWithBody, novelistStructure]);
 
+  const uniqueNoteTitle = useCallbackA((rawTitle = 'Untitled', excludeId = null) => {
+    const base = String(rawTitle || '').trim() || 'Untitled';
+    const existing = new Set(notes
+      .filter(note => note.id !== excludeId)
+      .map(note => String(note.title || '').trim().toLowerCase())
+      .filter(Boolean));
+    if (!existing.has(base.toLowerCase())) return base;
+    let index = 2;
+    while (existing.has(`${base} ${index}`.toLowerCase())) index++;
+    return `${base} ${index}`;
+  }, [notes]);
+
+  const createRuntimeNoteId = () => `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
   const createNote = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [] } = {}, options = {}) => {
-    const id = 'n_' + Date.now().toString(36);
+    const id = createRuntimeNoteId();
     const cleanTitle = String(title || '').trim() || 'Untitled';
     const defaults = mnParseDefaultTags(tweaks.defaultTags);
     const cleanTags = [...noteTags, ...defaults]
@@ -2205,6 +2394,32 @@ function MnApp() {
     markDirty(id);
     return id;
   }, [markDirty, navigateView, tweaks.defaultTags, tags]);
+
+  const duplicateNote = useCallbackA((noteId, options = {}) => {
+    const source = notesWithBody.find(n => n.id === noteId);
+    if (!source) return null;
+    const id = createRuntimeNoteId();
+    const title = uniqueNoteTitle(`${source.title || 'Untitled'} copy`);
+    const body = mnNormalizeNoteBody(source.body || mnBlocksToMd(source.blocks || []), title);
+    const blocks = body ? mnMdToBlocks(body) : [mkBlock({ kind: 'paragraph', content: '' })];
+    const duplicate = {
+      ...source,
+      id,
+      title,
+      body,
+      blocks,
+      pinned: false,
+      date: new Date().toISOString(),
+      modifiedAt: new Date().toISOString(),
+    };
+    setNotes(ns => [duplicate, ...ns]);
+    if (options.open !== false) {
+      setSelectedId(id);
+      navigateView(options.view || 'notes');
+    }
+    markDirty(id);
+    return id;
+  }, [notesWithBody, mnBlocksToMd, mnMdToBlocks, mkBlock, uniqueNoteTitle, markDirty, navigateView]);
 
   const updateNote = (id, patch) => {
     setNotes(ns => ns.map(n => {
@@ -2257,8 +2472,26 @@ function MnApp() {
 
   const renameNoteTitle = useCallbackA((noteId, title) => {
     if (!String(title || '').trim()) return;
-    updateNote(noteId, { title: String(title).trim() });
-  }, [updateNote]);
+    const source = notesWithBody.find(n => n.id === noteId);
+    if (!source) return;
+    const nextTitle = uniqueNoteTitle(title, noteId);
+    const previousTitle = source.title || '';
+    const linkUpdates = new Map();
+    notesWithBody.forEach(n => {
+      if (n.id === noteId) return;
+      const sourceBody = n.body || mnBlocksToMd(n.blocks || []);
+      const linkedBody = mnReplaceWikiLinkTitle(sourceBody, previousTitle, nextTitle);
+      if (linkedBody !== sourceBody) linkUpdates.set(n.id, mnNormalizeNoteBody(linkedBody, n.title || 'Untitled'));
+    });
+    setNotes(ns => ns.map(n => {
+      if (n.id === noteId) return { ...n, title: nextTitle, modifiedAt: new Date().toISOString() };
+      const cleanBody = linkUpdates.get(n.id);
+      if (!cleanBody) return n;
+      return { ...n, body: cleanBody, blocks: mnMdToBlocks(cleanBody || ''), modifiedAt: new Date().toISOString() };
+    }));
+    markDirty(noteId);
+    linkUpdates.forEach((_body, id) => markDirty(id));
+  }, [notesWithBody, uniqueNoteTitle, markDirty, mnBlocksToMd, mnMdToBlocks]);
 
   const convertNovelistType = useCallbackA((noteId, tag) => {
     const cleanTag = normalizeTagName(tag);
@@ -2363,8 +2596,7 @@ function MnApp() {
   };
 
   const promptNewTag = (name) => {
-    const raw = typeof name === 'string' ? name : window.prompt('New tag name (no spaces):', '');
-    if (raw) addTag(raw);
+    if (typeof name === 'string') addTag(name);
   };
 
   const requestDeleteNote = (id) => {
@@ -2375,20 +2607,38 @@ function MnApp() {
   const deleteNote = async (id) => {
     const n = notes.find(x => x.id === id);
     if (!n) return;
+    const previousNotes = notes;
+    const previousSelectedId = selectedId;
+    const dirtyKey = mnDirtyNoteKey(activeVaultId, id);
+    const previousDirtyEntry = dirtyNotes.get(dirtyKey);
     setDeleteTargetId(null);
     setDirtyNotes(cur => {
-      const key = mnDirtyNoteKey(activeVaultId, id);
-      if (!cur.has(key)) return cur;
+      if (!cur.has(dirtyKey)) return cur;
       const next = new Map(cur);
-      next.delete(key);
+      next.delete(dirtyKey);
       return next;
     });
     setNotes(ns => ns.filter(x => x.id !== id));
     const rest = notes.filter(x => x.id !== id);
     setSelectedId(rest[0]?.id || null);
     if (HAS_DISK && activeVaultId) {
-      try { await window.mn.deleteNote(activeVaultId, id); }
-      catch (e) { console.error('deleteNote failed', e); }
+      try {
+        const res = await window.mn.deleteNote(activeVaultId, id);
+        if (res && res.ok === false) throw new Error(res.error);
+      }
+      catch (e) {
+        console.error('deleteNote failed', e);
+        setNotes(previousNotes);
+        setSelectedId(previousSelectedId);
+        if (previousDirtyEntry) {
+          setDirtyNotes(cur => {
+            const next = new Map(cur);
+            next.set(dirtyKey, previousDirtyEntry);
+            return next;
+          });
+        }
+        showAppNotice('Could not delete note', e.message || String(e));
+      }
     }
   };
 
@@ -2471,7 +2721,7 @@ function MnApp() {
         saved = res.value;
       } catch (e) {
         console.error('saveCanvas failed', e);
-        alert('Could not create canvas: ' + (e.message || String(e)));
+        showAppNotice('Could not create canvas', e.message || String(e));
         return null;
       }
     }
@@ -2484,7 +2734,7 @@ function MnApp() {
       navigateView('canvas');
     }
     return saved;
-  }, [activeVaultId, navigateView, upsertCanvasSummary]);
+  }, [activeVaultId, navigateView, upsertCanvasSummary, showAppNotice]);
 
   const saveCanvas = useCallbackA(async (canvas) => {
     if (!canvas?.id) return null;
@@ -2496,13 +2746,14 @@ function MnApp() {
         saved = res.value;
       } catch (e) {
         console.error('saveCanvas failed', canvas.id, e);
+        showAppNotice('Could not save canvas', e.message || String(e));
         return null;
       }
     }
     setActiveCanvas(current => current?.id === saved.id ? saved : current);
     upsertCanvasSummary(saved);
     return saved;
-  }, [activeVaultId, upsertCanvasSummary]);
+  }, [activeVaultId, upsertCanvasSummary, showAppNotice]);
 
   const deleteCanvas = useCallbackA(async (canvasId) => {
     if (!canvasId) return;
@@ -2512,7 +2763,7 @@ function MnApp() {
         if (!res.ok) throw new Error(res.error);
       } catch (e) {
         console.error('deleteCanvas failed', canvasId, e);
-        alert('Could not delete canvas: ' + (e.message || String(e)));
+        showAppNotice('Could not delete canvas', e.message || String(e));
         return;
       }
     }
@@ -2520,7 +2771,7 @@ function MnApp() {
     cacheCanvases(next);
     if (activeCanvas?.id === canvasId) setActiveCanvas(null);
     navigateView('canvas');
-  }, [activeVaultId, activeCanvas, canvases, cacheCanvases, navigateView]);
+  }, [activeVaultId, activeCanvas, canvases, cacheCanvases, navigateView, showAppNotice]);
 
   useEffectA(() => {
     const h = (e) => {
@@ -2684,6 +2935,9 @@ function MnApp() {
               onQueryChange={setQuery}
               novelistStructure={activeVault?.novelistMode && view === 'notes' && !query.trim() && !selectedTag && !selectedWorkflow ? novelistStructure : null}
               allNotes={notesWithBody}
+              onRenameNote={renameNoteTitle}
+              onDuplicateNote={duplicateNote}
+              onDeleteNote={requestDeleteNote}
               tags={tags} theme={theme} density={tweaks.density} T={T}
             />
           )}
@@ -2747,6 +3001,7 @@ function MnApp() {
               }}
               onRemoveTag={(t) => updateNote(selectedNote.id, { tags: selectedNote.tags.filter(x => x !== t) })}
               onPinToggle={() => updateNote(selectedNote.id, { pinned: !selectedNote.pinned })}
+              onDuplicate={() => duplicateNote(selectedNote.id)}
               onDelete={() => requestDeleteNote(selectedNote.id)}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onBack={goBackView}
@@ -2826,6 +3081,8 @@ function MnApp() {
               onDeleteNote={requestDeleteNote}
               onCreateTag={addTag}
               onRemoveSupportingType={removeNovelistSupportingType}
+              initialAiConfig={activeVault?.novelistAiConfig || null}
+              onAiConfigChange={updateNovelistAiConfig}
               T={T}
               theme={theme}
             />
@@ -2937,6 +3194,13 @@ function MnApp() {
             T={T}
             onCancel={() => setDeleteTargetId(null)}
             onConfirm={() => deleteNote(deleteTargetNote.id)}
+          />
+        )}
+        {appNotice && (
+          <MnAppNoticeDialog
+            notice={appNotice}
+            T={T}
+            onClose={() => setAppNotice(null)}
           />
         )}
         {askAiOpen && (

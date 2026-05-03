@@ -1,5 +1,5 @@
 // Middle pane: list of notes (filtered). Click to select.
-const { useMemo: useMemoL, useState: useStateL } = React;
+const { useMemo: useMemoL, useState: useStateL, useEffect: useEffectL } = React;
 
 function mnFormatDate(iso) {
   const d = new Date(iso);
@@ -83,9 +83,15 @@ function MnNoteList({
   query, onQueryChange,
   novelistStructure = null,
   allNotes = null,
+  onRenameNote,
+  onDuplicateNote,
+  onDeleteNote,
   tags, theme, density, T,
 }) {
   const [collapsed, setCollapsed] = useStateL({});
+  const [menu, setMenu] = useStateL(null);
+  const [renameId, setRenameId] = useStateL(null);
+  const [renameValue, setRenameValue] = useStateL('');
   const tagHue = useMemoL(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
@@ -143,8 +149,36 @@ function MnNoteList({
     return { acts, looseChapters, looseScenes, chaptersForAct, scenesForChapter, other };
   }, [notes, allNotes, novelistStructure]);
 
+  useEffectL(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
+  const startRename = (note) => {
+    if (!note) return;
+    setMenu(null);
+    setRenameId(note.id);
+    setRenameValue(note.title || 'Untitled');
+    onSelect(note.id);
+  };
+
+  const submitRename = () => {
+    const title = renameValue.trim();
+    if (renameId && title) onRenameNote && onRenameNote(renameId, title);
+    setRenameId(null);
+    setRenameValue('');
+  };
+
   const NoteRow = ({ n, depth = 0, compact = false, meta = '' }) => {
     const active = n.id === selectedId;
+    const isRenaming = renameId === n.id;
     return (
       <div
         key={n.id}
@@ -155,7 +189,13 @@ function MnNoteList({
           e.dataTransfer.setData('text/plain', `mn-note:${n.id}`);
           e.dataTransfer.effectAllowed = 'copyMove';
         }}
-        onClick={() => onSelect(n.id)}
+        onClick={() => { if (!isRenaming) onSelect(n.id); }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setMenu({ x: e.clientX, y: e.clientY, note: n });
+          onSelect(n.id);
+        }}
         style={{
         padding: density === 'compact' || compact ? '9px 18px' : '14px 20px',
         paddingLeft: 20 + depth * 16,
@@ -174,12 +214,43 @@ function MnNoteList({
               <circle cx="5" cy="5" r="3" />
             </svg>
           )}
-          <div style={{
-            flex: 1, fontFamily: 'var(--mn-ui)',
-            fontSize: 13.5, fontWeight: depth ? 500 : 600,
-            color: T.ink, letterSpacing: '-0.005em',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>{mnHighlight(n.title, query, T)}</div>
+          {isRenaming ? (
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={submitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); submitRename(); }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setRenameId(null);
+                  setRenameValue('');
+                }
+              }}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                border: `1px solid ${T.accent}`,
+                borderRadius: 5,
+                background: T.bg,
+                color: T.ink,
+                padding: '4px 6px',
+                outline: 'none',
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            />
+          ) : (
+            <div style={{
+              flex: 1, fontFamily: 'var(--mn-ui)',
+              fontSize: 13.5, fontWeight: depth ? 500 : 600,
+              color: T.ink, letterSpacing: '-0.005em',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{mnHighlight(n.title, query, T)}</div>
+          )}
           <div style={{
             fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim,
             flexShrink: 0,
@@ -487,6 +558,56 @@ function MnNoteList({
           </>
         ) : notes.map(n => <NoteRow key={n.id} n={n} />)}
       </div>
+      {menu && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            left: menu.x,
+            top: menu.y,
+            zIndex: 90,
+            minWidth: 158,
+            padding: 5,
+            background: T.bg,
+            border: `1px solid ${T.line}`,
+            borderRadius: 7,
+            boxShadow: `0 10px 28px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+            fontFamily: 'var(--mn-ui)',
+          }}>
+          {[
+            { label: 'Rename', action: () => startRename(menu.note) },
+            { label: 'Duplicate', action: () => { setMenu(null); onDuplicateNote && onDuplicateNote(menu.note?.id); } },
+            { label: 'Delete', danger: true, action: () => { setMenu(null); onDeleteNote && onDeleteNote(menu.note?.id); } },
+          ].map(item => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={item.action}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 8px',
+                border: 'none',
+                borderRadius: 5,
+                background: 'transparent',
+                color: item.danger ? (T.danger || T.warn) : T.inkMed,
+                cursor: 'pointer',
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12.5,
+                textAlign: 'left',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <span style={{ width: 14, color: item.danger ? (T.danger || T.warn) : T.inkDim }}>
+                {item.label === 'Rename' ? 'R' : item.label === 'Duplicate' ? '+' : 'x'}
+              </span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

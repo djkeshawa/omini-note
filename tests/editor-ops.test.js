@@ -202,7 +202,9 @@ test('AI menu buttons open option menus instead of running Improve directly', ()
   assert.match(outliner, /if \(!undoStack\.current\.length\) return false/);
   assert.match(outliner, /if \(!redoStack\.current\.length\) return false/);
   assert.match(outliner, /stopImmediatePropagation/);
-  assert.match(outliner, /scope === 'section' \? 'What should AI write in this section\?'/);
+  assert.match(outliner, /const \[aiPrompt, setAiPrompt\]/);
+  assert.match(outliner, /title: scope === 'page' \? 'Write on this page'/);
+  assert.doesNotMatch(outliner, /window\.prompt/);
   assert.match(outliner, /onClick=\{\(e\) => \{[\s\S]*pickAction\(a\.id\);/);
   assert.doesNotMatch(outliner, /onPick\('improve'\)/);
 });
@@ -791,6 +793,39 @@ test('Vault registry creates one fallback vault if every folder is externally de
   });
 });
 
+test('New novelist vaults stay isolated and persist novelist AI config', async () => {
+  await withIsolatedStore(async (store) => {
+    const first = await store.createVault('Novel One', { type: 'novelist' });
+    await store.saveNote(first.id, {
+      id: 'n_custom_scene',
+      title: 'Custom Scene',
+      date: new Date().toISOString(),
+      tags: ['novel-scene'],
+      body: 'status:: DRAFT\nchapter:: [[Chapter 1]]\nOnly in the first vault.',
+    });
+
+    const second = await store.createVault('Novel Two', { type: 'novelist' });
+    await store.saveVaultMeta(second.id, {
+      novelistAiConfig: {
+        version: 2,
+        wordLimit: 1200,
+        prompts: [{ id: 'draft', name: 'Draft', prompt: 'Write a scene.' }],
+      },
+    });
+
+    const firstLoaded = await store.loadVault(first.id);
+    const secondLoaded = await store.loadVault(second.id);
+    const listed = await store.listVaults();
+    const secondMeta = listed.find(v => v.id === second.id);
+
+    assert.equal(firstLoaded.notes.some(note => note.id === 'n_custom_scene'), true);
+    assert.equal(secondLoaded.notes.some(note => note.id === 'n_custom_scene'), false);
+    assert.deepEqual(secondLoaded.notes.map(note => note.title).sort(), ['Act 1', 'Chapter 1', 'Scene 1']);
+    assert.equal(secondLoaded.novelistAiConfig.wordLimit, 1200);
+    assert.equal(secondMeta.novelistAiConfig.wordLimit, 1200);
+  });
+});
+
 test('Novelist hierarchy is inferred from act properties and explicit structure tags', () => {
   const Babel = require('@babel/standalone');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
@@ -892,7 +927,7 @@ test('Novelist order and note-level status properties drive visible workflow', (
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
   assert.match(outliner, /id: 'block-label'/);
   assert.match(outliner, /blockLabelAction/);
-  assert.match(outliner, /Status: \$\{state\.id\}/);
+  assert.match(outliner, /Marker: \$\{state\.id\}/);
   assert.match(outliner, /setLabelMenu/);
   assert.match(blockFeatures, /label="Add label"/);
 });
@@ -1175,9 +1210,9 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.8');
-  assert.equal(lock.version, '0.1.8');
-  assert.equal(lock.packages[''].version, '0.1.8');
+  assert.equal(pkg.version, '0.1.9');
+  assert.equal(lock.version, '0.1.9');
+  assert.equal(lock.packages[''].version, '0.1.9');
   assert.equal(pkg.homepage, 'https://github.com/djkeshawa/visp-note#readme');
   assert.equal(pkg.repository.url, 'https://github.com/djkeshawa/visp-note.git');
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
@@ -1254,6 +1289,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
     lastSelectedId: 'n_valid-1',
     novelistMode: true,
     workflowStates: [],
+    novelistAiConfig: { wordLimit: 900 },
   });
   assert.deepEqual(cleanMeta.tags, [
     { name: 'novel-cast', hue: 360 },
@@ -1262,8 +1298,10 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.equal(cleanMeta.lastSelectedId, 'n_valid-1');
   assert.equal(cleanMeta.novelistMode, true);
   assert.deepEqual(cleanMeta.workflowStates, []);
+  assert.deepEqual(cleanMeta.novelistAiConfig, { wordLimit: 900 });
   assert.throws(() => store.__test.sanitizeVaultMetaPatch({ slug: '../x' }), /Unsupported vault metadata field/);
   assert.throws(() => store.__test.sanitizeVaultMetaPatch({ lastSelectedId: '../x' }), /Invalid note id/);
+  assert.throws(() => store.__test.sanitizeVaultMetaPatch({ novelistAiConfig: 'bad' }), /Invalid novelist AI config patch/);
 
   assert.match(aiSource, /function sanitizeConfigPatch/);
   assert.match(aiSource, /SECRET_CONFIG_KEYS/);
@@ -1478,4 +1516,43 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(app, /top: topOffset/);
   assert.match(app, /const reminderCenterTop = view === 'workflow' \? 30 : view === 'graph' \? 12 : 13/);
   assert.match(app, /topOffset=\{reminderCenterTop\}/);
+});
+
+test('Stabilization wiring avoids stale UI and native dialogs', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+
+  assert.match(app, /function MnAppNoticeDialog/);
+  assert.match(app, /const searchSeq = useRefA\(0\)/);
+  assert.match(app, /if \(seq === searchSeq\.current && res\.ok\) setSearchHits/);
+  assert.match(app, /Load first, then switch atomically/);
+  assert.match(app, /function mnReplaceWikiLinkTitle/);
+  assert.match(app, /const duplicateNote = useCallbackA/);
+  assert.match(app, /showAppNotice\('Could not create vault'/);
+  assert.doesNotMatch(app, /alert\(/);
+  assert.doesNotMatch(app, /window\.prompt/);
+
+  assert.match(notelist, /onRenameNote/);
+  assert.match(notelist, /onDuplicateNote/);
+  assert.match(notelist, /onDeleteNote/);
+  assert.match(notelist, /onContextMenu=\{\(e\) =>/);
+  assert.match(editor, /onDuplicate/);
+  assert.match(editor, /title="Duplicate note"/);
+
+  assert.match(outliner, /const \[aiPrompt, setAiPrompt\]/);
+  assert.match(outliner, /role="dialog"/);
+  assert.match(outliner, /Marker: \$\{state\.id\}/);
+  assert.doesNotMatch(outliner, /window\.prompt/);
+  assert.match(blockFeatures, /Block marker/);
+
+  assert.match(store, /novelistAiConfig/);
+  assert.match(panels, /initialAiConfig = null/);
+  assert.match(panels, /onAiConfigChange && onAiConfigChange\(next\)/);
+  assert.match(panels, /window\.mnWriteNovelistAiConfig = mnWriteNovelistAiConfig/);
+  assert.match(app, /window\.mnWriteNovelistAiConfig\?\.\(activeVault\.novelistAiConfig, activeVaultId\)/);
 });

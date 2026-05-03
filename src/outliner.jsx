@@ -559,8 +559,8 @@ function mnWorkflowSlashCommands() {
   const states = window.MN_LOGSEQ?.WORKFLOW_STATES || [];
   return states.map(state => ({
     id: `wf-${String(state.id || '').toLowerCase()}`,
-    label: `Status: ${state.id}`,
-    hint: `Set block status to ${state.id.toLowerCase()}`,
+    label: `Marker: ${state.id}`,
+    hint: `Add a block marker for ${state.id.toLowerCase()}`,
     kbd: `/${state.id}`,
     icon: String(state.id || '?').slice(0, 1),
     workflow: state.id,
@@ -2673,6 +2673,7 @@ function MnOutliner({
   const [selection, setSelection] = useStateOE(null); // { blockId, start, end, rect }
   const [ctxMenu, setCtxMenu] = useStateOE(null); // { blockId, x, y } | null
   const [aiMenu, setAiMenu] = useStateOE(null); // { scope, blockId, x, y } | null
+  const [aiPrompt, setAiPrompt] = useStateOE(null); // { actionId, scope, payload, title, value } | null
   const [aiBusy, setAiBusy] = useStateOE(false);
   const [aiTarget, setAiTarget] = useStateOE(null); // { scope, blockId? } | null
   const [aiPreview, setAiPreview] = useStateOE(null);
@@ -3642,17 +3643,21 @@ function MnOutliner({
       return;
     }
     const action = mnAiAction(actionId);
-    let userRequest = null;
+    let userRequest = payload.userRequest || null;
     const needsPrompt = action.needsPrompt && !(scope === 'section' && payload.plotPointsAction === 'write-scene');
-    if (needsPrompt) {
-      userRequest = window.prompt(
-        scope === 'page' ? 'What should AI write on this page?' :
-        scope === 'section' ? 'What should AI write in this section?' :
-        'What should AI write for this selection?',
-        ''
-      );
-      if (!userRequest || !userRequest.trim()) return;
+    if (needsPrompt && !String(userRequest || '').trim()) {
+      setAiPrompt({
+        actionId,
+        scope,
+        payload,
+        title: scope === 'page' ? 'Write on this page'
+          : scope === 'section' ? 'Write in this section'
+          : 'Write for this selection',
+        value: '',
+      });
+      return;
     }
+    if (needsPrompt) userRequest = String(userRequest || '').trim();
     if (aiBusy) return;
     const requestNoteId = noteIdRef.current || '';
     setAiBusy(true);
@@ -4076,6 +4081,130 @@ function MnOutliner({
           onClose={() => setAiMenu(null)}
           T={T}
         />
+      )}
+      {aiPrompt && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 220,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: `color-mix(in oklab, ${T.ink} 24%, transparent)`,
+            backdropFilter: 'blur(2px)',
+          }}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={aiPrompt.title}
+            style={{
+              width: 420,
+              maxWidth: 'calc(100vw - 40px)',
+              background: T.bg,
+              color: T.ink,
+              border: `1px solid ${T.line}`,
+              borderRadius: 10,
+              boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 24%, transparent)`,
+              overflow: 'hidden',
+              fontFamily: 'var(--mn-ui)',
+            }}>
+            <div style={{
+              padding: '16px 18px 12px',
+              borderBottom: `1px solid ${T.lineSub}`,
+              background: T.bgSub,
+            }}>
+              <div style={{ fontSize: 15, fontWeight: 720, color: T.ink }}>{aiPrompt.title}</div>
+              <div style={{ marginTop: 4, fontFamily: 'var(--mn-body)', fontSize: 12.5, color: T.inkMed }}>
+                Add the writing instruction for this AI action.
+              </div>
+            </div>
+            <div style={{ padding: 18 }}>
+              <textarea
+                autoFocus
+                value={aiPrompt.value}
+                onChange={(e) => setAiPrompt(current => current ? { ...current, value: e.target.value } : current)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setAiPrompt(null);
+                  }
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    const current = aiPrompt;
+                    const value = String(current.value || '').trim();
+                    if (!value) return;
+                    setAiPrompt(null);
+                    runAiAction(current.actionId, current.scope, { ...current.payload, userRequest: value });
+                  }
+                }}
+                placeholder="Describe what to write..."
+                style={{
+                  width: '100%',
+                  minHeight: 96,
+                  resize: 'vertical',
+                  border: `1px solid ${T.lineSub}`,
+                  borderRadius: 7,
+                  background: T.bg,
+                  color: T.ink,
+                  outline: 'none',
+                  padding: '9px 10px',
+                  fontFamily: 'var(--mn-body)',
+                  fontSize: 13,
+                  lineHeight: 1.45,
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 8,
+              padding: '0 18px 16px',
+            }}>
+              <button
+                onClick={() => setAiPrompt(null)}
+                style={{
+                  height: 32,
+                  padding: '0 13px',
+                  borderRadius: 6,
+                  background: T.bg,
+                  color: T.inkMed,
+                  border: `1px solid ${T.line}`,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--mn-ui)',
+                  fontSize: 12.5,
+                  fontWeight: 650,
+                }}>
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const current = aiPrompt;
+                  const value = String(current.value || '').trim();
+                  if (!value) return;
+                  setAiPrompt(null);
+                  runAiAction(current.actionId, current.scope, { ...current.payload, userRequest: value });
+                }}
+                disabled={!String(aiPrompt.value || '').trim()}
+                style={{
+                  height: 32,
+                  padding: '0 13px',
+                  borderRadius: 6,
+                  background: String(aiPrompt.value || '').trim() ? T.ink : T.bgSub,
+                  color: String(aiPrompt.value || '').trim() ? T.bg : T.inkDim,
+                  border: `1px solid ${String(aiPrompt.value || '').trim() ? T.ink : T.lineSub}`,
+                  cursor: String(aiPrompt.value || '').trim() ? 'pointer' : 'default',
+                  fontFamily: 'var(--mn-ui)',
+                  fontSize: 12.5,
+                  fontWeight: 650,
+                }}>
+                Generate
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {previewForCurrentNote && !['insert-after', 'append-page'].includes(previewForCurrentNote.target?.kind) && (
         <MnAiPreviewDialog

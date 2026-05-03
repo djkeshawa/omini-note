@@ -60,7 +60,7 @@ function MnEditor({
   canvases = [], onOpenCanvas, onCreateCanvas,
   onOpen, onCreateLinkedNote, onOpenTag,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
-  onPinToggle, onDelete, onOpenGraph, onBack,
+  onPinToggle, onDuplicate, onDelete, onOpenGraph, onBack,
   onToggleSidebar, sidebarHidden,
   onToggleNoteList, noteListHidden,
   editorWidth = 'medium', fontSize = 'default',
@@ -306,6 +306,12 @@ function MnEditor({
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
             <circle cx="4" cy="4" r="1.6"/><circle cx="12" cy="4" r="1.6"/><circle cx="8" cy="12" r="1.6"/>
             <path d="M5.5 5L10.5 5M5.3 5.8L6.8 10.4M10.7 5.8L9.2 10.4"/>
+          </svg>
+        </button>
+        <button onClick={onDuplicate} title="Duplicate note" style={iconBtn(T)}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+            <rect x="5" y="5" width="8" height="8" rx="1.2"/>
+            <path d="M3 10.5V3H10.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
         <button onClick={onDelete} title="Delete" style={iconBtn(T)}>

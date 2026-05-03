@@ -382,12 +382,17 @@ function mnReadNovelistAiConfig(vaultId = '') {
 function mnWriteNovelistAiConfig(config, vaultId = '') {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return;
+    if (!config) {
+      window.localStorage.removeItem(mnNovelistAiConfigKey(vaultId));
+      return;
+    }
     window.localStorage.setItem(mnNovelistAiConfigKey(vaultId), JSON.stringify(config));
   } catch {}
 }
 
 if (typeof window !== 'undefined') {
   window.mnReadNovelistAiConfig = mnReadNovelistAiConfig;
+  window.mnWriteNovelistAiConfig = mnWriteNovelistAiConfig;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -399,7 +404,9 @@ function MnNovelistPanel({
   onOpen, onCreateNote, onLinkChapter, onLinkScene,
   onSetOrder, onRenameNote, onConvertNoteType,
   onDeleteNote,
-  onCreateTag, onRemoveSupportingType, T
+  onCreateTag, onRemoveSupportingType,
+  initialAiConfig = null, onAiConfigChange,
+  T
 }) {
   const [linkMenu, setLinkMenu] = useStateP(null);
   const [createMenu, setCreateMenu] = useStateP(null);
@@ -410,15 +417,15 @@ function MnNovelistPanel({
   const [noteMenu, setNoteMenu] = useStateP(null);
   const [linkNotice, setLinkNotice] = useStateP(null);
   const [editDialog, setEditDialog] = useStateP(null);
-  const [aiConfig, setAiConfig] = useStateP(() => mnReadNovelistAiConfig(vaultId));
-  const [aiWordLimitDraft, setAiWordLimitDraft] = useStateP(() => String(mnReadNovelistAiConfig(vaultId).wordLimit));
+  const [aiConfig, setAiConfig] = useStateP(() => mnNormalizeNovelistAiConfig(initialAiConfig || mnReadNovelistAiConfig(vaultId)));
+  const [aiWordLimitDraft, setAiWordLimitDraft] = useStateP(() => String(mnNormalizeNovelistAiConfig(initialAiConfig || mnReadNovelistAiConfig(vaultId)).wordLimit));
   const editInputRef = useRefP(null);
   const linkNoticeTimer = useRefP(null);
   useEffectP(() => {
-    const next = mnReadNovelistAiConfig(vaultId);
+    const next = mnNormalizeNovelistAiConfig(initialAiConfig || mnReadNovelistAiConfig(vaultId));
     setAiConfig(next);
     setAiWordLimitDraft(String(next.wordLimit));
-  }, [vaultId]);
+  }, [vaultId, initialAiConfig]);
   useEffectP(() => {
     if (!noteMenu && !createMenu && !linkMenu) return;
     const close = () => {
@@ -631,6 +638,7 @@ function MnNovelistPanel({
     setAiConfig(current => {
       const next = mnNormalizeNovelistAiConfig(typeof updater === 'function' ? updater(current) : updater);
       mnWriteNovelistAiConfig(next, vaultId);
+      onAiConfigChange && onAiConfigChange(next);
       return next;
     });
   };
@@ -643,6 +651,7 @@ function MnNovelistPanel({
     setAiConfig(next);
     setAiWordLimitDraft(String(next.wordLimit));
     mnWriteNovelistAiConfig(next, vaultId);
+    onAiConfigChange && onAiConfigChange(next);
   };
   const addAiPrompt = () => {
     updateAiConfig(current => ({
