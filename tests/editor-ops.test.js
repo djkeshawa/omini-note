@@ -1338,6 +1338,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
@@ -1443,12 +1444,16 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /function MnInlineAiPreview/);
   assert.match(outliner, /AI preview/);
   assert.match(outliner, /mn-inline-ai-preview-streaming/);
+  assert.match(editor, /noteId=\{note\.id\}/);
+  assert.match(outliner, /noteIdRef/);
+  assert.match(outliner, /previewForCurrentNote/);
+  assert.match(outliner, /makeAiPreview\(requestNoteId/);
   assert.match(outliner, /const pageContinuationInstruction/);
   assert.match(outliner, /Continue from the end of it/);
   assert.match(outliner, /const appendPageWrite = actionId === 'write' && pageBlocks\.length > 0/);
   assert.match(outliner, /const appendPageBlocks/);
   assert.match(outliner, /kind: 'append-page'/);
-  assert.match(outliner, /appendPageBlocks\(aiPreview\.text\)/);
+  assert.match(outliner, /appendPageBlocks\(preview\.text\)/);
   assert.match(outliner, /plotPointsAction: 'write-scene'/);
   assert.match(outliner, /const appendPlotWrite = payload\.plotPointsAction === 'write-scene'/);
   assert.match(outliner, /Existing page context/);
@@ -1456,7 +1461,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /function[^\n]*plotPointsInstruction|const plotPointsInstruction/);
   assert.match(outliner, /Linked context pages/);
   assert.match(outliner, /kind: 'insert-after'/);
-  assert.match(outliner, /insertBlocksAfter\(aiPreview\.target\.blockId, parseAiBlocks\(aiPreview\.text\)\)/);
+  assert.match(outliner, /insertBlocksAfter\(preview\.target\.blockId, parseAiBlocks\(preview\.text\)\)/);
   assert.match(outliner, /window\.mn\.ai\.editStream/);
   assert.match(preload, /editStream:\(payload, onChunk\)/);
   assert.match(main, /mn:ai\.editStream/);

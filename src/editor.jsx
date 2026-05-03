@@ -536,6 +536,7 @@ function MnEditor({
             setBlocks={setBlocks}
             allNotes={notes}
             allCanvases={canvases}
+            noteId={note.id}
             noteTitle={note.title}
             noteTags={note.tags || []}
             vaultId={vaultId}
