@@ -269,6 +269,7 @@ function MnNovelistPanel({
   notes, novelistNotes, tags, canvases, workflowStates, workflowItems,
   novelistStructure,
   onOpen, onCreateNote, onLinkChapter, onLinkScene,
+  onSetOrder, onRenameNote, onConvertNoteType,
   onDeleteNote, onOpenCanvas, onCreateCanvas, onOpenAskAI,
   onCreateTag, onRemoveSupportingType, T
 }) {
@@ -279,6 +280,8 @@ function MnNovelistPanel({
   const [collapsed, setCollapsed] = useStateP({});
   const [noteMenu, setNoteMenu] = useStateP(null);
   const [linkNotice, setLinkNotice] = useStateP(null);
+  const [editDialog, setEditDialog] = useStateP(null);
+  const editInputRef = useRefP(null);
   const linkNoticeTimer = useRefP(null);
   useEffectP(() => {
     if (!noteMenu && !createMenu && !linkMenu) return;
@@ -297,11 +300,18 @@ function MnNovelistPanel({
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, [noteMenu, createMenu, linkMenu]);
+  useEffectP(() => {
+    if (!editDialog) return;
+    const handle = window.setTimeout(() => editInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(handle);
+  }, [editDialog]);
   const novelNotes = novelistNotes || (notes || []).filter(n => (n.tags || []).some(t => t.startsWith('novel-')));
   const byTag = (tag) => novelNotes.filter(n => (n.tags || []).includes(tag));
   const arcs = novelistStructure?.arcs || byTag('novel-arc');
   const chapters = novelistStructure?.chapters || byTag('novel-chapter');
   const scenes = novelistStructure?.scenes || byTag('novel-scene');
+  const manuscripts = novelistStructure?.manuscripts || byTag('novel-manuscript');
+  const manuscript = novelistStructure?.manuscript || manuscripts[0] || null;
   const childrenByArcId = novelistStructure?.childrenByArcId || {};
   const childrenByChapterId = novelistStructure?.childrenByChapterId || {};
   const parentByChapterId = novelistStructure?.parentByChapterId || {};
@@ -321,12 +331,17 @@ function MnNovelistPanel({
     'novel-plot': {
       label: 'Plot Thread',
       sectionTitle: 'Plot Threads',
-      body: '# Plot Thread\n- IDEA Promise\n- OUTLINE Setup\n- REVISE Payoff',
+      body: '# Plot Thread\n- status:: IDEA\n- Promise\n- Setup\n- Payoff',
     },
     'novel-research': {
       label: 'Research',
       sectionTitle: 'Research',
       body: '# Research\n- Source:: \n- Notes\n  - ',
+    },
+    'novel-revision': {
+      label: 'Revision Note',
+      sectionTitle: 'Revision Notes',
+      body: '# Revision Note\n- status:: IDEA\n- Notes\n  - ',
     },
   };
   const titleFromTag = (tagName) => String(tagName || '')
@@ -371,6 +386,34 @@ function MnNovelistPanel({
     }
     return `${base} ${Date.now().toString(36)}`;
   };
+  const readOrder = (note) => {
+    if (typeof mnNoteOrderValue === 'function') return mnNoteOrderValue(note);
+    const raw = String(note?.body || '').match(/^\s*-?\s*order::\s*(.*)$/im)?.[1];
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const setBodyProperty = (body, key, value) => {
+    if (typeof mnSetBodyProperty === 'function') return mnSetBodyProperty(body, key, value);
+    return String(body || '').replace(new RegExp(`(^\\s*-?\\s*${key}::\\s*).*$`, 'im'), `$1${value}`);
+  };
+  const nextOrder = (kind, parent = null) => {
+    const values = (items, step, base) => {
+      const ordered = items.map(readOrder).filter(value => value != null);
+      return ordered.length ? Math.max(...ordered) + step : base + step;
+    };
+    if (kind === 'arc') return values(arcs, 100, 0);
+    if (kind === 'chapter') {
+      const base = readOrder(parent) ?? 100;
+      return values(parent ? childrenForArc(parent) : chapters, 10, base);
+    }
+    const base = readOrder(parent) ?? 100;
+    return values(parent ? childrenForChapter(parent) : scenes, 1, base);
+  };
+  const bodyWithTitleAndOrder = (template, title, order) => {
+    let body = String(template.body || '').replace(new RegExp(`# ${template.title}\\b`), `# ${title}`);
+    if (order != null) body = setBodyProperty(body, 'order', String(order));
+    return body;
+  };
   const createTemplate = (template, e) => {
     if ((template.tags || []).includes('novel-chapter') && arcs.length) {
       if (arcs.length === 1) {
@@ -389,12 +432,13 @@ function MnNovelistPanel({
       return;
     }
     const title = uniqueTitle(template.title);
-    onCreateNote && onCreateNote({ ...template, title, body: template.body.replace(new RegExp(`# ${template.title}\\b`), `# ${title}`) });
+    const order = (template.tags || []).includes('novel-arc') ? nextOrder('arc') : null;
+    onCreateNote && onCreateNote({ ...template, title, body: bodyWithTitleAndOrder(template, title, order) });
   };
   const createChapterForArc = (arc) => {
     if (!arc) return;
     const title = uniqueTitle(`${arc.title || 'Arc'} Chapter`);
-    const body = `# ${title}\n- arc:: [[${arc.title || 'Arc'}]]\n- OUTLINE Goal\n- DRAFT Scene list\n- REVISE Notes`;
+    const body = `# ${title}\n- status:: OUTLINE\n- order:: ${nextOrder('chapter', arc)}\n- arc:: [[${arc.title || 'Arc'}]]\n## Scenes\n- Chapter goal\n- Scene list\n- Revision notes`;
     const id = onCreateNote?.({ title, body, tags: ['novel-chapter'] });
     if (id) onLinkChapter?.(arc.id, id, title);
     showLinkNotice(`Created and linked ${title} to ${arc.title || 'arc'}`, arc.id);
@@ -403,10 +447,63 @@ function MnNovelistPanel({
     if (!chapter) return;
     const arc = (notes || []).find(note => note.id === parentByChapterId[chapter.id]);
     const title = uniqueTitle(`${chapter.title || 'Chapter'} Scene`);
-    const body = `# ${title}\n${arc ? `- arc:: [[${arc.title}]]\n` : ''}- chapter:: [[${chapter.title || 'Chapter'}]]\n- pov:: \n- setting:: \n- purpose:: \n- DRAFT Draft the scene here.`;
+    const body = `# ${title}\n- status:: DRAFT\n- order:: ${nextOrder('scene', chapter)}\n${arc ? `- arc:: [[${arc.title}]]\n` : ''}- chapter:: [[${chapter.title || 'Chapter'}]]\n- pov:: \n- setting:: \n- purpose:: \n- Draft the scene here.`;
     const id = onCreateNote?.({ title, body, tags: ['novel-scene'] });
     if (id) onLinkScene?.(chapter.id, id, title);
     showLinkNotice(`Created and linked ${title} to ${chapter.title || 'chapter'}`, chapter.id);
+  };
+  const createSceneForArc = (arc) => {
+    const chaptersForThisArc = childrenForArc(arc);
+    if (chaptersForThisArc[0]) {
+      createSceneForChapter(chaptersForThisArc[0]);
+      return;
+    }
+    const chapterTitle = uniqueTitle(`${arc.title || 'Arc'} Chapter`);
+    const sceneTitle = uniqueTitle(`${chapterTitle} Scene`);
+    const chapterBody = `# ${chapterTitle}\n- status:: OUTLINE\n- order:: ${nextOrder('chapter', arc)}\n- arc:: [[${arc.title || 'Arc'}]]\n## Scenes\n- [[${sceneTitle}]]`;
+    const chapterId = onCreateNote?.({ title: chapterTitle, body: chapterBody, tags: ['novel-chapter'] });
+    if (!chapterId) return;
+    onLinkChapter?.(arc.id, chapterId, chapterTitle);
+    const sceneBody = `# ${sceneTitle}\n- status:: DRAFT\n- order:: ${nextOrder('scene', { id: chapterId, title: chapterTitle, body: chapterBody })}\n- arc:: [[${arc.title || 'Arc'}]]\n- chapter:: [[${chapterTitle}]]\n- pov:: \n- setting:: \n- purpose:: \n- Draft the scene here.`;
+    onCreateNote?.({ title: sceneTitle, body: sceneBody, tags: ['novel-scene'] });
+  };
+  const createParentArcForChapter = (chapter) => {
+    const title = uniqueTitle(`${chapter.title || 'Chapter'} Arc`);
+    const body = `# ${title}\n- status:: OUTLINE\n- order:: ${nextOrder('arc')}\n- purpose:: \n## Chapters`;
+    const id = onCreateNote?.({ title, body, tags: ['novel-arc'] });
+    if (id) onLinkChapter?.(id, chapter.id, chapter.title);
+  };
+  const createParentChapterForScene = (scene) => {
+    const title = uniqueTitle(`${scene.title || 'Scene'} Chapter`);
+    const body = `# ${title}\n- status:: OUTLINE\n- order:: ${nextOrder('chapter')}\n## Scenes`;
+    const id = onCreateNote?.({ title, body, tags: ['novel-chapter'] });
+    if (id) onLinkScene?.(id, scene.id, scene.title);
+  };
+  const promptRename = (note) => {
+    setEditDialog({ type: 'rename', note, value: note?.title || '', error: '' });
+  };
+  const promptSetOrder = (note) => {
+    const current = readOrder(note);
+    setEditDialog({ type: 'order', note, value: current == null ? '' : String(current), error: '' });
+  };
+  const submitEditDialog = () => {
+    if (!editDialog?.note) return;
+    const value = String(editDialog.value || '').trim();
+    if (editDialog.type === 'rename') {
+      if (!value) {
+        setEditDialog(current => current ? { ...current, error: 'Title is required.' } : current);
+        return;
+      }
+      onRenameNote?.(editDialog.note.id, value);
+      setEditDialog(null);
+      return;
+    }
+    if (value && !Number.isFinite(Number(value))) {
+      setEditDialog(current => current ? { ...current, error: 'Order must be a number or blank.' } : current);
+      return;
+    }
+    onSetOrder?.(editDialog.note.id, value);
+    setEditDialog(null);
   };
   const openPlotBoard = async () => {
     if (plotBoard?.id) {
@@ -426,9 +523,10 @@ function MnNovelistPanel({
   };
 
   const templates = [
-    { title: 'Arc', tags: ['novel-arc'], body: '# Arc\n- purpose:: \n- OUTLINE Major turn\n- REVISE Open questions' },
-    { title: 'Chapter', tags: ['novel-chapter'], body: '# Chapter\n- arc:: \n- OUTLINE Goal\n- DRAFT Scene list\n- REVISE Notes' },
-    { title: 'Scene', tags: ['novel-scene'], body: '# Scene\n- chapter:: \n- pov:: \n- setting:: \n- purpose:: \n- DRAFT Draft the scene here.' },
+    { title: 'Manuscript', tags: ['novel-manuscript'], body: '# Manuscript\n- status:: OUTLINE\n- order:: 0\n## Arcs' },
+    { title: 'Arc', tags: ['novel-arc'], body: '# Arc\n- status:: OUTLINE\n- order:: \n- purpose:: \n## Chapters' },
+    { title: 'Chapter', tags: ['novel-chapter'], body: '# Chapter\n- status:: OUTLINE\n- order:: \n- arc:: \n## Scenes' },
+    { title: 'Scene', tags: ['novel-scene'], body: '# Scene\n- status:: DRAFT\n- order:: \n- chapter:: \n- pov:: \n- setting:: \n- purpose:: \n- Draft the scene here.' },
     ...supportingTypes.map(type => ({ title: type.label, tags: [type.tag], body: type.body })),
   ];
   const aiActions = [
@@ -720,21 +818,92 @@ function MnNovelistPanel({
     );
   };
 
-  const StructureActions = ({ parent, type, onAdd, candidates }) => (
+  const AttachMenu = () => {
+    if (!linkMenu?.type?.startsWith('attach-')) return null;
+    const isChapter = linkMenu.type === 'attach-chapter';
+    const child = noteById.get(linkMenu.childId);
+    const parents = isChapter ? arcs : chapters;
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: 'fixed',
+          left: linkMenu.x,
+          top: linkMenu.y,
+          zIndex: 125,
+          minWidth: 220,
+          maxWidth: 320,
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 7,
+          background: T.bg,
+          boxShadow: `0 14px 34px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+          padding: 4,
+        }}>
+        <div style={{
+          padding: '7px 10px 6px',
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 12,
+          color: T.inkMed,
+          borderBottom: `1px solid ${T.lineSub}`,
+          marginBottom: 4,
+        }}>
+          Attach {child?.title || (isChapter ? 'chapter' : 'scene')}
+        </div>
+        {parents.map(parent => (
+          <button
+            key={parent.id}
+            onClick={() => {
+              if (isChapter) onLinkChapter?.(parent.id, child.id, child.title);
+              else onLinkScene?.(parent.id, child.id, child.title);
+              setLinkMenu(null);
+            }}
+            style={mnPanelMenuItem(T)}>
+            {parent.title || 'Untitled'}
+          </button>
+        ))}
+        {!parents.length && (
+          <div style={{ padding: 10, color: T.inkDim, fontFamily: 'var(--mn-ui)', fontSize: 12 }}>
+            No {isChapter ? 'arcs' : 'chapters'} available
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const StructureActions = ({ parent, type, onAdd, onAddScene, candidates }) => (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
       <button
         onClick={(e) => { e.stopPropagation(); onAdd(parent); }}
         style={mnPanelMiniButton(T)}>
         + {type === 'chapter' ? 'Chapter' : 'Scene'}
       </button>
+      {type === 'chapter' && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onAddScene?.(parent); }}
+          style={mnPanelMiniButton(T)}>
+          + Scene
+        </button>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation();
           setLinkMenu(current => current?.type === type && current?.parentId === parent.id ? null : { type, parentId: parent.id });
         }}
         style={mnPanelMiniButton(T)}>
-        Link {type}
+        {type === 'chapter' ? 'Link existing chapter' : 'Link existing scene'}
       </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); promptSetOrder(parent); }}
+        style={mnPanelMiniButton(T)}>
+        Set order
+      </button>
+      {type === 'chapter' && (
+        <button
+          onClick={(e) => { e.stopPropagation(); promptRename(parent); }}
+          style={mnPanelMiniButton(T)}>
+          Rename
+        </button>
+      )}
       <LinkNoticeChip parentId={parent.id} />
       <LinkMenu type={type} parent={parent} candidates={candidates || []} />
     </div>
@@ -836,6 +1005,7 @@ function MnNovelistPanel({
                 parent={arc}
                 type="chapter"
                 onAdd={createChapterForArc}
+                onAddScene={createSceneForArc}
                 candidates={chapterCandidatesForArc(arc)}
               />
             </div>
@@ -844,6 +1014,23 @@ function MnNovelistPanel({
       </div>
     );
   };
+
+  const ManuscriptRoot = ({ note }) => (
+    <div style={{
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 9,
+      padding: '4px 0 10px',
+      borderBottom: `1px solid ${T.lineSub}`,
+      marginBottom: 10,
+    }}>
+      <StructureNoteButton
+        note={note}
+        label="Manuscript"
+        count={arcs.length}
+      />
+    </div>
+  );
 
   const LooseStructureSection = ({ title, items, empty, render }) => (
     <div style={{
@@ -907,7 +1094,7 @@ function MnNovelistPanel({
               <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 740, color: T.ink }}>Novelist</div>
               <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap', fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkDim }}>
                 <span>{novelNotes.length} story note{novelNotes.length === 1 ? '' : 's'}</span>
-                <span>{workflowTotal} revision item{workflowTotal === 1 ? '' : 's'}</span>
+                <span>{workflowTotal} workflow note{workflowTotal === 1 ? '' : 's'}</span>
               </div>
             </div>
             {linkNotice && (
@@ -945,8 +1132,9 @@ function MnNovelistPanel({
         }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 750, color: T.ink }}>Story Structure</div>
-            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>Arc -> Chapter -> Scene</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>Manuscript -> Arc -> Chapter -> Scene</div>
           </div>
+          {manuscript && <ManuscriptRoot note={manuscript} />}
           <div style={{ display: 'grid', gap: 10 }}>
             {arcs.length
               ? arcs.map(arc => <ArcRow key={arc.id} arc={arc} />)
@@ -965,8 +1153,24 @@ function MnNovelistPanel({
                   items={unlinkedChapters}
                   empty="No unlinked chapters"
                   render={chapter => (
-                    <div key={chapter.id} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    <div key={chapter.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
                       <StructureNoteButton note={chapter} label="Chapter" count={childrenForChapter(chapter).length} depth={1} />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLinkMenu({ type: 'attach-chapter', childId: chapter.id, x: e.clientX, y: e.clientY });
+                        }}
+                        style={mnPanelMiniButton(T)}>
+                        Attach to arc
+                      </button>
+                      <button onClick={() => createParentArcForChapter(chapter)} style={mnPanelMiniButton(T)}>
+                        Create parent arc
+                      </button>
+                      <button
+                        onClick={() => onConvertNoteType?.(chapter.id, 'novel-scene')}
+                        style={mnPanelMiniButton(T)}>
+                        Convert to scene
+                      </button>
                     </div>
                   )}
                 />
@@ -977,8 +1181,19 @@ function MnNovelistPanel({
                   items={unlinkedScenes}
                   empty="No unlinked scenes"
                   render={scene => (
-                    <div key={scene.id} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    <div key={scene.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
                       <StructureNoteButton note={scene} label="Scene" depth={1} />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLinkMenu({ type: 'attach-scene', childId: scene.id, x: e.clientX, y: e.clientY });
+                        }}
+                        style={mnPanelMiniButton(T)}>
+                        Attach to chapter
+                      </button>
+                      <button onClick={() => createParentChapterForScene(scene)} style={mnPanelMiniButton(T)}>
+                        Create parent chapter
+                      </button>
                     </div>
                   )}
                 />
@@ -1117,6 +1332,131 @@ function MnNovelistPanel({
           </section>
         </div>
       </div>
+      {editDialog && (
+        <div
+          onClick={() => setEditDialog(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 130,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: `color-mix(in oklab, ${T.ink} 24%, transparent)`,
+            backdropFilter: 'blur(2px)',
+          }}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={editDialog.type === 'rename' ? 'Rename note' : 'Set order'}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 360,
+              maxWidth: 'calc(100vw - 36px)',
+              border: `1px solid ${T.line}`,
+              borderRadius: 9,
+              background: T.bg,
+              color: T.ink,
+              boxShadow: `0 22px 60px color-mix(in oklab, ${T.ink} 24%, transparent)`,
+              overflow: 'hidden',
+              fontFamily: 'var(--mn-ui)',
+            }}>
+            <div style={{
+              padding: '13px 15px',
+              borderBottom: `1px solid ${T.lineSub}`,
+              background: T.bgSub,
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>
+                {editDialog.type === 'rename' ? 'Rename note' : 'Set order'}
+              </div>
+              <div style={{
+                marginTop: 3,
+                fontSize: 12,
+                color: T.inkDim,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {editDialog.note?.title || 'Untitled'}
+              </div>
+            </div>
+            <div style={{ padding: 15 }}>
+              <input
+                ref={editInputRef}
+                value={editDialog.value}
+                onChange={(e) => setEditDialog(current => current ? { ...current, value: e.target.value, error: '' } : current)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submitEditDialog();
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setEditDialog(null);
+                  }
+                }}
+                placeholder={editDialog.type === 'rename' ? 'Note title' : 'Blank or numeric order'}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  height: 34,
+                  border: `1px solid ${editDialog.error ? T.danger || T.warn : T.lineSub}`,
+                  borderRadius: 6,
+                  background: T.bgSub,
+                  color: T.ink,
+                  outline: 'none',
+                  padding: '0 9px',
+                  fontFamily: editDialog.type === 'order' ? 'var(--mn-mono)' : 'var(--mn-ui)',
+                  fontSize: 13,
+                }}
+              />
+              {editDialog.error && (
+                <div style={{
+                  marginTop: 7,
+                  color: T.danger || T.warn,
+                  fontSize: 12,
+                  lineHeight: 1.35,
+                }}>
+                  {editDialog.error}
+                </div>
+              )}
+              {editDialog.type === 'order' && (
+                <div style={{
+                  marginTop: 7,
+                  color: T.inkDim,
+                  fontSize: 11.5,
+                  lineHeight: 1.4,
+                }}>
+                  Leave blank to remove order:: from this note.
+                </div>
+              )}
+            </div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 8,
+              padding: '0 15px 15px',
+            }}>
+              <button
+                onClick={() => setEditDialog(null)}
+                style={{ ...mnPanelMiniButton(T), background: T.bg, color: T.inkMed }}>
+                Cancel
+              </button>
+              <button
+                onClick={submitEditDialog}
+                style={{
+                  ...mnPanelMiniButton(T),
+                  background: T.ink,
+                  color: T.bg,
+                  border: `1px solid ${T.ink}`,
+                }}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <AttachMenu />
       {noteMenu && (
         <div
           onClick={(e) => e.stopPropagation()}
@@ -1139,6 +1479,22 @@ function MnNovelistPanel({
             }}
             style={mnPanelMenuItem(T)}>
             Open note
+          </button>
+          <button
+            onClick={() => {
+              promptRename(noteMenu.note);
+              setNoteMenu(null);
+            }}
+            style={mnPanelMenuItem(T)}>
+            Rename
+          </button>
+          <button
+            onClick={() => {
+              promptSetOrder(noteMenu.note);
+              setNoteMenu(null);
+            }}
+            style={mnPanelMenuItem(T)}>
+            Set order
           </button>
           <button
             onClick={() => {
@@ -1579,7 +1935,7 @@ function MnWorkflowPanel({
       draggable
       onDragStart={(e) => {
         setDragItem(item);
-        e.dataTransfer.setData('text/mn-workflow', JSON.stringify({ noteId: item.noteId, blockId: item.id }));
+        e.dataTransfer.setData('text/mn-workflow', JSON.stringify({ noteId: item.noteId }));
         e.dataTransfer.effectAllowed = 'move';
       }}
       onDragEnd={() => setDragItem(null)}
@@ -1622,7 +1978,7 @@ function MnWorkflowPanel({
         WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',
         overflow: 'hidden',
-      }}>{item.text || <span style={{ color: T.inkDim, fontStyle: 'italic' }}>Empty block</span>}</div>
+      }}>{item.text || <span style={{ color: T.inkDim, fontStyle: 'italic' }}>No preview</span>}</div>
       <div style={{ flex: 1 }} />
       <div style={{
         display: 'flex', gap: 5, alignItems: 'center',
@@ -1711,7 +2067,7 @@ function MnWorkflowPanel({
                 fontFamily: 'var(--mn-mono)',
                 fontSize: 10,
                 color: T.inkDim,
-              }}>{note.workflowCount} workflow block{note.workflowCount === 1 ? '' : 's'}</div>
+              }}>{note.workflow || 'workflow'} note status</div>
             </div>
             <button
               type="button"
@@ -1829,7 +2185,7 @@ function MnWorkflowPanel({
             <div style={{
               fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
               letterSpacing: '0.06em',
-            }}>{total} workflow block{total === 1 ? '' : 's'} across this vault</div>
+            }}>{total} workflow note{total === 1 ? '' : 's'} across this vault</div>
           </div>
           <div style={{
             display: 'flex',
@@ -1924,7 +2280,7 @@ function MnWorkflowPanel({
                   minWidth: 880,
                   boxSizing: 'border-box',
                 }}>
-                  <span>Status</span><span>Block</span><span>Note</span><span>Tags</span><span>Change</span>
+                  <span>Status</span><span>Note</span><span>Title</span><span>Tags</span><span>Change</span>
                 </div>
                 {allItems.map(({ state, ...item }) => (
                   <div key={item.id} style={{
@@ -1952,7 +2308,7 @@ function MnWorkflowPanel({
                       lineHeight: 1.35,
                       paddingTop: 3,
                       minWidth: 0,
-                    }}>{item.text || 'Empty block'}</span>
+                    }}>{item.text || 'No preview'}</span>
                     <span onClick={() => onOpen(item.noteId)} style={{
                       color: T.inkMed,
                       overflow: 'hidden',
@@ -1983,7 +2339,7 @@ function MnWorkflowPanel({
                   </div>
                 ))}
                 {!allItems.length && (
-                  <div style={{ padding: 22, textAlign: 'center', color: T.inkDim, fontFamily: 'var(--mn-body)', fontStyle: 'italic' }}>No workflow blocks yet</div>
+                  <div style={{ padding: 22, textAlign: 'center', color: T.inkDim, fontFamily: 'var(--mn-body)', fontStyle: 'italic' }}>No workflow notes yet</div>
                 )}
               </div>
             )}
@@ -2008,7 +2364,7 @@ function MnWorkflowPanel({
                       color: T.inkDim, fontStyle: 'italic',
                       background: T.bgSub, border: `1px solid ${T.lineSub}`,
                       borderRadius: 6,
-                    }}>No workflow blocks</div>
+                    }}>No workflow notes</div>
                   )}
                 </div>
               );

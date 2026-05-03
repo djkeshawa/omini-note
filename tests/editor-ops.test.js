@@ -258,9 +258,17 @@ test('Note tag picker can create new tags from the editor', () => {
   assert.match(sidebar, /creatingTag/);
   assert.match(sidebar, /submitTag/);
   assert.match(sidebar, /onNewTag && onNewTag\(name\)/);
+  assert.match(sidebar, /onDeleteTag/);
+  assert.match(sidebar, /openTagMenu\(e, tag\.name\)/);
+  assert.match(sidebar, /title="Remove tag"/);
+  assert.match(sidebar, /Remove tag/);
   assert.match(sidebar, /if \(newTagName\.trim\(\)\) return/);
   assert.match(sidebar, /tagCreatorRef\.current\?\.contains\(e\.target\)/);
   assert.match(sidebar, /top: 42/);
+  assert.match(app, /const removeTag = \(name\) =>/);
+  assert.match(app, /onDeleteTag=\{removeTag\}/);
+  assert.match(app, /const taggedNotes = notes\.filter\(n => \(n\.tags \|\| \[\]\)\.includes\(clean\)\)/);
+  assert.match(app, /tags: \(n\.tags \|\| \[\]\)\.filter\(t => t !== clean\)/);
 });
 
 test('Vaults can be created and deleted from settings with backend cleanup', () => {
@@ -494,6 +502,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const graph = fs.readFileSync(path.join(__dirname, '../src/graph.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
   const ai = fs.readFileSync(path.join(__dirname, '../src/ai.jsx'), 'utf8');
 
@@ -518,20 +527,39 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.doesNotMatch(app, /setTweak\('workflowStates', MN_NOVELIST_WORKFLOW_STATES\)/);
   assert.match(app, /function mnBuildNovelistStarterNotes/);
   assert.match(app, /function mnBuildNovelistStructure/);
+  assert.match(app, /function mnNovelOutlineLinks/);
+  assert.match(app, /function mnBodyPropertyValue/);
+  assert.match(app, /function mnSetBodyProperty/);
+  assert.match(app, /function mnRemoveBodyProperty/);
+  assert.match(app, /function mnNoteOrderValue/);
+  assert.match(app, /function collectWorkflowNotes/);
   assert.match(app, /split\('\|'\)\[0\]/);
-  assert.match(app, /\|\|\s*match\[2\]/);
+  assert.match(app, /mnBodyPropertyTitle\(body, key\)/);
   assert.match(app, /addStage\('chapter', chapter\)/);
   assert.match(app, /addStage\('scene', scene\)/);
+  assert.match(app, /isManuscriptNote/);
+  assert.match(app, /Manuscript/);
+  assert.match(app, /selectedStage === 'arc'/);
+  assert.match(app, /selectedStage === 'chapter'/);
   assert.match(app, /stageByNoteId/);
-  assert.match(app, /const ensureNoteHasTag = useCallbackA/);
   assert.match(app, /mnNovelEnsureWikiLink/);
+  assert.match(app, /mnNovelEnsureWikiLinkInSection/);
   assert.match(app, /mnNovelUpsertPropertyLink/);
+  assert.match(app, /const updateWorkflowNoteStatus = useCallbackA/);
+  assert.match(app, /mnSetBodyProperty\(body, 'status', workflow\)/);
+  assert.match(app, /const setNovelistOrder = useCallbackA/);
+  assert.match(app, /const renameNoteTitle = useCallbackA/);
+  assert.match(app, /const convertNovelistType = useCallbackA/);
+  assert.match(app, /const graphVisibleNotes = useMemoA/);
   assert.match(app, /const setActiveVaultNovelistMode = useCallbackA/);
   assert.match(app, /view === 'novelist'/);
   assert.match(app, /<MnNovelistPanel/);
   assert.match(app, /createNote\(\{ title, body, tags: noteTags \|\| \[\] \}, \{ open: false \}\)/);
   assert.match(app, /onLinkChapter=\{linkNovelistChapter\}/);
   assert.match(app, /onLinkScene=\{linkNovelistScene\}/);
+  assert.match(app, /onSetOrder=\{setNovelistOrder\}/);
+  assert.match(app, /onRenameNote=\{renameNoteTitle\}/);
+  assert.match(app, /onConvertNoteType=\{convertNovelistType\}/);
   assert.match(app, /onDeleteNote=\{requestDeleteNote\}/);
   assert.match(app, /const removeNovelistSupportingType = \(name\) =>/);
   assert.match(app, /setTags\(ts => ts\.filter\(t => t\.name !== clean\)\)/);
@@ -546,7 +574,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(settings, /Novelist vault/);
   assert.match(panels, /function MnNovelistPanel/);
   assert.match(panels, /Story Structure/);
-  assert.match(panels, /Arc -> Chapter -> Scene/);
+  assert.match(panels, /Manuscript -> Arc -> Chapter -> Scene/);
   assert.match(panels, /function MnNovelistPanel[\s\S]*childrenByArcId/);
   assert.match(panels, /supportingTypes = \(tags \|\| \[\]\)/);
   assert.match(panels, /normalizeSupportingTypeTag/);
@@ -557,10 +585,22 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panels, /\+ Note/);
   assert.match(panels, /novel-character/);
   assert.match(panels, /novel-research/);
+  assert.match(panels, /novel-revision/);
   assert.match(panels, /No chapters linked/);
   assert.match(panels, /No scenes linked/);
   assert.match(panels, /\+ \{type === 'chapter' \? 'Chapter' : 'Scene'\}/);
-  assert.match(panels, /Link \{type\}/);
+  assert.match(panels, /Link existing chapter/);
+  assert.match(panels, /Link existing scene/);
+  assert.match(panels, /Attach to arc/);
+  assert.match(panels, /Create parent arc/);
+  assert.match(panels, /Convert to scene/);
+  assert.match(panels, /Attach to chapter/);
+  assert.match(panels, /Create parent chapter/);
+  assert.match(panels, /Set order/);
+  assert.match(panels, /const \[editDialog, setEditDialog\] = useStateP\(null\)/);
+  assert.match(panels, /Order must be a number or blank/);
+  assert.doesNotMatch(panels, /window\.prompt\('Rename note:'/);
+  assert.doesNotMatch(panels, /window\.prompt\('Set order:: value:'/);
   assert.match(panels, /showLinkNotice/);
   assert.match(panels, /LinkNoticeChip/);
   assert.match(panels, /linkNotice\.text/);
@@ -577,7 +617,14 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panels, /createChapterForArc/);
   assert.match(panels, /createSceneForChapter/);
   assert.match(editor, /novelistPath = null/);
+  assert.match(editor, /workflowStatus = ''/);
+  assert.match(editor, /onSetWorkflowStatus/);
   assert.match(editor, /onCreateLinkedNote/);
+  assert.match(graph, /All novelist notes/);
+  assert.match(graph, /Manuscript structure/);
+  assert.match(graph, /Characters \+ scenes/);
+  assert.match(graph, /Plot threads \+ scenes/);
+  assert.match(graph, /Research \+ scenes/);
   assert.match(notelist, /function MnNoteList[\s\S]*novelistStructure = null/);
   assert.match(notelist, /allNotes = null/);
   assert.match(notelist, /const sourceNotes = allNotes \|\| notes \|\| \[\]/);
@@ -596,6 +643,87 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panels, /Supporting Notes/);
   assert.match(panels, /Workflow Status/);
   assert.match(ai, /initialQuery/);
+});
+
+test('Novelist hierarchy is inferred from manuscript links and properties without structure tags', () => {
+  const Babel = require('@babel/standalone');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const code = Babel.transform(app, { presets: ['react'] }).code;
+  const sandbox = {
+    React: { createElement() {}, useState() {}, useEffect() {}, useMemo() {}, useCallback() {}, useRef() {} },
+    window: {},
+    console,
+  };
+  vm.runInNewContext(code, sandbox);
+
+  const structure = sandbox.mnBuildNovelistStructure([
+    { id: 'm', title: 'Manuscript', tags: [], body: '# Manuscript\n- [[Act One]]\n  - [[Chapter 1]]\n    - [[Opening Scene]]' },
+    { id: 'a', title: 'Act One', tags: [], body: '# Act One\n- [[Chapter 1]]' },
+    { id: 'c', title: 'Chapter 1', tags: [], body: '# Chapter 1\n- arc:: [[Act One]]\n- [[Opening Scene]]' },
+    { id: 's', title: 'Opening Scene', tags: [], body: '# Opening Scene\n- chapter:: [[Chapter 1]]' },
+  ]);
+  const ids = (items) => Array.from(items, note => note.id);
+
+  assert.deepEqual(ids(structure.manuscripts), ['m']);
+  assert.deepEqual(ids(structure.arcs), ['a']);
+  assert.deepEqual(ids(structure.chapters), ['c']);
+  assert.deepEqual(ids(structure.scenes), ['s']);
+  assert.equal(structure.parentByChapterId.c, 'a');
+  assert.equal(structure.parentBySceneId.s, 'c');
+  assert.deepEqual(ids(structure.pathByNoteId.s), ['m', 'a', 'c', 's']);
+});
+
+test('Novelist order and note-level status properties drive visible workflow', () => {
+  const Babel = require('@babel/standalone');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const code = Babel.transform(app, { presets: ['react'] }).code;
+  const sandbox = {
+    React: { createElement() {}, useState() {}, useEffect() {}, useMemo() {}, useCallback() {}, useRef() {} },
+    window: {
+      MN_LOGSEQ: {
+        mnNormalizeWorkflowId(raw) {
+          return String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
+        },
+      },
+    },
+    console,
+  };
+  vm.runInNewContext(code, sandbox);
+
+  let body = '# Scene\n- order:: 200\n- status:: DRAFT\n- chapter:: [[Chapter 1]]\nDraft text';
+  assert.equal(sandbox.mnBodyPropertyValue(body, 'status'), 'DRAFT');
+  body = sandbox.mnSetBodyProperty(body, 'status', 'REVISE');
+  assert.equal(sandbox.mnBodyPropertyValue(body, 'status'), 'REVISE');
+  body = sandbox.mnRemoveBodyProperty(body, 'status');
+  assert.equal(sandbox.mnBodyPropertyValue(body, 'status'), '');
+  assert.match(sandbox.mnSetBodyProperty('# Note\nBody', 'order', '100'), /- order:: 100\nBody/);
+
+  const structure = sandbox.mnBuildNovelistStructure([
+    { id: 'a', title: 'Arc', tags: ['novel-arc'], body: '# Arc\n- order:: 100' },
+    { id: 'c2', title: 'Chapter B', tags: ['novel-chapter'], body: '# Chapter B\n- order:: 120\n- arc:: [[Arc]]', modifiedAt: '2026-01-02T00:00:00.000Z' },
+    { id: 'c1', title: 'Chapter A', tags: ['novel-chapter'], body: '# Chapter A\n- order:: 110\n- arc:: [[Arc]]', modifiedAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'c3', title: 'Chapter C', tags: ['novel-chapter'], body: '# Chapter C\n- arc:: [[Arc]]', modifiedAt: '2026-01-03T00:00:00.000Z' },
+  ]);
+  assert.deepEqual(Array.from(structure.childrenByArcId.a), ['c1', 'c2', 'c3']);
+
+  const workflow = sandbox.collectWorkflowNotes([
+    { id: 'n1', title: 'Note status', tags: [], body: '# Note\n- status:: DRAFT\nBody', blocks: [{ id: 'b1', workflow: 'DONE', content: 'Block marker' }] },
+    { id: 'n2', title: 'Block only', tags: [], body: '# Block only\nBody', blocks: [{ id: 'b2', workflow: 'DRAFT', content: 'Should be ignored' }] },
+  ], [{ id: 'DRAFT' }, { id: 'DONE' }]);
+  assert.equal(workflow.counts.DRAFT, 1);
+  assert.equal(workflow.counts.DONE, 0);
+  assert.deepEqual([...workflow.noteIdsByState.DRAFT], ['n1']);
+
+  const converted = sandbox.mnBuildNovelistStructure([
+    { id: 'a', title: 'Arc', tags: ['novel-arc'], body: '# Arc\n- order:: 100' },
+    { id: 's', title: 'Converted', tags: ['novel-scene'], body: '# Converted\n- arc:: [[Arc]]' },
+  ]);
+  assert.deepEqual(Array.from(converted.chapters, note => note.id), []);
+  assert.deepEqual(Array.from(converted.scenes, note => note.id), ['s']);
+
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+  assert.doesNotMatch(panels, /## Chapters\\n- '\s*}/);
+  assert.doesNotMatch(panels, /## Scenes\\n- '\s*}/);
 });
 
 test('Canvas editor supports expected drawing, color, clipboard, and delete interactions', () => {
@@ -865,15 +993,15 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.5');
-  assert.equal(lock.version, '0.1.5');
-  assert.equal(lock.packages[''].version, '0.1.5');
+  assert.equal(pkg.version, '0.1.6');
+  assert.equal(lock.version, '0.1.6');
+  assert.equal(lock.packages[''].version, '0.1.6');
   assert.equal(pkg.homepage, 'https://github.com/djkeshawa/visp-note#readme');
   assert.equal(pkg.repository.url, 'https://github.com/djkeshawa/visp-note.git');
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
-  assert.match(settings, /Version 0\.1\.5 · Prototype/);
+  assert.match(settings, /Version 0\.1\.6 · Prototype/);
   assert.match(aiSource, /headers\['HTTP-Referer'\] = 'https:\/\/github\.com\/djkeshawa\/visp-note'/);
   assert.match(aiSource, /headers\['X-Title'\] = 'VispNote'/);
 });

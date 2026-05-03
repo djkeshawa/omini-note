@@ -26,7 +26,7 @@ function MnSidebar({
   onOpenNovelist, novelistActive, novelistEnabled, novelistCount = 0,
   onOpenCanvas, canvasActive, canvasCount = 0,
   onOpenAskAI,
-  onNewTag, onNew, onOpenSettings, onCollapse,
+  onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRenameVault, onDeleteVault,
   T, density, theme
 }) {
@@ -36,6 +36,7 @@ function MnSidebar({
   const [newVaultType, setNewVaultType] = React.useState('notes');
   const [creatingTag, setCreatingTag] = React.useState(false);
   const [newTagName, setNewTagName] = React.useState('');
+  const [tagMenu, setTagMenu] = React.useState(null);
   const tagCreatorRef = React.useRef(null);
   const [renameId, setRenameId] = React.useState(null);
   const [renameVal, setRenameVal] = React.useState('');
@@ -76,6 +77,26 @@ function MnSidebar({
     onNewTag && onNewTag(name);
     setNewTagName('');
     setCreatingTag(false);
+    setTagMenu(null);
+  };
+
+  const startTagCreate = () => {
+    setOpenSections(s => ({ ...s, tags: true }));
+    setCreatingTag(true);
+    setTagMenu(null);
+  };
+
+  const openTagMenu = (e, tagName = null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOpenSections(s => ({ ...s, tags: true }));
+    setTagMenu({ x: e.clientX, y: e.clientY, tagName });
+  };
+
+  const deleteTag = (tagName) => {
+    if (!tagName) return;
+    onDeleteTag && onDeleteTag(tagName);
+    setTagMenu(null);
   };
 
   const submitVault = () => {
@@ -99,10 +120,22 @@ function MnSidebar({
     return () => document.removeEventListener('mousedown', onDown);
   }, [creatingTag, newTagName]);
 
-  const SectionHeader = ({ label, sectionKey, count, action }) => {
+  React.useEffect(() => {
+    if (!tagMenu) return;
+    const close = () => setTagMenu(null);
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [tagMenu]);
+
+  const SectionHeader = ({ label, sectionKey, count, action, onContextMenu }) => {
     const open = !!openSections[sectionKey];
     return (
-      <div style={{
+      <div onContextMenu={onContextMenu} style={{
         padding: '0 10px',
         margin: '0 6px',
         display: 'flex', alignItems: 'center', gap: 4,
@@ -308,14 +341,19 @@ function MnSidebar({
                       }} />
                     <button onClick={() => {
                       submitVault();
-                    }} disabled={!newName.trim()}
+                    }} disabled={!newName.trim()} title="Create vault"
                       style={{
-                        padding: '3px 10px', borderRadius: 4, border: 'none',
+                        width: 24, height: 24, borderRadius: 4, border: 'none',
                         background: newName.trim() ? T.ink : T.bgSub,
                         color: newName.trim() ? T.bg : T.inkDim,
                         cursor: newName.trim() ? 'pointer' : 'default',
-                        fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 500,
-                      }}>Create</button>
+                        padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
+                        <path d="M3.5 8.5L6.5 11.5L12.5 5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
                   </div>
                   <div style={{
                     display: 'grid',
@@ -471,10 +509,15 @@ function MnSidebar({
           label="Tags"
           sectionKey="tags"
           count={tags.length}
+          onContextMenu={(e) => openTagMenu(e)}
           action={
             <button onClick={() => {
-              setOpenSections(s => ({ ...s, tags: true }));
-              setCreatingTag(v => !v);
+              if (creatingTag) {
+                setCreatingTag(false);
+                setNewTagName('');
+              } else {
+                startTagCreate();
+              }
             }} title="New tag" style={{
               width: 18, height: 18, borderRadius: 4,
               border: 'none', background: 'transparent',
@@ -544,7 +587,10 @@ function MnSidebar({
           const active = selectedTag === tag.name;
           const color = mnGetTagColor(tag.hue, theme);
           return (
-            <div key={tag.name} onClick={() => onSelectTag(tag.name)} style={{
+            <div key={tag.name}
+            onClick={() => { setTagMenu(null); onSelectTag(tag.name); }}
+            onContextMenu={(e) => openTagMenu(e, tag.name)}
+            style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: `${pad.py}px 10px`, margin: '0 6px', borderRadius: 6,
               cursor: 'pointer', userSelect: 'none',
@@ -558,14 +604,79 @@ function MnSidebar({
               <span style={{
                 width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0,
               }} />
-              <span style={{ flex: 1 }}>{tag.name}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag.name}</span>
               <span style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
               }}>{noteCounts[tag.name] || 0}</span>
+              <button
+                type="button"
+                title="Remove tag"
+                onClick={(e) => { e.stopPropagation(); deleteTag(tag.name); }}
+                style={{
+                  width: 18, height: 18, borderRadius: 4,
+                  border: 'none', background: 'transparent',
+                  color: T.inkDim, cursor: 'pointer', padding: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  opacity: 0.72, flexShrink: 0,
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                onMouseLeave={e => e.currentTarget.style.opacity = 0.72}>
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                  <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+              </button>
             </div>
           );
         })}
       </div>
+
+      {tagMenu && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            left: tagMenu.x,
+            top: tagMenu.y,
+            zIndex: 90,
+            minWidth: 148,
+            padding: 5,
+            background: T.bg,
+            border: `1px solid ${T.line}`,
+            borderRadius: 7,
+            boxShadow: `0 10px 28px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+          }}>
+          <button
+            type="button"
+            onClick={startTagCreate}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+              padding: '7px 8px', border: 'none', borderRadius: 5,
+              background: 'transparent', color: T.inkMed, cursor: 'pointer',
+              fontFamily: 'var(--mn-ui)', fontSize: 12.5, textAlign: 'left',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <span style={{ width: 14, textAlign: 'center', color: T.inkDim }}>+</span>
+            <span>New tag</span>
+          </button>
+          {tagMenu.tagName && (
+            <button
+              type="button"
+              onClick={() => deleteTag(tagMenu.tagName)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 8px', border: 'none', borderRadius: 5,
+                background: 'transparent', color: T.danger || T.warn || T.inkMed, cursor: 'pointer',
+                fontFamily: 'var(--mn-ui)', fontSize: 12.5, textAlign: 'left',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <span style={{ width: 14, textAlign: 'center' }}>x</span>
+              <span>Remove tag</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Footer */}
       <div style={{

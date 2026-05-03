@@ -3,7 +3,7 @@
 
 const { useEffect, useRef, useState, useMemo } = React;
 
-function MnGraph({ notes, links, style, focusId, onOpen, T, tags }) {
+function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = null, onGraphFilterChange }) {
   const frameRef = useRef(null);
   const svgRef = useRef(null);
   const rafRef = useRef(null);
@@ -224,9 +224,32 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags }) {
           <div style={{
             fontFamily: 'var(--mn-ui)', fontSize: 12.5,
             color: T.inkMed, marginTop: 2,
-          }}>Filtered by the All notes search</div>
+          }}>{graphFilter ? 'Filtered for novelist notes' : 'Filtered by the All notes search'}</div>
         </div>
         <div style={{ flex: 1 }} />
+        {graphFilter && (
+          <select
+            value={graphFilter}
+            onChange={(e) => onGraphFilterChange && onGraphFilterChange(e.target.value)}
+            title="Graph filter"
+            style={{
+              height: 28,
+              border: `1px solid ${T.lineSub}`,
+              borderRadius: 6,
+              background: T.bg,
+              color: T.inkMed,
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 12,
+              padding: '0 8px',
+              outline: 'none',
+            }}>
+            <option value="all-novelist">All novelist notes</option>
+            <option value="structure">Manuscript structure</option>
+            <option value="characters-scenes">Characters + scenes</option>
+            <option value="plot-scenes">Plot threads + scenes</option>
+            <option value="research-scenes">Research + scenes</option>
+          </select>
+        )}
         <div style={{
           fontFamily: 'var(--mn-mono)', fontSize: 11,
           color: T.inkDim,
@@ -337,7 +360,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags }) {
           background: `color-mix(in oklab, ${T.bg} 78%, transparent)`,
           border: `1px solid ${T.lineSub}`,
           borderRadius: 6, padding: '5px 8px',
-        }}>search in All notes · hover to isolate · click to open</div>
+        }}>{graphFilter ? 'novelist graph filter' : 'search in All notes'} · hover to isolate · click to open</div>
 
         <MnGraphControls
           T={T}

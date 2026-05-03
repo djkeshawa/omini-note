@@ -13,6 +13,7 @@ function MnEditor({
   editorWidth = 'medium', fontSize = 'default',
   indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
   novelistPath = null,
+  workflowStates = [], workflowStatus = '', onSetWorkflowStatus,
   theme, T,
 }) {
   const HAS_DISK_E = typeof window !== 'undefined' && !!window.mn;
@@ -153,6 +154,31 @@ function MnEditor({
             <span>{timeText}</span>
             <span style={{ color: T.lineSub }}>·</span>
             <span>{wordCount} words</span>
+            {workflowStates.length > 0 && (
+              <>
+                <span style={{ color: T.lineSub }}>·</span>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <span>Status</span>
+                  <select
+                    value={workflowStatus || ''}
+                    onChange={(e) => onSetWorkflowStatus && onSetWorkflowStatus(e.target.value || null)}
+                    style={{
+                      border: `1px solid ${T.lineSub}`,
+                      borderRadius: 4,
+                      background: T.bg,
+                      color: T.inkMed,
+                      fontFamily: 'var(--mn-mono)',
+                      fontSize: 10,
+                      textTransform: 'uppercase',
+                      padding: '2px 5px',
+                      outline: 'none',
+                    }}>
+                    <option value="">None</option>
+                    {workflowStates.map(state => <option key={state.id} value={state.id}>{state.id}</option>)}
+                  </select>
+                </label>
+              </>
+            )}
           </div>
 
           {Array.isArray(novelistPath) && novelistPath.length > 1 && (
