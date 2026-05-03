@@ -1958,7 +1958,10 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeK
               fontFamily: 'var(--mn-ui)',
               fontSize: 11,
             }}>
-              <MnAiIcon size={11} /> AI working...
+              <MnAiIcon size={11} /> AI working
+              <span className="mn-ai-live-dots" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <span /> <span /> <span />
+              </span>
             </span>
           )}
           <button onClick={() => onChangeKind(block.id, { hidden: !block.hidden })} style={mnTinyIconButton(T)}>{block.hidden ? 'Show' : 'Hide'}</button>
@@ -2556,6 +2559,85 @@ function mnAiDialogBtn(T, primary) {
   };
 }
 
+function MnInlineAiPreview({ preview, depth, T, onApply, onCancel }) {
+  if (!preview) return null;
+  const text = String(preview.text || '');
+  const canApply = !!text.trim() && !preview.streaming && !preview.error;
+  return (
+    <div
+      className={`mn-inline-ai-preview${preview.streaming ? ' mn-inline-ai-preview-streaming' : ''}`}
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{
+        marginLeft: depth * 24,
+        paddingLeft: 18,
+        marginTop: 7,
+        marginBottom: 8,
+        display: 'flex',
+        gap: 8,
+        color: T.inkDim,
+      }}>
+      <div style={{ width: 14, flexShrink: 0, display: 'flex', justifyContent: 'center', paddingTop: 7 }}>
+        <MnAiIcon size={12} />
+      </div>
+      <div style={{
+        flex: 1,
+        minWidth: 0,
+        border: `1px dashed ${T.lineSub}`,
+        borderRadius: 8,
+        background: `color-mix(in oklab, ${T.bgSub} 74%, ${T.bg})`,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '7px 9px',
+          borderBottom: `1px solid ${T.lineSub}`,
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 11.5,
+          color: T.inkDim,
+        }}>
+          <span style={{ fontWeight: 600, color: T.inkMed }}>AI preview</span>
+          {preview.streaming && (
+            <span className="mn-ai-live-dots" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <span /> <span /> <span />
+            </span>
+          )}
+          {preview.error && <span style={{ color: T.danger || T.warn }}>{preview.error}</span>}
+          <div style={{ flex: 1 }} />
+          <button onClick={onCancel} style={mnAiInlineBtn(T, false)}>Discard</button>
+          <button disabled={!canApply} onClick={onApply} style={mnAiInlineBtn(T, true, !canApply)}>Apply</button>
+        </div>
+        <div style={{
+          padding: '9px 10px 11px',
+          whiteSpace: 'pre-wrap',
+          fontFamily: 'var(--mn-body)',
+          fontSize: 14,
+          lineHeight: 1.6,
+          color: T.inkDim,
+          minHeight: 34,
+        }}>
+          {text || (preview.streaming ? 'Writing preview...' : 'No preview text returned.')}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function mnAiInlineBtn(T, primary, disabled = false) {
+  return {
+    border: `1px solid ${primary ? T.ink : T.lineSub}`,
+    background: primary ? T.ink : T.bg,
+    color: primary ? T.bg : T.inkMed,
+    borderRadius: 6,
+    padding: '4px 8px',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 11.5,
+    cursor: disabled ? 'default' : 'pointer',
+    opacity: disabled ? 0.45 : 1,
+  };
+}
+
 // ── Recursive tree renderer ────────────────────────────────────────────
 function MnOutlineTree({ blocks, depth, ...handlers }) {
   return (
@@ -2563,6 +2645,15 @@ function MnOutlineTree({ blocks, depth, ...handlers }) {
       {blocks.map(b => (
         <React.Fragment key={b.id}>
           <MnBlockRow block={b} depth={depth} {...handlers} />
+          {handlers.aiPreview?.target?.kind === 'insert-after' && handlers.aiPreview.target.blockId === b.id && (
+            <MnInlineAiPreview
+              preview={handlers.aiPreview}
+              depth={depth}
+              T={handlers.T}
+              onApply={handlers.onApplyAiPreview}
+              onCancel={handlers.onCancelAiPreview}
+            />
+          )}
           {b.children && b.children.length > 0 && !b.collapsed && (
             <MnOutlineTree blocks={b.children} depth={depth + 1} {...handlers} />
           )}
@@ -3328,19 +3419,22 @@ function MnOutliner({
     return parsed.length ? parsed : [mkBlock({ kind: 'paragraph', content: String(text || '').trim() })];
   };
 
-  const requestAiEdit = async (actionId, scope, sourceText, instructionOverride) => {
+  const requestAiEdit = async (actionId, scope, sourceText, instructionOverride, options = {}) => {
     const action = mnAiAction(actionId);
     const novelConfig = readNovelistAiConfig();
     const maxTokens = Number(novelConfig?.advanced?.maxTokens);
     if (!window.mn?.ai?.edit) throw new Error('AI editing is not available');
-    const res = await window.mn.ai.edit({
+    const payload = {
       text: sourceText,
       instruction: instructionOverride || action.instruction,
       scope,
       systemMessage: novelConfig?.systemMessage || '',
       model: novelConfig?.model || '',
       maxTokens: Number.isFinite(maxTokens) ? maxTokens : null,
-    });
+    };
+    const res = options.onToken && window.mn.ai.editStream
+      ? await window.mn.ai.editStream(payload, options.onToken)
+      : await window.mn.ai.edit(payload);
     if (!res.ok) throw new Error(res.error || 'AI edit failed');
     if (res.value && !res.value.ok) throw new Error(res.value.error || 'AI edit failed');
     return res.value.text;
@@ -3472,6 +3566,7 @@ function MnOutliner({
 
   const applyAiPreview = () => {
     if (!aiPreview) return;
+    if (aiPreview.streaming || aiPreview.error || !String(aiPreview.text || '').trim()) return;
     if (aiPreview.target.kind === 'text') applyTextReplacement(aiPreview.target, aiPreview.text);
     else if (aiPreview.target.kind === 'blocks') applyBlocksReplacement(aiPreview.target, aiPreview.text);
     else if (aiPreview.target.kind === 'section') applySectionReplacement(aiPreview.target, aiPreview.text);
@@ -3558,16 +3653,34 @@ function MnOutliner({
         const source = mnBlocksToMd([sourceBlock]);
         const isPlotPointsAi = sourceBlock.kind === 'plot-points' || payload.plotPointsAction;
         const plotContext = isPlotPointsAi ? plotPointsContextText(sourceBlock) : '';
+        if (isPlotPointsAi) {
+          setAiPreview({ actionId, text: '', streaming: true, target: { kind: 'insert-after', blockId } });
+        }
         const edited = await requestAiEdit(
           actionId,
           'section',
           source,
           isPlotPointsAi
             ? plotPointsInstruction(payload.plotPointsAction || actionId, userRequest, source, plotContext)
-            : action.needsPrompt ? writeInstruction('section', userRequest, source) : null
+            : action.needsPrompt ? writeInstruction('section', userRequest, source) : null,
+          isPlotPointsAi
+            ? {
+                onToken: (token) => {
+                  setAiPreview(prev => (
+                    prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId
+                      ? { ...prev, text: `${prev.text || ''}${token}` }
+                      : prev
+                  ));
+                },
+              }
+            : {}
         );
         if (isPlotPointsAi) {
-          setAiPreview({ actionId, text: edited, target: { kind: 'insert-after', blockId } });
+          setAiPreview(prev => (
+            prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId
+              ? { ...prev, text: edited, streaming: false }
+              : { actionId, text: edited, streaming: false, target: { kind: 'insert-after', blockId } }
+          ));
           return;
         }
         if (action.preview) {
@@ -3600,6 +3713,7 @@ function MnOutliner({
       onShowToast && onShowToast(`${mnAiAction(actionId).pageLabel} applied`);
     } catch (e) {
       console.error('AI edit failed', e);
+      setAiPreview(prev => prev?.streaming ? { ...prev, streaming: false, error: e.message || 'AI edit failed' } : prev);
       onShowToast && onShowToast(e.message || 'AI edit failed');
     } finally {
       setAiBusy(false);
@@ -3619,6 +3733,9 @@ function MnOutliner({
     onMove,
     onContextMenu, onZoom,
     onAiAction: runAiAction,
+    aiPreview,
+    onApplyAiPreview: applyAiPreview,
+    onCancelAiPreview: () => setAiPreview(null),
     aiTarget, focusId, setFocusId, T, allNotes, allCanvases, onOpenCanvas, onCreateCanvas,
     onSelectionChange: setSelection,
     onBlockMouseDown: beginBlockSelection,
@@ -3666,9 +3783,30 @@ function MnOutliner({
           animation: mnAiTextShimmer 1.35s ease-in-out infinite;
           background-size: 220% 100%;
         }
+        .mn-inline-ai-preview-streaming {
+          animation: mnInlineAiPreviewPulse 1.3s ease-in-out infinite;
+        }
+        .mn-ai-live-dots span {
+          width: 4px;
+          height: 4px;
+          border-radius: 999px;
+          background: ${T.accent || T.ink};
+          opacity: 0.35;
+          animation: mnAiLiveDot 900ms ease-in-out infinite;
+        }
+        .mn-ai-live-dots span:nth-child(2) { animation-delay: 130ms; }
+        .mn-ai-live-dots span:nth-child(3) { animation-delay: 260ms; }
         @keyframes mnAiPulse {
           0%, 100% { opacity: 0.34; transform: scale(0.998); }
           50% { opacity: 0.72; transform: scale(1.001); }
+        }
+        @keyframes mnAiLiveDot {
+          0%, 100% { opacity: 0.28; transform: translateY(1px); }
+          50% { opacity: 0.92; transform: translateY(-1px); }
+        }
+        @keyframes mnInlineAiPreviewPulse {
+          0%, 100% { filter: saturate(1); }
+          50% { filter: saturate(1.12); }
         }
         @keyframes mnAiPagePulse {
           0%, 100% {
@@ -3726,7 +3864,10 @@ function MnOutliner({
             justifyContent: 'center',
             color: T.accent || T.ink,
           }}><MnAiIcon size={13} /></span>
-          {mnAiAction(aiTarget.actionId).selectionLabel.replace('selected text', aiTarget.scope === 'page' ? 'page' : aiTarget.scope === 'section' ? 'section' : 'selected text')}...
+          {mnAiAction(aiTarget.actionId).selectionLabel.replace('selected text', aiTarget.scope === 'page' ? 'page' : aiTarget.scope === 'section' ? 'section' : 'selected text')}
+          <span className="mn-ai-live-dots" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            <span /> <span /> <span />
+          </span>
         </div>
       )}
       {zoomBlock && (
@@ -3800,7 +3941,7 @@ function MnOutliner({
           T={T}
         />
       )}
-      {aiPreview && (
+      {aiPreview && aiPreview.target?.kind !== 'insert-after' && (
         <MnAiPreviewDialog
           preview={aiPreview}
           onCancel={() => setAiPreview(null)}

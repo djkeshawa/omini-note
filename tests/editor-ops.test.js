@@ -1340,6 +1340,10 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
 
   assert.match(app, /workflowArchived: !!n\.workflowArchived/);
   assert.match(app, /if \(note\.workflowArchived\) \{/);
@@ -1433,12 +1437,21 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /No available pages/);
   assert.match(outliner, /contexts: \[\.\.\.contexts, `\[\[\$\{title\}\]\]`\]/);
   assert.match(outliner, /aiActive=\{aiActive\}/);
-  assert.match(outliner, /AI working\.\.\./);
+  assert.match(outliner, /AI working/);
+  assert.match(outliner, /mn-ai-live-dots/);
+  assert.match(outliner, /function MnInlineAiPreview/);
+  assert.match(outliner, /AI preview/);
+  assert.match(outliner, /mn-inline-ai-preview-streaming/);
   assert.match(outliner, /plotPointsAction: 'write-scene'/);
   assert.match(outliner, /function[^\n]*plotPointsInstruction|const plotPointsInstruction/);
   assert.match(outliner, /Linked context pages/);
   assert.match(outliner, /kind: 'insert-after'/);
   assert.match(outliner, /insertBlocksAfter\(aiPreview\.target\.blockId, parseAiBlocks\(aiPreview\.text\)\)/);
+  assert.match(outliner, /window\.mn\.ai\.editStream/);
+  assert.match(preload, /editStream:\(payload, onChunk\)/);
+  assert.match(main, /mn:ai\.editStream/);
+  assert.match(aiSource, /async function editTextStream/);
+  assert.match(ollama, /async function chatStream/);
   assert.match(outline, /window\.MN_LOGSEQ\?\.WORKFLOW_STATES/);
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(notelist, /const workflowPattern = states/);

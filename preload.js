@@ -36,6 +36,16 @@ contextBridge.exposeInMainWorld('mn', {
     connect:   () => ipcRenderer.invoke('mn:ai.connect'),
     ask:       (vaultId, query, options) => ipcRenderer.invoke('mn:ai.ask', vaultId, query, options),
     edit:      (payload) => ipcRenderer.invoke('mn:ai.edit', payload),
+    editStream:(payload, onChunk) => {
+      const requestId = `edit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const channel = `mn:ai.editStream.chunk:${requestId}`;
+      const listener = (_event, chunk) => {
+        if (typeof onChunk === 'function') onChunk(String(chunk || ''));
+      };
+      ipcRenderer.on(channel, listener);
+      return ipcRenderer.invoke('mn:ai.editStream', { ...payload, requestId })
+        .finally(() => ipcRenderer.removeListener(channel, listener));
+    },
     chat:      (payload) => ipcRenderer.invoke('mn:ai.chat', payload),
     cancel:    (jobId) => ipcRenderer.invoke('mn:ai.cancel', jobId),
     backfill:  (vaultId) => ipcRenderer.invoke('mn:ai.backfill', vaultId),
