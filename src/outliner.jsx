@@ -3581,11 +3581,19 @@ function MnOutliner({
     });
   };
 
+  const appendPageBlocks = (text) => {
+    const replacement = parseAiBlocks(text);
+    mutate(bs => {
+      bs.push(...mnCloneBlocks(replacement));
+    });
+    setFocusId(replacement[0]?.id || null);
+  };
+
   const applyPageReplacement = (text) => replaceAllBlocks(parseAiBlocks(text));
-  const inlinePreviewKey = (actionId, blockId) => `${actionId}:${blockId}`;
+  const inlinePreviewKey = (actionId, blockId = 'page') => `${actionId}:${blockId}`;
 
   const cancelAiPreview = () => {
-    if (aiPreview?.target?.kind === 'insert-after') {
+    if (aiPreview?.target?.kind === 'insert-after' || aiPreview?.target?.kind === 'append-page') {
       dismissedAiPreviewRef.current = inlinePreviewKey(aiPreview.actionId, aiPreview.target.blockId);
     }
     setAiPreview(null);
@@ -3598,8 +3606,9 @@ function MnOutliner({
     else if (aiPreview.target.kind === 'blocks') applyBlocksReplacement(aiPreview.target, aiPreview.text);
     else if (aiPreview.target.kind === 'section') applySectionReplacement(aiPreview.target, aiPreview.text);
     else if (aiPreview.target.kind === 'insert-after') insertBlocksAfter(aiPreview.target.blockId, parseAiBlocks(aiPreview.text));
+    else if (aiPreview.target.kind === 'append-page') appendPageBlocks(aiPreview.text);
     else if (aiPreview.target.kind === 'page') applyPageReplacement(aiPreview.text);
-    const label = aiPreview.target.kind === 'insert-after' && aiPreview.target.scopeLabel === 'page'
+    const label = aiPreview.target.kind === 'append-page'
       ? mnAiAction(aiPreview.actionId).pageLabel
       : mnAiAction(aiPreview.actionId).sectionLabel;
     onShowToast && onShowToast(`${label} applied`);
@@ -3734,15 +3743,14 @@ function MnOutliner({
       }
       const source = mnBlocksToMd(pageBlocks);
       const appendPageWrite = actionId === 'write' && pageBlocks.length > 0;
-      const appendTargetId = appendPageWrite ? pageBlocks[pageBlocks.length - 1].id : null;
-      const pagePreviewKey = appendTargetId ? inlinePreviewKey(actionId, appendTargetId) : null;
+      const pagePreviewKey = inlinePreviewKey(actionId);
       if (appendPageWrite) {
         dismissedAiPreviewRef.current = null;
         setAiPreview({
           actionId,
           text: '',
           streaming: true,
-          target: { kind: 'insert-after', blockId: appendTargetId, scopeLabel: 'page' },
+          target: { kind: 'append-page' },
         });
       }
       const edited = await requestAiEdit(
@@ -3757,7 +3765,7 @@ function MnOutliner({
               onToken: (token) => {
                 if (dismissedAiPreviewRef.current === pagePreviewKey) return;
                 setAiPreview(prev => (
-                  prev?.target?.kind === 'insert-after' && prev.target.blockId === appendTargetId
+                  prev?.target?.kind === 'append-page'
                     ? { ...prev, text: `${prev.text || ''}${token}` }
                     : prev
                 ));
@@ -3768,13 +3776,13 @@ function MnOutliner({
       if (appendPageWrite) {
         if (dismissedAiPreviewRef.current === pagePreviewKey) return;
         setAiPreview(prev => (
-          prev?.target?.kind === 'insert-after' && prev.target.blockId === appendTargetId
+          prev?.target?.kind === 'append-page'
             ? { ...prev, text: edited, streaming: false }
             : {
                 actionId,
                 text: edited,
                 streaming: false,
-                target: { kind: 'insert-after', blockId: appendTargetId, scopeLabel: 'page' },
+                target: { kind: 'append-page' },
               }
         ));
         return;
@@ -3939,9 +3947,6 @@ function MnOutliner({
             color: T.accent || T.ink,
           }}><MnAiIcon size={13} /></span>
           {mnAiAction(aiTarget.actionId).selectionLabel.replace('selected text', aiTarget.scope === 'page' ? 'page' : aiTarget.scope === 'section' ? 'section' : 'selected text')}
-          <span className="mn-ai-live-dots" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-            <span /> <span /> <span />
-          </span>
         </div>
       )}
       {zoomBlock && (
@@ -3964,6 +3969,15 @@ function MnOutliner({
         />
       )}
       <MnOutlineTree blocks={renderBlocks} depth={0} {...handlers} />
+      {aiPreview?.target?.kind === 'append-page' && (
+        <MnInlineAiPreview
+          preview={aiPreview}
+          depth={0}
+          T={T}
+          onApply={applyAiPreview}
+          onCancel={cancelAiPreview}
+        />
+      )}
       {/* Add new top-level block (or child of zoomed block) */}
       <div onClick={() => {
         const nb = mkBlock({ kind: 'paragraph' });
@@ -4015,7 +4029,7 @@ function MnOutliner({
           T={T}
         />
       )}
-      {aiPreview && aiPreview.target?.kind !== 'insert-after' && (
+      {aiPreview && !['insert-after', 'append-page'].includes(aiPreview.target?.kind) && (
         <MnAiPreviewDialog
           preview={aiPreview}
           onCancel={() => setAiPreview(null)}
