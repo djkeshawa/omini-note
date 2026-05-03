@@ -3509,7 +3509,7 @@ function MnOutliner({
       .join('\n\n');
   };
 
-  const plotPointsInstruction = (plotAction, userRequest, sourceText, contextText = '') => {
+  const plotPointsInstruction = (plotAction, userRequest, sourceText, contextText = '', pageText = '') => {
     const novelConfig = readNovelistAiConfig();
     const activePrompt = (novelConfig?.prompts || []).find(item => item.id === novelConfig.defaultPromptId)
       || (novelConfig?.prompts || []).find(item => item.prompt);
@@ -3527,10 +3527,16 @@ function MnOutliner({
       novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
       task,
       'Use the beat lines and linked context pages as source material. Do not rewrite the Plot Points block itself.',
+      plotAction === 'write-scene' && pageText?.trim()
+        ? 'Continue from the end of the existing page. Do not insert content above existing draft text, repeat existing prose, summarize it, or rewrite it.'
+        : null,
       userRequest?.trim() ? `User request: ${userRequest.trim()}` : null,
-      'Return only markdown that should be inserted below the Plot Points block after the user approves it.',
+      plotAction === 'write-scene'
+        ? 'Return only markdown that should be appended to the bottom of the page after the user approves it.'
+        : 'Return only markdown that should be inserted below the Plot Points block after the user approves it.',
       sourceText?.trim() ? `Plot Points source:\n${sourceText}` : null,
       contextText?.trim() ? `Linked context pages:\n${contextText}` : null,
+      pageText?.trim() ? `Existing page context:\n${pageText}` : null,
     ].filter(Boolean).join('\n\n');
   };
 
@@ -3691,25 +3697,33 @@ function MnOutliner({
         if (payload.cleanContent != null) sourceBlock.content = payload.cleanContent;
         const source = mnBlocksToMd([sourceBlock]);
         const isPlotPointsAi = sourceBlock.kind === 'plot-points' || payload.plotPointsAction;
+        const appendPlotWrite = payload.plotPointsAction === 'write-scene';
         const plotContext = isPlotPointsAi ? plotPointsContextText(sourceBlock) : '';
-        const plotPreviewKey = inlinePreviewKey(actionId, blockId);
+        const pageSource = appendPlotWrite ? mnBlocksToMd(blocks) : '';
+        const plotPreviewKey = appendPlotWrite ? inlinePreviewKey(actionId) : inlinePreviewKey(actionId, blockId);
         if (isPlotPointsAi) {
           dismissedAiPreviewRef.current = null;
-          setAiPreview({ actionId, text: '', streaming: true, target: { kind: 'insert-after', blockId } });
+          setAiPreview({
+            actionId,
+            text: '',
+            streaming: true,
+            target: appendPlotWrite ? { kind: 'append-page' } : { kind: 'insert-after', blockId },
+          });
         }
         const edited = await requestAiEdit(
           actionId,
           'section',
           source,
           isPlotPointsAi
-            ? plotPointsInstruction(payload.plotPointsAction || actionId, userRequest, source, plotContext)
+            ? plotPointsInstruction(payload.plotPointsAction || actionId, userRequest, source, plotContext, pageSource)
             : action.needsPrompt ? writeInstruction('section', userRequest, source) : null,
           isPlotPointsAi
             ? {
                 onToken: (token) => {
                   if (dismissedAiPreviewRef.current === plotPreviewKey) return;
                   setAiPreview(prev => (
-                    prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId
+                    (appendPlotWrite && prev?.target?.kind === 'append-page') ||
+                    (!appendPlotWrite && prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId)
                       ? { ...prev, text: `${prev.text || ''}${token}` }
                       : prev
                   ));
@@ -3720,9 +3734,15 @@ function MnOutliner({
         if (isPlotPointsAi) {
           if (dismissedAiPreviewRef.current === plotPreviewKey) return;
           setAiPreview(prev => (
-            prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId
+            (appendPlotWrite && prev?.target?.kind === 'append-page') ||
+            (!appendPlotWrite && prev?.target?.kind === 'insert-after' && prev.target.blockId === blockId)
               ? { ...prev, text: edited, streaming: false }
-              : { actionId, text: edited, streaming: false, target: { kind: 'insert-after', blockId } }
+              : {
+                  actionId,
+                  text: edited,
+                  streaming: false,
+                  target: appendPlotWrite ? { kind: 'append-page' } : { kind: 'insert-after', blockId },
+                }
           ));
           return;
         }

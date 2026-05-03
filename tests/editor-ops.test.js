@@ -1449,6 +1449,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /kind: 'append-page'/);
   assert.match(outliner, /appendPageBlocks\(aiPreview\.text\)/);
   assert.match(outliner, /plotPointsAction: 'write-scene'/);
+  assert.match(outliner, /const appendPlotWrite = payload\.plotPointsAction === 'write-scene'/);
+  assert.match(outliner, /Existing page context/);
+  assert.match(outliner, /appended to the bottom of the page/);
   assert.match(outliner, /function[^\n]*plotPointsInstruction|const plotPointsInstruction/);
   assert.match(outliner, /Linked context pages/);
   assert.match(outliner, /kind: 'insert-after'/);
