@@ -2775,6 +2775,7 @@ function MnOutliner({
       const isSelectAll = isMod && lowerKey === 'a' && !e.altKey && !e.shiftKey;
       const isBlockEditCommand = currentSelection?.kind === 'blocks' && (isCopy || isCut || isPaste);
       const isOutlinerSelectAll = isSelectAll && !isFormField;
+      const isTextDelete = (key === 'Backspace' || key === 'Delete') && currentSelection?.kind === 'text' && !isMod;
       const isAreaDelete = (key === 'Backspace' || key === 'Delete') && currentSelection?.kind === 'blocks' && !isMod;
       const isBlockZoom = isMod && key === 'Enter';
       const isBlockMoveUp = e.altKey && !isMod && key === 'ArrowUp';
@@ -2782,11 +2783,11 @@ function MnOutliner({
       const isBlockDuplicate = isMod && lowerKey === 'd';
       const isBlockDelete = isMod && (key === 'Backspace' || key === 'Delete') && !isFormField;
       const isBlockShortcut = isBlockZoom || isBlockMoveUp || isBlockMoveDown || isBlockDuplicate || isBlockDelete;
-      if (!isUndo && !isRedo && !isAreaDelete && !isBlockShortcut && !isBlockEditCommand && !isOutlinerSelectAll) return;
+      if (!isUndo && !isRedo && !isTextDelete && !isAreaDelete && !isBlockShortcut && !isBlockEditCommand && !isOutlinerSelectAll) return;
       if ((isUndo || isRedo) && isFormField && !target.closest?.('.mn-block-row')) return;
       const insideOutliner = !!target.closest?.('.mn-outliner');
       const activeInsideOutliner = !!document.activeElement?.closest?.('.mn-outliner');
-      if ((isBlockShortcut || isBlockEditCommand || isOutlinerSelectAll) && !insideOutliner && !activeInsideOutliner) return;
+      if ((isTextDelete || isBlockShortcut || isBlockEditCommand || isOutlinerSelectAll) && !insideOutliner && !activeInsideOutliner) return;
       const activeBlockId = () => {
         const currentSelection = selectionRef.current;
         if (currentSelection?.kind === 'blocks' && currentSelection.blockIds?.length) return currentSelection.blockIds[0];
@@ -2796,7 +2797,7 @@ function MnOutliner({
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation && e.stopImmediatePropagation();
-      if (isAreaDelete) deleteSelectionRef.current && deleteSelectionRef.current();
+      if (isTextDelete || isAreaDelete) deleteSelectionRef.current && deleteSelectionRef.current();
       else if (isCopy) keyboardEditActionsRef.current?.copySelectedBlocks?.();
       else if (isCut) keyboardEditActionsRef.current?.cutSelectedBlocks?.();
       else if (isPaste) keyboardEditActionsRef.current?.pasteForKeyboard?.();
