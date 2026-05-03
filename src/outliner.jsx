@@ -1891,13 +1891,8 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeK
       return !query || String(note.title || '').toLowerCase().includes(query);
     })
     .slice(0, 8);
-  const updateBeat = (index, value) => {
-    const next = [...beats];
-    next[index] = value;
-    onChangeKind(block.id, { beats: next });
-  };
-  const removeBeat = (index) => {
-    const next = beats.filter((_, i) => i !== index);
+  const updateBeatsText = (value) => {
+    const next = String(value || '').split('\n');
     onChangeKind(block.id, { beats: next.length ? next : [''] });
   };
   const addContextPage = (note) => {
@@ -1949,31 +1944,28 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeK
         </div>
         {!block.hidden && (
           <div style={{ display: 'grid', gap: 7, padding: 10 }}>
-            {beats.map((beat, index) => (
-              <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span style={{ width: 6, height: 6, borderRadius: 999, background: T.accent, flexShrink: 0 }} />
-                <input
-                  value={beat}
-                  onChange={(e) => updateBeat(index, e.target.value)}
-                  placeholder="Scene beat"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    border: `1px solid ${T.lineSub}`,
-                    borderRadius: 6,
-                    background: T.bg,
-                    color: T.ink,
-                    padding: '6px 8px',
-                    fontFamily: 'var(--mn-ui)',
-                    fontSize: 12.5,
-                    outline: 'none',
-                  }}
-                />
-                <button onClick={() => removeBeat(index)} style={mnTinyIconButton(T)}>Remove beat</button>
-              </div>
-            ))}
+            <textarea
+              value={beats.join('\n')}
+              onChange={(e) => updateBeatsText(e.target.value)}
+              placeholder="One plot point per line"
+              rows={Math.max(4, Math.min(12, beats.length + 1))}
+              style={{
+                width: '100%',
+                minHeight: 104,
+                resize: 'vertical',
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 7,
+                background: T.bg,
+                color: T.ink,
+                padding: '8px 9px',
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12.5,
+                lineHeight: 1.5,
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-              <button onClick={() => onChangeKind(block.id, { beats: [...beats, ''] })} style={mnTinyIconButton(T)}>Add beat</button>
               <button onClick={() => setContextPickerOpen(value => !value)} style={mnTinyIconButton(T)}>Add context</button>
             </div>
             {contextPickerOpen && (
