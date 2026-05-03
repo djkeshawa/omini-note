@@ -1331,6 +1331,7 @@ function MnBlockRow({
         depth={depth}
         T={T}
         indentPx={indentPx}
+        allNotes={allNotes}
         onChangeKind={onChangeKind}
         onDelete={onDelete}
         onAiAction={onAiAction}
@@ -1876,9 +1877,20 @@ function MnBlockRow({
   );
 }
 
-function MnPlotPointsBlock({ block, depth, T, indentPx, onChangeKind, onDelete, onAiAction }) {
+function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeKind, onDelete, onAiAction }) {
+  const [contextPickerOpen, setContextPickerOpen] = useStateOE(false);
+  const [contextQuery, setContextQuery] = useStateOE('');
   const beats = Array.isArray(block.beats) && block.beats.length ? block.beats : [''];
   const contexts = Array.isArray(block.contexts) ? block.contexts : [];
+  const linkedTitles = new Set(contexts.map(context => String(context || '').replace(/^\[\[|\]\]$/g, '').trim().toLowerCase()));
+  const pageOptions = (allNotes || [])
+    .filter(note => String(note?.title || '').trim())
+    .filter(note => !linkedTitles.has(String(note.title || '').trim().toLowerCase()))
+    .filter(note => {
+      const query = contextQuery.trim().toLowerCase();
+      return !query || String(note.title || '').toLowerCase().includes(query);
+    })
+    .slice(0, 8);
   const updateBeat = (index, value) => {
     const next = [...beats];
     next[index] = value;
@@ -1887,6 +1899,16 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, onChangeKind, onDelete, 
   const removeBeat = (index) => {
     const next = beats.filter((_, i) => i !== index);
     onChangeKind(block.id, { beats: next.length ? next : [''] });
+  };
+  const addContextPage = (note) => {
+    const title = String(note?.title || '').trim();
+    if (!title) return;
+    onChangeKind(block.id, { contexts: [...contexts, `[[${title}]]`] });
+    setContextPickerOpen(false);
+    setContextQuery('');
+  };
+  const removeContext = (index) => {
+    onChangeKind(block.id, { contexts: contexts.filter((_, i) => i !== index) });
   };
   return (
     <div
@@ -1952,20 +1974,74 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, onChangeKind, onDelete, 
             ))}
             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
               <button onClick={() => onChangeKind(block.id, { beats: [...beats, ''] })} style={mnTinyIconButton(T)}>Add beat</button>
-              <button onClick={() => onChangeKind(block.id, { contexts: [...contexts, '[[Context note]]'] })} style={mnTinyIconButton(T)}>Add context</button>
+              <button onClick={() => setContextPickerOpen(value => !value)} style={mnTinyIconButton(T)}>Add context</button>
             </div>
+            {contextPickerOpen && (
+              <div style={{
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 7,
+                background: T.bg,
+                padding: 7,
+                display: 'grid',
+                gap: 5,
+              }}>
+                <input
+                  value={contextQuery}
+                  onChange={(e) => setContextQuery(e.target.value)}
+                  autoFocus
+                  placeholder="Find page to link"
+                  style={{
+                    border: `1px solid ${T.lineSub}`,
+                    borderRadius: 6,
+                    background: T.bgSub,
+                    color: T.ink,
+                    padding: '6px 8px',
+                    fontFamily: 'var(--mn-ui)',
+                    fontSize: 12.5,
+                    outline: 'none',
+                  }}
+                />
+                <div style={{ display: 'grid', gap: 3, maxHeight: 180, overflow: 'auto' }}>
+                  {pageOptions.map(note => (
+                    <button
+                      key={note.id}
+                      onClick={() => addContextPage(note)}
+                      style={{
+                        border: 'none',
+                        borderRadius: 5,
+                        background: 'transparent',
+                        color: T.ink,
+                        cursor: 'pointer',
+                        padding: '6px 7px',
+                        textAlign: 'left',
+                        fontFamily: 'var(--mn-ui)',
+                        fontSize: 12.5,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      {note.title}
+                    </button>
+                  ))}
+                  {!pageOptions.length && (
+                    <div style={{ padding: '8px 7px', fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkDim }}>
+                      No available pages
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {contexts.length > 0 && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {contexts.map((context, index) => (
-                  <input
+                  <span
                     key={index}
-                    value={context}
-                    onChange={(e) => {
-                      const next = [...contexts];
-                      next[index] = e.target.value;
-                      onChangeKind(block.id, { contexts: next });
-                    }}
                     style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
                       border: `1px solid ${T.lineSub}`,
                       borderRadius: 999,
                       background: T.bg,
@@ -1973,9 +2049,22 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, onChangeKind, onDelete, 
                       padding: '4px 9px',
                       fontFamily: 'var(--mn-mono)',
                       fontSize: 10.5,
-                      outline: 'none',
-                    }}
-                  />
+                    }}>
+                    {context}
+                    <button
+                      onClick={() => removeContext(index)}
+                      title="Remove context"
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        color: T.inkDim,
+                        cursor: 'pointer',
+                        padding: 0,
+                        fontFamily: 'var(--mn-mono)',
+                        fontSize: 10,
+                        lineHeight: 1,
+                      }}>x</button>
+                  </span>
                 ))}
               </div>
             )}

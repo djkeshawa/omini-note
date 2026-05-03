@@ -1425,6 +1425,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /MN_NOVELIST_SLASH_CMDS/);
   assert.match(outliner, /options\.novelistMode \? MN_NOVELIST_SLASH_CMDS : \[\]/);
   assert.match(outliner, /plot-points/);
+  assert.match(outliner, /Find page to link/);
+  assert.match(outliner, /No available pages/);
+  assert.match(outliner, /contexts: \[\.\.\.contexts, `\[\[\$\{title\}\]\]`\]/);
   assert.match(outline, /window\.MN_LOGSEQ\?\.WORKFLOW_STATES/);
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(notelist, /const workflowPattern = states/);
