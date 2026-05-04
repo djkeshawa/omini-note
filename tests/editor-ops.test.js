@@ -481,7 +481,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(aiLib, /controller\.abort\(\)/);
   assert.match(aiLib, /cancelJob,/);
   assert.match(aiLib, /statusCache/);
-  assert.match(aiLib, /ollama\.chat\(options\.model \|\| CONFIG\.chatModel, messages, \{ keep_alive: OLLAMA_KEEP_ALIVE, signal: options\.signal \}\)/);
+  assert.match(aiLib, /ollama\.chat\(options\.model \|\| CONFIG\.chatModel, providerMessages, \{ keep_alive: OLLAMA_KEEP_ALIVE, signal: options\.signal \}\)/);
   assert.match(aiLib, /String\(systemMessage \|\| ''\)\.trim\(\) \|\| EDIT_SYSTEM_PROMPT/);
   assert.match(ollama, /async function embed\(model, text, opts = \{\}\)/);
   assert.match(ollama, /signal: opts\.signal/);
@@ -493,6 +493,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(settings, /id: 'anthropic'/);
   assert.match(settings, /id: 'gemini'/);
   assert.match(settings, /id: 'custom'/);
+  assert.match(settings, /PII reduction/);
   assert.match(settings, /Provider API base URL/);
   assert.match(settings, /Cloud providers are used for chat, note creation, and editing/);
 });
@@ -1215,9 +1216,9 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.11');
-  assert.equal(lock.version, '0.1.11');
-  assert.equal(lock.packages[''].version, '0.1.11');
+  assert.equal(pkg.version, '0.1.12');
+  assert.equal(lock.version, '0.1.12');
+  assert.equal(lock.packages[''].version, '0.1.12');
   assert.deepEqual(pkg.files, [
     'OminiNote.html',
     'main.js',
@@ -1320,10 +1321,12 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
 
   assert.match(aiSource, /function sanitizeConfigPatch/);
   assert.match(aiSource, /SECRET_CONFIG_KEYS/);
+  assert.match(aiSource, /piiReduction/);
   assert.match(aiSource, /Invalid \$\{field\} protocol/);
   assert.match(aiSource, /config: publicConfig\(\)/);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'file:///tmp/model' }), /Invalid customBaseUrl protocol/);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ surprise: true }), /Unsupported AI config field/);
+  assert.equal(ai.__test.sanitizeConfigPatch({ piiReduction: false }).piiReduction, false);
   assert.equal(
     ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://localhost:11434/v1/' }).customBaseUrl,
     'http://localhost:11434/v1'
@@ -1334,6 +1337,71 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   );
 });
 
+test('AI PII reduction masks hosted provider requests and restores local placeholders', async () => {
+  const ai = require('../lib/ai');
+  const originalConfig = ai.getConfig();
+  const originalFetch = global.fetch;
+  const sensitive = [
+    'Email jane.doe@example.com',
+    'phone +1 (415) 555-0134',
+    'SSN 123-45-6789',
+    'card 4111 1111 1111 1111',
+    'address 123 Market Street',
+    'token sk-1234567890abcdefghijkl',
+    'IP 10.0.0.5',
+  ].join(', ');
+  const reduced = ai.__test.reducePiiMessages([{ role: 'user', content: sensitive }]);
+  const redacted = reduced.messages[0].content;
+
+  assert.match(redacted, /\[EMAIL_1\]/);
+  assert.match(redacted, /\[PHONE_1\]/);
+  assert.match(redacted, /\[SSN_1\]/);
+  assert.match(redacted, /\[CARD_1\]/);
+  assert.match(redacted, /\[ADDRESS_1\]/);
+  assert.match(redacted, /\[SECRET_1\]/);
+  assert.match(redacted, /\[IP_1\]/);
+  assert.doesNotMatch(redacted, /jane\.doe@example\.com/);
+  assert.equal(
+    ai.__test.restorePiiText('Reply to [EMAIL_1] at [PHONE_1].', reduced.replacements),
+    'Reply to jane.doe@example.com at +1 (415) 555-0134.'
+  );
+
+  let capturedBody = null;
+  global.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'Use [EMAIL_1] and [PHONE_1].' } }],
+      }),
+    };
+  };
+
+  try {
+    ai.setConfig({
+      provider: 'custom',
+      customBaseUrl: 'https://example.invalid/v1',
+      customApiKey: 'test-key',
+      chatModel: 'test-model',
+      piiReduction: true,
+    });
+    const result = await ai.__test.providerChat([{ role: 'user', content: sensitive }]);
+    const sentMessages = JSON.stringify(capturedBody.messages);
+    assert.match(sentMessages, /\[EMAIL_1\]/);
+    assert.match(sentMessages, /\[PHONE_1\]/);
+    assert.doesNotMatch(sentMessages, /jane\.doe@example\.com/);
+    assert.doesNotMatch(sentMessages, /\+1 \(415\) 555-0134/);
+    assert.equal(result.text, 'Use jane.doe@example.com and +1 (415) 555-0134.');
+
+    ai.setConfig({ piiReduction: false });
+    await ai.__test.providerChat([{ role: 'user', content: 'Email jane.doe@example.com' }]);
+    assert.match(JSON.stringify(capturedBody.messages), /jane\.doe@example\.com/);
+  } finally {
+    global.fetch = originalFetch;
+    ai.setConfig(originalConfig, { rejectUnknown: false });
+  }
+});
+
 test('Fallback spell checker underlines misspellings and offers replacements', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -1341,6 +1409,8 @@ test('Fallback spell checker underlines misspellings and offers replacements', (
 
   assert.match(main, /function spellcheckWords/);
   assert.match(main, /SPELL_DICTIONARY_PATHS/);
+  assert.match(main, /loadedDictionaryWords < 1000/);
+  assert.match(main, /if \(!spellDictionaryAvailable\) return \{\}/);
   assert.match(main, /spellSuggestions\(word, dictionary\)/);
   assert.match(preload, /spellcheck: \(words\) => ipcRenderer\.invoke\('mn:spellcheck', words\)/);
   assert.match(outliner, /function mnRenderSpellCheckedText/);

@@ -32,6 +32,7 @@ VispNote/
 # Local tool/editor state
 .claude/
 .codex
+vispnote-web/
 .vscode/
 .idea/
 

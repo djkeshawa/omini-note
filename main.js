@@ -19,6 +19,7 @@ const SPELL_DICTIONARY_PATHS = [
 ];
 let spellWords = null;
 let spellWordBuckets = null;
+let spellDictionaryAvailable = false;
 const spellSuggestionCache = new Map();
 
 const COMMON_SPELL_WORDS = [
@@ -37,17 +38,30 @@ function normalizeSpellWord(word) {
 
 function loadSpellWords() {
   if (spellWords) return spellWords;
-  const words = new Set(COMMON_SPELL_WORDS);
+  const words = new Set();
+  let loadedDictionaryWords = 0;
   for (const file of SPELL_DICTIONARY_PATHS) {
     try {
       const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
       for (const line of lines) {
         const raw = line.replace(/\/.*$/, '').trim();
         const word = normalizeSpellWord(raw);
-        if (word.length >= 2 && /^[a-z][a-z']*$/.test(word)) words.add(word);
+        if (word.length >= 2 && /^[a-z][a-z']*$/.test(word)) {
+          const before = words.size;
+          words.add(word);
+          if (words.size > before) loadedDictionaryWords++;
+        }
       }
     } catch (e) {}
   }
+  if (loadedDictionaryWords < 1000) {
+    spellWords = new Set();
+    spellWordBuckets = new Map();
+    spellDictionaryAvailable = false;
+    return spellWords;
+  }
+  for (const word of COMMON_SPELL_WORDS) words.add(word);
+  spellDictionaryAvailable = true;
   spellWordBuckets = new Map();
   for (const word of words) {
     const first = word[0] || '';
@@ -96,6 +110,7 @@ function spellSuggestions(word, dictionary) {
 
 function spellcheckWords(inputWords = []) {
   const dictionary = loadSpellWords();
+  if (!spellDictionaryAvailable) return {};
   const result = {};
   for (const raw of inputWords) {
     const word = normalizeSpellWord(raw);

@@ -713,6 +713,9 @@ function SectionAI({ T }) {
         <Row T={T} label="Enable AI" sub="When disabled, Ask AI and embedding jobs will not run.">
           <Toggle T={T} checked={config?.enabled !== false} onChange={v => save({ enabled: v }, false)} />
         </Row>
+        <Row T={T} label="PII reduction" sub="Redact common identifiers before hosted or custom AI requests.">
+          <Toggle T={T} checked={config?.piiReduction !== false} onChange={v => save({ piiReduction: v }, false)} />
+        </Row>
         {showApiKey && (
           <Row T={T} label={`${providerMeta.label} API key`} sub="Stored locally in VispNote settings. It is used only from this app.">
             <input
