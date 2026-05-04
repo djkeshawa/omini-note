@@ -20,6 +20,11 @@ files:
   - "!dist/**/*"
   - "!release/**/*"
   - "!coverage/**/*"
+  - "!VispNote/**/*"
+  - "!OminiNote/**/*"
+  - "!MyNote/**/*"
+  - "!vispnote-web/**/*"
+  - "!*.tgz"
   - "!*.log"
 
 asar: true

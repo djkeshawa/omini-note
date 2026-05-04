@@ -1194,6 +1194,10 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(builder, /appId: com\.vispnote\.app/);
   assert.match(builder, /productName: VispNote/);
   assert.match(builder, /- assets\/\*\*\/*/);
+  assert.match(builder, /!VispNote\/\*\*\/*/);
+  assert.match(builder, /!OminiNote\/\*\*\/*/);
+  assert.match(builder, /!MyNote\/\*\*\/*/);
+  assert.match(builder, /!vispnote-web\/\*\*\/*/);
   assert.match(builder, /icon: assets\/linux-icons/);
   assert.match(builder, /afterInstall: scripts\/linux-after-install\.sh/);
   assert.match(builder, /shortcutName: VispNote/);
@@ -1211,15 +1215,25 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.10');
-  assert.equal(lock.version, '0.1.10');
-  assert.equal(lock.packages[''].version, '0.1.10');
+  assert.equal(pkg.version, '0.1.11');
+  assert.equal(lock.version, '0.1.11');
+  assert.equal(lock.packages[''].version, '0.1.11');
+  assert.deepEqual(pkg.files, [
+    'OminiNote.html',
+    'main.js',
+    'preload.js',
+    'assets/',
+    'lib/',
+    'src/',
+    'scripts/linux-after-install.sh',
+    'electron-builder.yml',
+  ]);
   assert.equal(pkg.homepage, 'https://github.com/djkeshawa/visp-note#readme');
   assert.equal(pkg.repository.url, 'https://github.com/djkeshawa/visp-note.git');
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
-  assert.match(settings, /Version 0\.1\.10 · Prototype/);
+  assert.match(settings, /Version 0\.1\.11 · Prototype/);
   assert.match(aiSource, /headers\['HTTP-Referer'\] = 'https:\/\/github\.com\/djkeshawa\/visp-note'/);
   assert.match(aiSource, /headers\['X-Title'\] = 'VispNote'/);
 });
