@@ -71,10 +71,10 @@ jobs:
             args: --win --x64
           - name: windows-appx-x64
             os: windows-2022
-            args: --win appx --x64 -c.forceCodeSigning=true
+            args: --win appx --x64 --config.forceCodeSigning=true
           - name: windows-msix-x64
             os: windows-2022
-            args: --config electron-builder-msix.yml --win appx --x64 -c.forceCodeSigning=true
+            args: --config electron-builder-msix.yml --win appx --x64 --config.forceCodeSigning=true
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: false

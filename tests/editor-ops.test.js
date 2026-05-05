@@ -1350,8 +1350,8 @@ test('Windows Store builds produce AppX and MSIX artifacts', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
   const storeDocs = fs.readFileSync(path.join(__dirname, '../docs/microsoft-store-submission.md'), 'utf8');
 
-  assert.equal(pkg.scripts['build:win:appx'], 'electron-builder --win appx --x64 -c.forceCodeSigning=true --publish never');
-  assert.equal(pkg.scripts['build:win:msix'], 'electron-builder --config electron-builder-msix.yml --win appx --x64 -c.forceCodeSigning=true --publish never');
+  assert.equal(pkg.scripts['build:win:appx'], 'electron-builder --win appx --x64 --config.forceCodeSigning=true --publish never');
+  assert.equal(pkg.scripts['build:win:msix'], 'electron-builder --config electron-builder-msix.yml --win appx --x64 --config.forceCodeSigning=true --publish never');
   assert.equal(pkg.scripts['build:win:store'], 'npm run build:win:appx && npm run build:win:msix');
   assert.match(builder, /appx:/);
   assert.match(builder, /artifactName: \$\{productName\}-\$\{version\}-store-\$\{arch\}\.\$\{ext\}/);

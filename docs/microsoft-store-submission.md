@@ -45,8 +45,8 @@ The Store build uses `-c.forceCodeSigning=true`, so it fails if signing is not c
 If Partner Center requires a specific package identity, pass the assigned values when building:
 
 ```sh
-npm run build:win:appx -- -c.appx.identityName=Publisher.VispNote -c.appx.publisher="CN=00000000-0000-0000-0000-000000000000"
-npm run build:win:msix -- -c.appx.identityName=Publisher.VispNote -c.appx.publisher="CN=00000000-0000-0000-0000-000000000000"
+npm run build:win:appx -- --config.appx.identityName=Publisher.VispNote --config.appx.publisher="CN=00000000-0000-0000-0000-000000000000"
+npm run build:win:msix -- --config.appx.identityName=Publisher.VispNote --config.appx.publisher="CN=00000000-0000-0000-0000-000000000000"
 ```
 
 ## Partner Center Checklist

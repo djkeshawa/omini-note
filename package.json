@@ -36,8 +36,8 @@
     "build:linux": "electron-builder --linux --publish never",
     "build:win": "electron-builder --win nsis --publish never",
     "build:win:portable": "electron-builder --win portable --publish never",
-    "build:win:appx": "electron-builder --win appx --x64 -c.forceCodeSigning=true --publish never",
-    "build:win:msix": "electron-builder --config electron-builder-msix.yml --win appx --x64 -c.forceCodeSigning=true --publish never",
+    "build:win:appx": "electron-builder --win appx --x64 --config.forceCodeSigning=true --publish never",
+    "build:win:msix": "electron-builder --config electron-builder-msix.yml --win appx --x64 --config.forceCodeSigning=true --publish never",
     "build:win:store": "npm run build:win:appx && npm run build:win:msix",
     "start": "electron .",
     "postinstall": "electron-builder install-app-deps"
