@@ -10,6 +10,7 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 const APP_NAME = 'VispNote';
+const APP_ID = 'com.vispnote.app';
 const APP_ICON_PATH = path.join(__dirname, 'assets', 'vispnote-icon.png');
 const SPELL_DICTIONARY_PATHS = [
   '/usr/share/dict/american-english',
@@ -456,6 +457,7 @@ async function rescanAllVaults() {
 // ── App lifecycle ────────────────────────────────────────────────────────────
 
 app.setName(APP_NAME);
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 if (process.platform === 'linux') app.setDesktopName('vispnote.desktop');
 
 app.whenReady().then(async () => {

@@ -1320,9 +1320,9 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.13');
-  assert.equal(lock.version, '0.1.13');
-  assert.equal(lock.packages[''].version, '0.1.13');
+  assert.equal(pkg.version, '0.1.14');
+  assert.equal(lock.version, '0.1.14');
+  assert.equal(lock.packages[''].version, '0.1.14');
   assert.deepEqual(pkg.files, [
     'OminiNote.html',
     'main.js',
