@@ -737,6 +737,29 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(ai, /initialQuery/);
 });
 
+test('First-run seed creates one notes vault and one novelist vault', async () => {
+  await withIsolatedStore(async (store) => {
+    const vaults = await store.listVaults();
+    assert.equal(vaults.length, 2);
+    assert.deepEqual(vaults.map(v => v.name), ['Personal', 'Novel']);
+
+    const personalVault = vaults.find(v => v.name === 'Personal');
+    const novelVault = vaults.find(v => v.name === 'Novel');
+    assert.equal(personalVault.novelistMode, false);
+    assert.equal(novelVault.novelistMode, true);
+
+    const personal = await store.loadVault(personalVault.id);
+    const novel = await store.loadVault(novelVault.id);
+
+    assert.equal(personal.notes.length, 3);
+    assert.deepEqual(personal.notes.map(note => note.title).sort(), ['Project plan', 'Reading notes', 'Welcome to VispNote']);
+    assert.equal(novel.notes.length, 3);
+    assert.deepEqual(novel.notes.map(note => note.title).sort(), ['Act 1', 'Chapter 1', 'Scene 1']);
+    assert.match(novel.notes.find(note => note.title === 'Chapter 1').body, /act:: \[\[Act 1\]\]/);
+    assert.match(novel.notes.find(note => note.title === 'Scene 1').body, /::: plot-points/);
+  });
+});
+
 test('New vault creation never reuses stale vault folders', async () => {
   await withIsolatedStore(async (store) => {
     const staleDir = path.join(store.ROOT, 'novel');
@@ -825,6 +848,87 @@ test('New novelist vaults stay isolated and persist novelist AI config', async (
     assert.deepEqual(secondLoaded.notes.map(note => note.title).sort(), ['Act 1', 'Chapter 1', 'Scene 1']);
     assert.equal(secondLoaded.novelistAiConfig.wordLimit, 1200);
     assert.equal(secondMeta.novelistAiConfig.wordLimit, 1200);
+  });
+});
+
+test('Note saves create restorable versions and reject stale disk writes', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    const loaded = await store.loadVault(vault.id);
+    const note = loaded.notes[0];
+
+    await new Promise(resolve => setTimeout(resolve, 12));
+    const first = await store.saveNote(vault.id, {
+      ...note,
+      body: 'first saved body',
+    }, { expectedModifiedAt: note.diskModifiedAt });
+
+    await new Promise(resolve => setTimeout(resolve, 12));
+    await store.saveNote(vault.id, {
+      ...first,
+      body: 'second saved body',
+    }, { expectedModifiedAt: first.diskModifiedAt });
+
+    const versions = await store.listNoteVersions(vault.id, note.id);
+    assert.ok(versions.length >= 2);
+    assert.match(versions[0].versionId, /^ver_/);
+
+    await assert.rejects(
+      () => store.saveNote(vault.id, {
+        ...first,
+        body: 'stale overwrite',
+      }, { expectedModifiedAt: first.diskModifiedAt }),
+      err => err.code === 'NOTE_CONFLICT'
+    );
+
+    const restored = await store.restoreNoteVersion(vault.id, note.id, versions[0].versionId);
+    assert.equal(restored.id, note.id);
+    assert.match(restored.body, /first saved body|Welcome/i);
+  });
+});
+
+test('Deleted notes move to trash and can be restored or purged', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    const loaded = await store.loadVault(vault.id);
+    const note = loaded.notes[0];
+
+    const deleted = await store.deleteNote(vault.id, note.id);
+    assert.ok(deleted.trashId);
+    assert.equal((await store.loadVault(vault.id)).notes.some(n => n.id === note.id), false);
+
+    const trash = await store.listDeletedNotes(vault.id);
+    assert.equal(trash.length, 1);
+    assert.equal(trash[0].originalId, note.id);
+
+    const restored = await store.restoreDeletedNote(vault.id, trash[0].trashId);
+    assert.equal(restored.id, note.id);
+    assert.equal((await store.loadVault(vault.id)).notes.some(n => n.id === note.id), true);
+
+    const deletedAgain = await store.deleteNote(vault.id, note.id);
+    await store.purgeDeletedNote(vault.id, deletedAgain.trashId);
+    assert.equal((await store.listDeletedNotes(vault.id)).some(item => item.trashId === deletedAgain.trashId), false);
+  });
+});
+
+test('Canvas deletes are soft-deleted into the vault trash folder', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    await store.saveCanvas(vault.id, { id: 'c_safety', title: 'Safety canvas', elements: [] });
+
+    const deleted = await store.deleteCanvas(vault.id, 'c_safety');
+    assert.ok(deleted.trashId);
+    assert.equal((await store.listCanvases(vault.id)).some(canvas => canvas.id === 'c_safety'), false);
+    assert.equal(
+      fs.existsSync(path.join(store.ROOT, vault.slug, '.trash', 'canvases', `${deleted.trashId}.json`)),
+      true
+    );
+
+    const trash = await store.listDeletedCanvases(vault.id);
+    assert.equal(trash.some(item => item.trashId === deleted.trashId && item.sourceType === 'canvas'), true);
+    const restored = await store.restoreDeletedCanvas(vault.id, deleted.trashId);
+    assert.equal(restored.id, 'c_safety');
+    assert.equal((await store.listCanvases(vault.id)).some(canvas => canvas.id === 'c_safety'), true);
   });
 });
 
@@ -1216,9 +1320,9 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.12');
-  assert.equal(lock.version, '0.1.12');
-  assert.equal(lock.packages[''].version, '0.1.12');
+  assert.equal(pkg.version, '0.1.13');
+  assert.equal(lock.version, '0.1.13');
+  assert.equal(lock.packages[''].version, '0.1.13');
   assert.deepEqual(pkg.files, [
     'OminiNote.html',
     'main.js',
@@ -1234,9 +1338,33 @@ test('Release metadata targets renamed VispNote repository', () => {
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
-  assert.match(settings, /Version 0\.1\.11 · Prototype/);
+  assert.match(settings, /Version 0\.1\.13 · Prototype/);
   assert.match(aiSource, /headers\['HTTP-Referer'\] = 'https:\/\/github\.com\/djkeshawa\/visp-note'/);
   assert.match(aiSource, /headers\['X-Title'\] = 'VispNote'/);
+});
+
+test('Windows Store builds produce AppX and MSIX artifacts', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+  const builder = fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8');
+  const msixBuilder = fs.readFileSync(path.join(__dirname, '../electron-builder-msix.yml'), 'utf8');
+  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
+  const storeDocs = fs.readFileSync(path.join(__dirname, '../docs/microsoft-store-submission.md'), 'utf8');
+
+  assert.equal(pkg.scripts['build:win:appx'], 'electron-builder --win appx --x64 -c.forceCodeSigning=true --publish never');
+  assert.equal(pkg.scripts['build:win:msix'], 'electron-builder --config electron-builder-msix.yml --win appx --x64 -c.forceCodeSigning=true --publish never');
+  assert.equal(pkg.scripts['build:win:store'], 'npm run build:win:appx && npm run build:win:msix');
+  assert.match(builder, /appx:/);
+  assert.match(builder, /artifactName: \$\{productName\}-\$\{version\}-store-\$\{arch\}\.\$\{ext\}/);
+  assert.match(builder, /identityName: VispNote/);
+  assert.match(builder, /publisherDisplayName: djkeshawa/);
+  assert.match(msixBuilder, /extends: electron-builder\.yml/);
+  assert.match(msixBuilder, /artifactName: \$\{productName\}-\$\{version\}-store-\$\{arch\}\.msix/);
+  assert.match(workflow, /name: windows-appx-x64/);
+  assert.match(workflow, /name: windows-msix-x64/);
+  assert.match(workflow, /dist\/\*\.appx/);
+  assert.match(workflow, /dist\/\*\.msix/);
+  assert.match(storeDocs, /npm run build:win:appx/);
+  assert.match(storeDocs, /npm run build:win:msix/);
 });
 
 test('Vault switcher uses VispNote icon instead of letter tiles', () => {
@@ -1640,4 +1768,32 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(panels, /onAiConfigChange && onAiConfigChange\(next\)/);
   assert.match(panels, /window\.mnWriteNovelistAiConfig = mnWriteNovelistAiConfig/);
   assert.match(app, /window\.mnWriteNovelistAiConfig\?\.\(activeVault\.novelistAiConfig, activeVaultId\)/);
+});
+
+test('Data safety wiring exposes trash, versions, and save conflict recovery', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+
+  assert.match(store, /atomicWriteFile/);
+  assert.match(store, /NOTE_CONFLICT/);
+  assert.match(store, /listDeletedNotes/);
+  assert.match(store, /restoreNoteVersion/);
+  assert.match(store, /restoreDeletedCanvas/);
+  assert.match(main, /mn:listDeletedNotes/);
+  assert.match(main, /mn:restoreDeletedCanvas/);
+  assert.match(main, /mn:restoreNoteVersion/);
+  assert.match(preload, /listNoteVersions/);
+  assert.match(preload, /listDeletedCanvases/);
+  assert.match(preload, /restoreDeletedNote/);
+
+  assert.match(app, /expectedModifiedAt: n\.diskModifiedAt/);
+  assert.match(app, /MnSaveConflictDialog/);
+  assert.match(app, /MnVersionHistoryDialog/);
+  assert.match(settings, /Recently deleted/);
+  assert.match(settings, /onRestoreDeletedNote/);
+  assert.match(editor, /Version history/);
 });

@@ -1,9 +1,12 @@
 {
   "name": "vispnote",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "VispNote — a local-first, block-based note-taking desktop app",
   "license": "Apache-2.0",
-  "author": "djkeshawa",
+  "author": {
+    "name": "djkeshawa",
+    "url": "https://github.com/djkeshawa"
+  },
   "files": [
     "OminiNote.html",
     "main.js",
@@ -31,7 +34,11 @@
     "build": "electron-builder --publish never",
     "build:mac": "electron-builder --mac --publish never",
     "build:linux": "electron-builder --linux --publish never",
-    "build:win": "electron-builder --win --publish never",
+    "build:win": "electron-builder --win nsis --publish never",
+    "build:win:portable": "electron-builder --win portable --publish never",
+    "build:win:appx": "electron-builder --win appx --x64 -c.forceCodeSigning=true --publish never",
+    "build:win:msix": "electron-builder --config electron-builder-msix.yml --win appx --x64 -c.forceCodeSigning=true --publish never",
+    "build:win:store": "npm run build:win:appx && npm run build:win:msix",
     "start": "electron .",
     "postinstall": "electron-builder install-app-deps"
   },

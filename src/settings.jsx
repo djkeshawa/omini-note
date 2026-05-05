@@ -1,7 +1,11 @@
 // Standardized settings modal with tabbed sections.
 const { useState: useStateS, useEffect: useEffectS } = React;
 
-function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault, onCreateVault, onDeleteVault, onSetVaultNovelistMode }) {
+function MnSettingsModal({
+  tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault,
+  onCreateVault, onDeleteVault, onSetVaultNovelistMode,
+  onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
+}) {
   const [section, setSection] = useStateS('appearance');
 
   const sections = [
@@ -178,6 +182,9 @@ function MnSettingsModal({ tweaks, setTweak, T, onClose, stats, vaults, activeVa
                 onCreateVault={onCreateVault}
                 onDeleteVault={onDeleteVault}
                 onSetVaultNovelistMode={onSetVaultNovelistMode}
+                onListDeletedNotes={onListDeletedNotes}
+                onRestoreDeletedNote={onRestoreDeletedNote}
+                onPurgeDeletedNote={onPurgeDeletedNote}
               />
             )}
             {section === 'shortcuts' && <SectionShortcuts T={T} />}
@@ -812,16 +819,38 @@ function mnSettingsInput(T, options = {}) {
   };
 }
 
-function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault, onCreateVault, onDeleteVault, onSetVaultNovelistMode }) {
+function SectionData({
+  tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault,
+  onCreateVault, onDeleteVault, onSetVaultNovelistMode,
+  onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
+}) {
   const [newVaultName, setNewVaultName] = useStateS('');
   const [newVaultType, setNewVaultType] = useStateS('notes');
   const [confirmingDelete, setConfirmingDelete] = useStateS(false);
   const [confirmText, setConfirmText] = useStateS('');
   const [busy, setBusy] = useStateS(false);
   const [error, setError] = useStateS('');
+  const [deletedNotes, setDeletedNotes] = useStateS([]);
+  const [deletedBusy, setDeletedBusy] = useStateS(false);
+  const [deletedError, setDeletedError] = useStateS('');
   const currentVault = activeVault || vaults.find(v => v.id === activeVaultId) || null;
   const canDeleteVault = !!currentVault && vaults.length > 1;
   const deleteReady = canDeleteVault && confirmText.trim() === currentVault.name;
+  const loadDeletedNotes = async () => {
+    if (!onListDeletedNotes) return;
+    setDeletedBusy(true);
+    setDeletedError('');
+    try {
+      setDeletedNotes(await onListDeletedNotes());
+    } catch (e) {
+      setDeletedError(e.message || String(e));
+    } finally {
+      setDeletedBusy(false);
+    }
+  };
+  useEffectS(() => {
+    loadDeletedNotes();
+  }, [activeVaultId]);
   useEffectS(() => {
     if (!confirmingDelete) return;
     const onKey = (e) => {
@@ -929,6 +958,77 @@ function SectionData({ tweaks, setTweak, T, stats, vaults, activeVaultId, active
             }}
           >Delete vault...</BtnOutline>
         </Row>
+      </SettingsCard>
+      <SettingsCard T={T} style={{ marginTop: 14 }}>
+        <Row
+          T={T}
+          label="Recently deleted"
+          sub="Deleted notes are kept for 30 days before cleanup."
+          last={deletedNotes.length === 0}
+        >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+            <StaticValue T={T}>{deletedNotes.length} note{deletedNotes.length === 1 ? '' : 's'}</StaticValue>
+            <BtnOutline T={T} disabled={deletedBusy || !onListDeletedNotes} onClick={loadDeletedNotes}>Refresh</BtnOutline>
+          </div>
+        </Row>
+        {deletedError && (
+          <div style={{ padding: '0 18px 12px', fontSize: 12, color: T.danger }}>{deletedError}</div>
+        )}
+        {deletedNotes.length > 0 && (
+          <div style={{ padding: '0 18px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {deletedNotes.slice(0, 8).map(item => (
+              <div key={item.trashId} style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+                gap: 8,
+                alignItems: 'center',
+                padding: '8px 10px',
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 7,
+                background: T.bgSub,
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: 'var(--mn-ui)',
+                    fontSize: 12.5,
+                    fontWeight: 650,
+                    color: T.ink,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>{item.title || 'Untitled'}</div>
+                  <div style={{
+                    marginTop: 2,
+                    fontFamily: 'var(--mn-mono)',
+                    fontSize: 10,
+                    color: T.inkDim,
+                  }}>{item.sourceType === 'canvas' ? 'Canvas' : 'Note'} · Deleted {item.deletedAt ? new Date(item.deletedAt).toLocaleString() : 'recently'}</div>
+                </div>
+                <BtnOutline
+                  T={T}
+                  disabled={deletedBusy || !onRestoreDeletedNote}
+                  onClick={async () => {
+                    setDeletedBusy(true);
+                    const result = await onRestoreDeletedNote(item);
+                    if (result?.ok !== false) await loadDeletedNotes();
+                    setDeletedBusy(false);
+                  }}
+                >Restore</BtnOutline>
+                <BtnOutline
+                  T={T}
+                  danger
+                  disabled={deletedBusy || !onPurgeDeletedNote}
+                  onClick={async () => {
+                    setDeletedBusy(true);
+                    const result = await onPurgeDeletedNote(item);
+                    if (result?.ok !== false) await loadDeletedNotes();
+                    setDeletedBusy(false);
+                  }}
+                >Delete permanently</BtnOutline>
+              </div>
+            ))}
+          </div>
+        )}
       </SettingsCard>
       {error && !confirmingDelete && <div style={{
         marginTop: 10,
@@ -1191,7 +1291,7 @@ function SectionAbout({ T, stats }) {
           }}><img src="assets/vispnote-icon.png" alt="" aria-hidden="true" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} /></div>
           <div>
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>VispNote</div>
-            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>Version 0.1.11 · Prototype</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>Version 0.1.13 · Prototype</div>
           </div>
         </div>
         <div style={{

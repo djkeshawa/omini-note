@@ -921,7 +921,7 @@ function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
               fontSize: 13,
               lineHeight: 1.45,
               color: T.inkMed,
-            }}>This removes the note from the current vault.</div>
+            }}>This moves the note to Recently deleted for 30 days.</div>
           </div>
         </div>
         <div style={{ padding: '16px 18px 10px' }}>
@@ -958,7 +958,7 @@ function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
             fontSize: 12.5,
             lineHeight: 1.45,
             color: T.inkMed,
-          }}>This action cannot be undone from the editor history.</div>
+          }}>You can restore this note from Settings → Data & Sync.</div>
         </div>
         <div style={{
           display: 'flex',
@@ -986,7 +986,7 @@ function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
               border: `1px solid ${T.danger}`,
               boxShadow: `0 8px 20px color-mix(in oklab, ${T.danger} 20%, transparent)`,
             }}>
-            Delete note
+            Move to trash
           </button>
         </div>
       </div>
@@ -1108,6 +1108,140 @@ function MnAppNoticeDialog({ notice, T, onClose }) {
             }}>
             OK
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MnSaveConflictDialog({ conflict, T, onReloadDisk, onKeepCopy, onDismiss }) {
+  if (!conflict) return null;
+  const when = conflict.currentModifiedAt ? new Date(conflict.currentModifiedAt).toLocaleString() : 'recently';
+  const btn = (tone = 'default') => ({
+    height: 32,
+    padding: '0 12px',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 12.5,
+    fontWeight: 650,
+    background: tone === 'primary' ? T.ink : T.bg,
+    color: tone === 'primary' ? T.bg : T.inkMed,
+    border: `1px solid ${tone === 'primary' ? T.ink : T.line}`,
+  });
+  return (
+    <div className="mn-save-conflict-dialog" onClick={onDismiss} style={{
+      position: 'absolute', inset: 0, zIndex: 93,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: `color-mix(in oklab, ${T.ink} 28%, transparent)`,
+      backdropFilter: 'blur(2px)', animation: 'mnFadeIn 120ms ease',
+    }}>
+      <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{
+        width: 460, maxWidth: 'calc(100vw - 40px)',
+        background: T.bg, color: T.ink, border: `1px solid ${T.line}`,
+        borderRadius: 10, overflow: 'hidden',
+        boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 24%, transparent)`,
+        fontFamily: 'var(--mn-ui)',
+      }}>
+        <div style={{ padding: '17px 18px 14px', background: T.bgSub, borderBottom: `1px solid ${T.lineSub}` }}>
+          <div style={{ fontSize: 15, fontWeight: 750, marginBottom: 5 }}>Save conflict</div>
+          <div style={{ fontFamily: 'var(--mn-body)', fontSize: 13, lineHeight: 1.45, color: T.inkMed }}>
+            “{conflict.title || 'Untitled'}” changed on disk {when}. VispNote kept your local edits unsaved.
+          </div>
+        </div>
+        <div style={{ padding: '14px 18px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={onDismiss} style={btn()}>Keep editing</button>
+          <button onClick={onKeepCopy} style={btn()}>Save local copy</button>
+          <button onClick={onReloadDisk} style={btn('primary')}>Reload disk version</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MnVersionHistoryDialog({ note, vaultId, T, onClose, onRestore }) {
+  const [versions, setVersions] = useStateA([]);
+  const [busy, setBusy] = useStateA(false);
+  const [error, setError] = useStateA('');
+
+  const load = useCallbackA(async () => {
+    if (!window.mn?.listNoteVersions || !vaultId || !note?.id) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await window.mn.listNoteVersions(vaultId, note.id);
+      if (!res.ok) throw new Error(res.error || 'Could not load versions');
+      setVersions(res.value || []);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [vaultId, note?.id]);
+
+  useEffectA(() => { load(); }, [load]);
+
+  if (!note) return null;
+  const btn = (danger = false) => ({
+    height: 30,
+    padding: '0 11px',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 12,
+    fontWeight: 600,
+    background: T.bg,
+    color: danger ? T.danger : T.inkMed,
+    border: `1px solid ${danger ? T.danger : T.line}`,
+  });
+  return (
+    <div className="mn-version-history-dialog" onClick={onClose} style={{
+      position: 'absolute', inset: 0, zIndex: 91,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: `color-mix(in oklab, ${T.ink} 28%, transparent)`,
+      backdropFilter: 'blur(2px)', animation: 'mnFadeIn 120ms ease',
+    }}>
+      <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{
+        width: 520, maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100vh - 56px)',
+        background: T.bg, color: T.ink, border: `1px solid ${T.line}`,
+        borderRadius: 10, overflow: 'hidden', fontFamily: 'var(--mn-ui)',
+        boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 24%, transparent)`,
+      }}>
+        <div style={{ padding: '17px 18px 14px', background: T.bgSub, borderBottom: `1px solid ${T.lineSub}` }}>
+          <div style={{ fontSize: 15, fontWeight: 750, marginBottom: 4 }}>Version history</div>
+          <div style={{ fontFamily: 'var(--mn-body)', fontSize: 13, color: T.inkMed }}>{note.title || 'Untitled'}</div>
+        </div>
+        <div style={{ padding: 14, maxHeight: 380, overflow: 'auto' }}>
+          {error && <div style={{ color: T.danger, fontSize: 12, marginBottom: 10 }}>{error}</div>}
+          {!busy && versions.length === 0 && (
+            <div style={{ fontFamily: 'var(--mn-body)', fontSize: 13, color: T.inkDim, padding: 8 }}>No saved versions yet.</div>
+          )}
+          {versions.map(version => (
+            <div key={version.versionId} style={{
+              display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 10,
+              alignItems: 'center', padding: '9px 10px', border: `1px solid ${T.lineSub}`,
+              borderRadius: 7, background: T.bgSub, marginBottom: 6,
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 650, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {version.title || 'Untitled'}
+                </div>
+                <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
+                  {version.createdAt ? new Date(version.createdAt).toLocaleString() : version.versionId}
+                </div>
+              </div>
+              <button style={btn()} disabled={busy} onClick={async () => {
+                setBusy(true);
+                const result = await onRestore(note.id, version.versionId);
+                setBusy(false);
+                if (result?.ok !== false) onClose();
+              }}>Restore</button>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '12px 18px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={load} disabled={busy} style={btn()}>Refresh</button>
+          <button onClick={onClose} style={btn()}>Close</button>
         </div>
       </div>
     </div>
@@ -1402,7 +1536,7 @@ function MnAiNotice({ notice, onOpen, onDismiss, T }) {
 }
 
 function MnApp() {
-  const { SEED_TAGS, SEED_NOTES, buildLinks } = window.MN_DATA;
+  const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
   // make them available to other modules via globals too
   window.mnMdToBlocks = mnMdToBlocks; window.mnBlocksToMd = mnBlocksToMd;
@@ -1444,6 +1578,8 @@ function MnApp() {
   const [captureOpen, setCaptureOpen] = useStateA(false);
   const [deleteTargetId, setDeleteTargetId] = useStateA(null);
   const [appNotice, setAppNotice] = useStateA(null);
+  const [conflictNotice, setConflictNotice] = useStateA(null);
+  const [versionTargetId, setVersionTargetId] = useStateA(null);
   const [toast, setToast] = useStateA(null);
   const [reminderCenterOpen, setReminderCenterOpen] = useStateA(false);
   const dismissedReminderKeys = useRefA(new Set());
@@ -1568,18 +1704,43 @@ function MnApp() {
     (async () => {
       try {
         if (!HAS_DISK) {
-          // In-browser fallback: use seed
-          const seedNotes = normalizeNotes(SEED_NOTES, mnMdToBlocks);
+          // In-browser fallback: use the same starter vault shape as first-run disk seed.
+          const fallbackSources = Array.isArray(SEED_VAULTS) && SEED_VAULTS.length
+            ? SEED_VAULTS
+            : [{
+              id: 'v_personal',
+              name: 'Personal',
+              slug: 'personal',
+              path: '~/VispNote/personal',
+              notes: SEED_NOTES,
+              tags: SEED_TAGS,
+              novelistMode: false,
+            }];
+          const fallbackVaults = fallbackSources.map((vault, index) => {
+            const slug = vault.slug || String(vault.name || `vault-${index + 1}`).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `vault-${index + 1}`;
+            const seedNotes = normalizeNotes(vault.notes || [], mnMdToBlocks);
+            return {
+              id: vault.id || `v_${slug}`,
+              name: vault.name || 'Personal',
+              slug,
+              path: vault.path || `~/VispNote/${slug}`,
+              notes: seedNotes,
+              tags: vault.tags || [],
+              canvases: [],
+              lastSelectedId: vault.lastSelectedId || seedNotes[0]?.id || null,
+              workflowStates: vault.workflowStates || (vault.novelistMode ? MN_NOVELIST_WORKFLOW_STATES : null),
+              novelistAiConfig: vault.novelistAiConfig || null,
+              novelistMode: !!vault.novelistMode,
+            };
+          });
+          const activeFallback = fallbackVaults[0];
           if (cancelled) return;
-        setVaults([{
-          id: 'v_personal', name: 'Personal', slug: 'personal',
-            path: '~/VispNote/personal', notes: seedNotes, tags: SEED_TAGS, canvases: [], novelistMode: false,
-        }]);
-          setActiveVaultId('v_personal');
-          setTags(SEED_TAGS);
-          setNotes(seedNotes);
+          setVaults(fallbackVaults);
+          setActiveVaultId(activeFallback?.id || null);
+          setTags(activeFallback?.tags || []);
+          setNotes(activeFallback?.notes || []);
           setCanvases([]);
-          setSelectedId(seedNotes[0]?.id || null);
+          setSelectedId(activeFallback?.lastSelectedId || activeFallback?.notes?.[0]?.id || null);
           setBootState('ready');
           return;
         }
@@ -1647,7 +1808,33 @@ function MnApp() {
       const n = noteList.find(x => x.id === id);
       if (!n) continue;
       try {
-        await window.mn.saveNote(vaultId, noteForDisk(n, mnBlocksToMd));
+        const res = await window.mn.saveNote(
+          vaultId,
+          noteForDisk(n, mnBlocksToMd),
+          { expectedModifiedAt: n.diskModifiedAt || null }
+        );
+        if (res && res.ok === false) {
+          if (res.code === 'NOTE_CONFLICT') {
+            setConflictNotice({
+              vaultId,
+              noteId: id,
+              title: n.title || 'Untitled',
+              currentModifiedAt: res.currentModifiedAt || null,
+              expectedModifiedAt: res.expectedModifiedAt || n.diskModifiedAt || null,
+            });
+            continue;
+          }
+          throw new Error(res.error || 'Save failed');
+        }
+        const saved = res?.value;
+        if (saved?.diskModifiedAt || saved?.modifiedAt) {
+          const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
+          const updateDiskStamp = note => note.id === id ? { ...note, diskModifiedAt } : note;
+          if (vaultId === activeVaultId) setNotes(ns => ns.map(updateDiskStamp));
+          setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
+            ? { ...v, notes: v.notes.map(updateDiskStamp) }
+            : v));
+        }
         setDirtyNotes(cur => {
           const key = mnDirtyNoteKey(vaultId, id);
           if (cur.get(key)?.vaultId !== vaultId) return cur;
@@ -1657,9 +1844,10 @@ function MnApp() {
         });
       } catch (e) {
         console.error('saveNote failed', id, e);
+        showAppNotice('Could not save note', e.message || String(e));
       }
     }
-  }, [findNotesForVault, notes, vaults]);
+  }, [findNotesForVault, notes, vaults, activeVaultId, showAppNotice]);
 
   // ── Persist dirty notes (debounced) ────────────────────────────────────
   useEffectA(() => {
@@ -2303,7 +2491,7 @@ function MnApp() {
 
   const selectedNote = notes.find(n => n.id === selectedId);
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
-  const blockingOverlayOpen = captureOpen || settingsOpen || askAiOpen || !!deleteTargetNote || !!appNotice;
+  const blockingOverlayOpen = captureOpen || settingsOpen || askAiOpen || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
 
   const reminderCenterItems = useMemoA(() => {
     const now = Date.now();
@@ -2388,6 +2576,7 @@ function MnApp() {
       id, title: cleanTitle, body: cleanBody, blocks, tags: cleanTags,
       date: new Date().toISOString(),
       modifiedAt: new Date().toISOString(),
+      diskModifiedAt: null,
     };
     setNotes(ns => [newNote, ...ns]);
     if (options.open !== false) {
@@ -2414,6 +2603,7 @@ function MnApp() {
       pinned: false,
       date: new Date().toISOString(),
       modifiedAt: new Date().toISOString(),
+      diskModifiedAt: null,
     };
     setNotes(ns => [duplicate, ...ns]);
     if (options.open !== false) {
@@ -2626,7 +2816,7 @@ function MnApp() {
     setSelectedId(rest[0]?.id || null);
     if (HAS_DISK && activeVaultId) {
       try {
-        const res = await window.mn.deleteNote(activeVaultId, id);
+        const res = await window.mn.deleteNote(activeVaultId, id, noteForDisk(n, mnBlocksToMd));
         if (res && res.ok === false) throw new Error(res.error);
       }
       catch (e) {
@@ -2644,6 +2834,161 @@ function MnApp() {
       }
     }
   };
+
+  const normalizeRuntimeNote = useCallbackA((note) => {
+    return normalizeNotes([note], mnMdToBlocks)[0] || null;
+  }, [mnMdToBlocks]);
+
+  const listDeletedNotes = useCallbackA(async () => {
+    if (!HAS_DISK || !activeVaultId) return [];
+    const [noteRes, canvasRes] = await Promise.all([
+      window.mn.listDeletedNotes(activeVaultId),
+      window.mn.listDeletedCanvases ? window.mn.listDeletedCanvases(activeVaultId) : Promise.resolve({ ok: true, value: [] }),
+    ]);
+    if (!noteRes.ok) throw new Error(noteRes.error || 'Could not load deleted notes');
+    if (!canvasRes.ok) throw new Error(canvasRes.error || 'Could not load deleted canvases');
+    return [...(noteRes.value || []), ...(canvasRes.value || [])]
+      .sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0));
+  }, [activeVaultId]);
+
+  const restoreDeletedNote = useCallbackA(async (itemOrTrashId) => {
+    const trashId = typeof itemOrTrashId === 'string' ? itemOrTrashId : itemOrTrashId?.trashId;
+    const sourceType = typeof itemOrTrashId === 'object' ? itemOrTrashId?.sourceType : 'note';
+    if (!HAS_DISK || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
+    try {
+      if (sourceType === 'canvas') {
+        const res = await window.mn.restoreDeletedCanvas(activeVaultId, trashId);
+        if (!res.ok) throw new Error(res.error || 'Could not restore canvas');
+        const restored = summarizeCanvas(res.value);
+        setCanvases(current => upsertCanvasList(current, restored));
+        setVaults(vs => vs.map(v => v.id === activeVaultId
+          ? { ...v, canvases: upsertCanvasList(v.canvases || [], restored) }
+          : v));
+        setActiveCanvas(res.value);
+        navigateView('canvas');
+        return { ok: true, canvas: res.value };
+      }
+      const res = await window.mn.restoreDeletedNote(activeVaultId, trashId);
+      if (!res.ok) throw new Error(res.error || 'Could not restore note');
+      const restored = normalizeRuntimeNote(res.value);
+      if (!restored) throw new Error('Restored note could not be loaded');
+      setNotes(ns => [restored, ...ns.filter(n => n.id !== restored.id)]);
+      setVaults(vs => vs.map(v => v.id === activeVaultId && Array.isArray(v.notes)
+        ? { ...v, notes: [restored, ...v.notes.filter(n => n.id !== restored.id)] }
+        : v));
+      setSelectedId(restored.id);
+      setSelectedTag(null);
+      setSelectedWorkflow(null);
+      navigateView('notes');
+      return { ok: true, note: restored };
+    } catch (e) {
+      console.error('restoreDeletedNote failed', e);
+      showAppNotice('Could not restore note', e.message || String(e));
+      return { ok: false, error: e.message || String(e) };
+    }
+  }, [activeVaultId, normalizeRuntimeNote, navigateView, showAppNotice]);
+
+  const purgeDeletedNote = useCallbackA(async (itemOrTrashId) => {
+    const trashId = typeof itemOrTrashId === 'string' ? itemOrTrashId : itemOrTrashId?.trashId;
+    const sourceType = typeof itemOrTrashId === 'object' ? itemOrTrashId?.sourceType : 'note';
+    if (!HAS_DISK || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
+    try {
+      const res = sourceType === 'canvas' && window.mn.purgeDeletedCanvas
+        ? await window.mn.purgeDeletedCanvas(activeVaultId, trashId)
+        : await window.mn.purgeDeletedNote(activeVaultId, trashId);
+      if (!res.ok) throw new Error(res.error || 'Could not permanently delete note');
+      return { ok: true };
+    } catch (e) {
+      console.error('purgeDeletedNote failed', e);
+      showAppNotice('Could not permanently delete note', e.message || String(e));
+      return { ok: false, error: e.message || String(e) };
+    }
+  }, [activeVaultId, showAppNotice]);
+
+  const restoreNoteVersion = useCallbackA(async (noteId, versionId) => {
+    if (!HAS_DISK || !activeVaultId || !noteId || !versionId) return { ok: false, error: 'No active vault.' };
+    try {
+      const res = await window.mn.restoreNoteVersion(activeVaultId, noteId, versionId);
+      if (!res.ok) throw new Error(res.error || 'Could not restore note version');
+      const restored = normalizeRuntimeNote(res.value);
+      if (!restored) throw new Error('Restored version could not be loaded');
+      setNotes(ns => ns.map(n => n.id === restored.id ? restored : n));
+      setVaults(vs => vs.map(v => v.id === activeVaultId && Array.isArray(v.notes)
+        ? { ...v, notes: v.notes.map(n => n.id === restored.id ? restored : n) }
+        : v));
+      setDirtyNotes(cur => {
+        const key = mnDirtyNoteKey(activeVaultId, restored.id);
+        if (!cur.has(key)) return cur;
+        const next = new Map(cur);
+        next.delete(key);
+        return next;
+      });
+      setSelectedId(restored.id);
+      navigateView('notes');
+      return { ok: true, note: restored };
+    } catch (e) {
+      console.error('restoreNoteVersion failed', e);
+      showAppNotice('Could not restore version', e.message || String(e));
+      return { ok: false, error: e.message || String(e) };
+    }
+  }, [activeVaultId, normalizeRuntimeNote, navigateView, showAppNotice]);
+
+  const reloadConflictFromDisk = useCallbackA(async () => {
+    const conflict = conflictNotice;
+    if (!conflict?.vaultId || !conflict?.noteId) return;
+    try {
+      const res = await window.mn.loadVault(conflict.vaultId);
+      if (!res.ok) throw new Error(res.error || 'Could not reload note');
+      const loaded = normalizeNotes(res.value.notes || [], mnMdToBlocks);
+      const diskNote = loaded.find(note => note.id === conflict.noteId);
+      if (!diskNote) throw new Error('The disk version no longer exists.');
+      if (conflict.vaultId === activeVaultId) {
+        setNotes(ns => ns.map(n => n.id === conflict.noteId ? diskNote : n));
+      }
+      setVaults(vs => vs.map(v => v.id === conflict.vaultId && Array.isArray(v.notes)
+        ? { ...v, notes: v.notes.map(n => n.id === conflict.noteId ? diskNote : n) }
+        : v));
+      setDirtyNotes(cur => {
+        const key = mnDirtyNoteKey(conflict.vaultId, conflict.noteId);
+        if (!cur.has(key)) return cur;
+        const next = new Map(cur);
+        next.delete(key);
+        return next;
+      });
+      setConflictNotice(null);
+    } catch (e) {
+      console.error('reload conflict failed', e);
+      showAppNotice('Could not reload disk version', e.message || String(e));
+    }
+  }, [activeVaultId, conflictNotice, mnMdToBlocks, showAppNotice]);
+
+  const keepConflictAsDuplicate = useCallbackA(async () => {
+    const conflict = conflictNotice;
+    if (!conflict?.vaultId || !conflict?.noteId) return;
+    const source = notesWithBody.find(note => note.id === conflict.noteId);
+    if (!source) return;
+    const duplicateId = createRuntimeNoteId();
+    const duplicateTitle = uniqueNoteTitle(`${source.title || 'Untitled'} local copy`);
+    const duplicateBody = mnNormalizeNoteBody(source.body || mnBlocksToMd(source.blocks || []), duplicateTitle);
+    const duplicate = {
+      ...source,
+      id: duplicateId,
+      title: duplicateTitle,
+      body: duplicateBody,
+      blocks: mnMdToBlocks(duplicateBody || ''),
+      pinned: false,
+      date: new Date().toISOString(),
+      modifiedAt: new Date().toISOString(),
+      diskModifiedAt: null,
+    };
+    setNotes(ns => [duplicate, ...ns]);
+    setVaults(vs => vs.map(v => v.id === conflict.vaultId && Array.isArray(v.notes)
+      ? { ...v, notes: [duplicate, ...v.notes] }
+      : v));
+    markDirty(duplicateId);
+    await reloadConflictFromDisk();
+    setSelectedId(duplicateId);
+  }, [conflictNotice, notesWithBody, uniqueNoteTitle, mnBlocksToMd, mnMdToBlocks, markDirty, reloadConflictFromDisk]);
 
   const summarizeCanvas = (canvas) => ({
     ...canvas,
@@ -3021,6 +3366,7 @@ function MnApp() {
               onPinToggle={() => updateNote(selectedNote.id, { pinned: !selectedNote.pinned })}
               onDuplicate={() => duplicateNote(selectedNote.id)}
               onDelete={() => requestDeleteNote(selectedNote.id)}
+              onOpenVersions={HAS_DISK ? () => setVersionTargetId(selectedNote.id) : null}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onBack={goBackView}
               onToggleSidebar={() => setSidebarHidden(v => !v)}
@@ -3204,6 +3550,9 @@ function MnApp() {
             onCreateVault={createVault}
             onDeleteVault={deleteVault}
             onSetVaultNovelistMode={setActiveVaultNovelistMode}
+            onListDeletedNotes={listDeletedNotes}
+            onRestoreDeletedNote={restoreDeletedNote}
+            onPurgeDeletedNote={purgeDeletedNote}
             onClose={() => setSettingsOpen(false)} />
         )}
         {deleteTargetNote && (
@@ -3219,6 +3568,24 @@ function MnApp() {
             notice={appNotice}
             T={T}
             onClose={() => setAppNotice(null)}
+          />
+        )}
+        {conflictNotice && (
+          <MnSaveConflictDialog
+            conflict={conflictNotice}
+            T={T}
+            onReloadDisk={reloadConflictFromDisk}
+            onKeepCopy={keepConflictAsDuplicate}
+            onDismiss={() => setConflictNotice(null)}
+          />
+        )}
+        {versionTargetId && (
+          <MnVersionHistoryDialog
+            note={notesWithBody.find(note => note.id === versionTargetId)}
+            vaultId={activeVaultId}
+            T={T}
+            onClose={() => setVersionTargetId(null)}
+            onRestore={restoreNoteVersion}
           />
         )}
         {askAiOpen && (

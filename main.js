@@ -312,7 +312,13 @@ function wrap(fn) {
       return { ok: true, value: await fn(...args) };
     } catch (e) {
       console.error('[ipc]', fn.name, e);
-      return { ok: false, error: e.message || String(e) };
+      return {
+        ok: false,
+        error: e.message || String(e),
+        code: e.code || null,
+        currentModifiedAt: e.currentModifiedAt || null,
+        expectedModifiedAt: e.expectedModifiedAt || null,
+      };
     }
   };
 }
@@ -345,19 +351,39 @@ ipcMain.handle('mn:setActiveVault', wrap(store.setActiveVault));
 
 // Notes
 ipcMain.handle('mn:loadVault',      wrap(store.loadVault));
-ipcMain.handle('mn:saveNote',       wrap(async (vaultId, note) => {
-  await store.saveNote(vaultId, note);
-  idx.indexNote(vaultId, note);
-  ai.scheduleEmbed(vaultId, note);  // fire-and-forget; no-op if Ollama down
+ipcMain.handle('mn:saveNote',       wrap(async (vaultId, note, options) => {
+  const saved = await store.saveNote(vaultId, note, options || {});
+  idx.indexNote(vaultId, saved);
+  ai.scheduleEmbed(vaultId, saved);  // fire-and-forget; no-op if Ollama down
+  return saved;
 }));
-ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId) => {
-  await store.deleteNote(vaultId, noteId);
+ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId, noteSnapshot) => {
+  const result = await store.deleteNote(vaultId, noteId, noteSnapshot);
   idx.removeNote(vaultId, noteId);
+  return result;
+}));
+ipcMain.handle('mn:listDeletedNotes', wrap(store.listDeletedNotes));
+ipcMain.handle('mn:restoreDeletedNote', wrap(async (vaultId, trashId) => {
+  const note = await store.restoreDeletedNote(vaultId, trashId);
+  idx.indexNote(vaultId, note);
+  ai.scheduleEmbed(vaultId, note);
+  return note;
+}));
+ipcMain.handle('mn:purgeDeletedNote', wrap(store.purgeDeletedNote));
+ipcMain.handle('mn:listNoteVersions', wrap(store.listNoteVersions));
+ipcMain.handle('mn:restoreNoteVersion', wrap(async (vaultId, noteId, versionId) => {
+  const note = await store.restoreNoteVersion(vaultId, noteId, versionId);
+  idx.indexNote(vaultId, note);
+  ai.scheduleEmbed(vaultId, note);
+  return note;
 }));
 ipcMain.handle('mn:listCanvases',   wrap(store.listCanvases));
 ipcMain.handle('mn:getCanvas',      wrap(store.getCanvas));
 ipcMain.handle('mn:saveCanvas',     wrap(store.saveCanvas));
 ipcMain.handle('mn:deleteCanvas',   wrap(store.deleteCanvas));
+ipcMain.handle('mn:listDeletedCanvases', wrap(store.listDeletedCanvases));
+ipcMain.handle('mn:restoreDeletedCanvas', wrap(store.restoreDeletedCanvas));
+ipcMain.handle('mn:purgeDeletedCanvas', wrap(store.purgeDeletedCanvas));
 ipcMain.handle('mn:saveVaultMeta',  wrap(store.saveVaultMeta));
 
 // Prefs

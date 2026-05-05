@@ -79,15 +79,35 @@ win:
     - target: nsis
       arch:
         - x64
-    - target: portable
-      arch:
-        - x64
-  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+  artifactName: ${productName}-${version}-setup-${arch}.${ext}
+  requestedExecutionLevel: asInvoker
+  signAndEditExecutable: true
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
+
+appx:
+  artifactName: ${productName}-${version}-store-${arch}.${ext}
+  identityName: VispNote
+  applicationId: VispNote
+  displayName: VispNote
+  publisherDisplayName: djkeshawa
+  backgroundColor: "#f6f7f9"
+  languages:
+    - en-US
 
 nsis:
+  artifactName: ${productName}-${version}-setup-${arch}.${ext}
   oneClick: false
   perMachine: false
+  allowElevation: true
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: VispNote
+  uninstallDisplayName: VispNote
+  uninstallUrlHelp: https://github.com/djkeshawa/visp-note/issues
+  uninstallUrlInfoAbout: https://github.com/djkeshawa/visp-note
+
+portable:
+  artifactName: ${productName}-${version}-portable-${arch}.${ext}

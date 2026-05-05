@@ -11,12 +11,20 @@ contextBridge.exposeInMainWorld('mn', {
 
   // Notes
   loadVault: (vaultId) => ipcRenderer.invoke('mn:loadVault', vaultId),
-  saveNote: (vaultId, note) => ipcRenderer.invoke('mn:saveNote', vaultId, note),
-  deleteNote: (vaultId, noteId) => ipcRenderer.invoke('mn:deleteNote', vaultId, noteId),
+  saveNote: (vaultId, note, options) => ipcRenderer.invoke('mn:saveNote', vaultId, note, options),
+  deleteNote: (vaultId, noteId, noteSnapshot) => ipcRenderer.invoke('mn:deleteNote', vaultId, noteId, noteSnapshot),
+  listDeletedNotes: (vaultId) => ipcRenderer.invoke('mn:listDeletedNotes', vaultId),
+  restoreDeletedNote: (vaultId, trashId) => ipcRenderer.invoke('mn:restoreDeletedNote', vaultId, trashId),
+  purgeDeletedNote: (vaultId, trashId) => ipcRenderer.invoke('mn:purgeDeletedNote', vaultId, trashId),
+  listNoteVersions: (vaultId, noteId) => ipcRenderer.invoke('mn:listNoteVersions', vaultId, noteId),
+  restoreNoteVersion: (vaultId, noteId, versionId) => ipcRenderer.invoke('mn:restoreNoteVersion', vaultId, noteId, versionId),
   listCanvases: (vaultId) => ipcRenderer.invoke('mn:listCanvases', vaultId),
   getCanvas: (vaultId, canvasId) => ipcRenderer.invoke('mn:getCanvas', vaultId, canvasId),
   saveCanvas: (vaultId, canvas) => ipcRenderer.invoke('mn:saveCanvas', vaultId, canvas),
   deleteCanvas: (vaultId, canvasId) => ipcRenderer.invoke('mn:deleteCanvas', vaultId, canvasId),
+  listDeletedCanvases: (vaultId) => ipcRenderer.invoke('mn:listDeletedCanvases', vaultId),
+  restoreDeletedCanvas: (vaultId, trashId) => ipcRenderer.invoke('mn:restoreDeletedCanvas', vaultId, trashId),
+  purgeDeletedCanvas: (vaultId, trashId) => ipcRenderer.invoke('mn:purgeDeletedCanvas', vaultId, trashId),
   saveVaultMeta: (vaultId, patch) => ipcRenderer.invoke('mn:saveVaultMeta', vaultId, patch),
 
   // Prefs
