@@ -86,16 +86,6 @@ win:
     signingHashAlgorithms:
       - sha256
 
-appx:
-  artifactName: ${productName}-${version}-store-${arch}.${ext}
-  identityName: VispNote
-  applicationId: VispNote
-  displayName: VispNote
-  publisherDisplayName: djkeshawa
-  backgroundColor: "#f6f7f9"
-  languages:
-    - en-US
-
 nsis:
   artifactName: ${productName}-${version}-setup-${arch}.${ext}
   oneClick: false

@@ -1343,28 +1343,21 @@ test('Release metadata targets renamed VispNote repository', () => {
   assert.match(aiSource, /headers\['X-Title'\] = 'VispNote'/);
 });
 
-test('Windows Store builds produce AppX and MSIX artifacts', () => {
+test('Release builds omit AppX and MSIX Store package targets', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const builder = fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8');
-  const msixBuilder = fs.readFileSync(path.join(__dirname, '../electron-builder-msix.yml'), 'utf8');
   const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
-  const storeDocs = fs.readFileSync(path.join(__dirname, '../docs/microsoft-store-submission.md'), 'utf8');
 
-  assert.equal(pkg.scripts['build:win:appx'], 'electron-builder --win appx --x64 --config.forceCodeSigning=true --publish never');
-  assert.equal(pkg.scripts['build:win:msix'], 'electron-builder --config electron-builder-msix.yml --win appx --x64 --config.forceCodeSigning=true --publish never');
-  assert.equal(pkg.scripts['build:win:store'], 'npm run build:win:appx && npm run build:win:msix');
-  assert.match(builder, /appx:/);
-  assert.match(builder, /artifactName: \$\{productName\}-\$\{version\}-store-\$\{arch\}\.\$\{ext\}/);
-  assert.match(builder, /identityName: VispNote/);
-  assert.match(builder, /publisherDisplayName: djkeshawa/);
-  assert.match(msixBuilder, /extends: electron-builder\.yml/);
-  assert.match(msixBuilder, /artifactName: \$\{productName\}-\$\{version\}-store-\$\{arch\}\.msix/);
-  assert.match(workflow, /name: windows-appx-x64/);
-  assert.match(workflow, /name: windows-msix-x64/);
-  assert.match(workflow, /dist\/\*\.appx/);
-  assert.match(workflow, /dist\/\*\.msix/);
-  assert.match(storeDocs, /npm run build:win:appx/);
-  assert.match(storeDocs, /npm run build:win:msix/);
+  assert.equal(pkg.scripts['build:win:appx'], undefined);
+  assert.equal(pkg.scripts['build:win:msix'], undefined);
+  assert.equal(pkg.scripts['build:win:store'], undefined);
+  assert.doesNotMatch(builder, /^appx:/m);
+  assert.doesNotMatch(workflow, /windows-appx-x64/);
+  assert.doesNotMatch(workflow, /windows-msix-x64/);
+  assert.doesNotMatch(workflow, /dist\/\*\.appx/);
+  assert.doesNotMatch(workflow, /dist\/\*\.msix/);
+  assert.equal(fs.existsSync(path.join(__dirname, '../electron-builder-msix.yml')), false);
+  assert.equal(fs.existsSync(path.join(__dirname, '../docs/microsoft-store-submission.md')), false);
 });
 
 test('Vault switcher uses VispNote icon instead of letter tiles', () => {
