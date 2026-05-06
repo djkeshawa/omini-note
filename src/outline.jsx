@@ -1,4 +1,4 @@
-// Block engine for OminiNote — typed blocks.
+// Block engine for VispNote — typed blocks.
 //
 // Each block has a `kind`:
 //   - 'paragraph'  — plain text, Enter creates next paragraph

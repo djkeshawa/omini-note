@@ -63,7 +63,7 @@ HOME=/tmp/vispnote-smoke npm run smoke:electron
 
 ```text
 .
-├── OminiNote.html           # Electron renderer entry point
+├── vispnote.html            # Electron renderer entry point
 ├── main.js                  # Electron main process and IPC handlers
 ├── preload.js               # Safe renderer bridge
 ├── lib/

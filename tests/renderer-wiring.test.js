@@ -219,7 +219,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
 });
 
 test('Canvas workspace is wired through storage, navigation, and note embeds', () => {
-  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
@@ -517,7 +517,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
 
 test('Electron installs native edit context menu for right-click copy paste cut', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
-  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const builder = fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8');
   const linuxAfterInstall = fs.readFileSync(path.join(__dirname, '../scripts/linux-after-install.sh'), 'utf8');
   const icon = fs.statSync(path.join(__dirname, '../assets/vispnote-icon.png'));
@@ -586,7 +586,7 @@ test('Release metadata targets renamed VispNote repository', () => {
   assert.equal(lock.version, '0.1.16');
   assert.equal(lock.packages[''].version, '0.1.16');
   assert.deepEqual(pkg.files, [
-    'OminiNote.html',
+    'vispnote.html',
     'main.js',
     'preload.js',
     'assets/',
@@ -827,7 +827,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const appShell = fs.readFileSync(path.join(__dirname, '../src/appShell.jsx'), 'utf8');
   const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/appNovelist.js'), 'utf8');
   const panelHelpersSource = fs.readFileSync(path.join(__dirname, '../src/panelHelpers.js'), 'utf8');
-  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');

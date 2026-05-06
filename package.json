@@ -8,7 +8,7 @@
     "url": "https://github.com/djkeshawa"
   },
   "files": [
-    "OminiNote.html",
+    "vispnote.html",
     "main.js",
     "preload.js",
     "assets/",
@@ -56,6 +56,8 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.9.0",
+    "katex": "^0.16.45",
+    "mermaid": "^11.14.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sqlite-vec": "^0.1.9"

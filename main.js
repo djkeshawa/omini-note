@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShortcut } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -254,6 +254,40 @@ function createAppIcon() {
   return createFallbackIcon();
 }
 
+// Bring the window forward and tell the renderer to open Quick Capture.
+// Routed through IPC because the renderer owns its modal stack and undo
+// history; the main process stays focused on lifecycle and OS hooks.
+function openQuickCaptureFromShortcut() {
+  showMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const send = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mn:openQuickCapture');
+    }
+  };
+  if (mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', send);
+  } else {
+    send();
+  }
+}
+
+const QUICK_CAPTURE_SHORTCUT = process.platform === 'darwin'
+  ? 'Cmd+Shift+N'
+  : 'Ctrl+Shift+N';
+
+function registerQuickCaptureShortcut() {
+  // globalShortcut may fail (already-registered, no display server). The app
+  // still works without it — capture stays available via the in-app button.
+  try {
+    if (!globalShortcut.register(QUICK_CAPTURE_SHORTCUT, openQuickCaptureFromShortcut)) {
+      console.warn('quick capture shortcut not registered:', QUICK_CAPTURE_SHORTCUT);
+    }
+  } catch (e) {
+    console.error('quick capture shortcut registration failed', e);
+  }
+}
+
 function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
@@ -352,7 +386,7 @@ function attachEditContextMenu(win) {
 function isAllowedAppNavigation(rawUrl) {
   try {
     const target = new URL(rawUrl);
-    const appUrl = new URL(pathToFileURL(path.join(__dirname, 'OminiNote.html')).href);
+    const appUrl = new URL(pathToFileURL(path.join(__dirname, 'vispnote.html')).href);
     return target.protocol === appUrl.protocol && target.pathname === appUrl.pathname;
   } catch (e) {
     return false;
@@ -399,7 +433,7 @@ function createWindow() {
     : spellLanguages.find(lang => /^en[-_]/i.test(lang));
   if (spellLanguage) spellSession.setSpellCheckerLanguages([spellLanguage]);
 
-  win.loadFile('OminiNote.html');
+  win.loadFile('vispnote.html');
   mainWindow = win;
   attachEditContextMenu(win);
 
@@ -583,6 +617,7 @@ ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(e
 ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(payload)));
 ipcMain.handle('mn:ai.cancel',      wrap((jobId) => ai.cancelJob(jobId)));
 ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, store)));
+ipcMain.handle('mn:ai.related',     wrap((vaultId, noteId, options) => ai.relatedNotes(vaultId, noteId, store, options || {})));
 ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.getConfig()));
 ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {
   const config = ai.setConfig(patch);
@@ -639,6 +674,7 @@ app.whenReady().then(async () => {
   indexReadyPromise = rescanAllVaults().catch(e => {
     console.error('boot index rescan failed', e);
   });
+  registerQuickCaptureShortcut();
 
   app.on('activate', () => {
     showMainWindow();
@@ -653,4 +689,7 @@ app.on('window-all-closed', () => {
   if (!tray && process.platform !== 'darwin') app.quit();
 });
 
-app.on('will-quit', () => { idx.close(); });
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  idx.close();
+});

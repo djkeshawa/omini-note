@@ -239,6 +239,14 @@ function MnApp() {
     askAiOpenRef.current = askAiOpen;
   }, [askAiOpen]);
 
+  // Global-shortcut bridge: the main process registers an OS-level hotkey
+  // (Ctrl/Cmd+Shift+N) and pushes an IPC event when it fires. We mirror the
+  // existing in-app keybinding by opening Quick Capture.
+  useEffectA(() => {
+    if (typeof window === 'undefined' || !window.mn?.onOpenQuickCapture) return;
+    return window.mn.onOpenQuickCapture(() => setCaptureOpen(true));
+  }, []);
+
   useEffectA(() => {
     if (bootState === 'loading') return;
     const splash = document.getElementById('mn-boot-splash');

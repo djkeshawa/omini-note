@@ -228,7 +228,7 @@ test('Canvas deletes are soft-deleted into the vault trash folder', async () => 
 
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
-  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/markdown.jsx'), 'utf8');
   const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');

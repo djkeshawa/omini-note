@@ -1,4 +1,4 @@
-// Theme + design tokens for OminiNote.
+// Theme + design tokens for VispNote.
 // Cool minimal: near-white canvas, slate ink, mono indigo accent.
 
 const MN_THEMES = {

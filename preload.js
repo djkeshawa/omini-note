@@ -62,10 +62,20 @@ contextBridge.exposeInMainWorld('mn', {
     chat:      (payload) => ipcRenderer.invoke('mn:ai.chat', payload),
     cancel:    (jobId) => ipcRenderer.invoke('mn:ai.cancel', jobId),
     backfill:  (vaultId) => ipcRenderer.invoke('mn:ai.backfill', vaultId),
+    related:   (vaultId, noteId, options) => ipcRenderer.invoke('mn:ai.related', vaultId, noteId, options),
     getConfig: () => ipcRenderer.invoke('mn:ai.getConfig'),
     setConfig: (patch) => ipcRenderer.invoke('mn:ai.setConfig', patch),
   },
 
   // Window
   setTitle: (title) => ipcRenderer.invoke('mn:setTitle', title),
+
+  // Push events from main → renderer. The bridge wraps the listener so the
+  // renderer never sees the raw IpcRendererEvent object.
+  onOpenQuickCapture: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = () => { try { callback(); } catch (e) { console.error('onOpenQuickCapture handler', e); } };
+    ipcRenderer.on('mn:openQuickCapture', listener);
+    return () => ipcRenderer.removeListener('mn:openQuickCapture', listener);
+  },
 });
