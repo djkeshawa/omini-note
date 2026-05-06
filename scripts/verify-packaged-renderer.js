@@ -37,7 +37,11 @@ function assertPackagedBundle(devBundleMtimeMs) {
   } catch {
     throw new Error('Found app.asar but @electron/asar is unavailable for package inspection');
   }
-  const missing = asarFiles.filter(file => !asar.listPackage(file).includes(`/${EXPECTED}`));
+  const expectedEntry = `/${EXPECTED}`;
+  const missing = asarFiles.filter(file => {
+    const entries = asar.listPackage(file).map(entry => entry.replace(/\\/g, '/'));
+    return !entries.includes(expectedEntry);
+  });
   if (missing.length) {
     throw new Error(`Renderer bundle missing from packaged asar: ${missing.map(file => path.relative(ROOT, file)).join(', ')}`);
   }
