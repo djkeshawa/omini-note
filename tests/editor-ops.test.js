@@ -597,10 +597,12 @@ test('Visible block context menu options are wired to real operations', () => {
 
 test('Table blocks are parsed, rendered, copied, and pasted as formatted markdown', () => {
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
 
-  assert.match(html, /src="src\/tableOps\.js"/);
+  assert.match(html, /src="dist\/renderer\/app\.js"/);
+  assert.match(rendererBuild, /'src\/tableOps\.js'/);
   assert.match(outline, /readMarkdownTable\(lines, i\)/);
   assert.match(outline, /kind: 'table'/);
   assert.match(outline, /b\.kind === 'table'/);
@@ -758,6 +760,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
 
 test('Canvas workspace is wired through storage, navigation, and note embeds', () => {
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -768,7 +771,8 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
   const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
 
-  assert.match(html, /src="src\/canvas\.jsx"/);
+  assert.match(html, /src="dist\/renderer\/app\.js"/);
+  assert.match(rendererBuild, /'src\/canvas\.jsx'/);
   assert.match(store, /function canvasDir\(slug\)/);
   assert.match(store, /async function listCanvases\(vaultId\)/);
   assert.match(store, /async function saveCanvas\(vaultId, canvas\)/);
@@ -1201,9 +1205,9 @@ test('Canvas deletes are soft-deleted into the vault trash folder', async () => 
 });
 
 test('Novelist hierarchy is inferred from act properties and explicit structure tags', () => {
-  const Babel = require('@babel/standalone');
+  const esbuild = require('esbuild');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const code = Babel.transform(app, { presets: ['react'] }).code;
+  const code = esbuild.transformSync(app, { loader: 'jsx', jsxFactory: 'React.createElement', jsxFragment: 'React.Fragment' }).code;
   const sandbox = {
     React: { createElement() {}, useState() {}, useEffect() {}, useMemo() {}, useCallback() {}, useRef() {} },
     window: { MN_APP_HELPERS: appHelpers },
@@ -1228,9 +1232,9 @@ test('Novelist hierarchy is inferred from act properties and explicit structure 
 });
 
 test('Novelist order and note-level status properties drive visible workflow', () => {
-  const Babel = require('@babel/standalone');
+  const esbuild = require('esbuild');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const code = Babel.transform(app, { presets: ['react'] }).code;
+  const code = esbuild.transformSync(app, { loader: 'jsx', jsxFactory: 'React.createElement', jsxFragment: 'React.Fragment' }).code;
   const sandbox = {
     React: { createElement() {}, useState() {}, useEffect() {}, useMemo() {}, useCallback() {}, useRef() {} },
     window: {
@@ -1602,11 +1606,17 @@ test('Release metadata targets renamed VispNote repository', () => {
     'assets/',
     'lib/',
     'src/',
+    'dist/renderer/',
     'scripts/linux-after-install.sh',
+    'scripts/build-renderer.js',
     'electron-builder.yml',
   ]);
   assert.equal(pkg.homepage, 'https://github.com/djkeshawa/visp-note#readme');
   assert.equal(pkg.repository.url, 'https://github.com/djkeshawa/visp-note.git');
+  assert.equal(pkg.scripts['build:renderer'], 'node scripts/build-renderer.js');
+  assert.equal(pkg.scripts.prebuild, 'npm run build:renderer');
+  assert.equal(pkg.dependencies['@babel/standalone'], undefined);
+  assert.match(fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8'), /esbuild\.transformSync/);
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
@@ -1692,7 +1702,13 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
 
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /default-src 'self'/);
-  assert.match(html, /script-src 'self' 'unsafe-inline' 'unsafe-eval'/);
+  assert.match(html, /script-src 'self'/);
+  assert.doesNotMatch(html, /unsafe-eval/);
+  assert.doesNotMatch(html, /type="text\/babel"/);
+  assert.doesNotMatch(html, /@babel\/standalone/);
+  assert.match(html, /react\.production\.min\.js/);
+  assert.match(html, /react-dom\.production\.min\.js/);
+  assert.match(html, /dist\/renderer\/app\.js/);
   assert.match(html, /object-src 'none'/);
   assert.match(html, /frame-ancestors 'none'/);
 
@@ -2016,6 +2032,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
 test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
@@ -2024,11 +2041,12 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
 
   assert.match(app, /function MnAppNoticeDialog/);
-  assert.ok(html.indexOf('src="src/appHelpers.js"') < html.indexOf('src="src/app.jsx"'));
-  assert.ok(html.indexOf('src="src/appHelpers.js"') < html.indexOf('src="src/appMutations.js"'));
-  assert.ok(html.indexOf('src="src/appMutations.js"') < html.indexOf('src="src/app.jsx"'));
-  assert.ok(html.indexOf('src="src/appMutations.js"') < html.indexOf('src="src/appCanvasActions.js"'));
-  assert.ok(html.indexOf('src="src/appCanvasActions.js"') < html.indexOf('src="src/app.jsx"'));
+  assert.match(html, /src="dist\/renderer\/app\.js"/);
+  assert.ok(rendererBuild.indexOf("'src/appHelpers.js'") < rendererBuild.indexOf("'src/app.jsx'"));
+  assert.ok(rendererBuild.indexOf("'src/appHelpers.js'") < rendererBuild.indexOf("'src/appMutations.js'"));
+  assert.ok(rendererBuild.indexOf("'src/appMutations.js'") < rendererBuild.indexOf("'src/app.jsx'"));
+  assert.ok(rendererBuild.indexOf("'src/appMutations.js'") < rendererBuild.indexOf("'src/appCanvasActions.js'"));
+  assert.ok(rendererBuild.indexOf("'src/appCanvasActions.js'") < rendererBuild.indexOf("'src/app.jsx'"));
   assert.match(app, /const MN_APP_HELPERS = window\.MN_APP_HELPERS/);
   assert.match(app, /const MN_APP_MUTATIONS = window\.MN_APP_MUTATIONS/);
   assert.match(app, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);

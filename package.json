@@ -14,7 +14,9 @@
     "assets/",
     "lib/",
     "src/",
+    "dist/renderer/",
     "scripts/linux-after-install.sh",
+    "scripts/build-renderer.js",
     "electron-builder.yml"
   ],
   "homepage": "https://github.com/djkeshawa/visp-note#readme",
@@ -28,23 +30,29 @@
     "npm": ">=11"
   },
   "scripts": {
+    "build:renderer": "node scripts/build-renderer.js",
     "check:main": "node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js",
     "test:editor": "node tests/editor-ops.test.js",
-    "smoke:electron": "electron --no-sandbox scripts/smoke-electron.js",
+    "smoke:electron": "npm run build:renderer && electron --no-sandbox scripts/smoke-electron.js",
+    "prebuild": "npm run build:renderer",
     "build": "electron-builder --publish never",
+    "prebuild:mac": "npm run build:renderer",
     "build:mac": "electron-builder --mac --publish never",
+    "prebuild:linux": "npm run build:renderer",
     "build:linux": "electron-builder --linux --publish never",
+    "prebuild:win": "npm run build:renderer",
     "build:win": "electron-builder --win nsis --publish never",
+    "prebuild:win:portable": "npm run build:renderer",
     "build:win:portable": "electron-builder --win portable --publish never",
-    "start": "electron .",
+    "start": "npm run build:renderer && electron .",
     "postinstall": "electron-builder install-app-deps"
   },
   "devDependencies": {
     "electron": "^41.3.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0"
   },
   "dependencies": {
-    "@babel/standalone": "^7.29.0",
     "better-sqlite3": "^12.9.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

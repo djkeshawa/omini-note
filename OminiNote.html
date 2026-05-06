@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <title>VispNote</title>
 <meta name="viewport" content="width=1400" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://localhost:* http://127.0.0.1:* https:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://localhost:* http://127.0.0.1:* https:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'" />
 <link rel="icon" type="image/png" href="assets/vispnote-icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -294,34 +294,8 @@
   </div>
 </div>
 
-<script src="node_modules/react/umd/react.development.js"></script>
-<script src="node_modules/react-dom/umd/react-dom.development.js"></script>
-<script src="node_modules/@babel/standalone/babel.min.js"></script>
-
-<script type="text/babel" src="src/theme.jsx"></script>
-<script type="text/babel" src="src/data.jsx"></script>
-<script type="text/babel" src="src/markdown.jsx"></script>
-<script type="text/babel" src="src/blockFeatures.jsx"></script>
-<script src="src/tableOps.js"></script>
-<script type="text/babel" src="src/outline.jsx"></script>
-<script src="src/editorOps.js"></script>
-<script type="text/babel" src="src/outliner.jsx"></script>
-<script type="text/babel" src="src/graph.jsx"></script>
-<script type="text/babel" src="src/sidebar.jsx"></script>
-<script type="text/babel" src="src/notelist.jsx"></script>
-<script type="text/babel" src="src/editor.jsx"></script>
-<script type="text/babel" src="src/panels.jsx"></script>
-<script type="text/babel" src="src/canvas.jsx"></script>
-<script type="text/babel" src="src/settings.jsx"></script>
-<script type="text/babel" src="src/ai.jsx"></script>
-<script src="src/appHelpers.js"></script>
-<script src="src/appMutations.js"></script>
-<script src="src/appCanvasActions.js"></script>
-<script type="text/babel" src="src/app.jsx"></script>
-
-<script type="text/babel">
-  const root = ReactDOM.createRoot(document.getElementById('root'));
-  root.render(<MnApp />);
-</script>
+<script src="node_modules/react/umd/react.production.min.js"></script>
+<script src="node_modules/react-dom/umd/react-dom.production.min.js"></script>
+<script src="dist/renderer/app.js"></script>
 </body>
 </html>
