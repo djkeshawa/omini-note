@@ -55,6 +55,7 @@ const MN_NOVELIST_WORKFLOW_STATES = [
 
 const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
 const MN_APP_MUTATIONS = window.MN_APP_MUTATIONS || {};
+const MN_APP_CANVAS_ACTIONS = window.MN_APP_CANVAS_ACTIONS || {};
 const MN_NOTE_TEMPLATES = MN_APP_HELPERS.NOTE_TEMPLATES || [];
 
 const MN_NOVELIST_STARTERS = [
@@ -2735,121 +2736,53 @@ function MnApp() {
     return MN_APP_MUTATIONS.upsertCanvasList(list, canvas);
   };
 
+  const canvasActionContext = useCallbackA((overrides = {}) => ({
+    activeVaultId,
+    activeCanvas,
+    canvases,
+    hasDisk: HAS_DISK,
+    mn: window.mn,
+    newCanvas: window.mnNewCanvas,
+    upsertCanvasList,
+    setCanvases,
+    setVaults,
+    setActiveCanvas,
+    setSelectedTag,
+    setSelectedWorkflow,
+    setQuery,
+    navigateView,
+    showAppNotice,
+    logError: (...args) => console.error(...args),
+    ...overrides,
+  }), [activeVaultId, activeCanvas, canvases, navigateView, showAppNotice]);
+
   const cacheCanvases = useCallbackA((nextCanvases) => {
-    setCanvases(nextCanvases);
-    setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, canvases: nextCanvases } : v));
-  }, [activeVaultId]);
+    MN_APP_CANVAS_ACTIONS.cacheCanvases(nextCanvases, canvasActionContext());
+  }, [canvasActionContext]);
 
   const upsertCanvasSummary = useCallbackA((canvas) => {
-    setCanvases(cur => upsertCanvasList(cur, canvas));
-    setVaults(vs => vs.map(v => v.id === activeVaultId
-      ? { ...v, canvases: upsertCanvasList(v.canvases || [], canvas) }
-      : v));
-  }, [activeVaultId]);
+    MN_APP_CANVAS_ACTIONS.upsertCanvasSummary(canvas, canvasActionContext());
+  }, [canvasActionContext]);
 
   const openCanvasDashboard = useCallbackA(() => {
-    setActiveCanvas(null);
-    setSelectedTag(null);
-    setSelectedWorkflow(null);
-    setQuery('');
-    navigateView('canvas');
-  }, [navigateView]);
+    MN_APP_CANVAS_ACTIONS.openCanvasDashboard(canvasActionContext());
+  }, [canvasActionContext]);
 
   const openCanvas = useCallbackA(async (canvasId) => {
-    if (!canvasId) {
-      openCanvasDashboard();
-      return null;
-    }
-    let canvas = null;
-    if (HAS_DISK && activeVaultId) {
-      try {
-        const res = await window.mn.getCanvas(activeVaultId, canvasId);
-        if (!res.ok) throw new Error(res.error);
-        canvas = res.value;
-      } catch (e) {
-        console.error('getCanvas failed', canvasId, e);
-      }
-    } else {
-      canvas = canvases.find(c => c.id === canvasId) || null;
-    }
-    if (!canvas) return null;
-    setActiveCanvas(canvas);
-    setSelectedTag(null);
-    setSelectedWorkflow(null);
-    setQuery('');
-    navigateView('canvas');
-    return canvas;
-  }, [activeVaultId, canvases, navigateView, openCanvasDashboard]);
+    return MN_APP_CANVAS_ACTIONS.openCanvas(canvasId, canvasActionContext());
+  }, [canvasActionContext]);
 
   const createCanvas = useCallbackA(async (title = 'Untitled canvas', options = {}) => {
-    const makeCanvas = window.mnNewCanvas || ((name) => ({
-      id: `c_${Date.now().toString(36)}`,
-      title: name,
-      createdAt: new Date().toISOString(),
-      modifiedAt: new Date().toISOString(),
-      viewport: { x: 0, y: 0, scale: 1 },
-      elements: [],
-    }));
-    const initial = makeCanvas(title);
-    let saved = initial;
-    if (HAS_DISK && activeVaultId) {
-      try {
-        const res = await window.mn.saveCanvas(activeVaultId, initial);
-        if (!res.ok) throw new Error(res.error);
-        saved = res.value;
-      } catch (e) {
-        console.error('saveCanvas failed', e);
-        showAppNotice('Could not create canvas', e.message || String(e));
-        return null;
-      }
-    }
-    upsertCanvasSummary(saved);
-    if (options.open !== false) {
-      setActiveCanvas(saved);
-      setSelectedTag(null);
-      setSelectedWorkflow(null);
-      setQuery('');
-      navigateView('canvas');
-    }
-    return saved;
-  }, [activeVaultId, navigateView, upsertCanvasSummary, showAppNotice]);
+    return MN_APP_CANVAS_ACTIONS.createCanvas(title, options, canvasActionContext());
+  }, [canvasActionContext]);
 
   const saveCanvas = useCallbackA(async (canvas) => {
-    if (!canvas?.id) return null;
-    let saved = canvas;
-    if (HAS_DISK && activeVaultId) {
-      try {
-        const res = await window.mn.saveCanvas(activeVaultId, canvas);
-        if (!res.ok) throw new Error(res.error);
-        saved = res.value;
-      } catch (e) {
-        console.error('saveCanvas failed', canvas.id, e);
-        showAppNotice('Could not save canvas', e.message || String(e));
-        return null;
-      }
-    }
-    setActiveCanvas(current => current?.id === saved.id ? saved : current);
-    upsertCanvasSummary(saved);
-    return saved;
-  }, [activeVaultId, upsertCanvasSummary, showAppNotice]);
+    return MN_APP_CANVAS_ACTIONS.saveCanvas(canvas, canvasActionContext());
+  }, [canvasActionContext]);
 
   const deleteCanvas = useCallbackA(async (canvasId) => {
-    if (!canvasId) return;
-    if (HAS_DISK && activeVaultId) {
-      try {
-        const res = await window.mn.deleteCanvas(activeVaultId, canvasId);
-        if (!res.ok) throw new Error(res.error);
-      } catch (e) {
-        console.error('deleteCanvas failed', canvasId, e);
-        showAppNotice('Could not delete canvas', e.message || String(e));
-        return;
-      }
-    }
-    const next = canvases.filter(c => c.id !== canvasId);
-    cacheCanvases(next);
-    if (activeCanvas?.id === canvasId) setActiveCanvas(null);
-    navigateView('canvas');
-  }, [activeVaultId, activeCanvas, canvases, cacheCanvases, navigateView, showAppNotice]);
+    return MN_APP_CANVAS_ACTIONS.deleteCanvas(canvasId, canvasActionContext());
+  }, [canvasActionContext]);
 
   const exportBackup = useCallbackA(async () => {
     if (!window.mn?.exportBackup) return showAppNotice('Backup unavailable', 'This build does not expose backup export.');

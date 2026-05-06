@@ -9,6 +9,7 @@ const ops = require('../src/editorOps.js');
 const tableOps = require('../src/tableOps.js');
 const appHelpers = require('../src/appHelpers.js');
 const appMutations = require('../src/appMutations.js');
+const appCanvasActions = require('../src/appCanvasActions.js');
 
 async function withIsolatedStore(fn) {
   const previousHome = process.env.HOME;
@@ -207,6 +208,97 @@ test('App mutations build note, tag, rename, and canvas updates without renderer
   ], { id: 'new', title: '', modifiedAt: '2026-05-10T00:00:00.000Z', elements: [{ id: 'e' }] });
   assert.equal(canvases[0].title, 'Untitled canvas');
   assert.equal(canvases[0].elementCount, 1);
+});
+
+test('App canvas actions orchestrate canvas state without renderer state', async () => {
+  const calls = [];
+  const notices = [];
+  const logs = [];
+  let canvases = [{ id: 'old', title: 'Old', modifiedAt: '2026-05-01T00:00:00.000Z' }];
+  let vaults = [{ id: 'v1', canvases }];
+  let activeCanvas = { id: 'old' };
+  let selectedTag = 'work';
+  let selectedWorkflow = 'DRAFT';
+  let query = 'canvas';
+  const ctx = {
+    activeVaultId: 'v1',
+    activeCanvas,
+    canvases,
+    hasDisk: true,
+    mn: {
+      async getCanvas(vaultId, canvasId) {
+        calls.push(['get', vaultId, canvasId]);
+        return { ok: true, value: { id: canvasId, title: 'Loaded', modifiedAt: '2026-05-02T00:00:00.000Z', elements: [] } };
+      },
+      async saveCanvas(vaultId, canvas) {
+        calls.push(['save', vaultId, canvas.id]);
+        return { ok: true, value: { ...canvas, title: `${canvas.title} saved`, modifiedAt: '2026-05-03T00:00:00.000Z' } };
+      },
+      async deleteCanvas(vaultId, canvasId) {
+        calls.push(['delete', vaultId, canvasId]);
+        return { ok: true };
+      },
+    },
+    newCanvas(title) {
+      return { id: 'new', title, modifiedAt: '2026-05-02T00:00:00.000Z', elements: [] };
+    },
+    upsertCanvasList: appMutations.upsertCanvasList,
+    setCanvases(value) {
+      canvases = typeof value === 'function' ? value(canvases) : value;
+      ctx.canvases = canvases;
+    },
+    setVaults(value) {
+      vaults = typeof value === 'function' ? value(vaults) : value;
+    },
+    setActiveCanvas(value) {
+      activeCanvas = typeof value === 'function' ? value(activeCanvas) : value;
+      ctx.activeCanvas = activeCanvas;
+    },
+    setSelectedTag(value) { selectedTag = value; },
+    setSelectedWorkflow(value) { selectedWorkflow = value; },
+    setQuery(value) { query = value; },
+    navigateView(view) { calls.push(['navigate', view]); },
+    showAppNotice(title, message) { notices.push([title, message]); },
+    logError(...args) { logs.push(args); },
+  };
+
+  appCanvasActions.openCanvasDashboard(ctx);
+  assert.equal(activeCanvas, null);
+  assert.equal(selectedTag, null);
+  assert.equal(selectedWorkflow, null);
+  assert.equal(query, '');
+  assert.deepEqual(calls.at(-1), ['navigate', 'canvas']);
+
+  const loaded = await appCanvasActions.openCanvas('remote', ctx);
+  assert.equal(loaded.title, 'Loaded');
+  assert.equal(activeCanvas.id, 'remote');
+  assert.deepEqual(calls.find(call => call[0] === 'get'), ['get', 'v1', 'remote']);
+
+  const created = await appCanvasActions.createCanvas('Sketch', {}, ctx);
+  assert.equal(created.title, 'Sketch saved');
+  assert.equal(activeCanvas.id, 'new');
+  assert.equal(canvases[0].id, 'new');
+  assert.equal(vaults[0].canvases[0].id, 'new');
+
+  const saved = await appCanvasActions.saveCanvas({ id: 'new', title: 'Updated', elements: [] }, ctx);
+  assert.equal(saved.title, 'Updated saved');
+  assert.equal(activeCanvas.title, 'Updated saved');
+
+  const deleted = await appCanvasActions.deleteCanvas('new', ctx);
+  assert.equal(deleted.ok, true);
+  assert.equal(activeCanvas, null);
+  assert.equal(canvases.some(canvas => canvas.id === 'new'), false);
+  assert.deepEqual(calls.filter(call => call[0] === 'delete')[0], ['delete', 'v1', 'new']);
+
+  const failingCtx = {
+    ...ctx,
+    canvases,
+    mn: { async saveCanvas() { return { ok: false, error: 'disk full' }; } },
+  };
+  const failed = await appCanvasActions.createCanvas('Broken', {}, failingCtx);
+  assert.equal(failed, null);
+  assert.deepEqual(notices.at(-1), ['Could not create canvas', 'disk full']);
+  assert.equal(logs.at(-1)[0], 'saveCanvas failed');
 });
 
 test('Enter in the middle splits content and annotations without duplicating the tail', () => {
@@ -670,6 +762,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const canvasActions = fs.readFileSync(path.join(__dirname, '../src/appCanvasActions.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
@@ -689,6 +782,14 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(app, /const \[canvases, setCanvases\]/);
   assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
   assert.match(app, /window\.mn\.listCanvases\(vaultId\)/);
+  assert.match(app, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
+  assert.match(app, /MN_APP_CANVAS_ACTIONS\.openCanvas\(canvasId, canvasActionContext\(\)\)/);
+  assert.match(app, /MN_APP_CANVAS_ACTIONS\.createCanvas\(title, options, canvasActionContext\(\)\)/);
+  assert.match(canvasActions, /async function openCanvas\(canvasId, ctx = \{\}\)/);
+  assert.match(canvasActions, /ctx\.mn\.getCanvas\(ctx\.activeVaultId, canvasId\)/);
+  assert.match(canvasActions, /async function createCanvas/);
+  assert.match(canvasActions, /async function saveCanvas/);
+  assert.match(canvasActions, /async function deleteCanvas/);
   assert.match(app, /view === 'canvas'/);
   assert.match(app, /<MnCanvasPanel/);
   assert.match(editor, /allCanvases=\{canvases\}/);
@@ -1270,8 +1371,8 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvas, /e\.button === 0 && tool !== 'select'/);
   assert.match(canvas, /beginCreate\(e, toCanvasPoint\(e\)\)/);
 
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  assert.match(app, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
+  const canvasActions = fs.readFileSync(path.join(__dirname, '../src/appCanvasActions.js'), 'utf8');
+  assert.match(canvasActions, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
 });
 
 test('Selection toolbar closes on outside click and keeps overflow actions in More', () => {
@@ -1910,8 +2011,11 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.ok(html.indexOf('src="src/appHelpers.js"') < html.indexOf('src="src/app.jsx"'));
   assert.ok(html.indexOf('src="src/appHelpers.js"') < html.indexOf('src="src/appMutations.js"'));
   assert.ok(html.indexOf('src="src/appMutations.js"') < html.indexOf('src="src/app.jsx"'));
+  assert.ok(html.indexOf('src="src/appMutations.js"') < html.indexOf('src="src/appCanvasActions.js"'));
+  assert.ok(html.indexOf('src="src/appCanvasActions.js"') < html.indexOf('src="src/app.jsx"'));
   assert.match(app, /const MN_APP_HELPERS = window\.MN_APP_HELPERS/);
   assert.match(app, /const MN_APP_MUTATIONS = window\.MN_APP_MUTATIONS/);
+  assert.match(app, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
   assert.match(app, /const searchSeq = useRefA\(0\)/);
   assert.match(app, /if \(seq === searchSeq\.current && res\.ok\) setSearchHits/);
   assert.match(app, /Load first, then switch atomically/);
