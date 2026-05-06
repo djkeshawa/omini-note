@@ -11,6 +11,7 @@ files:
   - preload.js
   - package.json
   - assets/**/*
+  - build/renderer/**/*
   - lib/**/*
   - src/**/*
   - node_modules/**/*

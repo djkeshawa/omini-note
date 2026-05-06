@@ -209,7 +209,7 @@ test('Table blocks are parsed, rendered, copied, and pasted as formatted markdow
   const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
 
-  assert.match(html, /src="dist\/renderer\/app\.js"/);
+  assert.match(html, /src="build\/renderer\/app\.js"/);
   assert.match(rendererBuild, /'src\/tableOps\.js'/);
   assert.match(outline, /readMarkdownTable\(lines, i\)/);
   assert.match(outline, /kind: 'table'/);

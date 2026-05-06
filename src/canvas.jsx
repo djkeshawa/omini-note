@@ -35,6 +35,12 @@ const MN_CANVAS_DEFAULT_STYLE = {
   strokeWidth: 2,
 };
 
+function mnCloneCanvasState(value) {
+  return typeof structuredClone === 'function'
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value));
+}
+
 function mnCanvasId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.floor(Math.random() * 100000).toString(36)}`;
 }
@@ -564,7 +570,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   }, [canvas?.id]);
 
   const rememberCanvas = () => {
-    undoRef.current.push(JSON.parse(JSON.stringify(draftRef.current)));
+    undoRef.current.push(mnCloneCanvasState(draftRef.current));
     if (undoRef.current.length > 80) undoRef.current.shift();
     redoRef.current = [];
     setHistoryVersion(v => v + 1);
@@ -589,7 +595,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const undoCanvas = () => {
     const previous = undoRef.current.pop();
     if (!previous) return;
-    redoRef.current.push(JSON.parse(JSON.stringify(draftRef.current)));
+    redoRef.current.push(mnCloneCanvasState(draftRef.current));
     const restored = { ...previous, modifiedAt: new Date().toISOString() };
     setDraftLocal(restored);
     onSave && onSave(restored);
@@ -602,7 +608,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const redoCanvas = () => {
     const next = redoRef.current.pop();
     if (!next) return;
-    undoRef.current.push(JSON.parse(JSON.stringify(draftRef.current)));
+    undoRef.current.push(mnCloneCanvasState(draftRef.current));
     const restored = { ...next, modifiedAt: new Date().toISOString() };
     setDraftLocal(restored);
     onSave && onSave(restored);

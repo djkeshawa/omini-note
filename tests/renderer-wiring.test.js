@@ -231,7 +231,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
   const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
 
-  assert.match(html, /src="dist\/renderer\/app\.js"/);
+  assert.match(html, /src="build\/renderer\/app\.js"/);
   assert.match(rendererBuild, /'src\/canvas\.jsx'/);
   assert.match(store, /function canvasDir\(slug\)/);
   assert.match(store, /async function listCanvases\(vaultId\)/);
@@ -582,24 +582,26 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.14');
-  assert.equal(lock.version, '0.1.14');
-  assert.equal(lock.packages[''].version, '0.1.14');
+  assert.equal(pkg.version, '0.1.15');
+  assert.equal(lock.version, '0.1.15');
+  assert.equal(lock.packages[''].version, '0.1.15');
   assert.deepEqual(pkg.files, [
     'OminiNote.html',
     'main.js',
     'preload.js',
     'assets/',
+    'build/renderer/',
     'lib/',
     'src/',
-    'dist/renderer/',
     'scripts/linux-after-install.sh',
     'scripts/build-renderer.js',
+    'scripts/verify-packaged-renderer.js',
     'electron-builder.yml',
   ]);
   assert.equal(pkg.homepage, 'https://github.com/djkeshawa/visp-note#readme');
   assert.equal(pkg.repository.url, 'https://github.com/djkeshawa/visp-note.git');
   assert.equal(pkg.scripts['build:renderer'], 'node scripts/build-renderer.js');
+  assert.equal(pkg.scripts['verify:package-renderer'], 'node scripts/verify-packaged-renderer.js');
   assert.equal(pkg.scripts.prebuild, 'npm run build:renderer');
   assert.equal(pkg.dependencies['@babel/standalone'], undefined);
   const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
@@ -607,6 +609,7 @@ test('Release metadata targets renamed VispNote repository', () => {
   assert.match(rendererBuild, /\(function \(\) \{/);
   assert.match(rendererBuild, /React\.createElement\(window\.MnApp\)/);
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
+  assert.match(workflow, /Verify packaged renderer bundle/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
   assert.match(settings, /Version 0\.1\.13 · Prototype/);
@@ -834,7 +837,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
 
   assert.match(appShell, /function MnAppNoticeDialog/);
-  assert.match(html, /src="dist\/renderer\/app\.js"/);
+  assert.match(html, /src="build\/renderer\/app\.js"/);
   assert.ok(rendererBuild.indexOf("'src/appHelpers.js'") < rendererBuild.indexOf("'src/app.jsx'"));
   assert.ok(rendererBuild.indexOf("'src/appHelpers.js'") < rendererBuild.indexOf("'src/appMutations.js'"));
   assert.ok(rendererBuild.indexOf("'src/appMutations.js'") < rendererBuild.indexOf("'src/app.jsx'"));

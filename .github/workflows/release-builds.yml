@@ -92,6 +92,9 @@ jobs:
       - name: Build installers
         run: npm run build -- ${{ matrix.args }}
 
+      - name: Verify packaged renderer bundle
+        run: npm run verify:package-renderer
+
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:

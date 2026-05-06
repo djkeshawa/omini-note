@@ -3,7 +3,7 @@ const path = require('path');
 const esbuild = require('esbuild');
 
 const ROOT = path.join(__dirname, '..');
-const OUT_DIR = path.join(ROOT, 'dist', 'renderer');
+const OUT_DIR = path.join(ROOT, 'build', 'renderer');
 const OUT_FILE = path.join(OUT_DIR, 'app.js');
 
 const SOURCES = [

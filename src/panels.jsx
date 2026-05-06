@@ -76,12 +76,18 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
   const open = items.filter(i => !i.checked);
   const done = items.filter(i => i.checked);
   const withRem = open.filter(i => i.remindAt);
+  const itemKey = (it, fallback) => [
+    it.noteId,
+    it.blockId ?? it.line ?? fallback,
+    it.remindAt?.raw || it.remindAt?.date || '',
+    it.text || '',
+  ].join('|');
 
   const Card = ({ it, idx }) => {
     const isOverdue = it.remindAt && it.remindAt.at < new Date();
     const label = window.MN_REMIND?.strip?.(it.text) || String(it.text || '').trim();
     return (
-      <div key={idx}
+      <div
         onClick={() => onOpen(it.noteId)}
         style={{
           padding: variant === 'compact' ? '8px 12px' : '12px 14px',
@@ -188,7 +194,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
                 <span>{b.items.length}</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {b.items.map((it, i) => <Card key={i} it={it} idx={i} />)}
+                {b.items.map((it, i) => <Card key={itemKey(it, i)} it={it} idx={i} />)}
                 {b.items.length === 0 && (
                   <div style={{
                     padding: 14, textAlign: 'center',
@@ -224,21 +230,21 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
           <>
             <SectionHead T={T} label="Reminders" count={withRem.length} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 28 }}>
-              {withRem.map((it, i) => <Card key={i} it={it} idx={i} />)}
+              {withRem.map((it, i) => <Card key={itemKey(it, i)} it={it} idx={i} />)}
             </div>
           </>
         )}
 
         <SectionHead T={T} label="Open" count={open.filter(i => !i.remindAt).length} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 28 }}>
-          {open.filter(i => !i.remindAt).map((it, i) => <Card key={i} it={it} idx={'o' + i} />)}
+          {open.filter(i => !i.remindAt).map((it, i) => <Card key={itemKey(it, `o${i}`)} it={it} idx={'o' + i} />)}
         </div>
 
         {done.length > 0 && (
           <>
             <SectionHead T={T} label="Done" count={done.length} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {done.map((it, i) => <Card key={i} it={it} idx={'d' + i} />)}
+              {done.map((it, i) => <Card key={itemKey(it, `d${i}`)} it={it} idx={'d' + i} />)}
             </div>
           </>
         )}
@@ -2891,8 +2897,8 @@ function MnTodayPanel({ notes, tags, onOpen, T, theme, rollupFormat = 'long' }) 
           letterSpacing: '0.06em', marginBottom: 28,
         }}>notes grouped by the day they were written</div>
 
-        {groups.map((g, i) => (
-          <div key={i} style={{ marginBottom: 28 }}>
+        {groups.map(g => (
+          <div key={g.date.toISOString().slice(0, 10)} style={{ marginBottom: 28 }}>
             <div style={{
               display: 'flex', alignItems: 'baseline', gap: 12,
               marginBottom: 10,

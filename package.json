@@ -1,6 +1,6 @@
 {
   "name": "vispnote",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "VispNote — a local-first, block-based note-taking desktop app",
   "license": "Apache-2.0",
   "author": {
@@ -12,11 +12,12 @@
     "main.js",
     "preload.js",
     "assets/",
+    "build/renderer/",
     "lib/",
     "src/",
-    "dist/renderer/",
     "scripts/linux-after-install.sh",
     "scripts/build-renderer.js",
+    "scripts/verify-packaged-renderer.js",
     "electron-builder.yml"
   ],
   "homepage": "https://github.com/djkeshawa/visp-note#readme",
@@ -31,6 +32,7 @@
   },
   "scripts": {
     "build:renderer": "node scripts/build-renderer.js",
+    "verify:package-renderer": "node scripts/verify-packaged-renderer.js",
     "check:main": "node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js",
     "test:editor": "node --test tests/*.test.js",
     "smoke:electron": "npm run build:renderer && electron --no-sandbox scripts/smoke-electron.js",

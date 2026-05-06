@@ -127,6 +127,24 @@ test('New novelist vaults stay isolated and persist novelist AI config', async (
   });
 });
 
+test('Global config is private and cached between writes', async () => {
+  await withIsolatedStore(async (store) => {
+    await store.setPrefs({ tweaks: { density: 'compact' } });
+    const configPath = store.__test.CONFIG_FILE;
+    const mode = fs.statSync(configPath).mode & 0o777;
+    assert.equal(mode, 0o600);
+
+    const first = await store.loadConfig();
+    const second = await store.loadConfig();
+    assert.equal(first, second);
+
+    await store.setPrefs({ tweaks: { density: 'comfortable' } });
+    const third = await store.loadConfig();
+    assert.equal(third.tweaks.density, 'comfortable');
+    assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+  });
+});
+
 test('Note saves create restorable versions and reject stale disk writes', async () => {
   await withIsolatedStore(async (store) => {
     const [vault] = await store.listVaults();
@@ -221,6 +239,8 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
 
   assert.match(main, /const \{ pathToFileURL \} = require\('url'\)/);
   assert.match(main, /function hardenWindow\(win\)/);
+  assert.match(main, /function ipcErrorResponse\(name, e\)/);
+  assert.match(main, /function wrapWithEvent\(fn\)/);
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/);
   assert.match(main, /webContents\.on\('will-navigate'/);
   assert.match(main, /setPermissionRequestHandler/);
@@ -243,8 +263,19 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /idx\.init\(\)/);
   assert.match(main, /result\?\.config\?\.provider === 'ollama'/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: ai\.getConfig\(\) \}\)/);
+  assert.match(main, /ipcMain\.handle\('mn:setTitle', wrapWithEvent/);
+  assert.match(main, /ipcMain\.handle\('mn:ai\.editStream', wrapWithEvent/);
+  assert.match(main, /idx\.searchDetailed\(vaultId, query, limit\)/);
+  assert.match(main, /ipcMain\.handle\('mn:searchDetailed', wrap\(async \(vaultId, query, limit\) => \{ await indexReadyPromise; return idx\.searchDetailed\(vaultId, query, limit\); \}\)\)/);
+  assert.match(main, /indexReadyPromise = rescanAllVaults\(\)\.catch/);
   assert.match(indexSource, /db\.transaction\(\(\) => \{/);
   assert.match(indexSource, /DROP TABLE note_embeddings/);
+  assert.match(indexSource, /function searchDetailed\(vaultId, query, limit = 50\)/);
+  assert.match(indexSource, /JOIN notes n ON n\.id = f\.note_id/);
+  assert.match(indexSource, /matchedFields/);
+  assert.match(indexSource, /LIMIT \?/);
+  assert.match(indexSource, /function backlinks\(vaultId, title, limit = 100\)/);
+  assert.match(indexSource, /const statements = null|let statements = null/);
   assert.match(app, /replace\(\/\[\^A-Z0-9_-\]\+\/g, '-'\)/);
 
   assert.match(html, /Content-Security-Policy/);
@@ -255,7 +286,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.doesNotMatch(html, /@babel\/standalone/);
   assert.match(html, /react\.production\.min\.js/);
   assert.match(html, /react-dom\.production\.min\.js/);
-  assert.match(html, /dist\/renderer\/app\.js/);
+  assert.match(html, /build\/renderer\/app\.js/);
   assert.match(html, /object-src 'none'/);
   assert.match(html, /frame-ancestors 'none'/);
 
@@ -263,6 +294,10 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.doesNotMatch(markdown, /\.innerHTML\s*=/);
 
   assert.match(storeSource, /function sanitizeVaultMetaPatch/);
+  assert.match(storeSource, /CONFIG_FILE_MODE = 0o600/);
+  assert.match(storeSource, /let configCache = null/);
+  assert.match(storeSource, /secureConfigFile/);
+  assert.match(storeSource, /writeJson\(CONFIG_FILE, cfg, \{ mode: CONFIG_FILE_MODE \}\)/);
   assert.match(storeSource, /Unsupported vault metadata field/);
   assert.match(storeSource, /if \(states === null \|\| states === undefined\) return null/);
   assert.match(storeSource, /Unsupported preferences field/);
@@ -288,6 +323,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
 
   assert.match(aiSource, /function sanitizeConfigPatch/);
   assert.match(aiSource, /SECRET_CONFIG_KEYS/);
+  assert.match(aiSource, /let ollamaSpawnPromise = null/);
+  assert.match(aiSource, /await ollamaSpawnPromise/);
+  assert.equal(ai.__test.sanitizeSecretValue('  sk-test\r\nbad\u0000  '), 'sk-testbad');
   assert.match(aiSource, /piiReduction/);
   assert.match(aiSource, /Invalid \$\{field\} protocol/);
   assert.match(aiSource, /config: publicConfig\(\)/);

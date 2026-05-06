@@ -9,6 +9,7 @@ const ai = require('./lib/ai');
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let indexReadyPromise = Promise.resolve();
 const APP_NAME = 'VispNote';
 const APP_ID = 'com.vispnote.app';
 const APP_ICON_PATH = path.join(__dirname, 'assets', 'vispnote-icon.png');
@@ -420,19 +421,33 @@ function createWindow() {
 
 // ── IPC handlers ─────────────────────────────────────────────────────────────
 
+function ipcErrorResponse(name, e) {
+  console.error('[ipc]', name, e);
+  return {
+    ok: false,
+    error: e.message || String(e),
+    code: e.code || null,
+    currentModifiedAt: e.currentModifiedAt || null,
+    expectedModifiedAt: e.expectedModifiedAt || null,
+  };
+}
+
 function wrap(fn) {
   return async (_evt, ...args) => {
     try {
       return { ok: true, value: await fn(...args) };
     } catch (e) {
-      console.error('[ipc]', fn.name, e);
-      return {
-        ok: false,
-        error: e.message || String(e),
-        code: e.code || null,
-        currentModifiedAt: e.currentModifiedAt || null,
-        expectedModifiedAt: e.expectedModifiedAt || null,
-      };
+      return ipcErrorResponse(fn.name, e);
+    }
+  };
+}
+
+function wrapWithEvent(fn) {
+  return async (evt, ...args) => {
+    try {
+      return { ok: true, value: await fn(evt, ...args) };
+    } catch (e) {
+      return ipcErrorResponse(fn.name, e);
     }
   };
 }
@@ -506,32 +521,11 @@ ipcMain.handle('mn:setPrefs',       wrap(setPrefsFromIpc));
 ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
 
 // Search / backlinks / tags (SQLite-backed)
-ipcMain.handle('mn:search',         wrap((vaultId, query, limit) => idx.search(vaultId, query, limit)));
-ipcMain.handle('mn:searchDetailed', wrap(async (vaultId, query, limit) => {
-  const hits = idx.search(vaultId, query, limit);
-  const vault = await store.loadVault(vaultId);
-  const byId = new Map((vault.notes || []).map(note => [note.id, note]));
-  const q = String(query || '').trim().toLowerCase();
-  return hits.map(hit => {
-    const note = byId.get(hit.id) || {};
-    const fields = [];
-    if (String(note.title || '').toLowerCase().includes(q)) fields.push('title');
-    if ((note.tags || []).some(tag => String(tag).toLowerCase().includes(q))) fields.push('tags');
-    if (String(note.body || '').toLowerCase().includes(q)) fields.push('body');
-    return {
-      ...hit,
-      snippet: hit.snippet || String(note.body || '').slice(0, 180),
-      matchedFields: fields.length ? fields : ['body'],
-      tags: note.tags || [],
-      modifiedAt: note.modifiedAt || null,
-      date: note.date || null,
-      pinned: !!note.pinned,
-    };
-  });
-}));
-ipcMain.handle('mn:backlinks',      wrap((vaultId, title) => idx.backlinks(vaultId, title)));
-ipcMain.handle('mn:notesByTag',     wrap((vaultId, tag) => idx.notesByTag(vaultId, tag)));
-ipcMain.handle('mn:tagCounts',      wrap((vaultId) => idx.tagCounts(vaultId)));
+ipcMain.handle('mn:search',         wrap(async (vaultId, query, limit) => { await indexReadyPromise; return idx.search(vaultId, query, limit); }));
+ipcMain.handle('mn:searchDetailed', wrap(async (vaultId, query, limit) => { await indexReadyPromise; return idx.searchDetailed(vaultId, query, limit); }));
+ipcMain.handle('mn:backlinks',      wrap(async (vaultId, title, limit) => { await indexReadyPromise; return idx.backlinks(vaultId, title, limit); }));
+ipcMain.handle('mn:notesByTag',     wrap(async (vaultId, tag) => { await indexReadyPromise; return idx.notesByTag(vaultId, tag); }));
+ipcMain.handle('mn:tagCounts',      wrap(async (vaultId) => { await indexReadyPromise; return idx.tagCounts(vaultId); }));
 ipcMain.handle('mn:rebuildIndex',   wrap(async (vaultId) => {
   const vault = await store.loadVault(vaultId);
   idx.rescanVault(vaultId, vault.notes || []);
@@ -575,23 +569,17 @@ ipcMain.handle('mn:ai.connect',     wrap(async () => {
 }));
 ipcMain.handle('mn:ai.ask',         wrap((vaultId, query, options) => ai.ask(vaultId, query, store, options || {})));
 ipcMain.handle('mn:ai.edit',        wrap((payload) => ai.editText(payload)));
-ipcMain.handle('mn:ai.editStream',  async (evt, payload = {}) => {
-  try {
-    const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-    const cleanPayload = { ...payload };
-    delete cleanPayload.requestId;
-    const value = await ai.editTextStream({
-      ...cleanPayload,
-      onToken: (token) => {
-        if (requestId) evt.sender.send(`mn:ai.editStream.chunk:${requestId}`, String(token || ''));
-      },
-    });
-    return { ok: true, value };
-  } catch (e) {
-    console.error('[ipc]', 'editTextStream', e);
-    return { ok: false, error: e.message || String(e) };
-  }
-});
+ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(evt, payload = {}) {
+  const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+  const cleanPayload = { ...payload };
+  delete cleanPayload.requestId;
+  return await ai.editTextStream({
+    ...cleanPayload,
+    onToken: (token) => {
+      if (requestId) evt.sender.send(`mn:ai.editStream.chunk:${requestId}`, String(token || ''));
+    },
+  });
+}));
 ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(payload)));
 ipcMain.handle('mn:ai.cancel',      wrap((jobId) => ai.cancelJob(jobId)));
 ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, store)));
@@ -603,10 +591,10 @@ ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {
 }));
 
 // Window
-ipcMain.handle('mn:setTitle', (evt, title) => {
+ipcMain.handle('mn:setTitle', wrapWithEvent((evt, title) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
   if (win && typeof title === 'string') win.setTitle(title);
-});
+}));
 
 // ── Boot scan: populate the index from disk ──────────────────────────────────
 
@@ -643,12 +631,14 @@ app.whenReady().then(async () => {
     }
     idx.init();                 // opens / creates the local search index
     loadSpellWords().catch(e => console.error('spell dictionary preload failed', e));
-    await rescanAllVaults();    // sync index with disk
   } catch (e) {
     console.error('boot init failed', e);
   }
   createTray();
   createWindow();
+  indexReadyPromise = rescanAllVaults().catch(e => {
+    console.error('boot index rescan failed', e);
+  });
 
   app.on('activate', () => {
     showMainWindow();
