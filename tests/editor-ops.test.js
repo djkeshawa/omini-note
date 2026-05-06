@@ -1616,7 +1616,10 @@ test('Release metadata targets renamed VispNote repository', () => {
   assert.equal(pkg.scripts['build:renderer'], 'node scripts/build-renderer.js');
   assert.equal(pkg.scripts.prebuild, 'npm run build:renderer');
   assert.equal(pkg.dependencies['@babel/standalone'], undefined);
-  assert.match(fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8'), /esbuild\.transformSync/);
+  const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
+  assert.match(rendererBuild, /esbuild\.transformSync/);
+  assert.match(rendererBuild, /\(function \(\) \{/);
+  assert.match(rendererBuild, /React\.createElement\(window\.MnApp\)/);
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
