@@ -100,484 +100,133 @@ const MN_NOVELIST_STARTERS = [
 ];
 
 function mnNovelistNoteId(title, vaultId = '') {
-  const slug = String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || Date.now().toString(36);
-  const vaultSlug = String(vaultId || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  return `n_novel_${vaultSlug ? `${vaultSlug}_` : ''}${slug}`;
+  return MN_APP_HELPERS.novelistNoteId(title, vaultId);
 }
 
 function mnEnsureNovelistTags(existingTags = []) {
-  const byName = new Map((existingTags || []).map(tag => [tag.name, tag]));
-  MN_NOVELIST_TAGS.forEach(tag => {
-    if (!byName.has(tag.name)) byName.set(tag.name, tag);
-  });
-  return [...byName.values()];
+  return MN_APP_HELPERS.ensureNovelistTags(existingTags, MN_NOVELIST_TAGS);
 }
 
 function mnBuildNovelistStarterNotes(notes = [], mnMdToBlocks, vaultId = '') {
-  const existing = new Set((notes || []).flatMap(note => [
-    String(note.title || '').toLowerCase(),
-    ...(note.tags || []),
-  ]));
-  return MN_NOVELIST_STARTERS
-    .filter(item => !existing.has(item.title.toLowerCase()) && !item.tags.some(tag => existing.has(tag)))
-    .map(item => ({
-      id: mnNovelistNoteId(item.title, vaultId),
-      title: item.title,
-      body: mnNormalizeNoteBody(item.body, item.title),
-      blocks: mnMdToBlocks(mnNormalizeNoteBody(item.body, item.title)),
-      tags: item.tags,
-      pinned: item.title === 'Act 1',
-      date: new Date().toISOString(),
-      modifiedAt: new Date().toISOString(),
-    }));
+  return MN_APP_HELPERS.buildNovelistStarterNotes(notes, mnMdToBlocks, vaultId, MN_NOVELIST_STARTERS);
 }
 
 function mnDirtyNoteKey(vaultId, noteId) {
-  return `${String(vaultId || '')}::${String(noteId || '')}`;
+  return MN_APP_HELPERS.dirtyNoteKey(vaultId, noteId);
 }
 
 function mnIsNovelistNote(note) {
-  return (note.tags || []).some(tag => tag.startsWith('novel-'));
+  return MN_APP_HELPERS.isNovelistNote(note);
 }
 
 function mnNormalizeNovelistLegacyTags(tags = []) {
-  return (tags || [])
-    .map(tag => tag === 'novel-arc' ? 'novel-act' : tag)
-    .filter(tag => tag !== 'novel-manuscript' && tag !== 'novel-storyRoot')
-    .filter((tag, index, arr) => arr.indexOf(tag) === index);
+  return MN_APP_HELPERS.normalizeNovelistLegacyTags(tags);
 }
 
 function mnNormalizeNovelistLegacyBody(body = '') {
-  return String(body || '')
-    .split('\n')
-    .map(line => {
-      const prop = line.match(/^(\s*(?:-\s*)?)arc(::\s*.*)$/i);
-      if (prop) return `${prop[1]}act${prop[2]}`;
-      return line.replace(/^(##+\s+)Arcs\s*$/i, '$1Acts');
-    })
-    .join('\n');
+  return MN_APP_HELPERS.normalizeNovelistLegacyBody(body);
 }
 
 function mnEnsureScenePlotPoints(body = '', tags = []) {
-  if (!(tags || []).includes('novel-scene')) return body || '';
-  const source = String(body || '');
-  if (/^:::\s*plot-points\s*$/im.test(source)) return source;
-  const lines = source.split('\n');
-  const insertAt = mnBodyPropertyInsertIndex(lines);
-  lines.splice(insertAt, 0, '::: plot-points', '- Opening beat', ':::');
-  return lines.join('\n');
+  return MN_APP_HELPERS.ensureScenePlotPoints(body, tags);
 }
 
 function mnNovelTitleKey(title) {
-  return String(title || '')
-    .split('|')[0]
-    .replace(/#[^\]]+$/, '')
-    .trim()
-    .toLowerCase();
+  return MN_APP_HELPERS.novelTitleKey(title);
 }
 
 function mnNovelWikiTitles(body = '') {
-  return [...String(body || '').matchAll(/\[\[([^\]]+)\]\]/g)]
-    .map(match => match[1].trim())
-    .filter(Boolean);
+  return MN_APP_HELPERS.novelWikiTitles(body);
 }
 
 function mnReplaceWikiLinkTitle(body = '', oldTitle = '', newTitle = '') {
-  const oldKey = mnNovelTitleKey(oldTitle);
-  const cleanNewTitle = String(newTitle || '').trim();
-  if (!oldKey || !cleanNewTitle) return body || '';
-  return String(body || '').replace(/\[\[([^\]]+)\]\]/g, (match, rawTarget) => {
-    const target = String(rawTarget || '');
-    const [targetAndAnchor, alias] = target.split('|');
-    const anchorIndex = targetAndAnchor.indexOf('#');
-    const targetTitle = anchorIndex >= 0 ? targetAndAnchor.slice(0, anchorIndex) : targetAndAnchor;
-    const anchor = anchorIndex >= 0 ? targetAndAnchor.slice(anchorIndex) : '';
-    if (mnNovelTitleKey(targetTitle) !== oldKey) return match;
-    return `[[${cleanNewTitle}${anchor}${alias != null ? `|${alias}` : ''}]]`;
-  });
+  return MN_APP_HELPERS.replaceWikiLinkTitle(body, oldTitle, newTitle);
 }
 
 function mnBodyPropertyLineRe(key = '') {
-  const safeKey = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^\\s*(?:-\\s*)?${safeKey}::\\s*(.*)$`, 'im');
+  return MN_APP_HELPERS.bodyPropertyLineRe(key);
 }
 
 function mnBodyPropertyValue(body = '', key = '') {
-  if (!key) return '';
-  const match = String(body || '').match(mnBodyPropertyLineRe(key));
-  return match ? String(match[1] || '').trim() : '';
+  return MN_APP_HELPERS.bodyPropertyValue(body, key);
 }
 
 function mnBodyPropertyTitle(body = '', key = '') {
-  const value = mnBodyPropertyValue(body, key);
-  const wiki = value.match(/^\[\[([^\]]+)\]\]/);
-  return String(wiki ? wiki[1] : value).replace(/#[^\]]+$/, '').trim();
+  return MN_APP_HELPERS.bodyPropertyTitle(body, key);
 }
 
 function mnBodyPropertyInsertIndex(lines) {
-  const isPropLine = (line) => /^\s*-?\s*[a-zA-Z][a-zA-Z0-9_-]*::\s*/.test(line);
-  const headingIndex = lines.findIndex(line => /^#{1,3}\s+/.test(line));
-  let index = headingIndex >= 0 ? headingIndex + 1 : 0;
-  while (index < lines.length && isPropLine(lines[index])) index++;
-  return index;
+  return MN_APP_HELPERS.bodyPropertyInsertIndex(lines);
 }
 
 function mnSetBodyProperty(body = '', key = '', value = '') {
-  const cleanKey = String(key || '').trim();
-  const cleanValue = String(value ?? '').trim();
-  if (!cleanKey) return body || '';
-  if (!cleanValue) return mnRemoveBodyProperty(body, cleanKey);
-  const source = String(body || '');
-  const lineRe = mnBodyPropertyLineRe(cleanKey);
-  if (lineRe.test(source)) return source.replace(lineRe, () => `${cleanKey}:: ${cleanValue}`);
-  const lines = source.split('\n');
-  lines.splice(mnBodyPropertyInsertIndex(lines), 0, `${cleanKey}:: ${cleanValue}`);
-  return lines.join('\n');
+  return MN_APP_HELPERS.setBodyProperty(body, key, value);
 }
 
 function mnRemoveBodyProperty(body = '', key = '') {
-  const cleanKey = String(key || '').trim();
-  if (!cleanKey) return body || '';
-  const safeKey = cleanKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return String(body || '')
-    .split('\n')
-    .filter(line => !(new RegExp(`^\\s*-?\\s*${safeKey}::\\s*`, 'i')).test(line))
-    .join('\n');
+  return MN_APP_HELPERS.removeBodyProperty(body, key);
 }
 
 function mnBodyPropertyParts(line = '') {
-  const match = String(line || '').match(/^\s*(?:-\s*)?([a-zA-Z][a-zA-Z0-9_-]*)::\s*(.*)$/);
-  return match ? { key: match[1], value: match[2] || '' } : null;
+  return MN_APP_HELPERS.bodyPropertyParts(line);
 }
 
 function mnNormalizeBodyPropertySyntax(body = '') {
-  const lines = String(body || '').split('\n');
-  let inFence = false;
-  return lines.map(line => {
-    if (/^```\s*/.test(line)) {
-      inFence = !inFence;
-      return line;
-    }
-    if (inFence) return line;
-    const prop = mnBodyPropertyParts(line);
-    return prop ? `${prop.key}:: ${prop.value}`.trimEnd() : line;
-  }).join('\n');
+  return MN_APP_HELPERS.normalizeBodyPropertySyntax(body);
 }
 
 function mnStripDuplicateTitleHeading(body = '', title = '') {
-  const source = String(body || '');
-  const cleanTitle = String(title || '').trim().toLowerCase();
-  if (!cleanTitle) return source;
-  const lines = source.split('\n');
-  let first = 0;
-  while (first < lines.length && !lines[first].trim()) first++;
-  const heading = lines[first]?.match(/^#\s+(.*)$/);
-  if (!heading || String(heading[1] || '').trim().toLowerCase() !== cleanTitle) return source;
-  lines.splice(first, 1);
-  while (lines.length && !lines[0].trim()) lines.shift();
-  return lines.join('\n');
+  return MN_APP_HELPERS.stripDuplicateTitleHeading(body, title);
 }
 
 function mnNormalizeNoteBody(body = '', title = '') {
-  return mnNormalizeBodyPropertySyntax(mnStripDuplicateTitleHeading(body, title));
+  return MN_APP_HELPERS.normalizeNoteBody(body, title);
 }
 
 function mnNoteOrderValue(note) {
-  const raw = mnBodyPropertyValue(note?.body || '', 'order');
-  if (!String(raw || '').trim()) return null;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
+  return MN_APP_HELPERS.noteOrderValue(note);
 }
 
 function mnCompareStoryNotes(a, b) {
-  const ao = mnNoteOrderValue(a);
-  const bo = mnNoteOrderValue(b);
-  if (ao != null || bo != null) {
-    if (ao == null) return 1;
-    if (bo == null) return -1;
-    if (ao !== bo) return ao - bo;
-  }
-  const byTitle = String(a?.title || '').localeCompare(String(b?.title || ''), undefined, { sensitivity: 'base' });
-  if (byTitle) return byTitle;
-  const byModified = new Date(b?.modifiedAt || b?.date || 0) - new Date(a?.modifiedAt || a?.date || 0);
-  if (byModified) return byModified;
-  return String(a?.id || '').localeCompare(String(b?.id || ''));
+  return MN_APP_HELPERS.compareStoryNotes(a, b);
 }
 
 function mnNovelOutlineLinks(body = '') {
-  const stack = [];
-  const links = [];
-  String(body || '').split('\n').forEach(line => {
-    const matches = [...line.matchAll(/\[\[([^\]]+)\]\]/g)]
-      .map(match => match[1].trim())
-      .filter(Boolean);
-    if (!matches.length) return;
-    const indent = (line.match(/^\s*/) || [''])[0].replace(/\t/g, '  ').length;
-    const depth = Math.max(0, Math.floor(indent / 2));
-    while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop();
-    const ancestors = stack.slice();
-    matches.forEach(title => links.push({ title, depth, ancestors }));
-    stack.push({ title: matches[0], depth });
-  });
-  return links;
+  return MN_APP_HELPERS.novelOutlineLinks(body);
 }
 
 function mnNovelPropertyTitle(body = '', key = '') {
-  return mnBodyPropertyTitle(body, key);
+  return MN_APP_HELPERS.novelPropertyTitle(body, key);
 }
 
 function mnNovelHasWikiLink(body = '', title = '') {
-  const target = mnNovelTitleKey(title);
-  return mnNovelWikiTitles(body).some(link => mnNovelTitleKey(link) === target);
+  return MN_APP_HELPERS.novelHasWikiLink(body, title);
 }
 
 function mnNovelEnsureWikiLink(body = '', title = '') {
-  const cleanTitle = String(title || '').trim();
-  if (!cleanTitle || mnNovelHasWikiLink(body, cleanTitle)) return body || '';
-  const base = String(body || '').trimEnd();
-  return `${base}${base ? '\n' : ''}- [[${cleanTitle}]]`;
+  return MN_APP_HELPERS.novelEnsureWikiLink(body, title);
 }
 
 function mnNovelEnsureWikiLinkInSection(body = '', title = '', sectionTitle = '') {
-  const cleanTitle = String(title || '').trim();
-  const cleanSection = String(sectionTitle || '').trim();
-  if (!cleanTitle) return body || '';
-  if (!cleanSection) return mnNovelEnsureWikiLink(body, cleanTitle);
-  const lines = String(body || '').split('\n');
-  const sectionRe = new RegExp(`^##+\\s+${cleanSection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
-  const sectionIndex = lines.findIndex(line => sectionRe.test(line));
-  if (sectionIndex < 0) {
-    const base = String(body || '').trimEnd();
-    return `${base}${base ? '\n' : ''}## ${cleanSection}\n- [[${cleanTitle}]]`;
-  }
-  let insertAt = sectionIndex + 1;
-  while (insertAt < lines.length && !/^#{1,6}\s+/.test(lines[insertAt])) insertAt++;
-  const existingSectionText = lines.slice(sectionIndex + 1, insertAt).join('\n');
-  if (mnNovelHasWikiLink(existingSectionText, cleanTitle)) return body || '';
-  lines.splice(insertAt, 0, `- [[${cleanTitle}]]`);
-  return lines.join('\n');
+  return MN_APP_HELPERS.novelEnsureWikiLinkInSection(body, title, sectionTitle);
 }
 
 function mnNovelUpsertPropertyLink(body = '', key = '', title = '') {
-  const cleanTitle = String(title || '').trim();
-  if (!key || !cleanTitle) return body || '';
-  return mnSetBodyProperty(body, key, `[[${cleanTitle}]]`);
+  return MN_APP_HELPERS.novelUpsertPropertyLink(body, key, title);
 }
 
 function mnBuildNovelistStructure(notes = []) {
-  const allNotes = notes || [];
-  const byTitle = new Map(allNotes.map(note => [mnNovelTitleKey(note.title), note]));
-  const isTagged = (note, tag) => (note?.tags || []).includes(tag);
-  const stageRank = { scene: 1, chapter: 2, act: 3 };
-  const stageIds = {
-    acts: new Set(),
-    chapters: new Set(),
-    scenes: new Set(),
-  };
-  const explicitStageByNoteId = {};
-  const stageByNoteId = {};
-  const childrenByActId = {};
-  const childrenByChapterId = {};
-  const parentByChapterId = {};
-  const parentBySceneId = {};
-  const actBySceneId = {};
-  const noteById = new Map(allNotes.map(note => [note.id, note]));
-
-  const addUnique = (bucket, parentId, childId) => {
-    if (!parentId || !childId) return;
-    if (!bucket[parentId]) bucket[parentId] = [];
-    if (!bucket[parentId].includes(childId)) bucket[parentId].push(childId);
-  };
-  const canStage = (stage, note) => {
-    const explicit = explicitStageByNoteId[note?.id];
-    return !explicit || explicit === stage;
-  };
-  const addStage = (stage, note) => {
-    if (!note) return;
-    if (!canStage(stage, note)) return;
-    const current = stageByNoteId[note.id];
-    if (current && stageRank[current] >= stageRank[stage]) return;
-    stageIds.acts.delete(note.id);
-    stageIds.chapters.delete(note.id);
-    stageIds.scenes.delete(note.id);
-    if (stage === 'act') stageIds.acts.add(note.id);
-    if (stage === 'chapter') stageIds.chapters.add(note.id);
-    if (stage === 'scene') stageIds.scenes.add(note.id);
-    stageByNoteId[note.id] = stage;
-  };
-  const linkChapterToAct = (chapter, act) => {
-    if (!chapter || !act || chapter.id === act.id) return;
-    if (!canStage('chapter', chapter) || !canStage('act', act)) return;
-    addStage('act', act);
-    addStage('chapter', chapter);
-    if (!parentByChapterId[chapter.id]) parentByChapterId[chapter.id] = act.id;
-    addUnique(childrenByActId, act.id, chapter.id);
-  };
-  const linkSceneToChapter = (scene, chapter, act = null) => {
-    if (!scene || !chapter || scene.id === chapter.id) return;
-    if (!canStage('scene', scene) || !canStage('chapter', chapter)) return;
-    addStage('chapter', chapter);
-    addStage('scene', scene);
-    if (!parentBySceneId[scene.id]) parentBySceneId[scene.id] = chapter.id;
-    addUnique(childrenByChapterId, chapter.id, scene.id);
-    if (act && act.id !== scene.id) {
-      linkChapterToAct(chapter, act);
-      actBySceneId[scene.id] = act.id;
-    }
-  };
-  const linkedNotes = (note) => mnNovelWikiTitles(note?.body || '')
-    .map(title => byTitle.get(mnNovelTitleKey(title)))
-    .filter(Boolean);
-  const outlineNotes = (note) => mnNovelOutlineLinks(note?.body || '')
-    .map(link => ({
-      ...link,
-      note: byTitle.get(mnNovelTitleKey(link.title)),
-      ancestors: (link.ancestors || []).map(ancestor => ({
-        ...ancestor,
-        note: byTitle.get(mnNovelTitleKey(ancestor.title)),
-      })),
-    }))
-    .filter(link => link.note);
-
-  allNotes.forEach(note => {
-    if (isTagged(note, 'novel-act')) explicitStageByNoteId[note.id] = 'act';
-    else if (isTagged(note, 'novel-chapter')) explicitStageByNoteId[note.id] = 'chapter';
-    else if (isTagged(note, 'novel-scene')) explicitStageByNoteId[note.id] = 'scene';
-  });
-
-  allNotes.forEach(note => {
-    if (explicitStageByNoteId[note.id]) addStage(explicitStageByNoteId[note.id], note);
-  });
-
-  allNotes.forEach(note => {
-    const act = byTitle.get(mnNovelTitleKey(mnNovelPropertyTitle(note.body, 'act')));
-    const chapter = byTitle.get(mnNovelTitleKey(mnNovelPropertyTitle(note.body, 'chapter')));
-    if (chapter) linkSceneToChapter(note, chapter, act || null);
-    else if (act) linkChapterToAct(note, act);
-  });
-
-  allNotes.filter(note => stageIds.acts.has(note.id)).forEach(act => {
-    const outlined = outlineNotes(act);
-    outlined.forEach(link => {
-      const chapter = link.ancestors.find(ancestor => ancestor.depth === 0)?.note;
-      if (link.depth <= 0) {
-        linkChapterToAct(link.note, act);
-      } else if (chapter) {
-        linkSceneToChapter(link.note, chapter, act);
-      }
-    });
-    if (!outlined.length) {
-      linkedNotes(act).forEach(chapter => {
-        if (!stageIds.scenes.has(chapter.id)) linkChapterToAct(chapter, act);
-      });
-    }
-  });
-
-  allNotes.filter(note => stageIds.chapters.has(note.id)).forEach(chapter => {
-    const act = noteById.get(parentByChapterId[chapter.id]) || null;
-    outlineNotes(chapter).forEach(link => {
-      linkSceneToChapter(link.note, chapter, act);
-    });
-    linkedNotes(chapter).forEach(scene => {
-      if (!stageIds.acts.has(scene.id) && !stageIds.chapters.has(scene.id)) {
-        linkSceneToChapter(scene, chapter, act);
-      }
-    });
-  });
-
-  let acts = allNotes.filter(note => stageIds.acts.has(note.id));
-  let chapters = allNotes.filter(note => stageIds.chapters.has(note.id));
-  let scenes = allNotes.filter(note => stageIds.scenes.has(note.id));
-
-  chapters.forEach(chapter => {
-    const act = byTitle.get(mnNovelTitleKey(mnNovelPropertyTitle(chapter.body, 'act')));
-    if (act) {
-      linkChapterToAct(chapter, act);
-    }
-  });
-  scenes.forEach(scene => {
-    const chapter = byTitle.get(mnNovelTitleKey(mnNovelPropertyTitle(scene.body, 'chapter')));
-    const act = byTitle.get(mnNovelTitleKey(mnNovelPropertyTitle(scene.body, 'act')));
-    if (chapter) linkSceneToChapter(scene, chapter, act || null);
-  });
-  acts = allNotes.filter(note => stageIds.acts.has(note.id));
-  chapters = allNotes.filter(note => stageIds.chapters.has(note.id));
-  scenes = allNotes.filter(note => stageIds.scenes.has(note.id));
-  acts.sort(mnCompareStoryNotes);
-  chapters.sort(mnCompareStoryNotes);
-  scenes.sort(mnCompareStoryNotes);
-  const sortChildIds = (ids = []) => [...ids]
-    .map(id => noteById.get(id))
-    .filter(Boolean)
-    .sort(mnCompareStoryNotes)
-    .map(note => note.id);
-  Object.keys(childrenByActId).forEach(actId => {
-    childrenByActId[actId] = sortChildIds(childrenByActId[actId]);
-  });
-  Object.keys(childrenByChapterId).forEach(chapterId => {
-    childrenByChapterId[chapterId] = sortChildIds(childrenByChapterId[chapterId]);
-  });
-  const novelNotes = allNotes.filter(note =>
-    mnIsNovelistNote(note) ||
-    stageByNoteId[note.id] ||
-    parentByChapterId[note.id] ||
-    parentBySceneId[note.id]
-  );
-
-  const pathByNoteId = {};
-  acts.forEach(act => {
-    pathByNoteId[act.id] = [act].filter(Boolean);
-  });
-  chapters.forEach(chapter => {
-    const act = noteById.get(parentByChapterId[chapter.id]);
-    pathByNoteId[chapter.id] = [act, chapter].filter(Boolean);
-  });
-  scenes.forEach(scene => {
-    const chapter = noteById.get(parentBySceneId[scene.id]);
-    const act = noteById.get(chapter ? parentByChapterId[chapter.id] : actBySceneId[scene.id]);
-    pathByNoteId[scene.id] = [act, chapter, scene].filter(Boolean);
-  });
-
-  return {
-    novelNotes,
-    acts,
-    chapters,
-    scenes,
-    childrenByActId,
-    childrenByChapterId,
-    parentByChapterId,
-    parentBySceneId,
-    stageByNoteId,
-    pathByNoteId,
-  };
+  return MN_APP_HELPERS.buildNovelistStructure(notes);
 }
 
 // Convert raw notes (with markdown body) to runtime form (with parsed blocks).
 function normalizeNotes(notes, mnMdToBlocks) {
-  return (notes || []).map(n => {
-    const tags = mnNormalizeNovelistLegacyTags(n.tags || []);
-    const body = mnNormalizeNoteBody(mnEnsureScenePlotPoints(mnNormalizeNovelistLegacyBody(n.body || ''), tags), n.title || 'Untitled');
-    return {
-      ...n,
-      body,
-      blocks: n.blocks || mnMdToBlocks(body || ''),
-      tags,
-    };
-  });
+  return MN_APP_HELPERS.normalizeNotes(notes, mnMdToBlocks);
 }
 
 // Strip in-memory-only fields before persisting to disk.
 function noteForDisk(n, mnBlocksToMd) {
-  const sourceBody = Array.isArray(n.blocks) ? mnBlocksToMd(n.blocks || []) : (n.body || '');
-  return {
-    id: n.id,
-    title: n.title || 'Untitled',
-    date: n.date || new Date().toISOString(),
-    tags: mnNormalizeNovelistLegacyTags(Array.isArray(n.tags) ? n.tags : []),
-    pinned: !!n.pinned,
-    workflowArchived: !!n.workflowArchived,
-    body: mnNormalizeNoteBody(mnEnsureScenePlotPoints(mnNormalizeNovelistLegacyBody(sourceBody), n.tags || []), n.title || 'Untitled'),
-  };
+  return MN_APP_HELPERS.noteForDisk(n, mnBlocksToMd);
 }
 
 function mnNormalizeNoteStatus(raw, states = []) {
@@ -604,15 +253,11 @@ function collectWorkflowBlocks(notes, states) {
 }
 
 function normalizeTagName(name) {
-  return String(name || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
+  return MN_APP_HELPERS.normalizeTagName(name);
 }
 
 function mnParseDefaultTags(value) {
-  return String(value || '')
-    .split(',')
-    .map(normalizeTagName)
-    .filter(Boolean)
-    .filter((tag, index, arr) => arr.indexOf(tag) === index);
+  return MN_APP_HELPERS.parseDefaultTags(value);
 }
 
 function mnNormalizeWorkflowStatesForApp(states) {

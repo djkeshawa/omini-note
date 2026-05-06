@@ -105,6 +105,45 @@ test('App helpers collect reminders and workflow notes without renderer state', 
   assert.equal(workflow.byState.DRAFT[0].text, 'Body');
 });
 
+test('App helpers normalize novelist notes and body properties', () => {
+  let body = '# Scene\n- order:: 200\n- status:: DRAFT\n- chapter:: [[Chapter 1]]\nDraft text';
+  assert.equal(appHelpers.bodyPropertyValue(body, 'status'), 'DRAFT');
+  body = appHelpers.setBodyProperty(body, 'status', 'REVISE');
+  assert.equal(appHelpers.bodyPropertyValue(body, 'status'), 'REVISE');
+  body = appHelpers.removeBodyProperty(body, 'status');
+  assert.equal(appHelpers.bodyPropertyValue(body, 'status'), '');
+  assert.match(appHelpers.setBodyProperty('# Note\nBody', 'order', '100'), /order:: 100\nBody/);
+  assert.equal(appHelpers.normalizeNoteBody('# Scene\n- status:: DRAFT\n- order:: 200\nDraft text', 'Scene'), 'status:: DRAFT\norder:: 200\nDraft text');
+  assert.deepEqual(appHelpers.normalizeNovelistLegacyTags(['novel-manuscript', 'novel-arc', 'novel-scene']), ['novel-act', 'novel-scene']);
+  assert.equal(appHelpers.normalizeNovelistLegacyBody('arc:: [[Arc 1]]\n## Arcs'), 'act:: [[Arc 1]]\n## Acts');
+  assert.match(appHelpers.ensureScenePlotPoints('status:: DRAFT\nDraft', ['novel-scene']), /:::\s*plot-points/);
+  assert.equal(appHelpers.replaceWikiLinkTitle('See [[Old#A|alias]]', 'Old', 'New'), 'See [[New#A|alias]]');
+
+  const structure = appHelpers.buildNovelistStructure([
+    { id: 'a', title: 'Act', tags: ['novel-act'], body: '# Act\n- order:: 100' },
+    { id: 'c2', title: 'Chapter B', tags: ['novel-chapter'], body: '# Chapter B\n- order:: 120\n- act:: [[Act]]', modifiedAt: '2026-01-02T00:00:00.000Z' },
+    { id: 'c1', title: 'Chapter A', tags: ['novel-chapter'], body: '# Chapter A\n- order:: 110\n- act:: [[Act]]', modifiedAt: '2026-01-01T00:00:00.000Z' },
+    { id: 's', title: 'Scene', tags: ['novel-scene'], body: '# Scene\n- chapter:: [[Chapter A]]' },
+  ]);
+  assert.deepEqual(Array.from(structure.childrenByActId.a), ['c1', 'c2']);
+  assert.equal(structure.parentBySceneId.s, 'c1');
+
+  const disk = appHelpers.noteForDisk({
+    id: 'n1',
+    title: 'Scene',
+    date: '2026-05-06T00:00:00.000Z',
+    tags: ['novel-arc', 'novel-scene'],
+    pinned: true,
+    workflowArchived: true,
+    blocks: [{ content: '# Scene\narc:: [[Act]]\nDraft', children: [] }],
+  }, blocks => blocks.map(block => block.content).join('\n'));
+  assert.equal(disk.pinned, true);
+  assert.equal(disk.workflowArchived, true);
+  assert.deepEqual(disk.tags, ['novel-act', 'novel-scene']);
+  assert.match(disk.body, /act:: \[\[Act\]\]/);
+  assert.doesNotMatch(disk.body, /^# Scene/m);
+});
+
 test('Enter in the middle splits content and annotations without duplicating the tail', () => {
   const first = block('hello world', [
     { start: 0, end: 5, kind: 'bold' },
@@ -604,6 +643,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const helpers = fs.readFileSync(path.join(__dirname, '../src/appHelpers.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
@@ -653,10 +693,10 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /function mnRemoveBodyProperty/);
   assert.match(app, /function mnNoteOrderValue/);
   assert.match(app, /function collectWorkflowNotes/);
-  assert.match(app, /split\('\|'\)\[0\]/);
-  assert.match(app, /mnBodyPropertyTitle\(body, key\)/);
-  assert.match(app, /addStage\('chapter', chapter\)/);
-  assert.match(app, /addStage\('scene', scene\)/);
+  assert.match(helpers, /split\('\|'\)\[0\]/);
+  assert.match(helpers, /function bodyPropertyTitle/);
+  assert.match(helpers, /addStage\('chapter', chapter\)/);
+  assert.match(helpers, /addStage\('scene', scene\)/);
   assert.match(app, /mnNormalizeNovelistLegacyTags/);
   assert.match(app, /mnNormalizeNovelistLegacyBody/);
   assert.match(app, /mnEnsureScenePlotPoints/);
@@ -998,7 +1038,7 @@ test('Novelist hierarchy is inferred from act properties and explicit structure 
   const code = Babel.transform(app, { presets: ['react'] }).code;
   const sandbox = {
     React: { createElement() {}, useState() {}, useEffect() {}, useMemo() {}, useCallback() {}, useRef() {} },
-    window: {},
+    window: { MN_APP_HELPERS: appHelpers },
     console,
   };
   vm.runInNewContext(code, sandbox);
@@ -1656,7 +1696,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
   const helpers = fs.readFileSync(path.join(__dirname, '../src/appHelpers.js'), 'utf8');
 
-  assert.match(app, /workflowArchived: !!n\.workflowArchived/);
+  assert.match(helpers, /workflowArchived: !!note\.workflowArchived/);
   assert.match(helpers, /if \(note\.workflowArchived\) \{/);
   assert.match(helpers, /archivedNotes\.push/);
   assert.match(app, /const updateWorkflowArchived = useCallbackA/);
