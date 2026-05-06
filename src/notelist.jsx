@@ -263,10 +263,19 @@ function MnNoteList({
             marginTop: 4, display: '-webkit-box',
             WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
-          }}>{mnHighlight(mnSnippet(n.body, query), query, T)}</div>
+          }}>{mnHighlight(String(n.__searchSnippet || '').replace(/<\/?mark>/g, '') || mnSnippet(n.body, query), query, T)}</div>
         )}
         {!compact && (
           <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+            {query && Array.isArray(n.__matchedFields) && n.__matchedFields.length > 0 && (
+              <span style={{
+                fontFamily: 'var(--mn-mono)', fontSize: 9.5,
+                letterSpacing: '0.03em',
+                color: T.accent,
+                padding: '1px 6px', borderRadius: 3,
+                background: T.accentSoft,
+              }}>{n.__matchedFields.join(', ')}</span>
+            )}
             {(n.tags || []).map(t => (
               <span key={t} style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 9.5,

@@ -543,7 +543,7 @@ function MnAskAI({
                     letterSpacing: '0.12em', textTransform: 'uppercase',
                     color: T.inkDim, marginBottom: 8,
                   }}>Sources</div>
-                  {m.sources.map(s => (
+                  {m.sources.map((s, sourceIndex) => (
                     <div key={s.id}
                       onClick={() => { onOpenNote?.(s.id); onClose(); }}
                       style={{
@@ -553,13 +553,18 @@ function MnAskAI({
                       }}
                       onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
                       onMouseLeave={e => e.currentTarget.style.background = T.bg}>
-                      <div style={{ fontSize: 12.5, fontWeight: 500, color: T.ink }}>{s.title}</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 500, color: T.ink }}>{sourceIndex + 1}. {s.title}</div>
                       <div style={{
                         fontSize: 12, color: T.inkDim, marginTop: 2,
                         fontFamily: 'var(--mn-body)', lineHeight: 1.5,
                         display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                         overflow: 'hidden',
                       }}>{s.snippet}</div>
+                      {s.modifiedAt && (
+                        <div style={{ marginTop: 5, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
+                          {new Date(s.modifiedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

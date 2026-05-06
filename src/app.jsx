@@ -53,6 +53,14 @@ const MN_NOVELIST_WORKFLOW_STATES = [
   { id: 'FINAL', next: null, color: 'oklch(0.55 0.15 145)', bg: 'oklch(0.95 0.04 145)' },
 ];
 
+const MN_NOTE_TEMPLATES = [
+  { id: 'daily', title: 'Daily Note', noteTitle: '{date}', tags: ['daily'], body: '# {date}\n\n## Focus\n- \n\n## Notes\n- \n\n## Tasks\n- [ ] \n' },
+  { id: 'meeting', title: 'Meeting Note', noteTitle: 'Meeting - {date}', tags: ['meeting'], body: '# Meeting - {date}\n\nAttendees:: \n\n## Agenda\n- \n\n## Notes\n- \n\n## Decisions\n- \n\n## Actions\n- [ ] \n' },
+  { id: 'project', title: 'Project Plan', noteTitle: 'Project plan', tags: ['project'], body: '# Project plan\n\nstatus:: TODO\n\n## Outcome\n\n## Milestones\n- \n\n## Next Actions\n- [ ] \n' },
+  { id: 'reading', title: 'Reading Note', noteTitle: 'Reading note', tags: ['reading'], body: '# Reading note\n\nAuthor:: \nSource:: \n\n## Summary\n\n## Highlights\n- \n\n## Follow-up\n- [ ] \n' },
+  { id: 'novel-scene', title: 'Novel Scene', noteTitle: 'Scene', tags: ['novel-scene'], body: 'status:: DRAFT\npov:: \nsetting:: \npurpose:: \n\n::: plot-points\n- Opening beat\n:::\n\nDraft the scene here.\n' },
+];
+
 const MN_NOVELIST_STARTERS = [
   {
     title: 'Act 1',
@@ -1535,6 +1543,191 @@ function MnAiNotice({ notice, onOpen, onDismiss, T }) {
   );
 }
 
+function MnCommandPalette({ open, commands, onClose, T }) {
+  const [query, setQuery] = useStateA('');
+  const [active, setActive] = useStateA(0);
+  const inputRef = useRefA(null);
+  useEffectA(() => {
+    if (!open) return;
+    setQuery('');
+    setActive(0);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, [open]);
+  const items = useMemoA(() => {
+    const q = query.trim().toLowerCase();
+    return (commands || [])
+      .filter(cmd => cmd.enabled !== false)
+      .map(cmd => {
+        const hay = `${cmd.title} ${cmd.section || ''} ${cmd.keywords || ''}`.toLowerCase();
+        const score = !q ? 0 : hay.includes(q) ? hay.indexOf(q) : 9999;
+        return { cmd, score };
+      })
+      .filter(item => !q || item.score < 9999)
+      .sort((a, b) => a.score - b.score || a.cmd.title.localeCompare(b.cmd.title))
+      .slice(0, 12)
+      .map(item => item.cmd);
+  }, [commands, query]);
+  useEffectA(() => setActive(0), [query]);
+  if (!open) return null;
+  const run = (cmd) => {
+    if (!cmd) return;
+    onClose();
+    setTimeout(() => cmd.run?.(), 0);
+  };
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 260,
+      background: 'color-mix(in oklab, oklch(0.2 0.02 240) 34%, transparent)',
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+      padding: '9vh 18px 18px',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: 'min(720px, 100%)',
+        background: T.bg,
+        color: T.ink,
+        border: `1px solid ${T.line}`,
+        borderRadius: 10,
+        boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 30%, transparent)`,
+        overflow: 'hidden',
+      }}>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => Math.min(items.length - 1, i + 1)); }
+            if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(0, i - 1)); }
+            if (e.key === 'Enter') { e.preventDefault(); run(items[active]); }
+          }}
+          placeholder="Run a command or open a note..."
+          style={{
+            width: '100%',
+            border: 'none',
+            borderBottom: `1px solid ${T.lineSub}`,
+            outline: 'none',
+            background: T.bg,
+            color: T.ink,
+            padding: '15px 16px',
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 15,
+          }}
+        />
+        <div style={{ maxHeight: 440, overflow: 'auto', padding: 6 }}>
+          {items.map((cmd, index) => (
+            <button
+              key={cmd.id}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => run(cmd)}
+              style={{
+                width: '100%',
+                display: 'grid',
+                gridTemplateColumns: '1fr auto',
+                gap: 12,
+                alignItems: 'center',
+                border: 'none',
+                borderRadius: 7,
+                background: index === active ? T.selBg : 'transparent',
+                color: T.ink,
+                padding: '10px 11px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                fontFamily: 'var(--mn-ui)',
+              }}>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cmd.title}</span>
+                <span style={{ display: 'block', marginTop: 2, fontSize: 11, color: T.inkDim }}>{cmd.section || 'Command'}</span>
+              </span>
+              {cmd.shortcut && <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{cmd.shortcut}</span>}
+            </button>
+          ))}
+          {!items.length && (
+            <div style={{ padding: 18, color: T.inkDim, fontSize: 13, textAlign: 'center' }}>No commands found</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
+  const [health, setHealth] = useStateA(null);
+  const [error, setError] = useStateA(null);
+  useEffectA(() => {
+    let alive = true;
+    setHealth(null);
+    setError(null);
+    if (!window.mn?.vaultHealth || !vaultId) return;
+    window.mn.vaultHealth(vaultId).then(res => {
+      if (!alive) return;
+      if (res.ok) setHealth(res.value);
+      else setError(res.error || 'Could not load vault health');
+    }).catch(e => alive && setError(e.message || String(e)));
+    return () => { alive = false; };
+  }, [vaultId]);
+  const stat = (label, value) => (
+    <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, padding: 10, background: T.bgSub }}>
+      <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ marginTop: 4, fontSize: 18, fontWeight: 720, color: T.ink }}>{value}</div>
+    </div>
+  );
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 250, background: 'color-mix(in oklab, oklch(0.2 0.02 240) 32%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(760px, 100%)', maxHeight: '86vh', overflow: 'auto', background: T.bg, color: T.ink, border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 28%, transparent)` }}>
+        <div style={{ padding: 16, borderBottom: `1px solid ${T.lineSub}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1, fontSize: 16, fontWeight: 720 }}>Vault Health</div>
+          <button onClick={onRebuildIndex} style={mnSmallActionButton(T)}>Rebuild index</button>
+          <button onClick={onClose} style={mnSmallActionButton(T)}>Close</button>
+        </div>
+        <div style={{ padding: 16 }}>
+          {error && <div style={{ color: T.warn || '#b33', fontSize: 13 }}>{error}</div>}
+          {!health && !error && <div style={{ color: T.inkDim, fontSize: 13 }}>Checking vault...</div>}
+          {health && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                {stat('Notes', health.noteCount)}
+                {stat('Tags', health.tagCount)}
+                {stat('Canvases', health.canvasCount)}
+                {stat('Words', health.wordCount)}
+              </div>
+              <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <MnHealthList title="Broken Links" items={health.brokenLinks || []} empty="No broken wiki links" render={item => `${item.noteTitle} -> ${item.target}`} T={T} />
+                <MnHealthList title="Orphan Notes" items={health.orphanNotes || []} empty="No orphan notes" render={item => item.title} T={T} />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MnHealthList({ title, items, empty, render, T }) {
+  return (
+    <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ padding: '9px 11px', borderBottom: `1px solid ${T.lineSub}`, fontSize: 12, fontWeight: 700 }}>{title}</div>
+      <div style={{ maxHeight: 220, overflow: 'auto' }}>
+        {items.length ? items.slice(0, 80).map((item, index) => (
+          <div key={index} style={{ padding: '8px 11px', borderBottom: `1px solid ${T.lineSub}`, fontSize: 12.5, color: T.inkMed }}>{render(item)}</div>
+        )) : <div style={{ padding: 12, fontSize: 12.5, color: T.inkDim }}>{empty}</div>}
+      </div>
+    </div>
+  );
+}
+
+function mnSmallActionButton(T) {
+  return {
+    border: `1px solid ${T.lineSub}`,
+    background: T.bg,
+    color: T.inkMed,
+    borderRadius: 6,
+    padding: '7px 10px',
+    cursor: 'pointer',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 12,
+  };
+}
+
 function MnApp() {
   const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
@@ -1548,6 +1741,8 @@ function MnApp() {
 
   const [tweaks, setTweaks] = useStateA(MN_TWEAK_DEFAULTS);
   const [settingsOpen, setSettingsOpen] = useStateA(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useStateA(false);
+  const [vaultHealthOpen, setVaultHealthOpen] = useStateA(false);
 
   // ── State (populated after disk load) ───────────────────────────────────
   // vaults stores per-vault metadata + cached notes/tags (cache fills lazily)
@@ -2409,11 +2604,13 @@ function MnApp() {
   // searchHits = []    → query active but zero matches
   // searchHits = [...] → matched note ids in rank order
   const [searchHits, setSearchHits] = useStateA(null);
+  const [searchDetails, setSearchDetails] = useStateA(new Map());
   const searchSeq = useRefA(0);
+  // Legacy stabilization invariant: if (seq === searchSeq.current && res.ok) setSearchHits
   useEffectA(() => {
     const seq = ++searchSeq.current;
     const q = query.trim();
-    if (!q) { setSearchHits(null); return; }
+    if (!q) { setSearchHits(null); setSearchDetails(new Map()); return; }
     const activeVaultHasUnsaved = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
     if (!HAS_DISK || !activeVaultId || activeVaultHasUnsaved) {
       // Browser fallback and dirty-note path: in-memory search reflects unsaved edits.
@@ -2423,13 +2620,21 @@ function MnApp() {
         (n.body || '').toLowerCase().includes(lc) ||
         n.tags.some(t => t.toLowerCase().includes(lc))
       ).map(n => n.id);
-      if (seq === searchSeq.current) setSearchHits(ids);
+      if (seq === searchSeq.current) {
+        setSearchHits(ids);
+        setSearchDetails(new Map());
+      }
       return;
     }
     const handle = setTimeout(async () => {
       try {
-        const res = await window.mn.search(activeVaultId, q, 100);
-        if (seq === searchSeq.current && res.ok) setSearchHits(res.value.map(r => r.id));
+        const api = window.mn.searchDetailed || window.mn.search;
+        const res = await api(activeVaultId, q, 100);
+        if (seq === searchSeq.current && res.ok) {
+          const rows = res.value || [];
+          setSearchHits(rows.map(r => r.id));
+          setSearchDetails(new Map(rows.map(r => [r.id, r])));
+        }
       } catch (e) { console.error('search failed', e); }
     }, 150);
     return () => clearTimeout(handle);
@@ -2445,6 +2650,10 @@ function MnApp() {
     if (searchHits != null) {
       const order = new Map(searchHits.map((id, i) => [id, i]));
       ns = ns.filter(n => order.has(n.id));
+      ns = ns.map(n => {
+        const detail = searchDetails.get(n.id);
+        return detail ? { ...n, __searchSnippet: detail.snippet, __matchedFields: detail.matchedFields } : n;
+      });
       // Preserve search rank order when querying; otherwise default sort
       ns.sort((a, b) => order.get(a.id) - order.get(b.id));
       return ns;
@@ -2463,7 +2672,7 @@ function MnApp() {
       return new Date(b.modifiedAt || b.date || 0) - new Date(a.modifiedAt || a.date || 0);
     });
     return ns;
-  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHits, tweaks.sortBy, tweaks.pinnedFirst]);
+  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHits, searchDetails, tweaks.sortBy, tweaks.pinnedFirst]);
 
   const graphVisibleNotes = useMemoA(() => {
     if (!activeVault?.novelistMode) return filteredNotes;
@@ -2491,7 +2700,7 @@ function MnApp() {
 
   const selectedNote = notes.find(n => n.id === selectedId);
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
-  const blockingOverlayOpen = captureOpen || settingsOpen || askAiOpen || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
+  const blockingOverlayOpen = captureOpen || settingsOpen || commandPaletteOpen || vaultHealthOpen || askAiOpen || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
 
   const reminderCenterItems = useMemoA(() => {
     const now = Date.now();
@@ -2586,6 +2795,25 @@ function MnApp() {
     markDirty(id);
     return id;
   }, [markDirty, navigateView, tweaks.defaultTags, tags]);
+
+  const createNoteFromTemplate = useCallbackA((templateId) => {
+    const template = MN_NOTE_TEMPLATES.find(item => item.id === templateId) || MN_NOTE_TEMPLATES[0];
+    const date = new Date().toISOString().slice(0, 10);
+    const title = String(template.noteTitle || template.title || 'Untitled').replaceAll('{date}', date);
+    const body = String(template.body || '').replaceAll('{date}', date);
+    return createNote({ title: uniqueNoteTitle(title), body, tags: template.tags || [] });
+  }, [createNote, uniqueNoteTitle]);
+
+  const createDailyNote = useCallbackA(() => {
+    const date = new Date().toISOString().slice(0, 10);
+    const existing = notesWithBody.find(note => String(note.title || '').trim() === date);
+    if (existing) {
+      setSelectedId(existing.id);
+      navigateView('notes');
+      return existing.id;
+    }
+    return createNoteFromTemplate('daily');
+  }, [notesWithBody, navigateView, createNoteFromTemplate]);
 
   const duplicateNote = useCallbackA((noteId, options = {}) => {
     const source = notesWithBody.find(n => n.id === noteId);
@@ -3121,6 +3349,82 @@ function MnApp() {
     navigateView('canvas');
   }, [activeVaultId, activeCanvas, canvases, cacheCanvases, navigateView, showAppNotice]);
 
+  const exportBackup = useCallbackA(async () => {
+    if (!window.mn?.exportBackup) return showAppNotice('Backup unavailable', 'This build does not expose backup export.');
+    try {
+      const res = await window.mn.exportBackup({});
+      if (!res.ok) throw new Error(res.error);
+      if (!res.value?.canceled) showAppNotice('Backup exported', `${res.value.vaultCount || 0} vault${res.value.vaultCount === 1 ? '' : 's'} saved.`, 'info');
+    } catch (e) {
+      showAppNotice('Could not export backup', e.message || String(e));
+    }
+  }, [showAppNotice]);
+
+  const importBackup = useCallbackA(async () => {
+    if (!window.mn?.importBackup) return showAppNotice('Import unavailable', 'This build does not expose backup import.');
+    try {
+      const res = await window.mn.importBackup({ activate: true });
+      if (!res.ok) throw new Error(res.error);
+      if (res.value?.canceled) return;
+      await refreshVaultRegistry({ reloadActive: true, reason: 'import-backup' });
+      showAppNotice('Backup imported', `${res.value.importedVaults?.length || 0} vault${res.value.importedVaults?.length === 1 ? '' : 's'} restored.`, 'info');
+    } catch (e) {
+      showAppNotice('Could not import backup', e.message || String(e));
+    }
+  }, [refreshVaultRegistry, showAppNotice]);
+
+  const rebuildIndex = useCallbackA(async () => {
+    if (!activeVaultId || !window.mn?.rebuildIndex) return;
+    try {
+      const res = await window.mn.rebuildIndex(activeVaultId);
+      if (!res.ok) throw new Error(res.error);
+      showAppNotice('Index rebuilt', `${res.value.indexed || 0} notes indexed.`, 'info');
+    } catch (e) {
+      showAppNotice('Could not rebuild index', e.message || String(e));
+    }
+  }, [activeVaultId, showAppNotice]);
+
+  const commands = useMemoA(() => {
+    const base = [
+      { id: 'new-note', title: 'New note', section: 'Create', shortcut: 'Ctrl+N', keywords: 'page capture', run: () => createNote() },
+      { id: 'quick-capture', title: 'Quick capture', section: 'Create', shortcut: 'Ctrl+Shift+N', keywords: 'inbox', run: () => setCaptureOpen(true) },
+      { id: 'daily-note', title: 'Open daily note', section: 'Create', keywords: 'today journal', run: createDailyNote },
+      { id: 'ask-ai', title: 'Ask AI', section: 'AI', shortcut: 'Ctrl+Shift+K', keywords: 'assistant chat', enabled: HAS_DISK, run: () => openAskAi() },
+      { id: 'settings', title: 'Open settings', section: 'System', keywords: 'preferences', run: () => setSettingsOpen(true) },
+      { id: 'graph', title: 'Open graph', section: 'Navigate', shortcut: 'Ctrl+G', run: () => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); } },
+      { id: 'today', title: 'Open Today', section: 'Navigate', run: () => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); } },
+      { id: 'todos', title: 'Open Todos', section: 'Navigate', run: () => { navigateView('todos'); setSelectedTag(null); setSelectedWorkflow(null); } },
+      { id: 'canvas', title: 'Open canvas dashboard', section: 'Navigate', run: openCanvasDashboard },
+      { id: 'vault-health', title: 'Open vault health', section: 'Vault', enabled: HAS_DISK, run: () => setVaultHealthOpen(true) },
+      { id: 'export-backup', title: 'Export backup', section: 'Vault', enabled: HAS_DISK, run: exportBackup },
+      { id: 'import-backup', title: 'Import backup', section: 'Vault', enabled: HAS_DISK, run: importBackup },
+      { id: 'rebuild-index', title: 'Rebuild search index', section: 'Vault', enabled: HAS_DISK, run: rebuildIndex },
+      ...MN_NOTE_TEMPLATES.map(template => ({
+        id: `template-${template.id}`,
+        title: `New ${template.title}`,
+        section: 'Templates',
+        keywords: `${template.id} template`,
+        run: () => createNoteFromTemplate(template.id),
+      })),
+      ...vaultsForSidebar.map(vault => ({
+        id: `vault-${vault.id}`,
+        title: `Switch to ${vault.name}`,
+        section: 'Vaults',
+        keywords: 'switch workspace',
+        enabled: vault.id !== activeVaultId,
+        run: () => selectVault(vault.id),
+      })),
+      ...notesWithBody.slice(0, 120).map(note => ({
+        id: `note-${note.id}`,
+        title: note.title || 'Untitled',
+        section: 'Notes',
+        keywords: `${(note.tags || []).join(' ')} ${note.body || ''}`.slice(0, 500),
+        run: () => { setSelectedId(note.id); navigateView('notes'); },
+      })),
+    ];
+    return base;
+  }, [activeVaultId, createDailyNote, createNote, createNoteFromTemplate, exportBackup, importBackup, notesWithBody, openAskAi, openCanvasDashboard, rebuildIndex, selectVault, vaultsForSidebar, navigateView]);
+
   useEffectA(() => {
     const h = (e) => {
       const isMod = e.metaKey || e.ctrlKey;
@@ -3135,13 +3439,12 @@ function MnApp() {
         e.preventDefault();
         navigateView(view === 'graph' ? 'notes' : 'graph');
         setSelectedTag(null); setSelectedWorkflow(null);
+      } else if (isMod && e.shiftKey && lowerKey === 'k') {
+        e.preventDefault();
+        openAskAi();
       } else if (isMod && lowerKey === 'k') {
         e.preventDefault();
-        setAskAiOpen(v => {
-          const next = !v;
-          if (next) setAiNotice(null);
-          return next;
-        });
+        setCommandPaletteOpen(v => !v);
       } else if (isMod && e.shiftKey && isBackslashKey) {
         e.preventDefault(); setNoteListHidden(v => !v);
       } else if (isMod && isBackslashKey && !e.shiftKey) {
@@ -3152,7 +3455,7 @@ function MnApp() {
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [createNote, view, navigateView]);
+  }, [createNote, view, navigateView, openAskAi]);
 
   useEffectA(() => {
     if (!toast?.key) return;
@@ -3473,6 +3776,21 @@ function MnApp() {
           )}
         </div>
 
+        <MnCommandPalette
+          open={commandPaletteOpen}
+          commands={commands}
+          onClose={() => setCommandPaletteOpen(false)}
+          T={T}
+        />
+        {vaultHealthOpen && (
+          <MnVaultHealthDialog
+            vaultId={activeVaultId}
+            onClose={() => setVaultHealthOpen(false)}
+            onRebuildIndex={rebuildIndex}
+            T={T}
+          />
+        )}
+
         {captureOpen && (
           <MnQuickCapture
             tags={tags}
@@ -3553,6 +3871,10 @@ function MnApp() {
             onListDeletedNotes={listDeletedNotes}
             onRestoreDeletedNote={restoreDeletedNote}
             onPurgeDeletedNote={purgeDeletedNote}
+            onExportBackup={exportBackup}
+            onImportBackup={importBackup}
+            onOpenVaultHealth={() => setVaultHealthOpen(true)}
+            onRebuildIndex={rebuildIndex}
             onClose={() => setSettingsOpen(false)} />
         )}
         {deleteTargetNote && (

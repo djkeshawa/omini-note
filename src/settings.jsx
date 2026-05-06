@@ -5,6 +5,7 @@ function MnSettingsModal({
   tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault,
   onCreateVault, onDeleteVault, onSetVaultNovelistMode,
   onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
+  onExportBackup, onImportBackup, onOpenVaultHealth, onRebuildIndex,
 }) {
   const [section, setSection] = useStateS('appearance');
 
@@ -185,6 +186,10 @@ function MnSettingsModal({
                 onListDeletedNotes={onListDeletedNotes}
                 onRestoreDeletedNote={onRestoreDeletedNote}
                 onPurgeDeletedNote={onPurgeDeletedNote}
+                onExportBackup={onExportBackup}
+                onImportBackup={onImportBackup}
+                onOpenVaultHealth={onOpenVaultHealth}
+                onRebuildIndex={onRebuildIndex}
               />
             )}
             {section === 'shortcuts' && <SectionShortcuts T={T} />}
@@ -823,6 +828,7 @@ function SectionData({
   tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault,
   onCreateVault, onDeleteVault, onSetVaultNovelistMode,
   onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
+  onExportBackup, onImportBackup, onOpenVaultHealth, onRebuildIndex,
 }) {
   const [newVaultName, setNewVaultName] = useStateS('');
   const [newVaultType, setNewVaultType] = useStateS('notes');
@@ -945,6 +951,18 @@ function SectionData({
         </Row>
         <Row T={T} label="Sync backend" sub="Keep notes in sync across devices.">
           <StaticValue T={T}>Local only</StaticValue>
+        </Row>
+        <Row T={T} label="Backup and restore" sub="Export all vaults or restore a backup into new vaults.">
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <BtnOutline T={T} disabled={!onExportBackup} onClick={onExportBackup}>Export backup</BtnOutline>
+            <BtnOutline T={T} disabled={!onImportBackup} onClick={onImportBackup}>Import backup</BtnOutline>
+          </div>
+        </Row>
+        <Row T={T} label="Vault health" sub="Check broken links, orphan notes, and search index status.">
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <BtnOutline T={T} disabled={!onOpenVaultHealth} onClick={onOpenVaultHealth}>Open health</BtnOutline>
+            <BtnOutline T={T} disabled={!onRebuildIndex} onClick={onRebuildIndex}>Rebuild index</BtnOutline>
+          </div>
         </Row>
         <Row T={T} label="Delete current vault" sub={canDeleteVault ? "Permanently remove this vault and every note file inside it." : "Create another vault before deleting this one."} last>
           <BtnOutline

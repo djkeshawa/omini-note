@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -394,9 +394,64 @@ ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
 
 // Search / backlinks / tags (SQLite-backed)
 ipcMain.handle('mn:search',         wrap((vaultId, query, limit) => idx.search(vaultId, query, limit)));
+ipcMain.handle('mn:searchDetailed', wrap(async (vaultId, query, limit) => {
+  const hits = idx.search(vaultId, query, limit);
+  const vault = await store.loadVault(vaultId);
+  const byId = new Map((vault.notes || []).map(note => [note.id, note]));
+  const q = String(query || '').trim().toLowerCase();
+  return hits.map(hit => {
+    const note = byId.get(hit.id) || {};
+    const fields = [];
+    if (String(note.title || '').toLowerCase().includes(q)) fields.push('title');
+    if ((note.tags || []).some(tag => String(tag).toLowerCase().includes(q))) fields.push('tags');
+    if (String(note.body || '').toLowerCase().includes(q)) fields.push('body');
+    return {
+      ...hit,
+      snippet: hit.snippet || String(note.body || '').slice(0, 180),
+      matchedFields: fields.length ? fields : ['body'],
+      tags: note.tags || [],
+      modifiedAt: note.modifiedAt || null,
+      date: note.date || null,
+      pinned: !!note.pinned,
+    };
+  });
+}));
 ipcMain.handle('mn:backlinks',      wrap((vaultId, title) => idx.backlinks(vaultId, title)));
 ipcMain.handle('mn:notesByTag',     wrap((vaultId, tag) => idx.notesByTag(vaultId, tag)));
 ipcMain.handle('mn:tagCounts',      wrap((vaultId) => idx.tagCounts(vaultId)));
+ipcMain.handle('mn:rebuildIndex',   wrap(async (vaultId) => {
+  const vault = await store.loadVault(vaultId);
+  idx.rescanVault(vaultId, vault.notes || []);
+  return { indexed: vault.notes?.length || 0 };
+}));
+ipcMain.handle('mn:vaultHealth',    wrap((vaultId) => store.vaultHealth(vaultId)));
+ipcMain.handle('mn:exportBackup',   wrap(async (options = {}) => {
+  const payload = await store.exportBackup(options || {});
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export VispNote backup',
+    defaultPath: `vispnote-backup-${stamp}.vispnote-backup.json`,
+    filters: [{ name: 'VispNote Backup', extensions: ['json'] }],
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  await fs.promises.writeFile(result.filePath, JSON.stringify(payload, null, 2), 'utf8');
+  return { canceled: false, filePath: result.filePath, vaultCount: payload.vaults.length };
+}));
+ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import VispNote backup',
+    properties: ['openFile'],
+    filters: [{ name: 'VispNote Backup', extensions: ['json'] }],
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  const text = await fs.promises.readFile(result.filePaths[0], 'utf8');
+  const imported = await store.importBackup(text, options || {});
+  for (const vault of imported.importedVaults || []) {
+    const loaded = await store.loadVault(vault.id);
+    idx.rescanVault(vault.id, loaded.notes || []);
+  }
+  return { ...imported, canceled: false, filePath: result.filePaths[0] };
+}));
 
 // AI (Ollama)
 ipcMain.handle('mn:ai.status',      wrap(() => ai.status()));

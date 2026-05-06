@@ -34,9 +34,14 @@ contextBridge.exposeInMainWorld('mn', {
 
   // Search / backlinks / tags (SQLite-backed)
   search:      (vaultId, query, limit) => ipcRenderer.invoke('mn:search', vaultId, query, limit),
+  searchDetailed:(vaultId, query, limit) => ipcRenderer.invoke('mn:searchDetailed', vaultId, query, limit),
   backlinks:   (vaultId, title) => ipcRenderer.invoke('mn:backlinks', vaultId, title),
   notesByTag:  (vaultId, tag) => ipcRenderer.invoke('mn:notesByTag', vaultId, tag),
   tagCounts:   (vaultId) => ipcRenderer.invoke('mn:tagCounts', vaultId),
+  rebuildIndex:(vaultId) => ipcRenderer.invoke('mn:rebuildIndex', vaultId),
+  vaultHealth: (vaultId) => ipcRenderer.invoke('mn:vaultHealth', vaultId),
+  exportBackup:(options) => ipcRenderer.invoke('mn:exportBackup', options),
+  importBackup:(options) => ipcRenderer.invoke('mn:importBackup', options),
 
   // AI (Ollama)
   ai: {
