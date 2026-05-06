@@ -19,13 +19,16 @@ const SOURCES = [
   'src/sidebar.jsx',
   'src/notelist.jsx',
   'src/editor.jsx',
+  'src/panelHelpers.js',
   'src/panels.jsx',
   'src/canvas.jsx',
   'src/settings.jsx',
   'src/ai.jsx',
   'src/appHelpers.js',
+  'src/appNovelist.js',
   'src/appMutations.js',
   'src/appCanvasActions.js',
+  'src/appShell.jsx',
   'src/app.jsx',
 ];
 

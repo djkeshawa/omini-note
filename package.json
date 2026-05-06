@@ -32,7 +32,7 @@
   "scripts": {
     "build:renderer": "node scripts/build-renderer.js",
     "check:main": "node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js",
-    "test:editor": "node tests/editor-ops.test.js",
+    "test:editor": "node --test tests/*.test.js",
     "smoke:electron": "npm run build:renderer && electron --no-sandbox scripts/smoke-electron.js",
     "prebuild": "npm run build:renderer",
     "build": "electron-builder --publish never",
