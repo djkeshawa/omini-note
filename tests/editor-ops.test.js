@@ -8,6 +8,7 @@ const vm = require('node:vm');
 const ops = require('../src/editorOps.js');
 const tableOps = require('../src/tableOps.js');
 const appHelpers = require('../src/appHelpers.js');
+const appMutations = require('../src/appMutations.js');
 
 async function withIsolatedStore(fn) {
   const previousHome = process.env.HOME;
@@ -142,6 +143,70 @@ test('App helpers normalize novelist notes and body properties', () => {
   assert.deepEqual(disk.tags, ['novel-act', 'novel-scene']);
   assert.match(disk.body, /act:: \[\[Act\]\]/);
   assert.doesNotMatch(disk.body, /^# Scene/m);
+});
+
+test('App mutations build note, tag, rename, and canvas updates without renderer state', () => {
+  const mdToBlocks = body => [{ id: 'b1', kind: 'paragraph', content: body, children: [] }];
+  const blocksToMd = blocks => (blocks || []).map(block => block.content).join('\n');
+  const makeEmptyBlock = () => ({ id: 'empty', kind: 'paragraph', content: '', children: [] });
+  const mutationCtx = {
+    normalizeTagName: appHelpers.normalizeTagName,
+    parseDefaultTags: appHelpers.parseDefaultTags,
+    normalizeNoteBody: appHelpers.normalizeNoteBody,
+    ensureScenePlotPoints: appHelpers.ensureScenePlotPoints,
+    mdToBlocks,
+    blocksToMd,
+    makeEmptyBlock,
+  };
+
+  assert.equal(appMutations.uniqueNoteTitle([{ id: 'n1', title: 'Draft' }], 'Draft'), 'Draft 2');
+  const draft = appMutations.createNoteDraft({
+    id: 'n2',
+    title: ' Scene ',
+    body: '# Scene\nDraft',
+    tags: ['Novel Scene'],
+    defaultTags: 'Daily, novel scene',
+    existingTags: [{ name: 'daily', hue: 10 }],
+    now: '2026-05-06T00:00:00.000Z',
+  }, mutationCtx);
+  assert.equal(draft.note.title, 'Scene');
+  assert.deepEqual(draft.note.tags, ['novel-scene', 'daily']);
+  assert.deepEqual(draft.missingTags, ['novel-scene']);
+  assert.doesNotMatch(draft.note.body, /^# Scene/m);
+  assert.match(draft.note.body, /plot-points/);
+
+  const addedTags = appMutations.addTagsToList([{ name: 'daily', hue: 10 }], draft.missingTags, () => 40);
+  assert.deepEqual(addedTags, [{ name: 'daily', hue: 10 }, { name: 'novel-scene', hue: 40 }]);
+  const duplicate = appMutations.duplicateNoteDraft(draft.note, {
+    id: 'n3',
+    title: 'Scene copy',
+    now: '2026-05-07T00:00:00.000Z',
+  }, mutationCtx);
+  assert.equal(duplicate.id, 'n3');
+  assert.equal(duplicate.pinned, false);
+
+  const renamed = appMutations.renameNoteTitleDrafts([
+    { id: 'a', title: 'Old', body: 'Body', blocks: mdToBlocks('Body') },
+    { id: 'b', title: 'Ref', body: 'See [[Old]]', blocks: mdToBlocks('See [[Old]]') },
+  ], 'a', 'New', {
+    blocksToMd,
+    mdToBlocks,
+    replaceWikiLinkTitle: appHelpers.replaceWikiLinkTitle,
+    normalizeNoteBody: appHelpers.normalizeNoteBody,
+    now: '2026-05-08T00:00:00.000Z',
+  });
+  assert.deepEqual(renamed.dirtyIds, ['a', 'b']);
+  assert.equal(renamed.notes.find(note => note.id === 'b').body, 'See [[New]]');
+
+  const removed = appMutations.removeTagFromNotes([{ id: 'n', tags: ['daily', 'work'] }], 'daily', '2026-05-09T00:00:00.000Z');
+  assert.deepEqual(removed.dirtyIds, ['n']);
+  assert.deepEqual(removed.notes[0].tags, ['work']);
+
+  const canvases = appMutations.upsertCanvasList([
+    { id: 'old', title: 'Old', modifiedAt: '2026-05-01T00:00:00.000Z' },
+  ], { id: 'new', title: '', modifiedAt: '2026-05-10T00:00:00.000Z', elements: [{ id: 'e' }] });
+  assert.equal(canvases[0].title, 'Untitled canvas');
+  assert.equal(canvases[0].elementCount, 1);
 });
 
 test('Enter in the middle splits content and annotations without duplicating the tail', () => {
@@ -370,6 +435,7 @@ test('Clicking rendered text enters edit mode at the clicked caret offset', () =
 test('Note tag picker can create new tags from the editor', () => {
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const mutations = fs.readFileSync(path.join(__dirname, '../src/appMutations.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
 
   assert.match(editor, /onCreateTag/);
@@ -389,8 +455,9 @@ test('Note tag picker can create new tags from the editor', () => {
   assert.match(sidebar, /top: 50/);
   assert.match(app, /const removeTag = \(name\) =>/);
   assert.match(app, /onDeleteTag=\{removeTag\}/);
-  assert.match(app, /const taggedNotes = notes\.filter\(n => \(n\.tags \|\| \[\]\)\.includes\(clean\)\)/);
-  assert.match(app, /tags: \(n\.tags \|\| \[\]\)\.filter\(t => t !== clean\)/);
+  assert.match(app, /MN_APP_MUTATIONS\.removeTagFromNotes\(notes, clean\)/);
+  assert.match(mutations, /function removeTagFromNotes/);
+  assert.match(mutations, /tags: \(note\.tags \|\| \[\]\)\.filter\(value => value !== tag\)/);
 });
 
 test('Vaults can be created and deleted from settings with backend cleanup', () => {
@@ -1315,6 +1382,7 @@ test('App and editor font size settings use stepper controls', () => {
 
 test('Review fixes wire settings, rollup, reminders, and safe note paths', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const mutations = fs.readFileSync(path.join(__dirname, '../src/appMutations.js'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
@@ -1324,7 +1392,9 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
 
   assert.match(app, /tweaks\.sortBy/);
   assert.match(app, /tweaks\.pinnedFirst/);
-  assert.match(app, /mnParseDefaultTags\(tweaks\.defaultTags\)/);
+  assert.match(app, /parseDefaultTags: mnParseDefaultTags/);
+  assert.match(app, /defaultTags: tweaks\.defaultTags/);
+  assert.match(mutations, /function cleanNoteTags/);
   assert.match(app, /toggleCheckFromAggregate = \(it\) =>/);
   assert.match(app, /it\.blockId/);
   assert.match(app, /mnCollectReminderItems\(notesWithBody\)/);
@@ -1838,7 +1908,10 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
 
   assert.match(app, /function MnAppNoticeDialog/);
   assert.ok(html.indexOf('src="src/appHelpers.js"') < html.indexOf('src="src/app.jsx"'));
+  assert.ok(html.indexOf('src="src/appHelpers.js"') < html.indexOf('src="src/appMutations.js"'));
+  assert.ok(html.indexOf('src="src/appMutations.js"') < html.indexOf('src="src/app.jsx"'));
   assert.match(app, /const MN_APP_HELPERS = window\.MN_APP_HELPERS/);
+  assert.match(app, /const MN_APP_MUTATIONS = window\.MN_APP_MUTATIONS/);
   assert.match(app, /const searchSeq = useRefA\(0\)/);
   assert.match(app, /if \(seq === searchSeq\.current && res\.ok\) setSearchHits/);
   assert.match(app, /Load first, then switch atomically/);

@@ -54,6 +54,7 @@ const MN_NOVELIST_WORKFLOW_STATES = [
 ];
 
 const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
+const MN_APP_MUTATIONS = window.MN_APP_MUTATIONS || {};
 const MN_NOTE_TEMPLATES = MN_APP_HELPERS.NOTE_TEMPLATES || [];
 
 const MN_NOVELIST_STARTERS = [
@@ -2296,46 +2297,33 @@ function MnApp() {
   }, [notesWithBody, novelistStructure]);
 
   const uniqueNoteTitle = useCallbackA((rawTitle = 'Untitled', excludeId = null) => {
-    const base = String(rawTitle || '').trim() || 'Untitled';
-    const existing = new Set(notes
-      .filter(note => note.id !== excludeId)
-      .map(note => String(note.title || '').trim().toLowerCase())
-      .filter(Boolean));
-    if (!existing.has(base.toLowerCase())) return base;
-    let index = 2;
-    while (existing.has(`${base} ${index}`.toLowerCase())) index++;
-    return `${base} ${index}`;
+    return MN_APP_MUTATIONS.uniqueNoteTitle(notes, rawTitle, excludeId);
   }, [notes]);
 
   const createRuntimeNoteId = () => `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
   const createNote = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [] } = {}, options = {}) => {
     const id = createRuntimeNoteId();
-    const cleanTitle = String(title || '').trim() || 'Untitled';
-    const defaults = mnParseDefaultTags(tweaks.defaultTags);
-    const cleanTags = [...noteTags, ...defaults]
-      .map(normalizeTagName)
-      .filter(Boolean)
-      .filter((tag, index, arr) => arr.indexOf(tag) === index);
-    const cleanBody = mnNormalizeNoteBody(mnEnsureScenePlotPoints(body || '', cleanTags), cleanTitle);
-    const missingTags = cleanTags.filter(tag => !tags.some(t => t.name === tag));
+    const { note: newNote, missingTags } = MN_APP_MUTATIONS.createNoteDraft({
+      id,
+      title,
+      body,
+      tags: noteTags,
+      defaultTags: tweaks.defaultTags,
+      existingTags: tags,
+      now: new Date().toISOString(),
+    }, {
+      normalizeTagName,
+      parseDefaultTags: mnParseDefaultTags,
+      normalizeNoteBody: mnNormalizeNoteBody,
+      ensureScenePlotPoints: mnEnsureScenePlotPoints,
+      mdToBlocks: mnMdToBlocks,
+      makeEmptyBlock: () => mkBlock({ kind: 'paragraph', content: '' }),
+    });
     if (missingTags.length) {
-      setTags(ts => {
-        const existing = new Set(ts.map(t => t.name));
-        const additions = missingTags
-          .filter(name => !existing.has(name))
-          .map(name => ({ name, hue: (Math.floor(Math.random() * 12) * 30) + 10 }));
-        return additions.length ? [...ts, ...additions] : ts;
-      });
+      setTags(ts => MN_APP_MUTATIONS.addTagsToList(ts, missingTags, () => (Math.floor(Math.random() * 12) * 30) + 10));
       markTagsDirty();
     }
-    const blocks = cleanBody ? mnMdToBlocks(cleanBody) : [mkBlock({ kind: 'paragraph', content: '' })];
-    const newNote = {
-      id, title: cleanTitle, body: cleanBody, blocks, tags: cleanTags,
-      date: new Date().toISOString(),
-      modifiedAt: new Date().toISOString(),
-      diskModifiedAt: null,
-    };
     setNotes(ns => [newNote, ...ns]);
     if (options.open !== false) {
       setSelectedId(id);
@@ -2343,7 +2331,7 @@ function MnApp() {
     }
     markDirty(id);
     return id;
-  }, [markDirty, navigateView, tweaks.defaultTags, tags]);
+  }, [markDirty, navigateView, tweaks.defaultTags, tags, mnMdToBlocks, mkBlock]);
 
   const createNoteFromTemplate = useCallbackA((templateId) => {
     const template = MN_APP_HELPERS.templateById ? MN_APP_HELPERS.templateById(templateId) : (MN_NOTE_TEMPLATES.find(item => item.id === templateId) || MN_NOTE_TEMPLATES[0]);
@@ -2368,20 +2356,16 @@ function MnApp() {
     const source = notesWithBody.find(n => n.id === noteId);
     if (!source) return null;
     const id = createRuntimeNoteId();
-    const title = uniqueNoteTitle(`${source.title || 'Untitled'} copy`);
-    const body = mnNormalizeNoteBody(source.body || mnBlocksToMd(source.blocks || []), title);
-    const blocks = body ? mnMdToBlocks(body) : [mkBlock({ kind: 'paragraph', content: '' })];
-    const duplicate = {
-      ...source,
+    const duplicate = MN_APP_MUTATIONS.duplicateNoteDraft(source, {
       id,
-      title,
-      body,
-      blocks,
-      pinned: false,
-      date: new Date().toISOString(),
-      modifiedAt: new Date().toISOString(),
-      diskModifiedAt: null,
-    };
+      title: uniqueNoteTitle(`${source.title || 'Untitled'} copy`),
+      now: new Date().toISOString(),
+    }, {
+      normalizeNoteBody: mnNormalizeNoteBody,
+      blocksToMd: mnBlocksToMd,
+      mdToBlocks: mnMdToBlocks,
+      makeEmptyBlock: () => mkBlock({ kind: 'paragraph', content: '' }),
+    });
     setNotes(ns => [duplicate, ...ns]);
     if (options.open !== false) {
       setSelectedId(id);
@@ -2394,8 +2378,7 @@ function MnApp() {
   const updateNote = (id, patch) => {
     setNotes(ns => ns.map(n => {
       if (n.id !== id) return n;
-      const resolved = typeof patch === 'function' ? patch(n) : patch;
-      return { ...n, ...resolved, modifiedAt: new Date().toISOString() };
+      return MN_APP_MUTATIONS.applyNotePatch(n, patch);
     }));
     markDirty(id);
   };
@@ -2403,10 +2386,11 @@ function MnApp() {
   const updateNoteBody = useCallbackA((id, bodyOrUpdater) => {
     setNotes(ns => ns.map(n => {
       if (n.id !== id) return n;
-      const currentBody = mnNormalizeNoteBody(mnBlocksToMd(n.blocks || []), n.title || 'Untitled');
-      const nextBody = typeof bodyOrUpdater === 'function' ? bodyOrUpdater(currentBody, n) : bodyOrUpdater;
-      const cleanBody = mnNormalizeNoteBody(nextBody || '', n.title || 'Untitled');
-      return { ...n, body: cleanBody, blocks: mnMdToBlocks(cleanBody || ''), modifiedAt: new Date().toISOString() };
+      return MN_APP_MUTATIONS.applyNoteBodyUpdate(n, bodyOrUpdater, {
+        normalizeNoteBody: mnNormalizeNoteBody,
+        blocksToMd: mnBlocksToMd,
+        mdToBlocks: mnMdToBlocks,
+      });
     }));
     markDirty(id);
   }, [markDirty, mnMdToBlocks, mnBlocksToMd]);
@@ -2441,47 +2425,30 @@ function MnApp() {
   }, [updateNoteBody]);
 
   const renameNoteTitle = useCallbackA((noteId, title) => {
-    if (!String(title || '').trim()) return;
-    const source = notesWithBody.find(n => n.id === noteId);
-    if (!source) return;
-    const nextTitle = uniqueNoteTitle(title, noteId);
-    const previousTitle = source.title || '';
-    const linkUpdates = new Map();
-    notesWithBody.forEach(n => {
-      if (n.id === noteId) return;
-      const sourceBody = n.body || mnBlocksToMd(n.blocks || []);
-      const linkedBody = mnReplaceWikiLinkTitle(sourceBody, previousTitle, nextTitle);
-      if (linkedBody !== sourceBody) linkUpdates.set(n.id, mnNormalizeNoteBody(linkedBody, n.title || 'Untitled'));
+    const result = MN_APP_MUTATIONS.renameNoteTitleDrafts(notesWithBody, noteId, title, {
+      blocksToMd: mnBlocksToMd,
+      mdToBlocks: mnMdToBlocks,
+      replaceWikiLinkTitle: mnReplaceWikiLinkTitle,
+      normalizeNoteBody: mnNormalizeNoteBody,
     });
-    setNotes(ns => ns.map(n => {
-      if (n.id === noteId) return { ...n, title: nextTitle, modifiedAt: new Date().toISOString() };
-      const cleanBody = linkUpdates.get(n.id);
-      if (!cleanBody) return n;
-      return { ...n, body: cleanBody, blocks: mnMdToBlocks(cleanBody || ''), modifiedAt: new Date().toISOString() };
-    }));
-    markDirty(noteId);
-    linkUpdates.forEach((_body, id) => markDirty(id));
-  }, [notesWithBody, uniqueNoteTitle, markDirty, mnBlocksToMd, mnMdToBlocks]);
+    if (!result) return;
+    setNotes(result.notes);
+    result.dirtyIds.forEach(id => markDirty(id));
+  }, [notesWithBody, markDirty, mnBlocksToMd, mnMdToBlocks]);
 
   const convertNovelistType = useCallbackA((noteId, tag) => {
-    const cleanTag = normalizeTagName(tag);
-    const structureTags = new Set(['novel-act', 'novel-chapter', 'novel-scene']);
-    if (!structureTags.has(cleanTag)) return;
     const note = notes.find(n => n.id === noteId);
-    if (!note) return;
-    const nextTags = [
-      ...(note.tags || []).filter(existing => !structureTags.has(existing)),
-      cleanTag,
-    ].filter((value, index, arr) => arr.indexOf(value) === index);
+    const nextTags = MN_APP_MUTATIONS.convertNovelistTypeTags(note, tag, normalizeTagName);
+    if (!nextTags) return;
     updateNote(noteId, { tags: nextTags });
   }, [notes, updateNote]);
 
   const updateNoteBlocks = useCallbackA((id, blocksOrUpdater) => {
     setNotes(ns => ns.map(n => {
       if (n.id !== id) return n;
-      const prevBlocks = n.blocks || [];
-      const nextBlocks = window.MN_EDITOR_OPS.resolveBlocksChange(prevBlocks, blocksOrUpdater);
-      return { ...n, blocks: nextBlocks, modifiedAt: new Date().toISOString() };
+      return MN_APP_MUTATIONS.applyNoteBlocksUpdate(n, blocksOrUpdater, {
+        resolveBlocksChange: window.MN_EDITOR_OPS.resolveBlocksChange,
+      });
     }));
     markDirty(id);
   }, [markDirty]);
@@ -2539,19 +2506,12 @@ function MnApp() {
   const removeTag = (name) => {
     const clean = normalizeTagName(name);
     if (!clean || !tags.find(t => t.name === clean)) return;
-    const taggedNotes = notes.filter(n => (n.tags || []).includes(clean));
+    const tagRemoval = MN_APP_MUTATIONS.removeTagFromNotes(notes, clean);
     setTags(ts => ts.filter(t => t.name !== clean));
     if (selectedTag === clean) setSelectedTag(null);
-    if (taggedNotes.length) {
-      setNotes(ns => ns.map(n => {
-        if (!(n.tags || []).includes(clean)) return n;
-        return {
-          ...n,
-          tags: (n.tags || []).filter(t => t !== clean),
-          modifiedAt: new Date().toISOString(),
-        };
-      }));
-      taggedNotes.forEach(n => markDirty(n.id));
+    if (tagRemoval.dirtyIds.length) {
+      setNotes(tagRemoval.notes);
+      tagRemoval.dirtyIds.forEach(id => markDirty(id));
     }
     markTagsDirty();
   };
@@ -2768,18 +2728,11 @@ function MnApp() {
   }, [conflictNotice, notesWithBody, uniqueNoteTitle, mnBlocksToMd, mnMdToBlocks, markDirty, reloadConflictFromDisk]);
 
   const summarizeCanvas = (canvas) => ({
-    ...canvas,
-    id: canvas.id,
-    title: canvas.title || 'Untitled canvas',
-    createdAt: canvas.createdAt,
-    modifiedAt: canvas.modifiedAt,
-    elementCount: (canvas.elements || []).length,
+    ...MN_APP_MUTATIONS.summarizeCanvas(canvas),
   });
 
   const upsertCanvasList = (list, canvas) => {
-    const summary = summarizeCanvas(canvas);
-    return [summary, ...(list || []).filter(c => c.id !== summary.id)]
-      .sort((a, b) => new Date(b.modifiedAt || 0) - new Date(a.modifiedAt || 0));
+    return MN_APP_MUTATIONS.upsertCanvasList(list, canvas);
   };
 
   const cacheCanvases = useCallbackA((nextCanvases) => {
