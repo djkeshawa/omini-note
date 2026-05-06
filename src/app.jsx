@@ -53,13 +53,8 @@ const MN_NOVELIST_WORKFLOW_STATES = [
   { id: 'FINAL', next: null, color: 'oklch(0.55 0.15 145)', bg: 'oklch(0.95 0.04 145)' },
 ];
 
-const MN_NOTE_TEMPLATES = [
-  { id: 'daily', title: 'Daily Note', noteTitle: '{date}', tags: ['daily'], body: '# {date}\n\n## Focus\n- \n\n## Notes\n- \n\n## Tasks\n- [ ] \n' },
-  { id: 'meeting', title: 'Meeting Note', noteTitle: 'Meeting - {date}', tags: ['meeting'], body: '# Meeting - {date}\n\nAttendees:: \n\n## Agenda\n- \n\n## Notes\n- \n\n## Decisions\n- \n\n## Actions\n- [ ] \n' },
-  { id: 'project', title: 'Project Plan', noteTitle: 'Project plan', tags: ['project'], body: '# Project plan\n\nstatus:: TODO\n\n## Outcome\n\n## Milestones\n- \n\n## Next Actions\n- [ ] \n' },
-  { id: 'reading', title: 'Reading Note', noteTitle: 'Reading note', tags: ['reading'], body: '# Reading note\n\nAuthor:: \nSource:: \n\n## Summary\n\n## Highlights\n- \n\n## Follow-up\n- [ ] \n' },
-  { id: 'novel-scene', title: 'Novel Scene', noteTitle: 'Scene', tags: ['novel-scene'], body: 'status:: DRAFT\npov:: \nsetting:: \npurpose:: \n\n::: plot-points\n- Opening beat\n:::\n\nDraft the scene here.\n' },
-];
+const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
+const MN_NOTE_TEMPLATES = MN_APP_HELPERS.NOTE_TEMPLATES || [];
 
 const MN_NOVELIST_STARTERS = [
   {
@@ -586,71 +581,22 @@ function noteForDisk(n, mnBlocksToMd) {
 }
 
 function mnNormalizeNoteStatus(raw, states = []) {
-  const id = window.MN_LOGSEQ?.mnNormalizeWorkflowId
-    ? window.MN_LOGSEQ.mnNormalizeWorkflowId(raw)
-    : String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
-  return (states || []).some(state => state.id === id) ? id : '';
+  return MN_APP_HELPERS.normalizeWorkflowStatus
+    ? MN_APP_HELPERS.normalizeWorkflowStatus(raw, states, window.MN_LOGSEQ?.mnNormalizeWorkflowId)
+    : ((states || []).some(state => state.id === String(raw || '').trim().toUpperCase()) ? String(raw || '').trim().toUpperCase() : '');
 }
 
 function mnWorkflowNotePreview(note) {
-  return String(note?.body || '')
-    .split('\n')
-    .filter(line => !/^\s*-?\s*[a-zA-Z][a-zA-Z0-9_-]*::\s*/.test(line))
-    .join('\n')
-    .replace(/^#{1,4}\s+.*/gm, '')
-    .replace(/\[\[([^\]]+)\]\]/g, '$1')
-    .replace(/[`*>#]/g, '')
-    .replace(/-\s+\[[ x]\]/g, '')
-    .replace(/-\s+/g, '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .slice(0, 180);
+  return MN_APP_HELPERS.workflowNotePreview ? MN_APP_HELPERS.workflowNotePreview(note) : String(note?.body || '').slice(0, 180);
 }
 
 function collectWorkflowNotes(notes, states) {
-  const safeStates = states || [];
-  const stateIds = safeStates.map(s => s.id);
-  const counts = Object.fromEntries(stateIds.map(id => [id, 0]));
-  const byState = Object.fromEntries(stateIds.map(id => [id, []]));
-  const noteIdsByState = Object.fromEntries(stateIds.map(id => [id, new Set()]));
-  const archivedNotes = [];
-
-  notes.forEach(note => {
-    const workflow = mnNormalizeNoteStatus(mnBodyPropertyValue(note.body || '', 'status'), safeStates);
-    if (!workflow || !Object.prototype.hasOwnProperty.call(counts, workflow)) return;
-    const item = {
-      id: note.id,
-      noteId: note.id,
-      noteTitle: note.title,
-      title: note.title,
-      noteTags: note.tags || [],
-      text: mnWorkflowNotePreview(note),
-      kind: 'note',
-      workflow,
-      modifiedAt: note.modifiedAt || note.date,
-    };
-    if (note.workflowArchived) {
-      archivedNotes.push({
-        id: note.id,
-        title: note.title,
-        tags: note.tags || [],
-        workflow,
-        workflowCount: 1,
-      });
-      return;
-    }
-    counts[item.workflow]++;
-    noteIdsByState[item.workflow].add(note.id);
-    byState[item.workflow].push(item);
-  });
-
-  return {
-    counts,
-    byState,
-    noteIdsByState,
-    archivedNotes,
-    total: Object.values(counts).reduce((sum, count) => sum + count, 0),
-  };
+  return MN_APP_HELPERS.collectWorkflowNotes
+    ? MN_APP_HELPERS.collectWorkflowNotes(notes, states, {
+      propertyValue: mnBodyPropertyValue,
+      normalizeId: window.MN_LOGSEQ?.mnNormalizeWorkflowId,
+    })
+    : { counts: {}, byState: {}, noteIdsByState: {}, archivedNotes: [], total: 0 };
 }
 
 function collectWorkflowBlocks(notes, states) {
@@ -679,7 +625,7 @@ function mnNormalizeWorkflowStatesForApp(states) {
 }
 
 function mnReminderKey(item) {
-  return [item.noteId, item.line ?? item.blockId ?? '', item.remindAt?.date || '', item.remindAt?.time || '', item.text || ''].join('|');
+  return MN_APP_HELPERS.reminderKey ? MN_APP_HELPERS.reminderKey(item) : [item.noteId, item.line ?? item.blockId ?? '', item.remindAt?.date || '', item.remindAt?.time || '', item.text || ''].join('|');
 }
 
 function mnReadSnoozedReminders() {
@@ -694,34 +640,9 @@ function mnWriteSnoozedReminder(key, until) {
 }
 
 function mnCollectReminderItems(notes) {
-  const parser = window.MN_REMIND;
-  if (!parser?.parse) return [];
-  const out = [];
-  notes.forEach(note => {
-    const pushItem = (text, meta = {}) => {
-      const remindAt = parser.parse(text);
-      if (!remindAt) return;
-      out.push({
-        noteId: note.id,
-        noteTitle: note.title,
-        text: parser.strip ? parser.strip(text) : String(text || '').replace(remindAt.raw, '').trim(),
-        remindAt,
-        ...meta,
-      });
-    };
-    if (note.blocks?.length && window.mnWalk) {
-      window.mnWalk(note.blocks, block => {
-        if (block.kind === 'todo' && block.checked) return;
-        pushItem(block.content || '', { blockId: block.id });
-      });
-      return;
-    }
-    String(note.body || '').split('\n').forEach((line, lineIndex) => {
-      if (/^\s*-\s+\[[xX]\]/.test(line)) return;
-      pushItem(line, { line: lineIndex });
-    });
-  });
-  return out.map(item => ({ ...item, key: mnReminderKey(item) }));
+  return MN_APP_HELPERS.collectReminderItems
+    ? MN_APP_HELPERS.collectReminderItems(notes, window.MN_REMIND, window.mnWalk)
+    : [];
 }
 
 function mnPlayReminderSound() {
@@ -745,20 +666,11 @@ function mnPlayReminderSound() {
 }
 
 function mnReminderDisplayDate(item) {
-  const at = item?.remindAt?.at;
-  if (!at) return '';
-  return at.toLocaleString([], {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return MN_APP_HELPERS.reminderDisplayDate ? MN_APP_HELPERS.reminderDisplayDate(item) : '';
 }
 
 function mnReminderStatusLabel(status) {
-  if (status === 'due') return 'Due';
-  if (status === 'snoozed') return 'Snoozed';
-  return 'Upcoming';
+  return MN_APP_HELPERS.reminderStatusLabel ? MN_APP_HELPERS.reminderStatusLabel(status) : 'Upcoming';
 }
 
 const MN_LAUNCH_BLOOMS = [
@@ -1553,20 +1465,10 @@ function MnCommandPalette({ open, commands, onClose, T }) {
     setActive(0);
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [open]);
-  const items = useMemoA(() => {
-    const q = query.trim().toLowerCase();
-    return (commands || [])
-      .filter(cmd => cmd.enabled !== false)
-      .map(cmd => {
-        const hay = `${cmd.title} ${cmd.section || ''} ${cmd.keywords || ''}`.toLowerCase();
-        const score = !q ? 0 : hay.includes(q) ? hay.indexOf(q) : 9999;
-        return { cmd, score };
-      })
-      .filter(item => !q || item.score < 9999)
-      .sort((a, b) => a.score - b.score || a.cmd.title.localeCompare(b.cmd.title))
-      .slice(0, 12)
-      .map(item => item.cmd);
-  }, [commands, query]);
+  const items = useMemoA(() => MN_APP_HELPERS.filterCommands
+    ? MN_APP_HELPERS.filterCommands(commands, query, 12)
+    : (commands || []).filter(cmd => cmd.enabled !== false).slice(0, 12),
+  [commands, query]);
   useEffectA(() => setActive(0), [query]);
   if (!open) return null;
   const run = (cmd) => {
@@ -2650,10 +2552,12 @@ function MnApp() {
     if (searchHits != null) {
       const order = new Map(searchHits.map((id, i) => [id, i]));
       ns = ns.filter(n => order.has(n.id));
-      ns = ns.map(n => {
-        const detail = searchDetails.get(n.id);
-        return detail ? { ...n, __searchSnippet: detail.snippet, __matchedFields: detail.matchedFields } : n;
-      });
+      ns = MN_APP_HELPERS.decorateNotesWithSearchDetails
+        ? MN_APP_HELPERS.decorateNotesWithSearchDetails(ns, searchDetails)
+        : ns.map(n => {
+          const detail = searchDetails.get(n.id);
+          return detail ? { ...n, __searchSnippet: detail.snippet, __matchedFields: detail.matchedFields } : n;
+        });
       // Preserve search rank order when querying; otherwise default sort
       ns.sort((a, b) => order.get(a.id) - order.get(b.id));
       return ns;
@@ -2797,15 +2701,15 @@ function MnApp() {
   }, [markDirty, navigateView, tweaks.defaultTags, tags]);
 
   const createNoteFromTemplate = useCallbackA((templateId) => {
-    const template = MN_NOTE_TEMPLATES.find(item => item.id === templateId) || MN_NOTE_TEMPLATES[0];
-    const date = new Date().toISOString().slice(0, 10);
-    const title = String(template.noteTitle || template.title || 'Untitled').replaceAll('{date}', date);
-    const body = String(template.body || '').replaceAll('{date}', date);
-    return createNote({ title: uniqueNoteTitle(title), body, tags: template.tags || [] });
+    const template = MN_APP_HELPERS.templateById ? MN_APP_HELPERS.templateById(templateId) : (MN_NOTE_TEMPLATES.find(item => item.id === templateId) || MN_NOTE_TEMPLATES[0]);
+    const expanded = MN_APP_HELPERS.expandTemplate
+      ? MN_APP_HELPERS.expandTemplate(template)
+      : { noteTitle: template?.noteTitle || template?.title || 'Untitled', body: template?.body || '', tags: template?.tags || [] };
+    return createNote({ title: uniqueNoteTitle(expanded.noteTitle), body: expanded.body, tags: expanded.tags || [] });
   }, [createNote, uniqueNoteTitle]);
 
   const createDailyNote = useCallbackA(() => {
-    const date = new Date().toISOString().slice(0, 10);
+    const date = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
     const existing = notesWithBody.find(note => String(note.title || '').trim() === date);
     if (existing) {
       setSelectedId(existing.id);

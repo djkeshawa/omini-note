@@ -7,6 +7,7 @@ const vm = require('node:vm');
 
 const ops = require('../src/editorOps.js');
 const tableOps = require('../src/tableOps.js');
+const appHelpers = require('../src/appHelpers.js');
 
 async function withIsolatedStore(fn) {
   const previousHome = process.env.HOME;
@@ -44,6 +45,65 @@ function loadOutlineForTest() {
 function block(content, annotations = []) {
   return { id: Math.random().toString(36).slice(2), content, annotations, children: [] };
 }
+
+test('App helpers expand templates, rank commands, and decorate search results', () => {
+  const expanded = appHelpers.expandTemplate(appHelpers.templateById('daily'), { date: '2026-05-06' });
+  assert.equal(expanded.noteTitle, '2026-05-06');
+  assert.match(expanded.body, /# 2026-05-06/);
+  assert.deepEqual(expanded.tags, ['daily']);
+
+  const commands = [
+    { id: 'settings', title: 'Open settings', section: 'System' },
+    { id: 'daily', title: 'Open daily note', section: 'Create', keywords: 'journal today' },
+    { id: 'disabled', title: 'Daily disabled', enabled: false },
+  ];
+  assert.deepEqual(appHelpers.filterCommands(commands, 'daily').map(cmd => cmd.id), ['daily']);
+
+  const notes = [{ id: 'a', title: 'Alpha' }, { id: 'b', title: 'Beta' }];
+  const decorated = appHelpers.decorateNotesWithSearchDetails(notes, new Map([
+    ['b', { snippet: 'matched body', matchedFields: ['body'] }],
+  ]));
+  assert.equal(decorated[0].__searchSnippet, undefined);
+  assert.equal(decorated[1].__searchSnippet, 'matched body');
+  assert.deepEqual(decorated[1].__matchedFields, ['body']);
+});
+
+test('App helpers collect reminders and workflow notes without renderer state', () => {
+  const parser = {
+    parse(text) {
+      const match = String(text || '').match(/@remind\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?/);
+      if (!match) return null;
+      return { raw: match[0], date: match[1], time: match[2] || '', at: new Date(`${match[1]}T${match[2] || '09:00'}:00.000Z`) };
+    },
+    strip(text) {
+      return String(text || '').replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/, '').trim();
+    },
+  };
+  const walk = (blocks, visit) => blocks.forEach(visit);
+  const reminders = appHelpers.collectReminderItems([
+    { id: 'n1', title: 'Body note', body: '- [ ] Call @remind 2026-05-06 10:30\n- [x] Done @remind 2026-05-06 11:00' },
+    { id: 'n2', title: 'Block note', blocks: [
+      { id: 'b1', kind: 'todo', checked: true, content: 'Ignored @remind 2026-05-06 12:00' },
+      { id: 'b2', kind: 'todo', checked: false, content: 'Ship @remind 2026-05-07' },
+    ] },
+  ], parser, walk);
+  assert.equal(reminders.length, 2);
+  assert.equal(reminders[0].text, '- [ ] Call');
+  assert.match(reminders[0].key, /^n1\|0\|2026-05-06\|10:30\|/);
+  assert.equal(reminders[1].blockId, 'b2');
+  assert.equal(appHelpers.reminderStatusLabel('snoozed'), 'Snoozed');
+
+  const workflow = appHelpers.collectWorkflowNotes([
+    { id: 'n1', title: 'Draft', tags: ['project'], body: 'status:: DRAFT\n# Draft\n- Body', modifiedAt: '2026-05-06T00:00:00.000Z' },
+    { id: 'n2', title: 'Archived', tags: [], body: 'status:: DONE\nClosed', workflowArchived: true },
+    { id: 'n3', title: 'No status', tags: [], body: 'Body' },
+  ], [{ id: 'DRAFT' }, { id: 'DONE' }]);
+  assert.equal(workflow.counts.DRAFT, 1);
+  assert.equal(workflow.counts.DONE, 0);
+  assert.deepEqual([...workflow.noteIdsByState.DRAFT], ['n1']);
+  assert.deepEqual(workflow.archivedNotes.map(note => note.id), ['n2']);
+  assert.equal(workflow.byState.DRAFT[0].text, 'Body');
+});
 
 test('Enter in the middle splits content and annotations without duplicating the tail', () => {
   const first = block('hello world', [
@@ -966,6 +1026,7 @@ test('Novelist order and note-level status properties drive visible workflow', (
   const sandbox = {
     React: { createElement() {}, useState() {}, useEffect() {}, useMemo() {}, useCallback() {}, useRef() {} },
     window: {
+      MN_APP_HELPERS: appHelpers,
       MN_LOGSEQ: {
         mnNormalizeWorkflowId(raw) {
           return String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
@@ -1593,10 +1654,11 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
+  const helpers = fs.readFileSync(path.join(__dirname, '../src/appHelpers.js'), 'utf8');
 
   assert.match(app, /workflowArchived: !!n\.workflowArchived/);
-  assert.match(app, /if \(note\.workflowArchived\) \{/);
-  assert.match(app, /archivedNotes\.push/);
+  assert.match(helpers, /if \(note\.workflowArchived\) \{/);
+  assert.match(helpers, /archivedNotes\.push/);
   assert.match(app, /const updateWorkflowArchived = useCallbackA/);
   assert.match(app, /archivedNotes=\{workflowViewData\.archivedNotes\}/);
   assert.match(app, /onSetWorkflowArchived=\{updateWorkflowArchived\}/);
@@ -1726,6 +1788,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
 
 test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
@@ -1734,6 +1797,8 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
 
   assert.match(app, /function MnAppNoticeDialog/);
+  assert.ok(html.indexOf('src="src/appHelpers.js"') < html.indexOf('src="src/app.jsx"'));
+  assert.match(app, /const MN_APP_HELPERS = window\.MN_APP_HELPERS/);
   assert.match(app, /const searchSeq = useRefA\(0\)/);
   assert.match(app, /if \(seq === searchSeq\.current && res\.ok\) setSearchHits/);
   assert.match(app, /Load first, then switch atomically/);
