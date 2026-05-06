@@ -18,7 +18,9 @@ const SPELL_DICTIONARY_PATHS = [
   '/usr/share/hunspell/en_US.dic',
   '/usr/share/hunspell/en_GB.dic',
 ];
+const SPELL_SUGGESTION_CACHE_LIMIT = 1000;
 let spellWords = null;
+let spellWordsPromise = null;
 let spellWordBuckets = null;
 let spellDictionaryAvailable = false;
 const spellSuggestionCache = new Map();
@@ -32,18 +34,124 @@ const COMMON_SPELL_WORDS = [
   'syntax', 'text', 'their', 'there', 'these', 'this', 'typing', 'with',
   'word', 'words', 'working',
 ];
+const PREF_TOP_LEVEL_KEYS = new Set(['activeVaultId', 'tweaks', 'aiConfig']);
+const PREF_TWEAK_DEFAULTS = {
+  theme: 'light',
+  density: 'comfortable',
+  graphStyle: 'force',
+  todoVariant: 'list',
+  toastVariant: 'card',
+  fontChoice: 'Editorial (Newsreader + Inter)',
+  showNoteList: true,
+  showSidebar: true,
+  editorWidth: 'medium',
+  fontSize: 'default',
+  appFontSize: 'default',
+  indentGuides: true,
+  spellCheck: true,
+  autoLink: true,
+  collapseByDefault: false,
+  sortBy: 'modified',
+  defaultTags: '',
+  pinnedFirst: true,
+  rollupFormat: 'long',
+  reminderSound: false,
+  showOverdue: true,
+  snoozeMinutes: '15',
+  weekStart: 'monday',
+  workflowStates: null,
+  autoSave: true,
+  storageFormat: 'markdown',
+  sync: 'local',
+};
+const PREF_TWEAK_KEYS = new Set(Object.keys(PREF_TWEAK_DEFAULTS));
+const PREF_STRING_LIMIT = 500;
+const PREF_SECRET_LIMIT = 4096;
 
 function normalizeSpellWord(word) {
   return String(word || '').toLowerCase().replace(/^[^a-z']+|[^a-z']+$/g, '');
 }
 
-function loadSpellWords() {
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function capString(value, field, maxLength = PREF_STRING_LIMIT) {
+  const clean = String(value || '').replace(/\0/g, '').trim();
+  if (clean.length > maxLength) throw new Error(`${field} is too long`);
+  return clean;
+}
+
+function sanitizeWorkflowStatesForPrefs(value) {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > 20) throw new Error('Invalid workflowStates preference');
+  return value.map((state, index) => {
+    if (!isPlainObject(state)) throw new Error('Invalid workflowStates preference');
+    return {
+      id: capString(state.id, `workflowStates[${index}].id`, 40),
+      next: state.next == null ? null : capString(state.next, `workflowStates[${index}].next`, 40),
+      color: capString(state.color, `workflowStates[${index}].color`, 120),
+      bg: capString(state.bg, `workflowStates[${index}].bg`, 120),
+    };
+  });
+}
+
+function sanitizeTweaksForPrefs(tweaks) {
+  if (!isPlainObject(tweaks)) throw new Error('Invalid tweaks patch');
+  const clean = {};
+  for (const [key, value] of Object.entries(tweaks)) {
+    if (!PREF_TWEAK_KEYS.has(key)) throw new Error('Unsupported tweak field: ' + key);
+    const defaultValue = PREF_TWEAK_DEFAULTS[key];
+    if (key === 'workflowStates') {
+      clean.workflowStates = sanitizeWorkflowStatesForPrefs(value);
+    } else if (typeof defaultValue === 'boolean') {
+      if (typeof value !== 'boolean') throw new Error('Invalid tweak field: ' + key);
+      clean[key] = value;
+    } else if (typeof defaultValue === 'string') {
+      clean[key] = capString(value, key);
+    } else if (defaultValue == null) {
+      clean[key] = value == null ? null : value;
+    }
+  }
+  return clean;
+}
+
+function sanitizeAiConfigForPrefs(aiConfig) {
+  if (!isPlainObject(aiConfig)) throw new Error('Invalid AI config patch');
+  const clean = {};
+  for (const [key, value] of Object.entries(aiConfig)) {
+    if (typeof value === 'string') clean[key] = capString(value, key, PREF_SECRET_LIMIT);
+    else if (typeof value === 'number' || typeof value === 'boolean' || value == null) clean[key] = value;
+    else throw new Error('Invalid AI config field: ' + key);
+  }
+  return clean;
+}
+
+function sanitizePrefsPatchFromIpc(patch) {
+  if (!isPlainObject(patch)) throw new Error('Invalid preferences patch');
+  const clean = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (!PREF_TOP_LEVEL_KEYS.has(key)) throw new Error('Unsupported preferences field: ' + key);
+    if (key === 'activeVaultId') clean.activeVaultId = capString(value, 'activeVaultId', 120);
+    if (key === 'tweaks') clean.tweaks = sanitizeTweaksForPrefs(value);
+    if (key === 'aiConfig') clean.aiConfig = sanitizeAiConfigForPrefs(value);
+  }
+  return clean;
+}
+
+async function loadSpellWords() {
   if (spellWords) return spellWords;
+  if (spellWordsPromise) return await spellWordsPromise;
+  spellWordsPromise = loadSpellWordsFromDisk();
+  return await spellWordsPromise;
+}
+
+async function loadSpellWordsFromDisk() {
   const words = new Set();
   let loadedDictionaryWords = 0;
   for (const file of SPELL_DICTIONARY_PATHS) {
     try {
-      const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+      const lines = (await fs.promises.readFile(file, 'utf8')).split(/\r?\n/);
       for (const line of lines) {
         const raw = line.replace(/\/.*$/, '').trim();
         const word = normalizeSpellWord(raw);
@@ -105,12 +213,16 @@ function spellSuggestions(word, dictionary) {
     .sort((a, b) => a.distance - b.distance || a.candidate.length - b.candidate.length || a.candidate.localeCompare(b.candidate))
     .slice(0, 5)
     .map(item => item.candidate);
+  if (spellSuggestionCache.size >= SPELL_SUGGESTION_CACHE_LIMIT) {
+    const oldest = spellSuggestionCache.keys().next().value;
+    spellSuggestionCache.delete(oldest);
+  }
   spellSuggestionCache.set(word, suggestions);
   return suggestions;
 }
 
-function spellcheckWords(inputWords = []) {
-  const dictionary = loadSpellWords();
+async function spellcheckWords(inputWords = []) {
+  const dictionary = await loadSpellWords();
   if (!spellDictionaryAvailable) return {};
   const result = {};
   for (const raw of inputWords) {
@@ -268,6 +380,7 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
       spellcheck: true,
@@ -325,12 +438,12 @@ function wrap(fn) {
 }
 
 async function setPrefsFromIpc(patch) {
-  if (patch && typeof patch === 'object' && !Array.isArray(patch) &&
-      Object.prototype.hasOwnProperty.call(patch, 'aiConfig')) {
-    const config = ai.setConfig(patch.aiConfig);
-    return await store.setPrefs({ ...patch, aiConfig: config });
+  const cleanPatch = sanitizePrefsPatchFromIpc(patch);
+  if (Object.prototype.hasOwnProperty.call(cleanPatch, 'aiConfig')) {
+    const config = ai.setConfig(cleanPatch.aiConfig);
+    return await store.setPrefs({ ...cleanPatch, aiConfig: config });
   }
-  return await store.setPrefs(patch);
+  return await store.setPrefs(cleanPatch);
 }
 
 // Vault management
@@ -529,6 +642,7 @@ app.whenReady().then(async () => {
       }
     }
     idx.init();                 // opens / creates the local search index
+    loadSpellWords().catch(e => console.error('spell dictionary preload failed', e));
     await rescanAllVaults();    // sync index with disk
   } catch (e) {
     console.error('boot init failed', e);

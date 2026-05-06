@@ -1654,8 +1654,10 @@ test('Vault switcher uses VispNote icon instead of letter tiles', () => {
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/markdown.jsx'), 'utf8');
   const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
   const store = require('../lib/store');
   const ai = require('../lib/ai');
@@ -1665,12 +1667,18 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/);
   assert.match(main, /webContents\.on\('will-navigate'/);
   assert.match(main, /setPermissionRequestHandler/);
+  assert.match(main, /sandbox: true/);
   assert.match(main, /webSecurity: true/);
   assert.match(main, /allowRunningInsecureContent: false/);
   assert.match(main, /async function setPrefsFromIpc\(patch\)/);
-  assert.match(main, /Object\.prototype\.hasOwnProperty\.call\(patch, 'aiConfig'\)/);
-  assert.match(main, /const config = ai\.setConfig\(patch\.aiConfig\)/);
-  assert.match(main, /store\.setPrefs\(\{ \.\.\.patch, aiConfig: config \}\)/);
+  assert.match(main, /function sanitizePrefsPatchFromIpc\(patch\)/);
+  assert.match(main, /const PREF_TWEAK_KEYS = new Set\(Object\.keys\(PREF_TWEAK_DEFAULTS\)\)/);
+  assert.match(main, /if \(!PREF_TOP_LEVEL_KEYS\.has\(key\)\) throw new Error\('Unsupported preferences field: ' \+ key\)/);
+  assert.match(main, /if \(!PREF_TWEAK_KEYS\.has\(key\)\) throw new Error\('Unsupported tweak field: ' \+ key\)/);
+  assert.match(main, /const cleanPatch = sanitizePrefsPatchFromIpc\(patch\)/);
+  assert.match(main, /Object\.prototype\.hasOwnProperty\.call\(cleanPatch, 'aiConfig'\)/);
+  assert.match(main, /const config = ai\.setConfig\(cleanPatch\.aiConfig\)/);
+  assert.match(main, /store\.setPrefs\(\{ \.\.\.cleanPatch, aiConfig: config \}\)/);
   assert.match(main, /ipcMain\.handle\('mn:setPrefs',\s+wrap\(setPrefsFromIpc\)\)/);
   assert.doesNotMatch(main, /ipcMain\.handle\('mn:setPrefs',\s+wrap\(store\.setPrefs\)\)/);
   assert.match(main, /ai\.setConfig\(prefs\.aiConfig, \{ rejectUnknown: false \}\)/);
@@ -1678,6 +1686,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /idx\.init\(\)/);
   assert.match(main, /result\?\.config\?\.provider === 'ollama'/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: ai\.getConfig\(\) \}\)/);
+  assert.match(indexSource, /db\.transaction\(\(\) => \{/);
+  assert.match(indexSource, /DROP TABLE note_embeddings/);
+  assert.match(app, /replace\(\/\[\^A-Z0-9_-\]\+\/g, '-'\)/);
 
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /default-src 'self'/);
@@ -1802,6 +1813,11 @@ test('Fallback spell checker underlines misspellings and offers replacements', (
 
   assert.match(main, /function spellcheckWords/);
   assert.match(main, /SPELL_DICTIONARY_PATHS/);
+  assert.match(main, /const SPELL_SUGGESTION_CACHE_LIMIT = 1000/);
+  assert.match(main, /async function loadSpellWords\(\)/);
+  assert.match(main, /await fs\.promises\.readFile\(file, 'utf8'\)/);
+  assert.match(main, /loadSpellWords\(\)\.catch/);
+  assert.match(main, /spellSuggestionCache\.size >= SPELL_SUGGESTION_CACHE_LIMIT/);
   assert.match(main, /loadedDictionaryWords < 1000/);
   assert.match(main, /if \(!spellDictionaryAvailable\) return \{\}/);
   assert.match(main, /spellSuggestions\(word, dictionary\)/);

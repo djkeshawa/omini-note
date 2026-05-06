@@ -234,7 +234,10 @@ function noteForDisk(n, mnBlocksToMd) {
 function mnNormalizeNoteStatus(raw, states = []) {
   return MN_APP_HELPERS.normalizeWorkflowStatus
     ? MN_APP_HELPERS.normalizeWorkflowStatus(raw, states, window.MN_LOGSEQ?.mnNormalizeWorkflowId)
-    : ((states || []).some(state => state.id === String(raw || '').trim().toUpperCase()) ? String(raw || '').trim().toUpperCase() : '');
+    : (() => {
+      const id = String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
+      return (states || []).some(state => state.id === id) ? id : '';
+    })();
 }
 
 function mnWorkflowNotePreview(note) {
