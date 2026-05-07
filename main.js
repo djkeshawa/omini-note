@@ -617,7 +617,7 @@ ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(e
 ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(payload)));
 ipcMain.handle('mn:ai.cancel',      wrap((jobId) => ai.cancelJob(jobId)));
 ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, store)));
-ipcMain.handle('mn:ai.related',     wrap((vaultId, noteId, options) => ai.relatedNotes(vaultId, noteId, store, options || {})));
+ipcMain.handle('mn:ai.related',     wrap(async (vaultId, noteId, options) => { await indexReadyPromise; return ai.relatedNotes(vaultId, noteId, store, options || {}); }));
 ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.getConfig()));
 ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {
   const config = ai.setConfig(patch);
