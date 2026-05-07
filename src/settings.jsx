@@ -8,6 +8,21 @@ function MnSettingsModal({
   onExportBackup, onImportBackup, onOpenVaultHealth, onRebuildIndex,
 }) {
   const [section, setSection] = useStateS('appearance');
+  const [updateState, setUpdateState] = useStateS(null);
+
+  useEffectS(() => {
+    let alive = true;
+    window.mn?.updates?.status?.().then(res => {
+      if (alive && res?.ok) setUpdateState(res.value);
+    }).catch(() => {});
+    const off = window.mn?.updates?.onState?.(state => {
+      if (alive) setUpdateState(state);
+    });
+    return () => {
+      alive = false;
+      if (typeof off === 'function') off();
+    };
+  }, []);
 
   const sections = [
     { k: 'appearance', label: 'Appearance', group: 'Workspace', sub: 'Theme, density, fonts', icon: iconAppearance },
@@ -193,7 +208,7 @@ function MnSettingsModal({
               />
             )}
             {section === 'shortcuts' && <SectionShortcuts T={T} />}
-            {section === 'about' && <SectionAbout T={T} stats={stats} />}
+            {section === 'about' && <SectionAbout T={T} stats={stats} updateState={updateState} setUpdateState={setUpdateState} />}
           </div>
         </div>
       </div>
@@ -252,13 +267,20 @@ function Row({ T, label, sub, children, last = false }) {
 function Segmented({ T, value, onChange, options }) {
   return (
     <div style={{
-      display: 'inline-flex', background: T.bgSub,
-      border: `1px solid ${T.lineSub}`, borderRadius: 7, padding: 2,
+      display: 'grid',
+      gridTemplateColumns: `repeat(${Math.max(1, options.length)}, minmax(0, 1fr))`,
+      gap: 3,
+      background: T.bgSub,
+      border: `1px solid ${T.lineSub}`, borderRadius: 7, padding: 3,
       maxWidth: '100%',
+      minWidth: options.length > 1 ? 220 : undefined,
+      boxSizing: 'border-box',
     }}>
       {options.map(o => (
         <button key={o.value} onClick={() => onChange(o.value)} style={{
-          padding: '5px 12px', borderRadius: 5, border: 'none',
+          minWidth: 0,
+          minHeight: 28,
+          padding: '5px 10px', borderRadius: 5, border: 'none',
           background: value === o.value ? T.bg : 'transparent',
           color: value === o.value ? T.ink : T.inkMed,
           fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
@@ -266,6 +288,11 @@ function Segmented({ T, value, onChange, options }) {
           boxShadow: value === o.value ? `0 1px 2px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
           textTransform: 'capitalize',
           whiteSpace: 'nowrap',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          boxSizing: 'border-box',
         }}>{o.label}</button>
       ))}
     </div>
@@ -621,7 +648,7 @@ function SectionAI({ T }) {
       ? (status?.chatModelOk === false
         ? `Chat model missing: ${status?.config?.chatModel || config?.chatModel}`
         : status?.embedModelOk === false
-          ? `${models.length} Ollama model${models.length === 1 ? '' : 's'} available. Ask AI will use keyword search until ${status?.config?.embedModel || config?.embedModel} is installed.`
+          ? (status?.embedModelReason || `${models.length} Ollama model${models.length === 1 ? '' : 's'} available. Ask AI will use keyword search until ${status?.config?.embedModel || config?.embedModel} is installed.`)
           : `${models.length} Ollama model${models.length === 1 ? '' : 's'} available`)
       : status?.reason || status?.connectError || 'Ollama is not responding yet.')
     : (providerReady
@@ -1297,7 +1324,31 @@ function SectionShortcuts({ T }) {
   );
 }
 
-function SectionAbout({ T, stats }) {
+function SectionAbout({ T, stats, updateState, setUpdateState }) {
+  const version = updateState?.currentVersion || '0.1.17';
+  const checking = updateState?.status === 'checking';
+  const statusText = updateState?.status === 'downloaded'
+    ? `Update ready: ${updateState?.updateInfo?.version || 'new version'}`
+    : updateState?.status === 'available'
+      ? `Downloading ${updateState?.updateInfo?.version || 'update'}`
+      : updateState?.status === 'manual'
+        ? 'Linux deb installs update from GitHub Releases'
+        : updateState?.status === 'not-available'
+          ? 'VispNote is up to date'
+          : updateState?.status === 'error'
+            ? updateState.error || 'Update check failed'
+            : checking
+              ? 'Checking for updates'
+              : 'Update checks use GitHub Releases';
+  const checkUpdates = async () => {
+    if (!window.mn?.updates?.check) return;
+    const res = await window.mn.updates.check();
+    if (res?.ok && setUpdateState) setUpdateState(res.value);
+  };
+  const installUpdate = async () => {
+    if (window.mn?.updates?.install) await window.mn.updates.install();
+  };
+  const openReleases = () => window.mn?.openExternal?.(updateState?.manualUrl || 'https://github.com/djkeshawa/visp-note/releases/latest');
   return (
     <div>
       <H T={T} label="About VispNote" sub="Local-first, markdown-native notes." />
@@ -1309,7 +1360,7 @@ function SectionAbout({ T, stats }) {
           }}><img src="assets/vispnote-icon.png" alt="" aria-hidden="true" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} /></div>
           <div>
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>VispNote</div>
-            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>Version 0.1.13 · Prototype</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>Version {version} · Prototype</div>
           </div>
         </div>
         <div style={{
@@ -1322,8 +1373,17 @@ function SectionAbout({ T, stats }) {
         <Stat T={T} label="Links" value={stats.linkCount} />
         <Stat T={T} label="Words" value={stats.wordCount.toLocaleString()} />
       </div>
+      <SettingsCard T={T} style={{ marginBottom: 16 }}>
+        <Row T={T} label="Updates" sub={statusText} last>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <BtnOutline T={T} disabled={checking} onClick={checkUpdates}>{checking ? 'Checking...' : 'Check for updates'}</BtnOutline>
+            {updateState?.downloaded && <BtnOutline T={T} onClick={installUpdate}>Install and restart</BtnOutline>}
+            {(updateState?.status === 'manual' || updateState?.status === 'error') && <BtnOutline T={T} onClick={openReleases}>Open releases</BtnOutline>}
+          </div>
+        </Row>
+      </SettingsCard>
       <div style={{ display: 'flex', gap: 8 }}>
-        <BtnOutline T={T}>Release notes</BtnOutline>
+        <BtnOutline T={T} onClick={openReleases}>Release notes</BtnOutline>
         <BtnOutline T={T}>Send feedback</BtnOutline>
       </div>
     </div>

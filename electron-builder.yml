@@ -5,6 +5,11 @@ copyright: Copyright © 2026 djkeshawa
 directories:
   output: dist
 
+publish:
+  provider: github
+  owner: djkeshawa
+  repo: visp-note
+
 files:
   - vispnote.html
   - main.js

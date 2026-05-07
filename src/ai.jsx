@@ -1,5 +1,5 @@
-// Ask-AI modal: query → RAG over your notes via local Ollama.
-// Lives as an overlay (similar to MnSettingsModal / MnQuickCapture).
+// Ask AI: query -> RAG over your notes via local Ollama or configured providers.
+// Renders as the main AI workspace and can still run as a compact overlay.
 
 const { useState: useStateAI, useEffect: useEffectAI, useRef: useRefAI } = React;
 
@@ -19,6 +19,81 @@ const MN_ASK_SUGGESTIONS = [
   'Format this page and link things together',
 ];
 
+const MN_AI_REPORT_TARGETS = {
+  openai: {
+    label: 'OpenAI',
+    url: 'https://help.openai.com/en/articles/10245791-reporting-content-in-chatgpt-and-openai-platforms',
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    url: 'https://openrouter.ai/docs/guides/overview/report-feedback',
+  },
+  anthropic: {
+    label: 'Anthropic',
+    url: 'mailto:usersafety@anthropic.com?subject=AI%20safety%20feedback',
+  },
+  gemini: {
+    label: 'Gemini',
+    url: 'https://support.google.com/gemini/answer/13275746',
+  },
+  ollama: {
+    label: 'Ollama or local model provider',
+    url: 'https://github.com/ollama/ollama/issues',
+  },
+  custom: {
+    label: 'Custom provider',
+    url: '',
+  },
+};
+
+async function mnAiProviderReportInfo() {
+  let config = null;
+  try {
+    const status = await window.mn?.ai?.status?.();
+    config = status?.value?.config || null;
+  } catch (e) {}
+  if (!config) {
+    try {
+      const res = await window.mn?.ai?.getConfig?.();
+      config = res?.value || null;
+    } catch (e) {}
+  }
+  const provider = String(config?.provider || 'ollama').toLowerCase();
+  const target = MN_AI_REPORT_TARGETS[provider] || MN_AI_REPORT_TARGETS.custom;
+  let url = target.url;
+  if (!url && provider === 'custom') {
+    try {
+      const base = new URL(String(config?.customBaseUrl || '').trim());
+      url = base.origin;
+    } catch (e) {}
+  }
+  return {
+    provider,
+    label: target.label,
+    model: config?.chatModel || '',
+    url,
+  };
+}
+
+async function mnReportAiOutput({ prompt = '', output = '', scope = 'AI output' } = {}) {
+  const info = await mnAiProviderReportInfo();
+  const report = [
+    `Provider: ${info.label}`,
+    info.model ? `Model: ${info.model}` : null,
+    `Scope: ${scope}`,
+    prompt ? `Prompt:\n${String(prompt).slice(0, 4000)}` : null,
+    output ? `Generated output:\n${String(output).slice(0, 8000)}` : null,
+  ].filter(Boolean).join('\n\n');
+  try { await navigator.clipboard?.writeText(report); } catch (e) {}
+  if (info.url && window.mn?.openExternal) {
+    const res = await window.mn.openExternal(info.url);
+    if (res && res.ok === false) throw new Error(res.error || 'Could not open provider report page');
+  }
+  return info;
+}
+
+window.MN_AI_REPORT = { report: mnReportAiOutput, targets: MN_AI_REPORT_TARGETS };
+
 function mnAskAiJobId() {
   return `ask_${Date.now().toString(36)}_${Math.floor(Math.random() * 100000).toString(36)}`;
 }
@@ -33,7 +108,7 @@ function mnAskStatusText(status) {
 
 function MnAskAI({
   vaultId, currentNote, allNotes, onClose, onOpenNote, onCreateNote, onApplyCurrentPageBody, onTagCurrentNote,
-  session, setSession, onBackgroundComplete, initialQuery, T,
+  session, setSession, onBackgroundComplete, initialQuery, T, embedded = false,
 }) {
   const [query, setQuery] = useStateAI('');
   const [status, setStatus] = useStateAI(null);
@@ -55,8 +130,9 @@ function MnAskAI({
   const pending = !!aiSession.pending;
   const error = aiSession.error || null;
   const activeAction = aiSession.activeAction || null;
-  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && !m.error);
-  const latestSourceCount = lastAssistant?.sources?.length || 0;
+  const latestResponseIndex = messages.reduce((found, message, index) => (
+    message.role === 'assistant' && !message.error && !message.stopped ? index : found
+  ), -1);
 
   useEffectAI(() => {
     inputRef.current?.focus();
@@ -72,8 +148,18 @@ function MnAskAI({
   }, [initialQuery]);
 
   useEffectAI(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, pending]);
+    const scrollNode = scrollRef.current;
+    if (!scrollNode) return;
+    const handle = requestAnimationFrame(() => {
+      const target = pending
+        ? scrollNode.querySelector('[data-mn-pending-response="true"]')
+        : scrollNode.querySelector('[data-mn-latest-response="true"]');
+      scrollNode.scrollTop = target
+        ? Math.max(0, target.offsetTop - scrollNode.offsetTop - 12)
+        : 0;
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [messages.length, pending]);
 
   const setActiveAction = (label) => {
     updateSession(prev => ({ ...(prev || {}), activeAction: label }));
@@ -171,6 +257,45 @@ function MnAskAI({
     setQuery('');
     let finalError = null;
     let stopped = false;
+    let streamingAssistantId = null;
+    const putAssistant = (patch) => {
+      if (!streamingAssistantId) streamingAssistantId = `assistant-${jobId}`;
+      updateSession(prev => {
+        const current = prev?.messages || [];
+        const idx = current.findIndex(m => m.id === streamingAssistantId);
+        const nextMessage = {
+          id: streamingAssistantId,
+          role: 'assistant',
+          text: '',
+          streaming: true,
+          ...(idx >= 0 ? current[idx] : {}),
+          ...patch,
+        };
+        const nextMessages = idx >= 0
+          ? current.map((m, i) => i === idx ? nextMessage : m)
+          : [...current, nextMessage];
+        return { ...(prev || {}), messages: nextMessages };
+      });
+    };
+    const appendAssistantToken = (token) => {
+      const chunk = String(token || '');
+      if (!chunk) return;
+      if (!streamingAssistantId) streamingAssistantId = `assistant-${jobId}`;
+      updateSession(prev => {
+        const current = prev?.messages || [];
+        const idx = current.findIndex(m => m.id === streamingAssistantId);
+        const base = idx >= 0 ? current[idx] : { id: streamingAssistantId, role: 'assistant', text: '', streaming: true };
+        const nextMessage = {
+          ...base,
+          text: String(base.text || '') + chunk,
+          streaming: true,
+        };
+        const nextMessages = idx >= 0
+          ? current.map((m, i) => i === idx ? nextMessage : m)
+          : [...current, nextMessage];
+        return { ...(prev || {}), messages: nextMessages, activeAction: 'Answering...' };
+      });
+    };
     try {
       if (route.type === 'action') {
         const actionResult = await runAction(q, route.action, jobId);
@@ -184,17 +309,18 @@ function MnAskAI({
         const qForAsk = priorMessages.length
           ? `Conversation so far:\n${priorMessages.slice(-6).map(m => `${m.role}: ${m.text}`).join('\n')}\n\nCurrent question: ${q}`
           : q;
-        const r = await window.mn.ai.ask(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null });
+        putAssistant({ text: '', streaming: true });
+        const askStream = window.mn?.ai?.askStream;
+        const r = askStream
+          ? await askStream(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null }, appendAssistantToken)
+          : await window.mn.ai.ask(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null });
         if (stoppedJobRef.current === jobId) return;
         if (!r.ok) {
           throw new Error(r.error || 'Unknown error');
         } else if (r.value && !r.value.ok) {
           throw new Error(r.value.error || 'Unknown error');
         } else {
-          updateSession(prev => ({
-            ...(prev || {}),
-            messages: [...(prev?.messages || []), { role: 'assistant', text: r.value.answer, sources: r.value.sources || [] }],
-          }));
+          putAssistant({ text: r.value.answer, sources: r.value.sources || [], streaming: false });
         }
       } else {
         setActiveAction('Thinking...');
@@ -202,25 +328,31 @@ function MnAskAI({
           ...priorMessages.slice(-6).map(m => ({ role: m.role, content: m.text })),
           { role: 'user', content: q },
         ];
-        const r = await window.mn.ai.chat({ messages: chatMessages, jobId });
+        putAssistant({ text: '', streaming: true });
+        const chatStream = window.mn?.ai?.chatStream;
+        const r = chatStream
+          ? await chatStream({ messages: chatMessages, jobId }, appendAssistantToken)
+          : await window.mn.ai.chat({ messages: chatMessages, jobId });
         if (stoppedJobRef.current === jobId) return;
         if (!r.ok) throw new Error(r.error || 'Unknown error');
         if (r.value && !r.value.ok) throw new Error(r.value.error || 'Unknown error');
-        updateSession(prev => ({
-          ...(prev || {}),
-          messages: [...(prev?.messages || []), { role: 'assistant', text: r.value.answer }],
-        }));
+        putAssistant({ text: r.value.answer, streaming: false });
       }
     } catch (e) {
       const msg = e.message || String(e);
       stopped = stoppedJobRef.current === jobId || /abort|cancel/i.test(msg);
       if (stopped) return;
       finalError = msg;
-      updateSession(prev => ({
-        ...(prev || {}),
-        error: msg,
-        messages: [...(prev?.messages || []), { role: 'assistant', text: msg, error: true }],
-      }));
+      if (streamingAssistantId) {
+        putAssistant({ text: msg, error: true, streaming: false });
+        updateSession(prev => ({ ...(prev || {}), error: msg }));
+      } else {
+        updateSession(prev => ({
+          ...(prev || {}),
+          error: msg,
+          messages: [...(prev?.messages || []), { role: 'assistant', text: msg, error: true }],
+        }));
+      }
     } finally {
       if (!stopped && stoppedJobRef.current !== jobId) {
         updateSession(prev => ({
@@ -277,7 +409,7 @@ function MnAskAI({
   };
 
   const onKey = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); closeOrBackground(); }
+    if (!embedded && e.key === 'Escape') { e.preventDefault(); closeOrBackground(); }
     else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
   };
 
@@ -287,54 +419,47 @@ function MnAskAI({
   const canAsk = reachable && chatOk;
   const statusText = mnAskStatusText(status);
 
-  return (
-    <div onClick={closeOrBackground} style={{
-      position: 'fixed', inset: 0, zIndex: 200,
-      background: 'color-mix(in oklab, oklch(0.2 0.02 240) 30%, transparent)',
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-      padding: '8vh 24px 24px', animation: 'mnFadeIn 140ms ease',
-    }}>
+  const content = (
       <div onClick={e => e.stopPropagation()} onKeyDown={onKey} style={{
-        width: '100%', maxWidth: 820, maxHeight: '86vh',
+        width: '100%', maxWidth: embedded ? 'none' : 820, height: embedded ? '100%' : 'auto', maxHeight: embedded ? 'none' : '86vh',
         background: T.bg, color: T.ink, borderRadius: 12,
-        border: `1px solid ${T.line}`,
-        boxShadow: `0 24px 60px color-mix(in oklab, ${T.ink} 30%, transparent)`,
+        border: embedded ? 'none' : `1px solid ${T.line}`,
+        boxShadow: embedded ? 'none' : `0 24px 60px color-mix(in oklab, ${T.ink} 30%, transparent)`,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        animation: 'mnSlideDown 160ms ease',
+        animation: embedded ? 'none' : 'mnSlideDown 160ms ease',
       }}>
         <div style={{
-          padding: '15px 18px 12px',
+          padding: embedded ? '12px 60px 12px 18px' : '12px 18px',
           borderBottom: `1px solid ${T.lineSub}`,
-          background: `linear-gradient(180deg, ${T.bg}, color-mix(in oklab, ${T.bgSub} 48%, ${T.bg}))`,
+          background: T.bg,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
-              width: 34,
-              height: 34,
-              borderRadius: 8,
+              width: 26,
+              height: 26,
+              borderRadius: 6,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: T.accent,
               background: T.accentSoft,
-              border: `1px solid ${T.selLine}`,
               flexShrink: 0,
             }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.45">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.45">
                 <path d="M8 2.4L9.1 5.9L12.6 7L9.1 8.1L8 11.6L6.9 8.1L3.4 7L6.9 5.9L8 2.4Z" strokeLinejoin="round" />
                 <path d="M12.4 10.4L13 12L14.6 12.6L13 13.2L12.4 14.8L11.8 13.2L10.2 12.6L11.8 12L12.4 10.4Z" strokeLinejoin="round" />
               </svg>
             </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>Ask AI</div>
+            <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 650, color: T.ink, flexShrink: 0 }}>Ask AI</div>
               <div style={{
-                marginTop: 2,
                 fontFamily: 'var(--mn-mono)',
                 fontSize: 10.5,
                 color: T.inkDim,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
+                minWidth: 0,
               }}>
                 {pending ? activeAction || 'Working on your request' : statusText}
               </div>
@@ -353,25 +478,17 @@ function MnAskAI({
                 Clear
               </button>
             )}
-            <button onClick={closeOrBackground} title={pending ? 'Run in background' : 'Close (Esc)'} style={iconBtn(T)}>
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
-                <path d="M4 4L12 12M12 4L4 12" strokeLinecap="round"/>
-              </svg>
-            </button>
-          </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-            gap: 8,
-            marginTop: 12,
-          }}>
-            <MnAskInfoChip label="Vault context" value={`${(allNotes || []).length} note${(allNotes || []).length === 1 ? '' : 's'}`} T={T} />
-            <MnAskInfoChip label="Current page" value={currentNote?.title || 'None open'} T={T} />
-            <MnAskInfoChip label="Latest answer" value={latestSourceCount ? `${latestSourceCount} source${latestSourceCount === 1 ? '' : 's'}` : messages.length ? 'No sources' : 'Not asked yet'} T={T} />
+            {!embedded && (
+              <button onClick={closeOrBackground} title={pending ? 'Run in background' : 'Close (Esc)'} style={iconBtn(T)}>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <path d="M4 4L12 12M12 4L4 12" strokeLinecap="round"/>
+                </svg>
+              </button>
+            )}
           </div>
         </div>
 
-        <div style={{ padding: '14px 18px 12px', borderBottom: `1px solid ${T.lineSub}` }}>
+        <div style={{ order: 3, padding: '14px 18px 16px', borderTop: `1px solid ${T.lineSub}`, background: `color-mix(in oklab, ${T.bg} 88%, ${T.bgSub})`, flexShrink: 0 }}>
           <textarea
             ref={inputRef}
             value={query}
@@ -418,8 +535,8 @@ function MnAskAI({
                 : (!chatOk && status)
                   ? `Chat model not installed: \`ollama pull ${status?.config?.chatModel}\``
                 : (!embedOk && status)
-                    ? `Using keyword search. For semantic search: \`ollama pull ${status?.config?.embedModel}\``
-                    : '⌘+Enter to ask · Esc to close'
+                    ? (status?.embedModelReason || `Using keyword search. For semantic search: \`ollama pull ${status?.config?.embedModel}\``)
+                : embedded ? '⌘+Enter to ask' : '⌘+Enter to ask · Esc to close'
               }
             </div>
             <button onClick={submit} disabled={pending || !query.trim() || !canAsk}
@@ -454,7 +571,7 @@ function MnAskAI({
           </div>
         </div>
 
-        <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '16px 18px', position: 'relative', background: T.bg }}>
+        <div ref={scrollRef} style={{ order: 2, flex: 1, overflow: 'auto', padding: '18px 18px', position: 'relative', background: T.bg }}>
           <style>{`
             .mn-ask-ai-shimmer {
               animation: mnAskAiShimmer 1.5s ease-in-out infinite;
@@ -477,22 +594,25 @@ function MnAskAI({
               fontFamily: 'var(--mn-mono)', fontSize: 12.5, whiteSpace: 'pre-wrap',
             }}>{error}</div>
           )}
-          {messages.map((m, idx) => (
-            <div key={idx} style={{
+          {messages.map((m, idx) => {
+            const previousUser = [...messages.slice(0, idx)].reverse().find(item => item.role === 'user')?.text || '';
+            const canReport = m.role === 'assistant' && !m.error && !m.stopped && String(m.text || '').trim();
+            return (
+            <div key={m.id || idx} data-mn-latest-response={idx === latestResponseIndex ? 'true' : undefined} style={{
               marginBottom: 14,
               display: 'flex',
               justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
             }}>
               <div style={{
-                maxWidth: m.role === 'user' ? '78%' : '88%',
-                padding: m.role === 'user' ? '8px 11px' : '11px 13px',
-                borderRadius: 8,
-                background: m.role === 'user' ? T.ink : T.bgSub,
+                maxWidth: m.role === 'user' ? '72%' : '100%',
+                padding: m.role === 'user' ? '9px 12px' : '2px 0',
+                borderRadius: m.role === 'user' ? 16 : 0,
+                background: m.role === 'user' ? T.ink : 'transparent',
                 color: m.role === 'user' ? T.bg : (m.error ? (T.warn || '#c33') : T.ink),
-                border: m.role === 'user' ? 'none' : `1px solid ${T.lineSub}`,
+                border: 'none',
                 fontFamily: 'var(--mn-body)', fontSize: 14.5, lineHeight: 1.6,
                 whiteSpace: 'pre-wrap',
-                boxShadow: m.role === 'user' ? 'none' : `0 8px 24px color-mix(in oklab, ${T.ink} 5%, transparent)`,
+                boxShadow: 'none',
               }}>
                 {m.role !== 'user' && (
                   <div style={{
@@ -503,10 +623,10 @@ function MnAskAI({
                     textTransform: 'uppercase',
                     letterSpacing: '0.08em',
                   }}>
-                    {m.error ? 'Error' : m.stopped ? 'Stopped' : m.action ? 'Action' : 'Answer'}
+                    {m.error ? 'Error' : m.stopped ? 'Stopped' : m.action ? 'Action' : m.streaming ? 'Answering' : 'Answer'}
                   </div>
                 )}
-                {m.text}
+                {m.text || (m.streaming ? activeAction || 'Thinking...' : '')}
                 {m.sources?.length > 0 && (
                 <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.lineSub}` }}>
                   <div style={{
@@ -516,7 +636,7 @@ function MnAskAI({
                   }}>Sources</div>
                   {m.sources.map((s, sourceIndex) => (
                     <div key={s.id}
-                      onClick={() => { onOpenNote?.(s.id); onClose(); }}
+                      onClick={() => { onOpenNote?.(s.id); onClose && onClose(); }}
                       style={{
                         padding: '9px 10px', marginBottom: 6, borderRadius: 7,
                         background: T.bg, border: `1px solid ${T.lineSub}`,
@@ -540,32 +660,41 @@ function MnAskAI({
                   ))}
                 </div>
               )}
+              {canReport && (
+                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => window.MN_AI_REPORT?.report?.({ prompt: previousUser, output: m.text, scope: m.action ? 'AI page action' : 'Ask AI answer' })}
+                    title="Report this AI output to the configured provider"
+                    style={mnAskReportButton(T)}>
+                    Report AI output
+                  </button>
+                </div>
+              )}
               </div>
             </div>
-          ))}
-          {pending && (
-            <div className="mn-ask-ai-shimmer" style={{
-              padding: 13,
+          );})}
+          {pending && !messages.some(m => m.streaming) && (
+            <div className="mn-ask-ai-shimmer" data-mn-pending-response="true" style={{
+              padding: '10px 12px',
               borderRadius: 8,
-              background: `linear-gradient(90deg, ${T.bgSub}, color-mix(in oklab, ${T.accent || T.ink} 5%, ${T.bgSub}), ${T.bgSub})`,
+              background: T.bgSub,
               border: `1px solid ${T.lineSub}`,
               color: T.inkDim,
-              fontSize: 13,
+              fontSize: 12.5,
               fontFamily: 'var(--mn-ui)',
               display: 'flex',
               alignItems: 'center',
-              gap: 10,
+              gap: 9,
             }}>
               <span style={{
-                width: 8,
-                height: 8,
+                width: 7,
+                height: 7,
                 borderRadius: 999,
                 background: T.accent,
-                boxShadow: `0 0 0 5px color-mix(in oklab, ${T.accent} 12%, transparent)`,
+                boxShadow: `0 0 0 4px color-mix(in oklab, ${T.accent} 14%, transparent)`,
                 flexShrink: 0,
               }} />
-              <span style={{ flex: 1 }}>{activeAction || 'Thinking...'}</span>
-              <button onClick={stopRun} style={{ ...mnAskSecondaryButton(T), height: 28, padding: '0 10px' }}>Stop</button>
+              <span style={{ flex: 1 }}>{activeAction || 'Thinking…'}</span>
             </div>
           )}
           {!pending && messages.length === 0 && !error && (
@@ -587,7 +716,363 @@ function MnAskAI({
           )}
         </div>
       </div>
+  );
+
+  if (embedded) {
+    return (
+      <div style={{ flex: 1, minWidth: 0, height: '100%', background: T.bg }}>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div onClick={closeOrBackground} style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      background: 'color-mix(in oklab, oklch(0.2 0.02 240) 30%, transparent)',
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+      padding: '8vh 24px 24px', animation: 'mnFadeIn 140ms ease',
+    }}>
+      {content}
     </div>
+  );
+}
+
+function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDelete, onArchive, onRename, T }) {
+  const [showArchived, setShowArchived] = useStateAI(false);
+  const [contextMenu, setContextMenu] = useStateAI(null);
+  const [renameId, setRenameId] = useStateAI(null);
+  const [renameValue, setRenameValue] = useStateAI('');
+  const visibleSessions = sessions
+    .filter(session => !!session.archived === showArchived)
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+  const activeCount = sessions.filter(session => !session.archived).length;
+  const archivedCount = sessions.filter(session => session.archived).length;
+
+  useEffectAI(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const closeOnEsc = (e) => { if (e.key === 'Escape') close(); };
+    const timer = setTimeout(() => document.addEventListener('mousedown', close), 0);
+    document.addEventListener('keydown', closeOnEsc);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', closeOnEsc);
+    };
+  }, [contextMenu]);
+
+  const openContextMenu = (e, session) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      sessionId: session.id,
+      archived: !!session.archived,
+    });
+  };
+  const startRename = (id, currentTitle) => {
+    setRenameId(id);
+    setRenameValue(currentTitle || '');
+    setContextMenu(null);
+  };
+  const submitRename = () => {
+    if (renameId && onRename) onRename(renameId, renameValue.trim() || 'New chat');
+    setRenameId(null);
+    setRenameValue('');
+  };
+  const cancelRename = () => {
+    setRenameId(null);
+    setRenameValue('');
+  };
+
+  return (
+    <aside style={{
+      width: 264,
+      height: '100%',
+      borderRight: `1px solid ${T.line}`,
+      background: T.bgSub,
+      display: 'flex',
+      flexDirection: 'column',
+      flexShrink: 0,
+      minWidth: 0,
+      position: 'relative',
+    }}>
+      <div style={{
+        padding: '12px 12px 10px',
+        borderBottom: `1px solid ${T.lineSub}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}>
+        <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 650, color: T.ink }}>AI chats</div>
+        <button onClick={onNew} title="New AI chat" style={iconBtn(T)}>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
+            <path d="M8 3V13M3 8H13" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div style={{
+        display: 'flex',
+        gap: 4,
+        padding: '8px 10px 0',
+      }}>
+        <MnAiTabPill active={!showArchived} onClick={() => setShowArchived(false)} T={T} title="Show active chats">
+          Active <span style={{ opacity: 0.55, marginLeft: 3 }}>{activeCount}</span>
+        </MnAiTabPill>
+        <MnAiTabPill active={showArchived} onClick={() => setShowArchived(true)} T={T} title="Show archived chats">
+          Archived <span style={{ opacity: 0.55, marginLeft: 3 }}>{archivedCount}</span>
+        </MnAiTabPill>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', padding: '8px 8px 10px' }}>
+        {visibleSessions.map(session => {
+          const active = session.id === activeId;
+          const renaming = session.id === renameId;
+          const messages = session.messages || [];
+          const last = [...messages].reverse().find(m => m.text)?.text || 'No messages yet';
+          return (
+            <div
+              key={session.id}
+              onClick={() => { if (!renaming) onSelect?.(session.id); }}
+              onContextMenu={(e) => openContextMenu(e, session)}
+              onDoubleClick={(e) => {
+                if (renaming) return;
+                e.preventDefault();
+                startRename(session.id, session.title);
+              }}
+              style={{
+                padding: '8px 10px',
+                marginBottom: 4,
+                borderRadius: 7,
+                border: `1px solid ${active ? T.selLine : 'transparent'}`,
+                background: active ? T.accentSoft : 'transparent',
+                cursor: renaming ? 'default' : 'pointer',
+              }}
+              onMouseEnter={(e) => { if (!active && !renaming) e.currentTarget.style.background = T.bgHover; }}
+              onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
+              {renaming ? (
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={submitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); submitRename(); }
+                    else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '3px 6px',
+                    border: `1px solid ${T.selLine}`,
+                    borderRadius: 5,
+                    background: T.bg,
+                    color: T.ink,
+                    fontFamily: 'var(--mn-ui)',
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    outline: 'none',
+                  }}
+                />
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{
+                    minWidth: 0,
+                    flex: 1,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: active ? T.accent : T.ink,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}>{session.title || 'New chat'}</div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onArchive?.(session.id, !session.archived);
+                    }}
+                    title={session.archived ? 'Restore chat' : 'Archive chat'}
+                    style={mnAiRowActionButton(T)}>
+                    {session.archived ? (
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.55">
+                        <path d="M4 7L8 3L12 7" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M8 3V12" strokeLinecap="round"/>
+                        <path d="M3 12.5H13" strokeLinecap="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.55">
+                        <path d="M3 5.5H13" strokeLinecap="round"/>
+                        <path d="M5 5.5V12.5H11V5.5" strokeLinejoin="round"/>
+                        <path d="M6 3.5H10" strokeLinecap="round"/>
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete?.(session.id);
+                    }}
+                    title="Delete chat"
+                    style={mnAiRowActionButton(T, true)}>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.55">
+                      <path d="M3.5 4.5H12.5" strokeLinecap="round"/>
+                      <path d="M6 4.5V3.2H10V4.5" strokeLinejoin="round"/>
+                      <path d="M5 6.5L5.5 13H10.5L11 6.5" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+              )}
+              <div style={{
+                marginTop: 3,
+                fontSize: 11.25,
+                color: T.inkDim,
+                lineHeight: 1.35,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}>{last}</div>
+            </div>
+          );
+        })}
+        {!visibleSessions.length && (
+          <div style={{
+            padding: 16,
+            color: T.inkDim,
+            fontSize: 12,
+            lineHeight: 1.5,
+            textAlign: 'center',
+          }}>
+            {showArchived ? 'No archived chats' : 'No chats yet — start one with “New”.'}
+          </div>
+        )}
+      </div>
+      {!showArchived && (
+        <div style={{
+          padding: '8px 12px 10px',
+          borderTop: `1px solid ${T.lineSub}`,
+          fontFamily: 'var(--mn-mono)',
+          fontSize: 9.5,
+          color: T.inkDim,
+          textAlign: 'center',
+        }}>
+          Use the row buttons or right-click for chat actions
+        </div>
+      )}
+      {contextMenu && (
+        <div
+          role="menu"
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: contextMenu.y,
+            left: contextMenu.x,
+            zIndex: 60,
+            background: T.bg,
+            border: `1px solid ${T.line}`,
+            borderRadius: 6,
+            padding: 4,
+            minWidth: 160,
+            boxShadow: `0 12px 28px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+          }}>
+          <MnAiContextMenuItem
+            T={T}
+            onClick={() => {
+              const sess = sessions.find(s => s.id === contextMenu.sessionId);
+              startRename(contextMenu.sessionId, sess?.title || '');
+            }}>
+            Rename
+          </MnAiContextMenuItem>
+          <MnAiContextMenuItem
+            T={T}
+            onClick={() => {
+              onArchive?.(contextMenu.sessionId, !contextMenu.archived);
+              setContextMenu(null);
+            }}>
+            {contextMenu.archived ? 'Restore chat' : 'Archive chat'}
+          </MnAiContextMenuItem>
+          <MnAiContextMenuItem
+            T={T}
+            danger
+            onClick={() => {
+              onDelete?.(contextMenu.sessionId);
+              setContextMenu(null);
+            }}>
+            Delete chat
+          </MnAiContextMenuItem>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function MnAiTabPill({ active, onClick, children, T, title }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        flex: 1,
+        padding: '5px 9px',
+        border: `1px solid ${active ? T.selLine : T.lineSub}`,
+        background: active ? T.accentSoft : T.bg,
+        color: active ? T.accent : T.inkMed,
+        borderRadius: 6,
+        fontFamily: 'var(--mn-ui)',
+        fontSize: 11.5,
+        fontWeight: 600,
+        cursor: 'pointer',
+      }}>
+      {children}
+    </button>
+  );
+}
+
+function mnAiRowActionButton(T, danger = false) {
+  return {
+    width: 24,
+    height: 24,
+    border: `1px solid ${T.lineSub}`,
+    borderRadius: 5,
+    background: T.bg,
+    color: danger ? (T.danger || T.warn || T.inkDim) : T.inkDim,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    flexShrink: 0,
+  };
+}
+
+function MnAiContextMenuItem({ onClick, disabled, danger, children, T }) {
+  const color = disabled
+    ? T.inkDim
+    : danger
+      ? (T.danger || T.warn || T.ink)
+      : T.ink;
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'block',
+        width: '100%',
+        textAlign: 'left',
+        padding: '7px 10px',
+        background: 'transparent',
+        border: 'none',
+        cursor: disabled ? 'default' : 'pointer',
+        color,
+        fontFamily: 'var(--mn-ui)',
+        fontSize: 12.5,
+        borderRadius: 4,
+        opacity: disabled ? 0.5 : 1,
+      }}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = T.bgHover; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+      {children}
+    </button>
   );
 }
 
@@ -605,34 +1090,6 @@ function StatusPill({ status, T }) {
     <Pill T={T} color="#a60">keyword mode</Pill>
   );
   return <Pill T={T} color="#070">ready</Pill>;
-}
-function MnAskInfoChip({ label, value, T }) {
-  return (
-    <div style={{
-      minWidth: 0,
-      border: `1px solid ${T.lineSub}`,
-      borderRadius: 7,
-      background: `color-mix(in oklab, ${T.bg} 78%, ${T.bgSub})`,
-      padding: '7px 9px',
-    }}>
-      <div style={{
-        fontFamily: 'var(--mn-mono)',
-        fontSize: 9.5,
-        color: T.inkDim,
-        textTransform: 'uppercase',
-        letterSpacing: '0.08em',
-        marginBottom: 3,
-      }}>{label}</div>
-      <div style={{
-        fontFamily: 'var(--mn-ui)',
-        fontSize: 12.5,
-        color: T.inkMed,
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-      }}>{value}</div>
-    </div>
-  );
 }
 function Pill({ T, color, children }) {
   return (
@@ -667,6 +1124,18 @@ function mnAskSecondaryButton(T) {
     cursor: 'pointer',
   };
 }
+function mnAskReportButton(T) {
+  return {
+    border: `1px solid ${T.lineSub}`,
+    background: T.bg,
+    color: T.inkDim,
+    borderRadius: 6,
+    padding: '4px 8px',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 11.5,
+    cursor: 'pointer',
+  };
+}
 function iconBtn(T) {
   return {
     width: 24, height: 24, borderRadius: 5,
@@ -677,3 +1146,4 @@ function iconBtn(T) {
 }
 
 window.MnAskAI = MnAskAI;
+window.MnAiChatHistory = MnAiChatHistory;

@@ -263,37 +263,63 @@ function mnMdToBlocks(md) {
 
 function mnBlocksToMd(blocks, depth = 0) {
   let out = [];
+  let previousBlock = null;
   const wfPrefix = (b) => b.workflow ? b.workflow + ' ' : '';
   const labelPrefix = (b) => mnSerializeBlockLabels(b.labels || []);
+  const isPlainParagraph = (b) => (
+    b &&
+    b.kind !== 'heading' &&
+    b.kind !== 'quote' &&
+    b.kind !== 'divider' &&
+    b.kind !== 'code' &&
+    b.kind !== 'table' &&
+    b.kind !== 'plot-points' &&
+    b.kind !== 'bullet' &&
+    b.kind !== 'todo'
+  );
+  const isPropertyParagraph = (b) => isPlainParagraph(b) && /^\s*[a-zA-Z][a-zA-Z0-9_-]*::/.test(b.content || '');
+  const pushBlock = (b, text) => {
+    if (
+      out.length &&
+      isPlainParagraph(previousBlock) &&
+      isPlainParagraph(b) &&
+      !isPropertyParagraph(previousBlock) &&
+      !isPropertyParagraph(b)
+    ) {
+      out.push('');
+    }
+    out.push(text);
+    previousBlock = b;
+  };
   for (const b of blocks) {
     if (b.kind === 'heading') {
-      out.push('#'.repeat(b.level || 1) + ' ' + labelPrefix(b) + wfPrefix(b) + b.content);
+      pushBlock(b, '#'.repeat(b.level || 1) + ' ' + labelPrefix(b) + wfPrefix(b) + b.content);
       if (b.children.length) out.push(mnBlocksToMd(b.children, depth + 1));
     } else if (b.kind === 'quote') {
-      out.push('> ' + labelPrefix(b) + wfPrefix(b) + b.content);
+      pushBlock(b, '> ' + labelPrefix(b) + wfPrefix(b) + b.content);
     } else if (b.kind === 'divider') {
-      out.push('---');
+      pushBlock(b, '---');
     } else if (b.kind === 'code') {
       const language = mnCleanCodeLanguage(b.language);
-      out.push('```' + language + '\n' + b.content + '\n```');
+      pushBlock(b, '```' + language + '\n' + b.content + '\n```');
     } else if (b.kind === 'table') {
-      out.push(b.content);
+      pushBlock(b, b.content);
     } else if (b.kind === 'plot-points') {
-      out.push('::: plot-points');
+      pushBlock(b, '::: plot-points');
       (b.beats && b.beats.length ? b.beats : ['']).forEach(beat => out.push('- ' + String(beat || '')));
       (b.contexts || []).forEach(context => out.push('  - context:: ' + String(context || '')));
       out.push(':::');
     } else if (b.kind === 'bullet' || b.kind === 'todo') {
       const pad = '  '.repeat(depth);
       const chk = b.kind === 'todo' ? (b.checked ? '[x] ' : '[ ] ') : '';
-      out.push(pad + '- ' + chk + labelPrefix(b) + wfPrefix(b) + b.content);
+      pushBlock(b, pad + '- ' + chk + labelPrefix(b) + wfPrefix(b) + b.content);
       if (b.children.length) out.push(mnBlocksToMd(b.children, depth + 1));
     } else {
       // paragraph
-      out.push(labelPrefix(b) + wfPrefix(b) + b.content);
+      pushBlock(b, labelPrefix(b) + wfPrefix(b) + b.content);
     }
   }
-  return out.filter(Boolean).join('\n');
+  return out.join('\n').trimEnd();
 }
 
 // Walk blocks

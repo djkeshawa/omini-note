@@ -231,6 +231,8 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/markdown.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
@@ -264,6 +266,10 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /result\?\.config\?\.provider === 'ollama'/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: ai\.getConfig\(\) \}\)/);
   assert.match(main, /ipcMain\.handle\('mn:setTitle', wrapWithEvent/);
+  assert.match(main, /function sanitizeExternalUrl\(rawUrl\)/);
+  assert.match(main, /parsed\.protocol !== 'https:' && parsed\.protocol !== 'mailto:'/);
+  assert.match(main, /shell\.openExternal\(sanitizeExternalUrl\(url\)\)/);
+  assert.match(preload, /openExternal: \(url\) => ipcRenderer\.invoke\('mn:openExternal', url\)/);
   assert.match(main, /ipcMain\.handle\('mn:ai\.editStream', wrapWithEvent/);
   assert.match(main, /idx\.searchDetailed\(vaultId, query, limit\)/);
   assert.match(main, /ipcMain\.handle\('mn:searchDetailed', wrap\(async \(vaultId, query, limit\) => \{ await indexReadyPromise; return idx\.searchDetailed\(vaultId, query, limit\); \}\)\)/);
@@ -292,6 +298,11 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
 
   assert.doesNotMatch(markdown, /dangerouslySetInnerHTML/);
   assert.doesNotMatch(markdown, /\.innerHTML\s*=/);
+  assert.doesNotMatch(outliner, /ref\.current\.innerHTML\s*=/);
+  assert.match(outliner, /sandbox=""/);
+  assert.match(outliner, /function mnMermaidSvgHeight/);
+  assert.match(outliner, /pointerEvents: 'none'/);
+  assert.doesNotMatch(aiSource, /env:\s*\{\s*\.\.\.process\.env/);
 
   assert.match(storeSource, /function sanitizeVaultMetaPatch/);
   assert.match(storeSource, /CONFIG_FILE_MODE = 0o600/);
@@ -307,7 +318,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
     lastSelectedId: 'n_valid-1',
     novelistMode: true,
     workflowStates: [],
-    novelistAiConfig: { wordLimit: 900 },
+    novelistAiConfig: { wordLimit: 900, surprise: '<script>', prompts: [{ id: 'draft', prompt: 'Write.' }] },
   });
   assert.deepEqual(cleanMeta.tags, [
     { name: 'novel-cast', hue: 360 },
@@ -316,7 +327,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.equal(cleanMeta.lastSelectedId, 'n_valid-1');
   assert.equal(cleanMeta.novelistMode, true);
   assert.deepEqual(cleanMeta.workflowStates, []);
-  assert.deepEqual(cleanMeta.novelistAiConfig, { wordLimit: 900 });
+  assert.equal(cleanMeta.novelistAiConfig.wordLimit, 900);
+  assert.equal(cleanMeta.novelistAiConfig.surprise, undefined);
+  assert.deepEqual(cleanMeta.novelistAiConfig.prompts, [{ id: 'draft', name: '', prompt: 'Write.' }]);
   assert.throws(() => store.__test.sanitizeVaultMetaPatch({ slug: '../x' }), /Unsupported vault metadata field/);
   assert.throws(() => store.__test.sanitizeVaultMetaPatch({ lastSelectedId: '../x' }), /Invalid note id/);
   assert.throws(() => store.__test.sanitizeVaultMetaPatch({ novelistAiConfig: 'bad' }), /Invalid novelist AI config patch/);
@@ -324,6 +337,10 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(aiSource, /function sanitizeConfigPatch/);
   assert.match(aiSource, /SECRET_CONFIG_KEYS/);
   assert.match(aiSource, /let ollamaSpawnPromise = null/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ ollamaHost: 'http://127.0.0.1:9999' }), /Ollama host/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://127.0.0.1:8080/v1' }), /HTTPS/);
+  assert.equal(ai.__test.sanitizeConfigPatch({ ollamaHost: 'http://localhost:11434' }).ollamaHost, 'http://localhost:11434');
+  assert.deepEqual(Object.keys(ai.__test.ollamaServeEnv()).sort(), Object.keys(ai.__test.ollamaServeEnv()).filter(key => ['HOME', 'LANG', 'LC_ALL', 'OLLAMA_HOST', 'PATH', 'TMPDIR'].includes(key)).sort());
   assert.match(aiSource, /await ollamaSpawnPromise/);
   assert.equal(ai.__test.sanitizeSecretValue('  sk-test\r\nbad\u0000  '), 'sk-testbad');
   assert.match(aiSource, /piiReduction/);
@@ -332,10 +349,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'file:///tmp/model' }), /Invalid customBaseUrl protocol/);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ surprise: true }), /Unsupported AI config field/);
   assert.equal(ai.__test.sanitizeConfigPatch({ piiReduction: false }).piiReduction, false);
-  assert.equal(
-    ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://localhost:11434/v1/' }).customBaseUrl,
-    'http://localhost:11434/v1'
-  );
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://localhost:11434/v1/' }), /HTTPS/);
   assert.equal(
     ai.__test.publicConfig({ openaiApiKey: 'secret-key', provider: 'openai' }).openaiApiKey,
     'configured'

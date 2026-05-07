@@ -60,6 +60,7 @@ function MnEditor({
   canvases = [], onOpenCanvas, onCreateCanvas,
   onOpen, onCreateLinkedNote, onOpenTag,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
+  onEndNoteMetadataEdit, onUndoNoteEdit, onRedoNoteEdit,
   onPinToggle, onDuplicate, onDelete, onOpenVersions, onOpenGraph, onBack,
   onToggleSidebar, sidebarHidden,
   onToggleNoteList, noteListHidden,
@@ -370,10 +371,24 @@ function MnEditor({
           fontSize: fontSize === 'small' ? '13px' : fontSize === 'large' ? '16px' : '14.5px',
         }}>
           <input
+            className="mn-note-title-input"
             value={note.title}
             onChange={(e) => onTitleChange(e.target.value)}
+            onBlur={() => onEndNoteMetadataEdit && onEndNoteMetadataEdit()}
             spellCheck={spellCheck}
             onKeyDown={(e) => {
+              const isMod = e.metaKey || e.ctrlKey;
+              const lower = String(e.key || '').toLowerCase();
+              if (isMod && lower === 'z' && !e.shiftKey && onUndoNoteEdit) {
+                e.preventDefault();
+                onUndoNoteEdit();
+                return;
+              }
+              if (((isMod && e.shiftKey && lower === 'z') || (isMod && lower === 'y')) && onRedoNoteEdit) {
+                e.preventDefault();
+                onRedoNoteEdit();
+                return;
+              }
               if (e.key === 'Enter' || e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
                 e.preventDefault();
                 // Focus first block in outliner

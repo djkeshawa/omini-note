@@ -111,26 +111,21 @@ function mnNormalizeNovelistAiConfig(raw) {
 }
 
 function mnReadNovelistAiConfig(vaultId = '') {
-  try {
-    if (!root?.localStorage) return mnNormalizeNovelistAiConfig(null);
-    const raw = root.localStorage.getItem(mnNovelistAiConfigKey(vaultId));
-    if (raw) return mnNormalizeNovelistAiConfig(JSON.parse(raw));
-    const legacy = root.localStorage.getItem(mnNovelistLegacyAiConfigKey(vaultId));
-    return mnNormalizeNovelistAiConfig(legacy ? JSON.parse(legacy) : null);
-  } catch {
-    return mnNormalizeNovelistAiConfig(null);
-  }
+  const storage = root.MN_STORAGE;
+  const saved = storage?.getJson?.(mnNovelistAiConfigKey(vaultId), null, root);
+  if (saved) return mnNormalizeNovelistAiConfig(saved);
+  const legacy = storage?.getJson?.(mnNovelistLegacyAiConfigKey(vaultId), null, root);
+  return mnNormalizeNovelistAiConfig(legacy || null);
 }
 
 function mnWriteNovelistAiConfig(config, vaultId = '') {
-  try {
-    if (!root?.localStorage) return;
-    if (!config) {
-      root.localStorage.removeItem(mnNovelistAiConfigKey(vaultId));
-      return;
-    }
-    root.localStorage.setItem(mnNovelistAiConfigKey(vaultId), JSON.stringify(config));
-  } catch {}
+  const storage = root.MN_STORAGE;
+  if (!storage) return;
+  if (!config) {
+    storage.remove(mnNovelistAiConfigKey(vaultId), root);
+    return;
+  }
+  storage.setJson(mnNovelistAiConfigKey(vaultId), config, root);
 }
 
 

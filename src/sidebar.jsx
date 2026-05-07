@@ -25,6 +25,7 @@ function MnSidebar({
   onSelectWorkflow, onOpenWorkflowPanel, workflowActive,
   onOpenNovelist, novelistActive, novelistEnabled, novelistCount = 0,
   onOpenCanvas, canvasActive, canvasCount = 0,
+  aiActive = false,
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
@@ -42,16 +43,13 @@ function MnSidebar({
   const [renameVal, setRenameVal] = React.useState('');
   // Collapsible sections — persisted in localStorage
   const [openSections, setOpenSections] = React.useState(() => {
-    try {
-      const raw = localStorage.getItem('mn:sidebarSections');
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return { allnotes: true, vaults: true, workflow: false, tags: true };
+    return window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
+      { allnotes: true, vaults: true, workflow: false, tags: true };
   });
   const toggleSection = (key) => {
     setOpenSections(prev => {
       const next = { ...prev, [key]: !prev[key] };
-      try { localStorage.setItem('mn:sidebarSections', JSON.stringify(next)); } catch (e) {}
+      window.MN_STORAGE?.setJson?.('mn:sidebarSections', next);
       return next;
     });
   };
@@ -438,9 +436,11 @@ function MnSidebar({
                   </div>
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: 5,
-                    margin: '6px 0 0 29px',
+                    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                    gap: 8,
+                    margin: '7px 0 0',
+                    width: '100%',
+                    boxSizing: 'border-box',
                   }}>
                     {[
                       { id: 'notes', label: 'Notes vault' },
@@ -451,13 +451,20 @@ function MnSidebar({
                         type="button"
                         onClick={() => setNewVaultType(type.id)}
                         style={{
-                          padding: '5px 7px',
-                          borderRadius: 5,
+                          minWidth: 0,
+                          minHeight: 32,
+                          padding: '0 10px',
+                          borderRadius: 6,
                           border: `1px solid ${newVaultType === type.id ? T.selLine : T.lineSub}`,
-                          background: newVaultType === type.id ? T.accentSoft : T.bgSub,
+                          background: newVaultType === type.id ? T.accentSoft : T.bg,
                           color: newVaultType === type.id ? T.accent : T.inkMed,
                           fontFamily: 'var(--mn-ui)',
                           fontSize: 11.5,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          textAlign: 'center',
+                          boxSizing: 'border-box',
                           cursor: 'pointer',
                         }}>{type.label}</button>
                     ))}
@@ -509,7 +516,7 @@ function MnSidebar({
       {openSections.allnotes && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
-               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive}
+               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive && !aiActive}
                onClick={() => onSelectTag(null)} />
           <Row icon={iconToday} label="Daily rollup" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
@@ -529,7 +536,7 @@ function MnSidebar({
                active={canvasActive}
                onClick={onOpenCanvas} accent={T.accent} />
           {onOpenAskAI && (
-            <Row icon={iconAI} label="Ask AI" onClick={onOpenAskAI} />
+            <Row icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
           )}
         </div>
       )}

@@ -48,6 +48,16 @@ contextBridge.exposeInMainWorld('mn', {
     status:    () => ipcRenderer.invoke('mn:ai.status'),
     connect:   () => ipcRenderer.invoke('mn:ai.connect'),
     ask:       (vaultId, query, options) => ipcRenderer.invoke('mn:ai.ask', vaultId, query, options),
+    askStream: (vaultId, query, options, onChunk) => {
+      const requestId = `ask-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const channel = `mn:ai.askStream.chunk:${requestId}`;
+      const listener = (_event, chunk) => {
+        if (typeof onChunk === 'function') onChunk(String(chunk || ''));
+      };
+      ipcRenderer.on(channel, listener);
+      return ipcRenderer.invoke('mn:ai.askStream', vaultId, query, { ...(options || {}), requestId })
+        .finally(() => ipcRenderer.removeListener(channel, listener));
+    },
     edit:      (payload) => ipcRenderer.invoke('mn:ai.edit', payload),
     editStream:(payload, onChunk) => {
       const requestId = `edit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -60,6 +70,16 @@ contextBridge.exposeInMainWorld('mn', {
         .finally(() => ipcRenderer.removeListener(channel, listener));
     },
     chat:      (payload) => ipcRenderer.invoke('mn:ai.chat', payload),
+    chatStream:(payload, onChunk) => {
+      const requestId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const channel = `mn:ai.chatStream.chunk:${requestId}`;
+      const listener = (_event, chunk) => {
+        if (typeof onChunk === 'function') onChunk(String(chunk || ''));
+      };
+      ipcRenderer.on(channel, listener);
+      return ipcRenderer.invoke('mn:ai.chatStream', { ...(payload || {}), requestId })
+        .finally(() => ipcRenderer.removeListener(channel, listener));
+    },
     cancel:    (jobId) => ipcRenderer.invoke('mn:ai.cancel', jobId),
     backfill:  (vaultId) => ipcRenderer.invoke('mn:ai.backfill', vaultId),
     related:   (vaultId, noteId, options) => ipcRenderer.invoke('mn:ai.related', vaultId, noteId, options),
@@ -69,6 +89,18 @@ contextBridge.exposeInMainWorld('mn', {
 
   // Window
   setTitle: (title) => ipcRenderer.invoke('mn:setTitle', title),
+  openExternal: (url) => ipcRenderer.invoke('mn:openExternal', url),
+  updates: {
+    status: () => ipcRenderer.invoke('mn:updates.status'),
+    check: () => ipcRenderer.invoke('mn:updates.check'),
+    install: () => ipcRenderer.invoke('mn:updates.install'),
+    onState: (callback) => {
+      if (typeof callback !== 'function') return () => {};
+      const listener = (_event, state) => { try { callback(state); } catch (e) { console.error('updates state handler', e); } };
+      ipcRenderer.on('mn:updates.state', listener);
+      return () => ipcRenderer.removeListener('mn:updates.state', listener);
+    },
+  },
 
   // Push events from main → renderer. The bridge wraps the listener so the
   // renderer never sees the raw IpcRendererEvent object.
