@@ -437,6 +437,36 @@ test('AI note traversal expands seed notes through links backlinks and tags', ()
   assert.ok(expanded.find(item => item.note.id === 'shared').reasons.some(reason => reason.includes('shares #reading')));
 });
 
+test('AI recursive note research uses only bounded read-only note tools', async () => {
+  const ai = require('../lib/ai');
+  const notes = [
+    { id: 'seed', title: 'Seed', tags: ['topic'], body: 'See [[Linked]].' },
+    { id: 'linked', title: 'Linked', tags: [], body: 'Linked body' },
+    { id: 'backlink', title: 'Backlink', tags: [], body: 'Mentions [[Seed]].' },
+    { id: 'shared', title: 'Shared tag', tags: ['topic'], body: 'Same category' },
+    { id: 'other', title: 'Other', tags: [], body: 'Unrelated' },
+  ];
+  const research = await ai.__test.runRecursiveNoteResearch({
+    query: 'explain Seed connections',
+    allNotes: notes,
+    seedIds: ['seed'],
+    options: {
+      planNoteResearch: async ({ round }) => round === 1
+        ? [
+          { tool: 'get_links', args: { id: 'seed' } },
+          { tool: 'get_backlinks', args: { id: 'seed' } },
+          { tool: 'get_notes_by_tag', args: { tag: 'topic' } },
+          { tool: 'read_file', args: { path: '/etc/passwd' } },
+        ]
+        : [{ tool: 'finish' }],
+    },
+  });
+
+  assert.deepEqual(research.notes.map(note => note.id).slice(0, 4), ['seed', 'linked', 'backlink', 'shared']);
+  assert.equal(research.toolLog.some(entry => entry.tool === 'read_file' && /Rejected unknown/.test(entry.summary)), true);
+  assert.equal(research.toolCalls, 5);
+});
+
 test('AI high-risk capability policy remains disabled by default', () => {
   const aiActions = require('../src/aiActions.js');
   const action = aiActions.classifyPrompt('run python code over my notes').action;
