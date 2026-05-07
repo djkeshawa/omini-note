@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShortcut } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShortcut, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -10,6 +11,15 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let indexReadyPromise = Promise.resolve();
+let updateState = {
+  status: 'idle',
+  currentVersion: app.getVersion(),
+  lastCheckedAt: null,
+  error: null,
+  updateInfo: null,
+  downloaded: false,
+  manualUrl: 'https://github.com/djkeshawa/visp-note/releases/latest',
+};
 const APP_NAME = 'VispNote';
 const APP_ID = 'com.vispnote.app';
 const APP_ICON_PATH = path.join(__dirname, 'assets', 'vispnote-icon.png');
@@ -272,6 +282,72 @@ function openQuickCaptureFromShortcut() {
   }
 }
 
+function linuxUpdaterMode() {
+  if (process.platform !== 'linux') return 'native';
+  return process.env.APPIMAGE ? 'appimage' : 'manual';
+}
+
+function emitUpdateState(patch = {}) {
+  updateState = {
+    ...updateState,
+    ...patch,
+    currentVersion: app.getVersion(),
+    linuxMode: linuxUpdaterMode(),
+  };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('mn:updates.state', updateState);
+  }
+  return updateState;
+}
+
+function configureUpdates() {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.on('checking-for-update', () => emitUpdateState({
+    status: 'checking',
+    lastCheckedAt: new Date().toISOString(),
+    error: null,
+  }));
+  autoUpdater.on('update-available', info => emitUpdateState({
+    status: 'available',
+    updateInfo: info || null,
+    downloaded: false,
+  }));
+  autoUpdater.on('update-not-available', info => emitUpdateState({
+    status: 'not-available',
+    updateInfo: info || null,
+    downloaded: false,
+  }));
+  autoUpdater.on('update-downloaded', info => emitUpdateState({
+    status: 'downloaded',
+    updateInfo: info || null,
+    downloaded: true,
+  }));
+  autoUpdater.on('error', error => emitUpdateState({
+    status: 'error',
+    error: error?.message || String(error),
+  }));
+}
+
+async function checkForUpdates(manual = false) {
+  const mode = linuxUpdaterMode();
+  if (!app.isPackaged || mode === 'manual') {
+    return emitUpdateState({
+      status: mode === 'manual' ? 'manual' : 'not-available',
+      lastCheckedAt: new Date().toISOString(),
+      error: null,
+      updateInfo: null,
+    });
+  }
+  emitUpdateState({ status: 'checking', lastCheckedAt: new Date().toISOString(), error: null });
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (e) {
+    emitUpdateState({ status: 'error', error: e?.message || String(e) });
+  }
+  return updateState;
+}
+
 const QUICK_CAPTURE_SHORTCUT = process.platform === 'darwin'
   ? 'Cmd+Shift+N'
   : 'Ctrl+Shift+N';
@@ -391,6 +467,21 @@ function isAllowedAppNavigation(rawUrl) {
   } catch (e) {
     return false;
   }
+}
+
+function sanitizeExternalUrl(rawUrl) {
+  const value = String(rawUrl || '').trim();
+  if (!value || value.length > 2048) throw new Error('Invalid external URL');
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (e) {
+    throw new Error('Invalid external URL');
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'mailto:') {
+    throw new Error('Unsupported external URL protocol');
+  }
+  return parsed.href;
 }
 
 function hardenWindow(win) {
@@ -630,6 +721,14 @@ ipcMain.handle('mn:setTitle', wrapWithEvent((evt, title) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
   if (win && typeof title === 'string') win.setTitle(title);
 }));
+ipcMain.handle('mn:openExternal', wrap((url) => shell.openExternal(sanitizeExternalUrl(url))));
+ipcMain.handle('mn:updates.status', wrap(() => emitUpdateState()));
+ipcMain.handle('mn:updates.check', wrap(() => checkForUpdates(true)));
+ipcMain.handle('mn:updates.install', wrap(() => {
+  if (!updateState.downloaded) throw new Error('No downloaded update is ready to install');
+  autoUpdater.quitAndInstall(false, true);
+  return { ok: true };
+}));
 
 // ── Boot scan: populate the index from disk ──────────────────────────────────
 
@@ -653,6 +752,7 @@ if (process.platform === 'linux') app.setDesktopName('vispnote.desktop');
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
+  configureUpdates();
   if (process.platform === 'darwin') app.dock?.setIcon(createAppIcon());
   try {
     await store.loadConfig();   // ensures the vault folder, seeds on first run
@@ -675,6 +775,7 @@ app.whenReady().then(async () => {
     console.error('boot index rescan failed', e);
   });
   registerQuickCaptureShortcut();
+  setTimeout(() => { checkForUpdates(false).catch(e => console.error('update check failed', e)); }, 5000);
 
   app.on('activate', () => {
     showMainWindow();

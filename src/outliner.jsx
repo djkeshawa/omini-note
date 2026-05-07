@@ -28,6 +28,10 @@ const {
   markdownTableToRows: mnMarkdownTableToRows,
   markdownTableToHtml: mnMarkdownTableToHtml,
 } = window.MN_TABLE_OPS || {};
+const {
+  createEditorHistory: mnCreateEditorHistory,
+  shareBlockTree: mnShareBlockTree,
+} = window.MN_OUTLINER_HISTORY || {};
 
 const MN_AI_ACTIONS = [
   {
@@ -157,118 +161,19 @@ function mnRenderAnnotated(text, annotations, T, onOpen, onTagClick, allNotes) {
   );
 }
 
-const MN_CODE_LANGUAGES = [
-  { value: '', label: 'Plain text' },
-  { value: 'javascript', label: 'JavaScript', aliases: ['js', 'mjs', 'cjs'] },
-  { value: 'typescript', label: 'TypeScript', aliases: ['ts'] },
-  { value: 'jsx', label: 'JSX' },
-  { value: 'tsx', label: 'TSX' },
-  { value: 'html', label: 'HTML' },
-  { value: 'css', label: 'CSS' },
-  { value: 'json', label: 'JSON' },
-  { value: 'markdown', label: 'Markdown', aliases: ['md'] },
-  { value: 'bash', label: 'Bash', aliases: ['sh', 'shell', 'zsh'] },
-  { value: 'python', label: 'Python', aliases: ['py'] },
-  { value: 'sql', label: 'SQL' },
-  { value: 'math', label: 'Math (KaTeX)', aliases: ['latex', 'tex', 'katex'] },
-  { value: 'mermaid', label: 'Mermaid', aliases: ['flowchart', 'sequence'] },
-];
+const MN_CODE_LANGUAGES = window.MN_CODE_HIGHLIGHTER?.languages || [];
 
 function mnNormalizeCodeLanguage(value) {
-  const raw = String(value || '').trim().toLowerCase();
-  if (!raw || raw === 'plain' || raw === 'text' || raw === 'txt') return '';
-  for (const lang of MN_CODE_LANGUAGES) {
-    if (lang.value === raw || (lang.aliases || []).includes(raw)) return lang.value;
-  }
-  return raw.replace(/[^a-z0-9_+#.-]/g, '');
+  return window.MN_CODE_HIGHLIGHTER?.normalizeLanguage?.(value) || '';
 }
 
 function mnCodeLanguageLabel(value) {
-  const normalized = mnNormalizeCodeLanguage(value);
-  return MN_CODE_LANGUAGES.find(lang => lang.value === normalized)?.label || normalized || 'Plain text';
-}
-
-function mnCodeKeywords(language) {
-  const lang = mnNormalizeCodeLanguage(language);
-  if (['javascript', 'typescript', 'jsx', 'tsx'].includes(lang)) {
-    return 'abstract|async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|enum|export|extends|false|finally|for|from|function|if|implements|import|in|instanceof|interface|let|new|null|of|private|protected|public|return|static|super|switch|this|throw|true|try|type|typeof|undefined|var|void|while|yield';
-  }
-  if (lang === 'python') {
-    return 'and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield';
-  }
-  if (lang === 'bash') {
-    return 'case|do|done|elif|else|esac|fi|for|function|if|in|select|then|until|while|export|local|readonly|return';
-  }
-  if (lang === 'sql') {
-    return 'ALTER|AND|AS|ASC|BETWEEN|BY|CREATE|DELETE|DESC|DISTINCT|DROP|FROM|GROUP|HAVING|IN|INSERT|INTO|IS|JOIN|LEFT|LIKE|LIMIT|NOT|NULL|ON|OR|ORDER|RIGHT|SELECT|SET|TABLE|UPDATE|VALUES|WHERE';
-  }
-  return '';
-}
-
-function mnCodeTokenStyle(token, language, T) {
-  const lang = mnNormalizeCodeLanguage(language);
-  if (lang === 'markdown' && /^(#{1,6}|[-*+]|\*\*|__|`|\[|\])/.test(token)) return { color: T.accent, fontWeight: 600 };
-  if (/^(\/\/|\/\*|#|--|<!--)/.test(token)) return { color: T.inkDim, fontStyle: 'italic' };
-  if (/^(['"`])/.test(token) || (/^".*"$/.test(token) && lang !== 'html')) return { color: 'oklch(0.48 0.12 150)' };
-  if (/^\d/.test(token)) return { color: T.warn };
-  if (lang === 'html' && /^<\/?/.test(token)) return { color: T.accent };
-  if (lang === 'html' && /^[A-Za-z:-]+$/.test(token)) return { color: 'oklch(0.50 0.16 240)' };
-  if (lang === 'css' && /^[@.#]?[A-Za-z_-][\w-]*/.test(token)) return { color: 'oklch(0.50 0.16 240)' };
-  const keywords = mnCodeKeywords(lang);
-  if (keywords && new RegExp(`^(${keywords})$`, lang === 'sql' ? 'i' : '').test(token)) {
-    return { color: T.accent, fontWeight: 600 };
-  }
-  return null;
-}
-
-function mnCodeRegex(language) {
-  const lang = mnNormalizeCodeLanguage(language);
-  if (['javascript', 'typescript', 'jsx', 'tsx'].includes(lang)) {
-    return /(\/\/.*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_$][\w$]*\b)/g;
-  }
-  if (lang === 'python') {
-    return /(#.*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
-  }
-  if (lang === 'bash') {
-    return /(#.*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\$[A-Za-z_]\w*|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
-  }
-  if (lang === 'sql') {
-    return /(--.*|"(?:\\.|[^"\\])*"|'(?:''|[^'])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
-  }
-  if (lang === 'html') {
-    return /(<!--[\s\S]*?-->|<\/?[A-Za-z][\w:-]*|\/?>|[A-Za-z_:][\w:.-]*(?=\=)|"(?:\\.|[^"\\])*")/g;
-  }
-  if (lang === 'css') {
-    return /(\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#[A-Fa-f0-9]{3,8}\b|[@.#]?[A-Za-z_-][\w-]*|\b\d+(?:\.\d+)?(?:px|rem|em|%|vh|vw)?\b)/g;
-  }
-  if (lang === 'json') {
-    return /("(?:\\.|[^"\\])*"(?=\s*:)|"(?:\\.|[^"\\])*"|\btrue\b|\bfalse\b|\bnull\b|-?\b\d+(?:\.\d+)?\b)/g;
-  }
-  if (lang === 'markdown') {
-    return /(#{1,6}|[-*+](?=\s)|\*\*|__|`{1,3}|\[[^\]]*\]|\([^)]+\))/g;
-  }
-  return null;
+  return window.MN_CODE_HIGHLIGHTER?.languageLabel?.(value) || 'Plain text';
 }
 
 function mnRenderCode(text, language, T) {
-  const regex = mnCodeRegex(language);
-  const value = String(text || '');
-  if (!regex) return value;
-  const parts = [];
-  let last = 0, match, key = 0;
-  while ((match = regex.exec(value))) {
-    if (match.index > last) parts.push(<span key={key++}>{value.slice(last, match.index)}</span>);
-    const token = match[0];
-    parts.push(<span key={key++} style={mnCodeTokenStyle(token, language, T) || undefined}>{token}</span>);
-    last = match.index + token.length;
-  }
-  if (last < value.length) parts.push(<span key={key++}>{value.slice(last)}</span>);
-  return parts;
+  return window.MN_CODE_HIGHLIGHTER?.render?.(text, language, T) ?? String(text || '');
 }
-
-window.MN_CODE_LANGUAGES = MN_CODE_LANGUAGES;
-window.mnNormalizeCodeLanguage = mnNormalizeCodeLanguage;
-window.mnRenderCode = mnRenderCode;
 
 // KaTeX block renderer. Renders the source as displayMode TeX. KaTeX is
 // loaded as a UMD <script> in vispnote.html so this is a no-op fallback if
@@ -330,26 +235,42 @@ function mnDetectThemeFromT(T) {
   return (T && window.MN_THEMES && T === window.MN_THEMES.dark) ? 'dark' : 'light';
 }
 
+function mnMermaidSvgHeight(svg) {
+  const text = String(svg || '');
+  const viewBox = text.match(/\bviewBox=["']\s*[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s*["']/i);
+  const viewBoxHeight = viewBox ? Number(viewBox[1]) : 0;
+  if (Number.isFinite(viewBoxHeight) && viewBoxHeight > 0) return Math.ceil(viewBoxHeight + 16);
+  const height = text.match(/\bheight=["']\s*([\d.]+)(?:px)?\s*["']/i);
+  const attrHeight = height ? Number(height[1]) : 0;
+  if (Number.isFinite(attrHeight) && attrHeight > 0) return Math.ceil(attrHeight + 16);
+  return 260;
+}
+
 function MnMermaidBlock({ source, T }) {
-  const ref = React.useRef(null);
   const idRef = React.useRef(`mn_mer_${Math.random().toString(36).slice(2, 10)}`);
   const [error, setError] = React.useState(null);
+  const [doc, setDoc] = React.useState('');
+  const [height, setHeight] = React.useState(0);
   const themeMode = mnDetectThemeFromT(T);
   React.useEffect(() => {
     let cancelled = false;
-    if (!ref.current) return;
     const code = String(source || '').trim();
-    if (!code) { ref.current.innerHTML = ''; setError(null); return; }
+    if (!code) { setDoc(''); setHeight(0); setError(null); return; }
     if (!mnMermaidInit(themeMode)) {
-      ref.current.textContent = code;
+      setDoc('');
+      setHeight(0);
+      setError('Mermaid renderer unavailable');
       return;
     }
     setError(null);
     window.mermaid.render(idRef.current, code).then(({ svg }) => {
-      if (cancelled || !ref.current) return;
-      ref.current.innerHTML = svg;
+      if (cancelled) return;
+      setHeight(mnMermaidSvgHeight(svg));
+      setDoc(`<!doctype html><html><head><style>html,body{margin:0;background:transparent;}body{display:flex;justify-content:center;align-items:flex-start;overflow:visible;padding:4px 0;}svg{max-width:100%;height:auto;font-family:inherit;}</style></head><body>${svg}</body></html>`);
     }).catch(err => {
       if (cancelled) return;
+      setDoc('');
+      setHeight(0);
       setError(err?.message || String(err));
     });
     return () => { cancelled = true; };
@@ -364,11 +285,18 @@ function MnMermaidBlock({ source, T }) {
     );
   }
   return (
-    <div
-      ref={ref}
+    <iframe
+      title="Mermaid diagram"
+      sandbox=""
+      srcDoc={doc || '<!doctype html><html><body></body></html>'}
       style={{
-        display: 'flex', justifyContent: 'center',
-        padding: '4px 0', overflowX: 'auto',
+        display: 'block',
+        width: '100%',
+        height: doc ? Math.max(160, height) : 0,
+        minHeight: doc ? 160 : 0,
+        border: 0,
+        overflowX: 'auto',
+        pointerEvents: 'none',
       }}
     />
   );
@@ -996,9 +924,10 @@ function MnBlockRow({
     if (!labelMenu) return;
     const close = () => setLabelMenu(null);
     const closeOnEscape = (e) => { if (e.key === 'Escape') close(); };
-    setTimeout(() => document.addEventListener('mousedown', close), 0);
+    const timer = setTimeout(() => document.addEventListener('mousedown', close), 0);
     document.addEventListener('keydown', closeOnEscape);
     return () => {
+      clearTimeout(timer);
       document.removeEventListener('mousedown', close);
       document.removeEventListener('keydown', closeOnEscape);
     };
@@ -1992,6 +1921,26 @@ function MnBlockRow({
   );
 }
 
+function mnBlockRowMemoEqual(prev, next) {
+  return prev.block === next.block &&
+    prev.depth === next.depth &&
+    prev.focusId === next.focusId &&
+    prev.T === next.T &&
+    prev.allNotes === next.allNotes &&
+    prev.allCanvases === next.allCanvases &&
+    prev.aiPreview === next.aiPreview &&
+    prev.aiTarget === next.aiTarget &&
+    prev.selectedBlockIds === next.selectedBlockIds &&
+    prev.editorFontSize === next.editorFontSize &&
+    prev.indentGuides === next.indentGuides &&
+    prev.spellCheck === next.spellCheck &&
+    prev.autoLink === next.autoLink &&
+    prev.collapseByDefault === next.collapseByDefault &&
+    prev.novelistMode === next.novelistMode;
+}
+
+const MnMemoBlockRow = React.memo(MnBlockRow, mnBlockRowMemoEqual);
+
 function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeKind, onDelete, onAiAction, aiActive = false }) {
   const [contextPickerOpen, setContextPickerOpen] = useStateOE(false);
   const [contextQuery, setContextQuery] = useStateOE('');
@@ -2652,6 +2601,11 @@ function MnAiPreviewDialog({ preview, onCancel, onApply, T }) {
           padding: 12,
           background: T.bg,
         }}>
+          <button
+            onClick={() => window.MN_AI_REPORT?.report?.({ output: preview.text, scope: 'AI writing preview' })}
+            style={mnAiReportBtn(T)}>
+            Report AI output
+          </button>
           <button onClick={onCancel} style={mnAiDialogBtn(T, false)}>Cancel</button>
           <button onClick={onApply} style={mnAiDialogBtn(T, true)}>Apply change</button>
         </div>
@@ -2719,6 +2673,14 @@ function MnInlineAiPreview({ preview, depth, T, onApply, onCancel }) {
           )}
           {preview.error && <span style={{ color: T.danger || T.warn }}>{preview.error}</span>}
           <div style={{ flex: 1 }} />
+          {!preview.error && (
+            <button
+              disabled={!text.trim()}
+              onClick={() => window.MN_AI_REPORT?.report?.({ output: text, scope: 'AI inline preview' })}
+              style={mnAiInlineReportBtn(T, !text.trim())}>
+              Report
+            </button>
+          )}
           <button onClick={onCancel} style={mnAiInlineBtn(T, false)}>Discard</button>
           <button disabled={!canApply} onClick={onApply} style={mnAiInlineBtn(T, true, !canApply)}>Apply</button>
         </div>
@@ -2751,6 +2713,32 @@ function mnAiInlineBtn(T, primary, disabled = false) {
     opacity: disabled ? 0.45 : 1,
   };
 }
+function mnAiReportBtn(T) {
+  return {
+    border: `1px solid ${T.lineSub}`,
+    background: T.bg,
+    color: T.inkDim,
+    borderRadius: 6,
+    padding: '7px 12px',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 12.5,
+    cursor: 'pointer',
+    marginRight: 'auto',
+  };
+}
+function mnAiInlineReportBtn(T, disabled = false) {
+  return {
+    border: `1px solid ${T.lineSub}`,
+    background: T.bg,
+    color: T.inkDim,
+    borderRadius: 6,
+    padding: '4px 8px',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 11.5,
+    cursor: disabled ? 'default' : 'pointer',
+    opacity: disabled ? 0.45 : 1,
+  };
+}
 
 // ── Recursive tree renderer ────────────────────────────────────────────
 function MnOutlineTree({ blocks, depth, ...handlers }) {
@@ -2758,7 +2746,7 @@ function MnOutlineTree({ blocks, depth, ...handlers }) {
     <>
       {blocks.map(b => (
         <React.Fragment key={b.id}>
-          <MnBlockRow block={b} depth={depth} {...handlers} />
+          <MnMemoBlockRow block={b} depth={depth} {...handlers} />
           {handlers.aiPreview?.target?.kind === 'insert-after' && handlers.aiPreview.target.blockId === b.id && (
             <MnInlineAiPreview
               preview={handlers.aiPreview}
@@ -2794,6 +2782,7 @@ function MnOutliner({
   const selectDragRef = useRefOE(null);
   const undoStack = useRefOE([]);
   const redoStack = useRefOE([]);
+  const historyRef = useRefOE(mnCreateEditorHistory ? mnCreateEditorHistory(80) : null);
   const undoActionRef = useRefOE(null);
   const redoActionRef = useRefOE(null);
   const selectionRef = useRefOE(null);
@@ -2814,6 +2803,7 @@ function MnOutliner({
   useEffectOE(() => {
     undoStack.current = [];
     redoStack.current = [];
+    historyRef.current?.clear?.();
   }, [noteId, noteTitle]);
 
   useEffectOE(() => {
@@ -2823,24 +2813,39 @@ function MnOutliner({
   const mutate = (fn, options = {}) => {
     setBlocks(prev => {
       if (options.history !== false) {
-        undoStack.current.push(snapshotBlocks(prev));
-        if (undoStack.current.length > 80) undoStack.current.shift();
-        redoStack.current = [];
+        const snap = snapshotBlocks(prev);
+        if (historyRef.current) {
+          historyRef.current.record(snap);
+          undoStack.current = historyRef.current.undoStack;
+          redoStack.current = historyRef.current.redoStack;
+        } else {
+          undoStack.current.push(snap);
+          if (undoStack.current.length > 80) undoStack.current.shift();
+          redoStack.current = [];
+        }
       }
       const next = mnCloneBlocks(prev);
       fn(next);
-      return next;
+      return mnShareBlockTree ? mnShareBlockTree(prev, next) : next;
     });
   };
 
   const replaceAllBlocks = (nextBlocks, options = {}) => {
     setBlocks(prev => {
       if (options.history !== false) {
-        undoStack.current.push(snapshotBlocks(prev));
-        if (undoStack.current.length > 80) undoStack.current.shift();
-        redoStack.current = [];
+        const snap = snapshotBlocks(prev);
+        if (historyRef.current) {
+          historyRef.current.record(snap);
+          undoStack.current = historyRef.current.undoStack;
+          redoStack.current = historyRef.current.redoStack;
+        } else {
+          undoStack.current.push(snap);
+          if (undoStack.current.length > 80) undoStack.current.shift();
+          redoStack.current = [];
+        }
       }
-      return snapshotBlocks(nextBlocks);
+      const next = snapshotBlocks(nextBlocks);
+      return mnShareBlockTree ? mnShareBlockTree(prev, next) : next;
     });
   };
 
@@ -2848,9 +2853,16 @@ function MnOutliner({
     if (!undoStack.current.length) return false;
     contentEditHistoryRef.current = { blockId: null, armed: false };
     setBlocks(prev => {
-      const prior = undoStack.current.pop();
+      const prior = historyRef.current
+        ? historyRef.current.undo(snapshotBlocks(prev))
+        : undoStack.current.pop();
       if (!prior) return prev;
-      redoStack.current.push(snapshotBlocks(prev));
+      if (historyRef.current) {
+        undoStack.current = historyRef.current.undoStack;
+        redoStack.current = historyRef.current.redoStack;
+      } else {
+        redoStack.current.push(snapshotBlocks(prev));
+      }
       return snapshotBlocks(prior);
     });
     return true;
@@ -2860,9 +2872,16 @@ function MnOutliner({
     if (!redoStack.current.length) return false;
     contentEditHistoryRef.current = { blockId: null, armed: false };
     setBlocks(prev => {
-      const next = redoStack.current.pop();
+      const next = historyRef.current
+        ? historyRef.current.redo(snapshotBlocks(prev))
+        : redoStack.current.pop();
       if (!next) return prev;
-      undoStack.current.push(snapshotBlocks(prev));
+      if (historyRef.current) {
+        undoStack.current = historyRef.current.undoStack;
+        redoStack.current = historyRef.current.redoStack;
+      } else {
+        undoStack.current.push(snapshotBlocks(prev));
+      }
       return snapshotBlocks(next);
     });
     return true;
@@ -4372,3 +4391,4 @@ function MnOutliner({
 
 window.MnOutliner = MnOutliner;
 window.MnBlockRow = MnBlockRow;
+window.MnMemoBlockRow = MnMemoBlockRow;

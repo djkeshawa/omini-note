@@ -295,9 +295,10 @@ function MnBlockContextMenu({
       if (!e.target.closest('.mn-block-ctx-menu')) onClose();
     };
     const onEsc = (e) => { if (e.key === 'Escape') onClose(); };
-    setTimeout(() => document.addEventListener('mousedown', onDown), 0);
+    const timer = setTimeout(() => document.addEventListener('mousedown', onDown), 0);
     document.addEventListener('keydown', onEsc);
     return () => {
+      clearTimeout(timer);
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onEsc);
     };

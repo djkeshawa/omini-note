@@ -82,6 +82,22 @@ test('Note tag picker can create new tags from the editor', () => {
   assert.match(mutations, /tags: \(note\.tags \|\| \[\]\)\.filter\(value => value !== tag\)/);
 });
 
+test('Note metadata edits participate in undo and redo', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+
+  assert.match(app, /noteMetadataHistoryRef/);
+  assert.match(app, /recordNoteMetadataHistory\(n, options\.historyKey\)/);
+  assert.match(app, /restoreNoteMetadataSnapshot\('undo'\)/);
+  assert.match(app, /restoreNoteMetadataSnapshot\('redo'\)/);
+  assert.match(app, /historyKey: `note:\$\{selectedNote\.id\}:title`/);
+  assert.match(app, /historyKey: `note:\$\{selectedNote\.id\}:tag:\$\{t\}:remove`/);
+  assert.match(editor, /className="mn-note-title-input"/);
+  assert.match(editor, /onUndoNoteEdit/);
+  assert.match(editor, /onRedoNoteEdit/);
+  assert.match(editor, /onEndNoteMetadataEdit/);
+});
+
 test('Vaults can be created and deleted from settings with backend cleanup', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
@@ -151,24 +167,46 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
 
-  assert.match(app, /const \[askAiSession, setAskAiSession\]/);
+  assert.match(app, /const \[askAiSessions, setAskAiSessions\]/);
+  assert.match(app, /const \[activeAskAiSessionId, setActiveAskAiSessionId\]/);
+  assert.match(app, /function mnPickActiveAskAiSession/);
+  assert.match(app, /mnPickActiveAskAiSession\(askAiSessions, activeAskAiSessionId\)/);
+  assert.match(app, /allowArchivedPreferred !== false/);
+  assert.match(app, /allowArchivedPreferred: false/);
+  assert.match(app, /view === 'ai'/);
+  assert.match(app, /<MnAiChatHistory/);
+  assert.match(app, /archiveAskAiChat/);
   assert.match(appShell, /function MnAiNotice/);
   assert.match(appShell, /AI response ready/);
   assert.match(app, /onOpen=\{openAskAi\}/);
-  assert.match(app, /session=\{askAiSession\}/);
-  assert.match(app, /setSession=\{setAskAiSession\}/);
+  assert.match(app, /session=\{activeAskAiSession\}/);
+  assert.match(app, /setSession=\{setActiveAskAiSession\}/);
   assert.match(app, /onBackgroundComplete=\{notifyAskAiComplete\}/);
 
   assert.match(ai, /const aiSession = session \|\| localSession/);
+  assert.match(ai, /function MnAiChatHistory/);
+  assert.match(ai, /AI chats/);
+  assert.match(ai, /Show archived chats/);
+  assert.match(ai, /Archived <span/);
+  assert.match(ai, /Archive chat/);
+  assert.match(ai, /Restore chat/);
+  assert.match(ai, /function mnAiRowActionButton/);
+  assert.match(ai, /embedded = false/);
   assert.match(ai, /const MN_ASK_SUGGESTIONS = \[/);
   assert.match(ai, /function mnAskStatusText/);
-  assert.match(ai, /function MnAskInfoChip/);
   assert.match(ai, /mnAskPrimaryButton/);
   assert.match(ai, /mnAskSecondaryButton/);
   assert.match(ai, /Clear/);
-  assert.match(ai, /Vault context/);
-  assert.match(ai, /Current page/);
-  assert.match(ai, /Latest answer/);
+  assert.match(ai, /onContextMenu=\{\(e\) => openContextMenu\(e, session\)\}/);
+  assert.match(ai, /function MnAiContextMenuItem/);
+  assert.match(ai, /Delete chat/);
+  assert.match(ai, /Use the row buttons or right-click for chat actions/);
+  assert.match(ai, /onRename\(renameId, renameValue\.trim\(\) \|\| 'New chat'\)/);
+  assert.match(ai, /MN_AI_REPORT/);
+  assert.match(ai, /Report AI output/);
+  assert.match(ai, /mnAiProviderReportInfo/);
+  assert.match(ai, /navigator\.clipboard\?\.writeText\(report\)/);
+  assert.match(ai, /window\.mn\.openExternal\(info\.url\)/);
   assert.match(ai, /Semantic search ready/);
   assert.match(ai, /Ask about the vault or ask for a page action/);
   assert.match(ai, /backgroundRef\.current = true/);
@@ -181,7 +219,9 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /completedAt: new Date\(\)\.toISOString\(\)/);
 
   assert.match(preload, /cancel:\s+\(jobId\) => ipcRenderer\.invoke\('mn:ai\.cancel', jobId\)/);
+  assert.match(preload, /openExternal: \(url\) => ipcRenderer\.invoke\('mn:openExternal', url\)/);
   assert.match(main, /ipcMain\.handle\('mn:ai\.cancel'/);
+  assert.match(main, /ipcMain\.handle\('mn:openExternal'/);
   assert.match(aiLib, /const STATUS_CACHE_MS/);
   assert.match(aiLib, /const OLLAMA_KEEP_ALIVE = '10m'/);
   assert.match(aiLib, /const PROVIDERS = \{/);
@@ -582,9 +622,9 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.16');
-  assert.equal(lock.version, '0.1.16');
-  assert.equal(lock.packages[''].version, '0.1.16');
+  assert.equal(pkg.version, '0.1.17');
+  assert.equal(lock.version, '0.1.17');
+  assert.equal(lock.packages[''].version, '0.1.17');
   assert.deepEqual(pkg.files, [
     'vispnote.html',
     'main.js',
@@ -612,7 +652,7 @@ test('Release metadata targets renamed VispNote repository', () => {
   assert.match(workflow, /Verify packaged renderer bundle/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);
   assert.match(workflow, /Automated VispNote desktop release/);
-  assert.match(settings, /Version 0\.1\.13 · Prototype/);
+  assert.match(settings, /Version \{version\} · Prototype/);
   assert.match(aiSource, /headers\['HTTP-Referer'\] = 'https:\/\/github\.com\/djkeshawa\/visp-note'/);
   assert.match(aiSource, /headers\['X-Title'\] = 'VispNote'/);
 });
@@ -788,6 +828,8 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /mn-ai-live-dots/);
   assert.match(outliner, /function MnInlineAiPreview/);
   assert.match(outliner, /AI preview/);
+  assert.match(outliner, /window\.MN_AI_REPORT\?\.report/);
+  assert.match(outliner, /Report AI output/);
   assert.match(outliner, /mn-inline-ai-preview-streaming/);
   assert.match(editor, /noteId=\{note\.id\}/);
   assert.match(outliner, /noteIdRef/);
@@ -816,9 +858,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(notelist, /const workflowPattern = states/);
   assert.doesNotMatch(notelist, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
-  assert.match(appShell, /function MnReminderCenter\(\{ open, items, dueCount, onToggle, onClose, onOpenNote, topOffset = 13, T \}\)/);
+  assert.match(appShell, /function MnReminderCenter\(\{ open, items, dueCount, onToggle, onClose, onOpenNote, topOffset = 14, T \}\)/);
   assert.match(appShell, /top: topOffset/);
-  assert.match(app, /const reminderCenterTop = view === 'workflow' \? 30 : view === 'graph' \? 12 : 13/);
+  assert.match(app, /const reminderCenterTop = view === 'ai' \? 17 : 14/);
   assert.match(app, /topOffset=\{reminderCenterTop\}/);
 });
 

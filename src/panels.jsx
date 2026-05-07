@@ -1448,7 +1448,7 @@ function MnNovelistPanel({
         }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 750, color: T.ink }}>Story Structure</div>
-            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>Act -> Chapter -> Scene</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{'Act -> Chapter -> Scene'}</div>
           </div>
           <div style={{ display: 'grid', gap: 10 }}>
             {acts.length

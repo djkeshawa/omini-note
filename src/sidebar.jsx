@@ -25,6 +25,7 @@ function MnSidebar({
   onSelectWorkflow, onOpenWorkflowPanel, workflowActive,
   onOpenNovelist, novelistActive, novelistEnabled, novelistCount = 0,
   onOpenCanvas, canvasActive, canvasCount = 0,
+  aiActive = false,
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
@@ -42,16 +43,13 @@ function MnSidebar({
   const [renameVal, setRenameVal] = React.useState('');
   // Collapsible sections — persisted in localStorage
   const [openSections, setOpenSections] = React.useState(() => {
-    try {
-      const raw = localStorage.getItem('mn:sidebarSections');
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return { allnotes: true, vaults: true, workflow: false, tags: true };
+    return window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
+      { allnotes: true, vaults: true, workflow: false, tags: true };
   });
   const toggleSection = (key) => {
     setOpenSections(prev => {
       const next = { ...prev, [key]: !prev[key] };
-      try { localStorage.setItem('mn:sidebarSections', JSON.stringify(next)); } catch (e) {}
+      window.MN_STORAGE?.setJson?.('mn:sidebarSections', next);
       return next;
     });
   };
@@ -509,7 +507,7 @@ function MnSidebar({
       {openSections.allnotes && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
-               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive}
+               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive && !aiActive}
                onClick={() => onSelectTag(null)} />
           <Row icon={iconToday} label="Daily rollup" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
@@ -529,7 +527,7 @@ function MnSidebar({
                active={canvasActive}
                onClick={onOpenCanvas} accent={T.accent} />
           {onOpenAskAI && (
-            <Row icon={iconAI} label="Ask AI" onClick={onOpenAskAI} />
+            <Row icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
           )}
         </div>
       )}

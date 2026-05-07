@@ -69,6 +69,18 @@ contextBridge.exposeInMainWorld('mn', {
 
   // Window
   setTitle: (title) => ipcRenderer.invoke('mn:setTitle', title),
+  openExternal: (url) => ipcRenderer.invoke('mn:openExternal', url),
+  updates: {
+    status: () => ipcRenderer.invoke('mn:updates.status'),
+    check: () => ipcRenderer.invoke('mn:updates.check'),
+    install: () => ipcRenderer.invoke('mn:updates.install'),
+    onState: (callback) => {
+      if (typeof callback !== 'function') return () => {};
+      const listener = (_event, state) => { try { callback(state); } catch (e) { console.error('updates state handler', e); } };
+      ipcRenderer.on('mn:updates.state', listener);
+      return () => ipcRenderer.removeListener('mn:updates.state', listener);
+    },
+  },
 
   // Push events from main → renderer. The bridge wraps the listener so the
   // renderer never sees the raw IpcRendererEvent object.

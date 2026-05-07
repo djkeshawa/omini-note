@@ -505,7 +505,7 @@ function MnVersionHistoryDialog({ note, vaultId, T, onClose, onRestore }) {
   );
 }
 
-function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote, topOffset = 13, T }) {
+function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote, topOffset = 14, T }) {
   const visibleItems = items;
   return (
     <div

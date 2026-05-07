@@ -133,6 +133,33 @@ test('Functional block updates compose in one event', () => {
   ]);
 });
 
+test('Outliner history preserves unchanged block identity for memoized rows', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/outlinerHistory.js'), 'utf8');
+  const context = { window: {} };
+  vm.createContext(context);
+  vm.runInContext(source, context);
+  const history = context.window.MN_OUTLINER_HISTORY;
+
+  const previous = [
+    { id: 'a', content: 'keep', annotations: [], children: [] },
+    { id: 'b', content: 'old', annotations: [], children: [
+      { id: 'c', content: 'child', annotations: [], children: [] },
+    ] },
+  ];
+  const next = structuredClone(previous);
+  next[1].content = 'new';
+
+  const shared = history.shareBlockTree(previous, next);
+  assert.equal(shared[0], previous[0]);
+  assert.notEqual(shared[1], previous[1]);
+  assert.equal(shared[1].children[0], previous[1].children[0]);
+
+  const editorHistory = history.createEditorHistory(2);
+  editorHistory.record(previous);
+  assert.deepEqual(editorHistory.undo(next), previous);
+  assert.deepEqual(editorHistory.redo(previous), next);
+});
+
 test('Clipboard tables convert to normalized markdown tables', () => {
   assert.equal(
     tableOps.clipboardToMarkdownTable({ text: 'Name\tRole\nAda\tEngineer\nLinus\tMaintainer' }),
@@ -177,8 +204,14 @@ test('Block area selection can delete as one undoable operation and redo it', ()
 
 test('Typing in a section groups into one undo entry per edit session', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
 
   assert.match(outliner, /contentEditHistoryRef/);
+  assert.match(rendererBuild, /'src\/outlinerHistory\.js'/);
+  assert.match(outliner, /mnCreateEditorHistory/);
+  assert.match(outliner, /mnShareBlockTree/);
+  assert.match(outliner, /const MnMemoBlockRow = React\.memo\(MnBlockRow, mnBlockRowMemoEqual\)/);
+  assert.match(outliner, /<MnMemoBlockRow block=\{b\} depth=\{depth\} \{\.\.\.handlers\} \/>/);
   assert.match(outliner, /const pushHistory = !grouped \|\| contentEditHistoryRef\.current\.armed/);
   assert.match(outliner, /if \(grouped\) contentEditHistoryRef\.current\.armed = false/);
   assert.match(outliner, /onBeginContentEdit && onBeginContentEdit\(block\.id\)/);
@@ -228,6 +261,7 @@ test('Table blocks are parsed, rendered, copied, and pasted as formatted markdow
 test('Code blocks preserve language metadata and expose syntax UI', () => {
   const outlineApi = loadOutlineForTest();
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const highlighter = fs.readFileSync(path.join(__dirname, '../src/codeHighlighter.jsx'), 'utf8');
 
   const blocks = outlineApi.mnMdToBlocks('```js\nconst answer = 42;\n```');
   assert.equal(blocks.length, 1);
@@ -236,11 +270,14 @@ test('Code blocks preserve language metadata and expose syntax UI', () => {
   assert.equal(blocks[0].content, 'const answer = 42;');
   assert.equal(outlineApi.mnBlocksToMd(blocks), '```javascript\nconst answer = 42;\n```');
 
-  assert.match(outliner, /const MN_CODE_LANGUAGES = \[/);
-  assert.match(outliner, /value: 'javascript'/);
+  assert.match(highlighter, /const MN_CODE_LANGUAGES = \[/);
+  assert.match(highlighter, /value: 'javascript'/);
+  assert.match(highlighter, /window\.MN_CODE_HIGHLIGHTER/);
   assert.match(outliner, /function mnRenderCode/);
   assert.match(outliner, /<select[\s\S]+Code language/);
   assert.match(outliner, /mnRenderCode\(content, block\.language, T\)/);
+  assert.match(outliner, /mnMermaidSvgHeight\(svg\)/);
+  assert.match(outliner, /height: doc \? Math\.max\(160, height\) : 0/);
 });
 
 test('Selection toolbar closes on outside click and keeps overflow actions in More', () => {
