@@ -693,6 +693,17 @@ ipcMain.handle('mn:ai.connect',     wrap(async () => {
   return result;
 }));
 ipcMain.handle('mn:ai.ask',         wrap((vaultId, query, options) => ai.ask(vaultId, query, store, options || {})));
+ipcMain.handle('mn:ai.askStream', wrapWithEvent(async function askStream(evt, vaultId, query, options = {}) {
+  const requestId = String(options.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+  const cleanOptions = { ...(options || {}) };
+  delete cleanOptions.requestId;
+  return await ai.askStream(vaultId, query, store, {
+    ...cleanOptions,
+    onToken: (token) => {
+      if (requestId) evt.sender.send(`mn:ai.askStream.chunk:${requestId}`, String(token || ''));
+    },
+  });
+}));
 ipcMain.handle('mn:ai.edit',        wrap((payload) => ai.editText(payload)));
 ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(evt, payload = {}) {
   const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
@@ -706,6 +717,17 @@ ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(e
   });
 }));
 ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(payload)));
+ipcMain.handle('mn:ai.chatStream', wrapWithEvent(async function chatStream(evt, payload = {}) {
+  const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+  const cleanPayload = { ...payload };
+  delete cleanPayload.requestId;
+  return await ai.chatStream({
+    ...cleanPayload,
+    onToken: (token) => {
+      if (requestId) evt.sender.send(`mn:ai.chatStream.chunk:${requestId}`, String(token || ''));
+    },
+  });
+}));
 ipcMain.handle('mn:ai.cancel',      wrap((jobId) => ai.cancelJob(jobId)));
 ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, store)));
 ipcMain.handle('mn:ai.related',     wrap(async (vaultId, noteId, options) => { await indexReadyPromise; return ai.relatedNotes(vaultId, noteId, store, options || {}); }));

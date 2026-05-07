@@ -241,7 +241,8 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(aiLib, /controller\.abort\(\)/);
   assert.match(aiLib, /cancelJob,/);
   assert.match(aiLib, /statusCache/);
-  assert.match(aiLib, /ollama\.chat\(options\.model \|\| CONFIG\.chatModel, providerMessages, \{ keep_alive: OLLAMA_KEEP_ALIVE, signal: options\.signal \}\)/);
+  assert.match(aiLib, /ollama\.chat\(options\.model \|\| CONFIG\.chatModel, providerMessages, \{/);
+  assert.match(aiLib, /timeoutMs: options\.timeoutMs/);
   assert.match(aiLib, /String\(systemMessage \|\| ''\)\.trim\(\) \|\| EDIT_SYSTEM_PROMPT/);
   assert.match(ollama, /async function embed\(model, text, opts = \{\}\)/);
   assert.match(ollama, /signal: opts\.signal/);
@@ -622,9 +623,9 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.17');
-  assert.equal(lock.version, '0.1.17');
-  assert.equal(lock.packages[''].version, '0.1.17');
+  assert.equal(pkg.version, '0.1.18');
+  assert.equal(lock.version, '0.1.18');
+  assert.equal(lock.packages[''].version, '0.1.18');
   assert.deepEqual(pkg.files, [
     'vispnote.html',
     'main.js',
@@ -729,6 +730,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const ai = fs.readFileSync(path.join(__dirname, '../src/ai.jsx'), 'utf8');
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
   const helpers = fs.readFileSync(path.join(__dirname, '../src/appHelpers.js'), 'utf8');
 
@@ -854,6 +856,15 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(main, /mn:ai\.editStream/);
   assert.match(aiSource, /async function editTextStream/);
   assert.match(ollama, /async function chatStream/);
+  assert.match(ai, /window\.mn\?\.ai\?\.askStream/);
+  assert.match(ai, /window\.mn\?\.ai\?\.chatStream/);
+  assert.match(preload, /askStream: \(vaultId, query, options, onChunk\)/);
+  assert.match(preload, /chatStream:\(payload, onChunk\)/);
+  assert.match(main, /mn:ai\.askStream/);
+  assert.match(main, /mn:ai\.chatStream/);
+  assert.match(aiSource, /async function askStream/);
+  assert.match(aiSource, /async function chatStream/);
+  assert.match(ollama, /const CHAT_TIMEOUT_MS = 180000/);
   assert.match(outline, /window\.MN_LOGSEQ\?\.WORKFLOW_STATES/);
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(notelist, /const workflowPattern = states/);

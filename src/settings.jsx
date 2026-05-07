@@ -267,13 +267,20 @@ function Row({ T, label, sub, children, last = false }) {
 function Segmented({ T, value, onChange, options }) {
   return (
     <div style={{
-      display: 'inline-flex', background: T.bgSub,
-      border: `1px solid ${T.lineSub}`, borderRadius: 7, padding: 2,
+      display: 'grid',
+      gridTemplateColumns: `repeat(${Math.max(1, options.length)}, minmax(0, 1fr))`,
+      gap: 3,
+      background: T.bgSub,
+      border: `1px solid ${T.lineSub}`, borderRadius: 7, padding: 3,
       maxWidth: '100%',
+      minWidth: options.length > 1 ? 220 : undefined,
+      boxSizing: 'border-box',
     }}>
       {options.map(o => (
         <button key={o.value} onClick={() => onChange(o.value)} style={{
-          padding: '5px 12px', borderRadius: 5, border: 'none',
+          minWidth: 0,
+          minHeight: 28,
+          padding: '5px 10px', borderRadius: 5, border: 'none',
           background: value === o.value ? T.bg : 'transparent',
           color: value === o.value ? T.ink : T.inkMed,
           fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
@@ -281,6 +288,11 @@ function Segmented({ T, value, onChange, options }) {
           boxShadow: value === o.value ? `0 1px 2px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
           textTransform: 'capitalize',
           whiteSpace: 'nowrap',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          boxSizing: 'border-box',
         }}>{o.label}</button>
       ))}
     </div>

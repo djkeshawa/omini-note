@@ -286,6 +286,45 @@ function MnAskAI({
     setQuery('');
     let finalError = null;
     let stopped = false;
+    let streamingAssistantId = null;
+    const putAssistant = (patch) => {
+      if (!streamingAssistantId) streamingAssistantId = `assistant-${jobId}`;
+      updateSession(prev => {
+        const current = prev?.messages || [];
+        const idx = current.findIndex(m => m.id === streamingAssistantId);
+        const nextMessage = {
+          id: streamingAssistantId,
+          role: 'assistant',
+          text: '',
+          streaming: true,
+          ...(idx >= 0 ? current[idx] : {}),
+          ...patch,
+        };
+        const nextMessages = idx >= 0
+          ? current.map((m, i) => i === idx ? nextMessage : m)
+          : [...current, nextMessage];
+        return { ...(prev || {}), messages: nextMessages };
+      });
+    };
+    const appendAssistantToken = (token) => {
+      const chunk = String(token || '');
+      if (!chunk) return;
+      if (!streamingAssistantId) streamingAssistantId = `assistant-${jobId}`;
+      updateSession(prev => {
+        const current = prev?.messages || [];
+        const idx = current.findIndex(m => m.id === streamingAssistantId);
+        const base = idx >= 0 ? current[idx] : { id: streamingAssistantId, role: 'assistant', text: '', streaming: true };
+        const nextMessage = {
+          ...base,
+          text: String(base.text || '') + chunk,
+          streaming: true,
+        };
+        const nextMessages = idx >= 0
+          ? current.map((m, i) => i === idx ? nextMessage : m)
+          : [...current, nextMessage];
+        return { ...(prev || {}), messages: nextMessages, activeAction: 'Answering...' };
+      });
+    };
     try {
       if (route.type === 'action') {
         const actionResult = await runAction(q, route.action, jobId);
@@ -299,17 +338,18 @@ function MnAskAI({
         const qForAsk = priorMessages.length
           ? `Conversation so far:\n${priorMessages.slice(-6).map(m => `${m.role}: ${m.text}`).join('\n')}\n\nCurrent question: ${q}`
           : q;
-        const r = await window.mn.ai.ask(vaultId, qForAsk, { jobId });
+        putAssistant({ text: '', streaming: true });
+        const askStream = window.mn?.ai?.askStream;
+        const r = askStream
+          ? await askStream(vaultId, qForAsk, { jobId }, appendAssistantToken)
+          : await window.mn.ai.ask(vaultId, qForAsk, { jobId });
         if (stoppedJobRef.current === jobId) return;
         if (!r.ok) {
           throw new Error(r.error || 'Unknown error');
         } else if (r.value && !r.value.ok) {
           throw new Error(r.value.error || 'Unknown error');
         } else {
-          updateSession(prev => ({
-            ...(prev || {}),
-            messages: [...(prev?.messages || []), { role: 'assistant', text: r.value.answer, sources: r.value.sources || [] }],
-          }));
+          putAssistant({ text: r.value.answer, sources: r.value.sources || [], streaming: false });
         }
       } else {
         setActiveAction('Thinking...');
@@ -317,25 +357,31 @@ function MnAskAI({
           ...priorMessages.slice(-6).map(m => ({ role: m.role, content: m.text })),
           { role: 'user', content: q },
         ];
-        const r = await window.mn.ai.chat({ messages: chatMessages, jobId });
+        putAssistant({ text: '', streaming: true });
+        const chatStream = window.mn?.ai?.chatStream;
+        const r = chatStream
+          ? await chatStream({ messages: chatMessages, jobId }, appendAssistantToken)
+          : await window.mn.ai.chat({ messages: chatMessages, jobId });
         if (stoppedJobRef.current === jobId) return;
         if (!r.ok) throw new Error(r.error || 'Unknown error');
         if (r.value && !r.value.ok) throw new Error(r.value.error || 'Unknown error');
-        updateSession(prev => ({
-          ...(prev || {}),
-          messages: [...(prev?.messages || []), { role: 'assistant', text: r.value.answer }],
-        }));
+        putAssistant({ text: r.value.answer, streaming: false });
       }
     } catch (e) {
       const msg = e.message || String(e);
       stopped = stoppedJobRef.current === jobId || /abort|cancel/i.test(msg);
       if (stopped) return;
       finalError = msg;
-      updateSession(prev => ({
-        ...(prev || {}),
-        error: msg,
-        messages: [...(prev?.messages || []), { role: 'assistant', text: msg, error: true }],
-      }));
+      if (streamingAssistantId) {
+        putAssistant({ text: msg, error: true, streaming: false });
+        updateSession(prev => ({ ...(prev || {}), error: msg }));
+      } else {
+        updateSession(prev => ({
+          ...(prev || {}),
+          error: msg,
+          messages: [...(prev?.messages || []), { role: 'assistant', text: msg, error: true }],
+        }));
+      }
     } finally {
       if (!stopped && stoppedJobRef.current !== jobId) {
         updateSession(prev => ({
@@ -581,7 +627,7 @@ function MnAskAI({
             const previousUser = [...messages.slice(0, idx)].reverse().find(item => item.role === 'user')?.text || '';
             const canReport = m.role === 'assistant' && !m.error && !m.stopped && String(m.text || '').trim();
             return (
-            <div key={idx} data-mn-latest-response={idx === latestResponseIndex ? 'true' : undefined} style={{
+            <div key={m.id || idx} data-mn-latest-response={idx === latestResponseIndex ? 'true' : undefined} style={{
               marginBottom: 14,
               display: 'flex',
               justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
@@ -606,10 +652,10 @@ function MnAskAI({
                     textTransform: 'uppercase',
                     letterSpacing: '0.08em',
                   }}>
-                    {m.error ? 'Error' : m.stopped ? 'Stopped' : m.action ? 'Action' : 'Answer'}
+                    {m.error ? 'Error' : m.stopped ? 'Stopped' : m.action ? 'Action' : m.streaming ? 'Answering' : 'Answer'}
                   </div>
                 )}
-                {m.text}
+                {m.text || (m.streaming ? activeAction || 'Thinking...' : '')}
                 {m.sources?.length > 0 && (
                 <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.lineSub}` }}>
                   <div style={{
@@ -656,7 +702,7 @@ function MnAskAI({
               </div>
             </div>
           );})}
-          {pending && (
+          {pending && !messages.some(m => m.streaming) && (
             <div className="mn-ask-ai-shimmer" data-mn-pending-response="true" style={{
               padding: '10px 12px',
               borderRadius: 8,

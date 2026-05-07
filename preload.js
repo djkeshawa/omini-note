@@ -48,6 +48,16 @@ contextBridge.exposeInMainWorld('mn', {
     status:    () => ipcRenderer.invoke('mn:ai.status'),
     connect:   () => ipcRenderer.invoke('mn:ai.connect'),
     ask:       (vaultId, query, options) => ipcRenderer.invoke('mn:ai.ask', vaultId, query, options),
+    askStream: (vaultId, query, options, onChunk) => {
+      const requestId = `ask-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const channel = `mn:ai.askStream.chunk:${requestId}`;
+      const listener = (_event, chunk) => {
+        if (typeof onChunk === 'function') onChunk(String(chunk || ''));
+      };
+      ipcRenderer.on(channel, listener);
+      return ipcRenderer.invoke('mn:ai.askStream', vaultId, query, { ...(options || {}), requestId })
+        .finally(() => ipcRenderer.removeListener(channel, listener));
+    },
     edit:      (payload) => ipcRenderer.invoke('mn:ai.edit', payload),
     editStream:(payload, onChunk) => {
       const requestId = `edit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -60,6 +70,16 @@ contextBridge.exposeInMainWorld('mn', {
         .finally(() => ipcRenderer.removeListener(channel, listener));
     },
     chat:      (payload) => ipcRenderer.invoke('mn:ai.chat', payload),
+    chatStream:(payload, onChunk) => {
+      const requestId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const channel = `mn:ai.chatStream.chunk:${requestId}`;
+      const listener = (_event, chunk) => {
+        if (typeof onChunk === 'function') onChunk(String(chunk || ''));
+      };
+      ipcRenderer.on(channel, listener);
+      return ipcRenderer.invoke('mn:ai.chatStream', { ...(payload || {}), requestId })
+        .finally(() => ipcRenderer.removeListener(channel, listener));
+    },
     cancel:    (jobId) => ipcRenderer.invoke('mn:ai.cancel', jobId),
     backfill:  (vaultId) => ipcRenderer.invoke('mn:ai.backfill', vaultId),
     related:   (vaultId, noteId, options) => ipcRenderer.invoke('mn:ai.related', vaultId, noteId, options),

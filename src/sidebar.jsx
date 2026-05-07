@@ -436,9 +436,11 @@ function MnSidebar({
                   </div>
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: 5,
-                    margin: '6px 0 0 29px',
+                    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                    gap: 8,
+                    margin: '7px 0 0',
+                    width: '100%',
+                    boxSizing: 'border-box',
                   }}>
                     {[
                       { id: 'notes', label: 'Notes vault' },
@@ -449,13 +451,20 @@ function MnSidebar({
                         type="button"
                         onClick={() => setNewVaultType(type.id)}
                         style={{
-                          padding: '5px 7px',
-                          borderRadius: 5,
+                          minWidth: 0,
+                          minHeight: 32,
+                          padding: '0 10px',
+                          borderRadius: 6,
                           border: `1px solid ${newVaultType === type.id ? T.selLine : T.lineSub}`,
-                          background: newVaultType === type.id ? T.accentSoft : T.bgSub,
+                          background: newVaultType === type.id ? T.accentSoft : T.bg,
                           color: newVaultType === type.id ? T.accent : T.inkMed,
                           fontFamily: 'var(--mn-ui)',
                           fontSize: 11.5,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          textAlign: 'center',
+                          boxSizing: 'border-box',
                           cursor: 'pointer',
                         }}>{type.label}</button>
                     ))}
