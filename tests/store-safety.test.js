@@ -407,6 +407,30 @@ test('AI PII reduction masks hosted provider requests and restores local placeho
   }
 });
 
+test('AI note traversal expands seed notes through links backlinks and tags', () => {
+  const ai = require('../lib/ai');
+  const notes = [
+    { id: 'seed', title: 'Seed', tags: ['reading'], body: 'See [[Linked]].' },
+    { id: 'linked', title: 'Linked', tags: [], body: 'Linked body' },
+    { id: 'backlink', title: 'Backlink', tags: [], body: 'Mentions [[Seed]].' },
+    { id: 'shared', title: 'Shared tag', tags: ['reading'], body: 'Same category' },
+    { id: 'other', title: 'Other', tags: [], body: 'Unrelated' },
+  ];
+  const expanded = ai.__test.expandTraversalCandidates(['seed'], notes, 'what is related to seed?');
+  assert.deepEqual(expanded.map(item => item.note.id).slice(0, 4), ['seed', 'linked', 'backlink', 'shared']);
+  assert.ok(expanded.find(item => item.note.id === 'linked').reasons.some(reason => reason.includes('linked from')));
+  assert.ok(expanded.find(item => item.note.id === 'backlink').reasons.some(reason => reason.includes('backlinks')));
+  assert.ok(expanded.find(item => item.note.id === 'shared').reasons.some(reason => reason.includes('shares #reading')));
+});
+
+test('AI high-risk capability policy remains disabled by default', () => {
+  const aiActions = require('../src/aiActions.js');
+  const action = aiActions.classifyPrompt('run python code over my notes').action;
+  assert.equal(action.type, 'high-risk-disabled');
+  assert.match(action.reason, /not enabled/);
+  assert.match(action.reason, /Settings toggle/);
+});
+
 test('Data safety wiring exposes trash, versions, and save conflict recovery', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');

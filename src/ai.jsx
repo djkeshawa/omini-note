@@ -32,7 +32,7 @@ function mnAskStatusText(status) {
 }
 
 function MnAskAI({
-  vaultId, currentNote, allNotes, onClose, onOpenNote, onCreateNote, onApplyCurrentPageBody,
+  vaultId, currentNote, allNotes, onClose, onOpenNote, onCreateNote, onApplyCurrentPageBody, onTagCurrentNote,
   session, setSession, onBackgroundComplete, initialQuery, T,
 }) {
   const [query, setQuery] = useStateAI('');
@@ -87,54 +87,8 @@ function MnAskAI({
     onClose && onClose();
   };
 
-  const detectAction = (q) => {
-    const s = q.toLowerCase();
-    const quoted = q.match(/["“']([^"”']+)["”']/)?.[1];
-    if (/\b(create|make|new)\b.*\b(page|note)\b/.test(s)) {
-      const title =
-        quoted ||
-        q.match(/\b(?:called|titled|named)\s+(.+)$/i)?.[1]?.trim().replace(/[.?!]$/, '') ||
-        q.match(/\b(?:page|note)\s+(?:about|for)\s+(.+)$/i)?.[1]?.trim().replace(/[.?!]$/, '') ||
-        'AI draft';
-      return { type: 'create-note', title };
-    }
-    if (/\b(link|wikilink|connect)\b.*\b(page|note|this|things|together)\b/.test(s)) {
-      const wantsFormat = /\b(format|clean up|organize|improve|polish)\b/.test(s);
-      return { type: 'edit-current', action: wantsFormat ? 'format-link' : 'link' };
-    }
-    if (/\b(format|clean up|organize)\b.*\b(page|note|this|current)\b/.test(s)) {
-      return { type: 'edit-current', action: 'format' };
-    }
-    if (/\b(improve|rewrite|polish)\b.*\b(page|note|writing|this|current)\b/.test(s)) {
-      return { type: 'edit-current', action: 'improve' };
-    }
-    if (/\b(summarize|summary)\b.*\b(page|note|this|current)\b/.test(s)) {
-      return { type: 'edit-current', action: 'summarize' };
-    }
-    if (/\b(concise|shorten)\b.*\b(page|note|this|current)\b/.test(s)) {
-      return { type: 'edit-current', action: 'concise' };
-    }
-    if (/\b(fix|correct)\b.*\b(grammar|spelling|page|note|this|current)\b/.test(s)) {
-      return { type: 'edit-current', action: 'fix' };
-    }
-    return null;
-  };
-
   const classifyPrompt = (q) => {
-    const action = detectAction(q);
-    if (action) return { type: 'action', action };
-    const s = q.toLowerCase().trim();
-    const normalized = s.replace(/[!?.\s]+$/g, '');
-    if (/^(hi|hello|hey|yo|sup|thanks|thank you|ok|okay|cool|nice|good morning|good afternoon|good evening)$/.test(normalized)) {
-      return { type: 'chat' };
-    }
-    if (/\b(who are you|what can you do|help|how do you work|what are your capabilities)\b/.test(s)) {
-      return { type: 'chat' };
-    }
-    if (/\b(my|this|current|latest|recent|last|note|notes|page|pages|vault|tag|tags|task|tasks|todo|todos|reminder|reminders|decide|decided|wrote|writing|link|links|backlink|backlinks|summarize.*notes|search)\b/.test(s)) {
-      return { type: 'notes' };
-    }
-    return { type: 'notes' };
+    return (window.MN_AI_ACTIONS?.classifyPrompt || (() => ({ type: 'notes' })))(q);
   };
 
   const askEdit = async ({ text, instruction, scope, jobId }) => {
@@ -145,6 +99,10 @@ function MnAskAI({
   };
 
   const runAction = async (q, action, jobId) => {
+    if (action.type === 'high-risk-disabled') {
+      return { answer: action.reason, sources: [], action: true };
+    }
+
     if (action.type === 'create-note') {
       if (!onCreateNote) throw new Error('Page creation is not available here');
       setActiveAction('Creating page...');
@@ -154,8 +112,21 @@ function MnAskAI({
         text: q,
         jobId,
       });
-      const id = onCreateNote({ title: action.title || 'AI draft', body });
+      const id = onCreateNote({ title: action.title || 'AI draft', body, open: false });
       return { answer: `Created page "${action.title || 'AI draft'}".`, sources: id ? [{ id, title: action.title || 'AI draft', snippet: body.slice(0, 200) }] : [] };
+    }
+
+    if (action.type === 'tag-current-note') {
+      if (!currentNote || !onTagCurrentNote) throw new Error('No current page is open to tag');
+      setActiveAction('Tagging page...');
+      const result = onTagCurrentNote(action.tag);
+      const tag = result?.tag || action.tag;
+      return {
+        answer: result?.alreadyHadTag
+          ? `"${currentNote.title}" already has #${tag}.`
+          : `Tagged "${currentNote.title}" with #${tag}.`,
+        sources: [{ id: currentNote.id, title: currentNote.title, snippet: `#${tag}` }],
+      };
     }
 
     if (action.type === 'edit-current') {
@@ -213,7 +184,7 @@ function MnAskAI({
         const qForAsk = priorMessages.length
           ? `Conversation so far:\n${priorMessages.slice(-6).map(m => `${m.role}: ${m.text}`).join('\n')}\n\nCurrent question: ${q}`
           : q;
-        const r = await window.mn.ai.ask(vaultId, qForAsk, { jobId });
+        const r = await window.mn.ai.ask(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null });
         if (stoppedJobRef.current === jobId) return;
         if (!r.ok) {
           throw new Error(r.error || 'Unknown error');

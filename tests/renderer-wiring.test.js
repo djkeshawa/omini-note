@@ -158,8 +158,11 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(app, /session=\{askAiSession\}/);
   assert.match(app, /setSession=\{setAskAiSession\}/);
   assert.match(app, /onBackgroundComplete=\{notifyAskAiComplete\}/);
+  assert.match(app, /onCreateNote=\{\(\{ title, body, tags: noteTags \}\) => createNote\(\{ title, body, tags: noteTags \|\| \[\] \}, \{ open: false \}\)\}/);
+  assert.match(app, /onTagCurrentNote=\{tagCurrentNoteFromAi\}/);
 
   assert.match(ai, /const aiSession = session \|\| localSession/);
+  assert.match(ai, /window\.MN_AI_ACTIONS\?\.classifyPrompt/);
   assert.match(ai, /const MN_ASK_SUGGESTIONS = \[/);
   assert.match(ai, /function mnAskStatusText/);
   assert.match(ai, /function MnAskInfoChip/);

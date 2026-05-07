@@ -23,6 +23,7 @@ const SOURCES = [
   'src/panels.jsx',
   'src/canvas.jsx',
   'src/settings.jsx',
+  'src/aiActions.js',
   'src/ai.jsx',
   'src/appHelpers.js',
   'src/appNovelist.js',

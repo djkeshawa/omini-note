@@ -1417,6 +1417,18 @@ function MnApp() {
     return clean;
   };
 
+  const tagCurrentNoteFromAi = useCallbackA((name) => {
+    if (!selectedNote) return null;
+    const clean = addTag(name);
+    if (!clean) return null;
+    const currentTags = selectedNote.tags || [];
+    const alreadyHadTag = currentTags.includes(clean);
+    if (!alreadyHadTag) {
+      updateNote(selectedNote.id, { tags: [...currentTags, clean] }, { historyKey: `note:${selectedNote.id}:tag:${clean}:ai-add` });
+    }
+    return { tag: clean, alreadyHadTag };
+  }, [selectedNote, updateNote, tags]);
+
   const removeTag = (name) => {
     const clean = normalizeTagName(name);
     if (!clean || !tags.find(t => t.name === clean)) return;
@@ -2269,7 +2281,8 @@ function MnApp() {
             initialQuery={askAiSeed}
             onClose={() => setAskAiOpen(false)}
             onOpenNote={(id) => { setSelectedId(id); navigateView('notes'); }}
-            onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] })}
+            onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] }, { open: false })}
+            onTagCurrentNote={tagCurrentNoteFromAi}
             onApplyCurrentPageBody={(body) => {
               if (!selectedNote) return;
               const cleanBody = mnNormalizeNoteBody(body, selectedNote.title || 'Untitled');
