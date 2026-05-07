@@ -248,7 +248,7 @@ function MnAskAI({
       messages: [...(prev?.messages || []), userMsg],
       pending: true,
       error: null,
-      activeAction: route.type === 'notes' ? 'Searching notes...' : route.type === 'chat' ? 'Thinking...' : 'Starting task...',
+      activeAction: route.type === 'notes' ? 'Researching notes...' : route.type === 'chat' ? 'Thinking...' : 'Starting task...',
       background: false,
       jobId,
       lastQuery: q,
@@ -305,7 +305,7 @@ function MnAskAI({
           messages: [...(prev?.messages || []), { role: 'assistant', text: actionResult.answer, sources: actionResult.sources || [], action: true }],
         }));
       } else if (route.type === 'notes') {
-        setActiveAction('Searching notes...');
+        setActiveAction('Researching notes...');
         const qForAsk = priorMessages.length
           ? `Conversation so far:\n${priorMessages.slice(-6).map(m => `${m.role}: ${m.text}`).join('\n')}\n\nCurrent question: ${q}`
           : q;

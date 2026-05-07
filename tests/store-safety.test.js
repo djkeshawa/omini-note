@@ -467,6 +467,14 @@ test('AI recursive note research uses only bounded read-only note tools', async 
   assert.equal(research.toolCalls, 5);
 });
 
+test('AI recursive note research is gated for simple specific queries unless forced', () => {
+  const ai = require('../lib/ai');
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('open Alpha note', ['a', 'b', 'c'], {}), false);
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('what did I decide about Alpha?', ['a', 'b', 'c'], {}), true);
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('open Alpha note', ['a', 'b', 'c'], { recursiveResearch: true }), true);
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('what did I decide about Alpha?', ['a'], { recursiveResearch: false }), false);
+});
+
 test('AI high-risk capability policy remains disabled by default', () => {
   const aiActions = require('../src/aiActions.js');
   const action = aiActions.classifyPrompt('run python code over my notes').action;
