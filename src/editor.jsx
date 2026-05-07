@@ -1,4 +1,4 @@
-// Editor pane: OminiNote block outliner. Shows note title, date, tags, backlinks.
+// Editor pane: VispNote block outliner. Shows note title, date, tags, backlinks.
 
 const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useEffectE } = React;
 
@@ -137,6 +137,30 @@ function MnEditor({
   }, [vaultId, note.id, note.title, note.blocks]);
 
   const backlinks = diskBacklinks != null ? diskBacklinks : inMemoryBacklinks;
+
+  // Related notes via embeddings (semantic) with FTS top-up. Debounced so the
+  // IPC fires once the note settles, and re-runs on note id only — content
+  // edits don't move similarity meaningfully on every keystroke.
+  const [related, setRelated] = useStateE({ items: [], mode: null, loading: false });
+  useEffectE(() => {
+    if (!HAS_DISK_E || !vaultId || !note.id) {
+      setRelated({ items: [], mode: null, loading: false });
+      return;
+    }
+    let cancelled = false;
+    setRelated(prev => ({ ...prev, loading: true }));
+    const handle = setTimeout(async () => {
+      try {
+        const res = await window.mn.ai.related(vaultId, note.id, { limit: 6 });
+        if (cancelled) return;
+        if (res?.ok && res.value?.ok) setRelated({ items: res.value.items || [], mode: res.value.mode, loading: false });
+        else setRelated({ items: [], mode: null, loading: false });
+      } catch (e) {
+        if (!cancelled) setRelated({ items: [], mode: null, loading: false });
+      }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [vaultId, note.id]);
 
   // Word count from blocks
   const wordCount = useMemoE(() => {
@@ -618,6 +642,49 @@ function MnEditor({
                     fontFamily: 'var(--mn-body)', fontSize: 12.5,
                     color: T.inkMed, lineHeight: 1.5,
                   }}>{b.context.replace(/\[\[([^\]]+)\]\]/g, '$1').replace(/^[-#>*\s]*\s*/, '')}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {related.items.length > 0 && (
+            <div style={{
+              marginTop: backlinks.length > 0 ? 28 : 40,
+              paddingTop: 20,
+              borderTop: `1px solid ${T.lineSub}`,
+            }}>
+              <div style={{
+                fontFamily: 'var(--mn-mono)', fontSize: 10,
+                letterSpacing: '0.12em', textTransform: 'uppercase',
+                color: T.inkDim, marginBottom: 10,
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span>≈ {related.items.length} related</span>
+                {related.mode && (
+                  <span style={{
+                    fontSize: 9, letterSpacing: '0.1em',
+                    color: T.inkDim, opacity: 0.7,
+                  }}>{related.mode === 'semantic' ? 'semantic' : 'keyword'}</span>
+                )}
+              </div>
+              {related.items.map(r => (
+                <div key={r.noteId} onClick={() => onOpen(r.noteId)} style={{
+                  padding: '10px 12px', marginBottom: 6, borderRadius: 6,
+                  background: T.bgSub, border: `1px solid ${T.lineSub}`,
+                  cursor: 'pointer',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+                onMouseLeave={e => e.currentTarget.style.background = T.bgSub}>
+                  <div style={{
+                    fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500,
+                    color: T.ink, marginBottom: 3,
+                  }}>{r.title}</div>
+                  {r.snippet && (
+                    <div style={{
+                      fontFamily: 'var(--mn-body)', fontSize: 12.5,
+                      color: T.inkMed, lineHeight: 1.5,
+                    }}>{r.snippet}</div>
+                  )}
                 </div>
               ))}
             </div>

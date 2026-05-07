@@ -97,7 +97,7 @@ test('Note delete confirmation uses themed in-app dialog', () => {
 });
 
 test('Launch screen uses VispNote logo with pastel blooming light design', () => {
-  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   const appShell = fs.readFileSync(path.join(__dirname, '../src/appShell.jsx'), 'utf8');
   const loadingLogo = fs.statSync(path.join(__dirname, '../assets/vispnote-loading-transparent.png'));

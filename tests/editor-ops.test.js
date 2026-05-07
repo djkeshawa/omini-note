@@ -204,7 +204,7 @@ test('Visible block context menu options are wired to real operations', () => {
 });
 
 test('Table blocks are parsed, rendered, copied, and pasted as formatted markdown', () => {
-  const html = fs.readFileSync(path.join(__dirname, '../OminiNote.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');

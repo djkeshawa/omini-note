@@ -1,4 +1,4 @@
-// Lightweight markdown renderer for OminiNote.
+// Lightweight markdown renderer for VispNote.
 // Supports: headings, collapsible H2/H3, checkboxes, [[wiki-links]], #tags,
 // @remind, blockquotes, bullets, bold/italic/code, horizontal rule.
 // Headings are collapsible — click to fold the following block until the next heading of same-or-higher level.

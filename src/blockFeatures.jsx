@@ -1,4 +1,4 @@
-// OminiNote block features: workflow markers, block refs, embeds, properties, context menu.
+// VispNote block features: workflow markers, block refs, embeds, properties, context menu.
 //
 // Block markers: legacy workflow tokens kept for markdown compatibility.
 //   - stored in block.workflow (string | null)

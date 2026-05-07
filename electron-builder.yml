@@ -6,7 +6,7 @@ directories:
   output: dist
 
 files:
-  - OminiNote.html
+  - vispnote.html
   - main.js
   - preload.js
   - package.json

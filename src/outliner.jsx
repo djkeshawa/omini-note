@@ -1,4 +1,4 @@
-// OminiNote outliner — typed-block editor.
+// VispNote outliner — typed-block editor.
 //
 // Block kinds: paragraph (default), heading, bullet, todo, quote, code, table, divider.
 // - Enter behavior depends on kind (see handleEnter).
@@ -170,6 +170,8 @@ const MN_CODE_LANGUAGES = [
   { value: 'bash', label: 'Bash', aliases: ['sh', 'shell', 'zsh'] },
   { value: 'python', label: 'Python', aliases: ['py'] },
   { value: 'sql', label: 'SQL' },
+  { value: 'math', label: 'Math (KaTeX)', aliases: ['latex', 'tex', 'katex'] },
+  { value: 'mermaid', label: 'Mermaid', aliases: ['flowchart', 'sequence'] },
 ];
 
 function mnNormalizeCodeLanguage(value) {
@@ -267,6 +269,113 @@ function mnRenderCode(text, language, T) {
 window.MN_CODE_LANGUAGES = MN_CODE_LANGUAGES;
 window.mnNormalizeCodeLanguage = mnNormalizeCodeLanguage;
 window.mnRenderCode = mnRenderCode;
+
+// KaTeX block renderer. Renders the source as displayMode TeX. KaTeX is
+// loaded as a UMD <script> in vispnote.html so this is a no-op fallback if
+// it failed to load (e.g. user replaced the bundle).
+function MnMathBlock({ source, T }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!ref.current) return;
+    if (!window.katex) {
+      ref.current.textContent = String(source || '');
+      return;
+    }
+    try {
+      window.katex.render(String(source || ''), ref.current, {
+        displayMode: true,
+        throwOnError: false,
+        output: 'html',
+      });
+    } catch (e) {
+      ref.current.textContent = `Math error: ${e.message || e}`;
+    }
+  }, [source]);
+  return (
+    <div
+      ref={ref}
+      style={{
+        fontFamily: 'KaTeX_Main, Newsreader, serif',
+        fontSize: 16,
+        color: T.ink,
+        overflowX: 'auto',
+        padding: '4px 0',
+      }}
+    />
+  );
+}
+
+// Mermaid block renderer. Mermaid is async — renderToString creates a fresh
+// SVG keyed by id. We dedupe on (source, T.bg) so the diagram only
+// re-renders when content or theme changes, not on every keystroke elsewhere.
+let _mnMermaidInited = false;
+function mnMermaidInit(theme) {
+  if (!window.mermaid) return false;
+  if (_mnMermaidInited) return true;
+  try {
+    window.mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: theme === 'dark' ? 'dark' : 'default',
+      fontFamily: 'inherit',
+    });
+    _mnMermaidInited = true;
+  } catch (e) {
+    console.warn('mermaid init failed', e);
+  }
+  return _mnMermaidInited;
+}
+
+function mnDetectThemeFromT(T) {
+  return (T && window.MN_THEMES && T === window.MN_THEMES.dark) ? 'dark' : 'light';
+}
+
+function MnMermaidBlock({ source, T }) {
+  const ref = React.useRef(null);
+  const idRef = React.useRef(`mn_mer_${Math.random().toString(36).slice(2, 10)}`);
+  const [error, setError] = React.useState(null);
+  const themeMode = mnDetectThemeFromT(T);
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!ref.current) return;
+    const code = String(source || '').trim();
+    if (!code) { ref.current.innerHTML = ''; setError(null); return; }
+    if (!mnMermaidInit(themeMode)) {
+      ref.current.textContent = code;
+      return;
+    }
+    setError(null);
+    window.mermaid.render(idRef.current, code).then(({ svg }) => {
+      if (cancelled || !ref.current) return;
+      ref.current.innerHTML = svg;
+    }).catch(err => {
+      if (cancelled) return;
+      setError(err?.message || String(err));
+    });
+    return () => { cancelled = true; };
+  }, [source, themeMode]);
+  if (error) {
+    return (
+      <pre style={{
+        margin: 0, padding: 8, color: T.warn || T.ink,
+        fontFamily: 'var(--mn-mono)', fontSize: 12,
+        whiteSpace: 'pre-wrap',
+      }}>Mermaid error: {error}</pre>
+    );
+  }
+  return (
+    <div
+      ref={ref}
+      style={{
+        display: 'flex', justifyContent: 'center',
+        padding: '4px 0', overflowX: 'auto',
+      }}
+    />
+  );
+}
+
+window.MnMathBlock = MnMathBlock;
+window.MnMermaidBlock = MnMermaidBlock;
 
 function mnSpellWords(text) {
   return Array.from(new Set(String(text || '')
@@ -1817,9 +1926,13 @@ function MnBlockRow({
                   return <MnMarkdownTable markdown={content} T={T} />;
                 }
                 if (block.kind === 'code') {
-                  return content
-                    ? mnRenderCode(content, block.language, T)
-                    : <span style={{ color: T.inkDim, fontStyle: 'italic' }}>{mnPlaceholder(block)}</span>;
+                  if (!content) {
+                    return <span style={{ color: T.inkDim, fontStyle: 'italic' }}>{mnPlaceholder(block)}</span>;
+                  }
+                  const lang = mnNormalizeCodeLanguage(block.language);
+                  if (lang === 'math') return <MnMathBlock source={content} T={T} />;
+                  if (lang === 'mermaid') return <MnMermaidBlock source={content} T={T} />;
+                  return mnRenderCode(content, block.language, T);
                 }
                 if (spellCheck && Object.keys(spellIssues || {}).length) {
                   return mnRenderSpellCheckedText(content, spellIssues, T, setSpellMenu);

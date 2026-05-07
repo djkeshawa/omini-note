@@ -1,4 +1,4 @@
-// In-layout knowledge graph for OminiNote.
+// In-layout knowledge graph for VispNote.
 // Pure JS force simulation, scoped by the existing note-list search/filter.
 
 const { useEffect, useRef, useState, useMemo } = React;
