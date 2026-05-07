@@ -243,6 +243,10 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(aiLib, /statusCache/);
   assert.match(aiLib, /ollama\.chat\(options\.model \|\| CONFIG\.chatModel, providerMessages, \{/);
   assert.match(aiLib, /timeoutMs: options\.timeoutMs/);
+  assert.match(aiLib, /function isEmbeddingUnsupportedError/);
+  assert.match(aiLib, /function markEmbedModelFailure/);
+  assert.match(aiLib, /EMBED_MODEL_UNSUPPORTED/);
+  assert.match(aiLib, /embedModelReason/);
   assert.match(aiLib, /String\(systemMessage \|\| ''\)\.trim\(\) \|\| EDIT_SYSTEM_PROMPT/);
   assert.match(ollama, /async function embed\(model, text, opts = \{\}\)/);
   assert.match(ollama, /signal: opts\.signal/);
@@ -623,9 +627,9 @@ test('Release metadata targets renamed VispNote repository', () => {
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
 
-  assert.equal(pkg.version, '0.1.18');
-  assert.equal(lock.version, '0.1.18');
-  assert.equal(lock.packages[''].version, '0.1.18');
+  assert.equal(pkg.version, '0.1.19');
+  assert.equal(lock.version, '0.1.19');
+  assert.equal(lock.packages[''].version, '0.1.19');
   assert.deepEqual(pkg.files, [
     'vispnote.html',
     'main.js',

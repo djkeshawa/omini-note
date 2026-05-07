@@ -564,7 +564,7 @@ function MnAskAI({
                 : (!chatOk && status)
                   ? `Chat model not installed: \`ollama pull ${status?.config?.chatModel}\``
                 : (!embedOk && status)
-                    ? `Using keyword search. For semantic search: \`ollama pull ${status?.config?.embedModel}\``
+                    ? (status?.embedModelReason || `Using keyword search. For semantic search: \`ollama pull ${status?.config?.embedModel}\``)
                 : embedded ? '⌘+Enter to ask' : '⌘+Enter to ask · Esc to close'
               }
             </div>

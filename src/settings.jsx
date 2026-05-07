@@ -648,7 +648,7 @@ function SectionAI({ T }) {
       ? (status?.chatModelOk === false
         ? `Chat model missing: ${status?.config?.chatModel || config?.chatModel}`
         : status?.embedModelOk === false
-          ? `${models.length} Ollama model${models.length === 1 ? '' : 's'} available. Ask AI will use keyword search until ${status?.config?.embedModel || config?.embedModel} is installed.`
+          ? (status?.embedModelReason || `${models.length} Ollama model${models.length === 1 ? '' : 's'} available. Ask AI will use keyword search until ${status?.config?.embedModel || config?.embedModel} is installed.`)
           : `${models.length} Ollama model${models.length === 1 ? '' : 's'} available`)
       : status?.reason || status?.connectError || 'Ollama is not responding yet.')
     : (providerReady
