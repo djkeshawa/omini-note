@@ -90,7 +90,21 @@ jobs:
         run: npm ci
 
       - name: Build installers
-        run: npm run build -- ${{ matrix.args }}
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm run build -- ${{ matrix.args }}; then
+              exit 0
+            fi
+
+            status=$?
+            if [[ "${attempt}" == "3" ]]; then
+              exit "${status}"
+            fi
+
+            rm -rf dist
+            sleep $((attempt * 20))
+          done
 
       - name: Verify packaged renderer bundle
         run: npm run verify:package-renderer

@@ -47,11 +47,14 @@ function assertPackagedBundle(devBundleMtimeMs) {
   }
 }
 
-function packagedResourceRoots() {
+function packagedResourceRoots(devBundleMtimeMs) {
   const dist = path.join(ROOT, 'dist');
   const roots = [];
   const add = (platform, resources) => {
-    if (fs.existsSync(resources)) roots.push({ platform, resources });
+    const asarFile = path.join(resources, 'app.asar');
+    if (!fs.existsSync(asarFile)) return;
+    if (fs.statSync(asarFile).mtimeMs < devBundleMtimeMs) return;
+    roots.push({ platform, resources });
   };
 
   add('win32', path.join(dist, 'win-unpacked', 'resources'));
@@ -60,6 +63,7 @@ function packagedResourceRoots() {
   for (const file of walk(dist)) {
     const normalized = file.replace(/\\/g, '/');
     if (!normalized.endsWith('.app/Contents/Resources/app.asar')) continue;
+    if (fs.statSync(file).mtimeMs < devBundleMtimeMs) continue;
     roots.push({ platform: 'darwin', resources: path.dirname(file) });
   }
 
@@ -126,8 +130,8 @@ function assertSqliteVecNative(root) {
   }
 }
 
-function assertPackagedNativeModules() {
-  for (const root of packagedResourceRoots()) {
+function assertPackagedNativeModules(devBundleMtimeMs) {
+  for (const root of packagedResourceRoots(devBundleMtimeMs)) {
     assertBetterSqliteNative(root);
     assertSqliteVecNative(root);
   }
@@ -135,5 +139,5 @@ function assertPackagedNativeModules() {
 
 const devBundleMtimeMs = assertDevBundle();
 assertPackagedBundle(devBundleMtimeMs);
-assertPackagedNativeModules();
+assertPackagedNativeModules(devBundleMtimeMs);
 console.log(`Verified packaged renderer path: ${EXPECTED}`);
