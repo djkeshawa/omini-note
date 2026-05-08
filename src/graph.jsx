@@ -73,6 +73,9 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
         contentSize,
         tag: n.tags[0] || 'untagged',
         date: new Date(n.date).getTime(),
+        fixedX: null,
+        cx: null,
+        cy: null,
       };
     });
 
@@ -292,7 +295,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
               if (!a || !b) return null;
               const active = connectedToHover(a.id) && connectedToHover(b.id);
               return (
-                <path key={i}
+                <path key={`${e.source}:${e.target}:${i}`}
                   d={mnGraphCurve(a, b)}
                   fill="none"
                   stroke={active ? T.inkDim : T.line}

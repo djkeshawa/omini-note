@@ -184,9 +184,86 @@ function MnAskAI({
     return r.value.text;
   };
 
+  const askNotes = async ({ prompt, jobId }) => {
+    const r = await window.mn.ai.ask(vaultId, prompt, { jobId, currentNoteId: currentNote?.id || null });
+    if (!r.ok) throw new Error(r.error || 'AI action failed');
+    if (r.value && !r.value.ok) throw new Error(r.value.error || 'AI action failed');
+    return {
+      answer: String(r.value?.answer || '').trim(),
+      sources: r.value?.sources || [],
+    };
+  };
+
+  const runActionPlan = async (q, plan, jobId) => {
+    if (!Array.isArray(plan.steps) || !plan.steps.length) throw new Error('No AI action steps found');
+    let previousAnswer = '';
+    let created = null;
+    const sources = [];
+    const completed = [];
+    const createdTags = (plan.steps || [])
+      .filter(step => step?.type === 'tag-created-note' && step.tag)
+      .map(step => step.tag)
+      .filter((tag, index, arr) => arr.indexOf(tag) === index);
+
+    for (const step of plan.steps) {
+      if (!step || !step.type) continue;
+      if (step.type === 'notes-answer') {
+        setActiveAction(step.purpose === 'summary' ? 'Summarizing notes...' : 'Researching notes...');
+        const result = await askNotes({ prompt: step.prompt || q, jobId });
+        previousAnswer = result.answer;
+        result.sources.forEach(source => {
+          if (source?.id && !sources.some(item => item.id === source.id)) sources.push(source);
+        });
+        completed.push(step.purpose === 'summary' ? 'summarized your notes' : 'researched your notes');
+      } else if (step.type === 'create-note') {
+        if (!onCreateNote) throw new Error('Page creation is not available here');
+        setActiveAction('Creating page...');
+        const title = step.title || plan.title || 'AI draft';
+        const tags = [...(step.tags || []), ...createdTags]
+          .filter(Boolean)
+          .filter((tag, index, arr) => arr.indexOf(tag) === index);
+        const body = step.bodyFrom === 'previous-answer'
+          ? previousAnswer
+          : await askEdit({
+              scope: 'new page',
+              instruction: 'Create a useful markdown note body for this request. Return only the body; do not include a title heading unless it adds value.',
+              text: q,
+              jobId,
+            });
+        const id = onCreateNote({ title, body, tags, open: false });
+        created = { id, title, body, tags };
+        completed.push(`created "${title}"`);
+      } else if (step.type === 'tag-created-note') {
+        if (!created) continue;
+        completed.push(`tagged it #${step.tag}`);
+      } else {
+        throw new Error(`Unsupported AI action step: ${step.type}`);
+      }
+    }
+
+    const createdSource = created?.id
+      ? [{ id: created.id, title: created.title, snippet: String(created.body || '').slice(0, 200) }]
+      : [];
+    const answer = created
+      ? `I ${completed.filter((item, index, arr) => arr.indexOf(item) === index).join(', ')}.`
+      : `I ${completed.join(', ')}.`;
+    return {
+      answer,
+      sources: [
+        ...createdSource,
+        ...sources.filter(source => source?.id !== created?.id),
+      ],
+      action: true,
+    };
+  };
+
   const runAction = async (q, action, jobId) => {
     if (action.type === 'high-risk-disabled') {
       return { answer: action.reason, sources: [], action: true };
+    }
+
+    if (action.type === 'action-plan') {
+      return runActionPlan(q, action, jobId);
     }
 
     if (action.type === 'create-note') {
@@ -278,6 +355,7 @@ function MnAskAI({
       });
     };
     const appendAssistantToken = (token) => {
+      if (stoppedJobRef.current === jobId) return;
       const chunk = String(token || '');
       if (!chunk) return;
       if (!streamingAssistantId) streamingAssistantId = `assistant-${jobId}`;
@@ -312,7 +390,7 @@ function MnAskAI({
         putAssistant({ text: '', streaming: true });
         const askStream = window.mn?.ai?.askStream;
         const r = askStream
-          ? await askStream(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null }, appendAssistantToken)
+          ? await askStream(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null, onToken: appendAssistantToken })
           : await window.mn.ai.ask(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null });
         if (stoppedJobRef.current === jobId) return;
         if (!r.ok) {
@@ -331,7 +409,7 @@ function MnAskAI({
         putAssistant({ text: '', streaming: true });
         const chatStream = window.mn?.ai?.chatStream;
         const r = chatStream
-          ? await chatStream({ messages: chatMessages, jobId }, appendAssistantToken)
+          ? await chatStream({ messages: chatMessages, jobId, onToken: appendAssistantToken })
           : await window.mn.ai.chat({ messages: chatMessages, jobId });
         if (stoppedJobRef.current === jobId) return;
         if (!r.ok) throw new Error(r.error || 'Unknown error');

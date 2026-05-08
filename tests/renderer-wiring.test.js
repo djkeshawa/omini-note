@@ -197,6 +197,11 @@ test('Ask AI can continue in background and reopen completed responses', () => {
 
   assert.match(ai, /const aiSession = session \|\| localSession/);
   assert.match(ai, /window\.MN_AI_ACTIONS\?\.classifyPrompt/);
+  assert.match(ai, /const runActionPlan = async/);
+  assert.match(ai, /window\.mn\.ai\.ask\(vaultId, prompt/);
+  assert.match(ai, /bodyFrom === 'previous-answer'/);
+  assert.match(ai, /tag-created-note/);
+  assert.match(ai, /if \(stoppedJobRef\.current === jobId\) return/);
   assert.match(ai, /function MnAiChatHistory/);
   assert.match(ai, /AI chats/);
   assert.match(ai, /Show archived chats/);
@@ -869,14 +874,17 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /kind: 'insert-after'/);
   assert.match(outliner, /insertBlocksAfter\(preview\.target\.blockId, parseAiBlocks\(preview\.text\)\)/);
   assert.match(outliner, /window\.mn\.ai\.editStream/);
-  assert.match(preload, /editStream:\(payload, onChunk\)/);
+  assert.match(preload, /editStream:\(payload = \{\}, onChunk\)/);
   assert.match(main, /mn:ai\.editStream/);
   assert.match(aiSource, /async function editTextStream/);
   assert.match(ollama, /async function chatStream/);
   assert.match(ai, /window\.mn\?\.ai\?\.askStream/);
   assert.match(ai, /window\.mn\?\.ai\?\.chatStream/);
-  assert.match(preload, /askStream: \(vaultId, query, options, onChunk\)/);
-  assert.match(preload, /chatStream:\(payload, onChunk\)/);
+  assert.match(ai, /onToken: appendAssistantToken/);
+  assert.match(preload, /askStream: \(vaultId, query, options = \{\}, onChunk\)/);
+  assert.match(preload, /chatStream:\(payload = \{\}, onChunk\)/);
+  assert.match(preload, /delete cleanOptions\.onToken/);
+  assert.match(preload, /delete cleanPayload\.onToken/);
   assert.match(main, /mn:ai\.askStream/);
   assert.match(main, /mn:ai\.chatStream/);
   assert.match(aiSource, /async function askStream/);

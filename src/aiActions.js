@@ -22,21 +22,80 @@
 
   function extractCreateTitle(q) {
     const quoted = q.match(/["“']([^"”']+)["”']/)?.[1];
-    return cleanTitle(
-      quoted ||
-      q.match(/\b(?:called|titled|named)\s+(.+)$/i)?.[1] ||
-      q.match(/\b(?:page|note)\s+(?:about|for)\s+(.+)$/i)?.[1] ||
-      'AI draft'
-    );
+    const explicit = quoted ||
+      q.match(/\b(?:called|titled|named)\s+(.+?)(?:\s+(?:and|with)\s+(?:tag|tags?|#)|[.?!]?$)/i)?.[1] ||
+      q.match(/\b(?:page|note)\s+(?:about|for)\s+(.+?)(?:\s+(?:and|with)\s+(?:tag|tags?|#)|[.?!]?$)/i)?.[1];
+    if (explicit) return cleanTitle(explicit);
+    if (wantsVaultSummary(q)) return 'Notes summary';
+    return 'AI draft';
+  }
+
+  function extractTagNames(q) {
+    const text = String(q || '');
+    const found = [];
+    const add = (value) => {
+      const clean = normalizeTagName(value);
+      if (clean && !found.includes(clean)) found.push(clean);
+    };
+    for (const match of text.matchAll(/#([a-zA-Z0-9][a-zA-Z0-9_-]{0,47})/g)) add(match[1]);
+    for (const match of text.matchAll(/\b(?:tag|tags|tagged|mark|label|categorize|file)\s+(?:it|this|current|(?:this|current)\s+(?:page|note)|the\s+(?:new\s+)?(?:page|note|one))?\s*(?:as|with|for|under|in)\s+#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})/gi)) {
+      add(match[1].replace(/\b(?:and|then|after|also)\b.*$/i, ''));
+    }
+    for (const match of text.matchAll(/\b(?:under|with|as|for)\s+#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})\s+(?:tag|tags?)\b/gi)) add(match[1]);
+    for (const match of text.matchAll(/\b(?:add|apply|set)\s+(?:the\s+)?#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})\s+tag\b/gi)) add(match[1]);
+    return found;
   }
 
   function extractTagName(q) {
-    const quoted = q.match(/["“']#?([^"”']+)["”']/)?.[1];
-    const hash = q.match(/#([a-zA-Z0-9][a-zA-Z0-9_-]{0,47})/)?.[1];
-    const preposition = q.match(/\b(?:tag|mark|label|categorize|file)\s+(?:(?:this|current)\s+)?(?:page|note|it)?\s*(?:as|with|for|under)?\s+#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})/i)?.[1];
-    const addTag = q.match(/\b(?:add|apply|create|set)\s+(?:the\s+)?#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})\s+tag\b/i)?.[1];
-    const raw = quoted || hash || preposition || addTag || '';
-    return normalizeTagName(raw.replace(/\b(?:tag|to|this|current|page|note|it)\b.*$/i, ''));
+    return extractTagNames(q)[0] || '';
+  }
+
+  function wantsCreateNote(q) {
+    const s = String(q || '').toLowerCase();
+    return /\b(create|make|new)\b.*\b(page|note|one)\b/.test(s) ||
+      /\b(summarize|summary)\b.*\bnotes?\b.*\b(create|make|new)\b/.test(s);
+  }
+
+  function wantsVaultSummary(q) {
+    const s = String(q || '').toLowerCase();
+    return /\b(summarize|summary)\b.*\b(all|my|vault|notes?)\b.*\bnotes?\b/.test(s) ||
+      /\b(all|my|vault)\b.*\bnotes?\b.*\b(summarize|summary)\b/.test(s);
+  }
+
+  function wantsCurrentTarget(q) {
+    const s = String(q || '').toLowerCase();
+    return /\b(this|current)\b.*\b(page|note)\b/.test(s) ||
+      /\b(page|note)\b.*\b(this|current)\b/.test(s) ||
+      /\btag\s+this\b/.test(s) ||
+      /\btag\s+for\b/.test(s);
+  }
+
+  function buildActionPlan(q) {
+    const text = String(q || '');
+    const s = text.toLowerCase();
+    if (!wantsCreateNote(s)) return null;
+    const steps = [];
+    const tags = extractTagNames(text);
+    const title = extractCreateTitle(text);
+    const summary = wantsVaultSummary(s);
+    if (summary) {
+      steps.push({
+        type: 'notes-answer',
+        purpose: 'summary',
+        prompt: `${text}\n\nReturn a concise markdown note body only. Focus on the notes, decisions, tasks, dates, and named references that matter.`,
+      });
+    }
+    steps.push({
+      type: 'create-note',
+      title,
+      bodyFrom: summary ? 'previous-answer' : 'generate',
+      tags: tags.slice(),
+    });
+    tags.forEach(tag => steps.push({ type: 'tag-created-note', tag }));
+    if (steps.length > 1 || summary || tags.length) {
+      return { type: 'action-plan', title, steps };
+    }
+    return null;
   }
 
   function detectAction(q) {
@@ -48,9 +107,12 @@
         reason: 'This AI capability is not enabled. Code execution, shell commands, plugin execution, and model-controlled filesystem or network access require an explicit Settings toggle with a clear warning.',
       };
     }
+    const actionPlan = buildActionPlan(text);
+    if (actionPlan) return actionPlan;
     const tagName = extractTagName(text);
     const asksTagLookup = /\b(which|what|show|find|list|search|filter)\b/.test(s);
-    if (tagName && /\b(tag|mark|label|categorize|file|add|apply|set)\b/.test(s) && !asksTagLookup) {
+    const addTagCommand = /\b(?:add|apply|set)\b.*\btag\b/.test(s);
+    if (tagName && (wantsCurrentTarget(text) || addTagCommand) && /\b(tag|mark|label|categorize|file|add|apply|set)\b/.test(s) && !asksTagLookup) {
       return { type: 'tag-current-note', tag: tagName };
     }
     if (/\b(create|make|new)\b.*\b(page|note)\b/.test(s)) {
@@ -98,5 +160,7 @@
     classifyPrompt,
     normalizeTagName,
     extractTagName,
+    extractTagNames,
+    buildActionPlan,
   };
 });

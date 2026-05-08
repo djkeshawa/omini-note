@@ -244,6 +244,7 @@ function MnApp() {
   const [view, setView] = useStateA('notes');
   const [graphFilter, setGraphFilter] = useStateA('all-novelist');
   const lastViewRef = useRefA('notes');
+  const titleUpdateTimerRef = useRefA(null);
   const [askAiSeed, setAskAiSeed] = useStateA('');
   const askAiOpenRef = useRefA(false);
   const newAiSession = useCallbackA(() => mnNewAskAiSession(), []);
@@ -319,8 +320,7 @@ function MnApp() {
 
   useEffectA(() => {
     if (!activeAskAiSession && askAiSessions[0]) setActiveAskAiSessionId(askAiSessions[0].id);
-    else if (activeAskAiSession && activeAskAiSession.id !== activeAskAiSessionId) setActiveAskAiSessionId(activeAskAiSession.id);
-  }, [activeAskAiSession, activeAskAiSessionId, askAiSessions]);
+  }, [activeAskAiSession, askAiSessions]);
 
   const setActiveAskAiSession = useCallbackA((updater) => {
     setAskAiSessions(prev => prev.map(session => {
@@ -1622,9 +1622,11 @@ function MnApp() {
       next.delete(dirtyKey);
       return next;
     });
-    setNotes(ns => ns.filter(x => x.id !== id));
-    const rest = notes.filter(x => x.id !== id);
-    setSelectedId(rest[0]?.id || null);
+    setNotes(ns => {
+      const next = ns.filter(x => x.id !== id);
+      setSelectedId(current => current === id ? (next[0]?.id || null) : current);
+      return next;
+    });
     if (HAS_DISK && activeVaultId) {
       try {
         const res = await window.mn.deleteNote(activeVaultId, id, noteForDisk(n, mnBlocksToMd));
@@ -2011,10 +2013,14 @@ function MnApp() {
   // Push vault + selected note into the OS title bar
   useEffectA(() => {
     if (!HAS_DISK) return;
-    const vname = vaults.find(v => v.id === activeVaultId)?.name;
+    const vname = vaults.find(v => v.id === activeVaultId)?.name || 'VispNote';
     const nname = selectedNote?.title;
     const t = [vname, nname].filter(Boolean).join(' — ') || 'VispNote';
-    window.mn.setTitle(t === 'VispNote' ? t : `${t} — VispNote`);
+    clearTimeout(titleUpdateTimerRef.current);
+    titleUpdateTimerRef.current = setTimeout(() => {
+      window.mn.setTitle(t === 'VispNote' ? t : `${t} — VispNote`);
+    }, 80);
+    return () => clearTimeout(titleUpdateTimerRef.current);
   }, [activeVaultId, vaults, selectedNote]);
 
   const noteListVisible = view === 'notes' || view === 'graph' || view === 'workflow';

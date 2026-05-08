@@ -256,8 +256,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /if \(!PREF_TWEAK_KEYS\.has\(key\)\) throw new Error\('Unsupported tweak field: ' \+ key\)/);
   assert.match(main, /const cleanPatch = sanitizePrefsPatchFromIpc\(patch\)/);
   assert.match(main, /Object\.prototype\.hasOwnProperty\.call\(cleanPatch, 'aiConfig'\)/);
-  assert.match(main, /const config = ai\.setConfig\(cleanPatch\.aiConfig\)/);
+  assert.match(main, /const config = ai\.previewConfig\(cleanPatch\.aiConfig\)/);
   assert.match(main, /store\.setPrefs\(\{ \.\.\.cleanPatch, aiConfig: config \}\)/);
+  assert.match(main, /ai\.setConfig\(cleanPatch\.aiConfig\)/);
   assert.match(main, /ipcMain\.handle\('mn:setPrefs',\s+wrap\(setPrefsFromIpc\)\)/);
   assert.doesNotMatch(main, /ipcMain\.handle\('mn:setPrefs',\s+wrap\(store\.setPrefs\)\)/);
   assert.match(main, /ai\.setConfig\(prefs\.aiConfig, \{ rejectUnknown: false \}\)/);
@@ -265,6 +266,10 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /idx\.init\(\)/);
   assert.match(main, /result\?\.config\?\.provider === 'ollama'/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: ai\.getConfig\(\) \}\)/);
+  assert.match(main, /ipcMain\.handle\('mn:ai\.setConfig',\s+wrap\(async \(patch\) => \{/);
+  assert.match(main, /const config = ai\.previewConfig\(patch\)/);
+  assert.match(main, /store\.setPrefs\(\{ aiConfig: config \}\)/);
+  assert.match(main, /ai\.setConfig\(patch\)/);
   assert.match(main, /ipcMain\.handle\('mn:setTitle', wrapWithEvent/);
   assert.match(main, /function sanitizeExternalUrl\(rawUrl\)/);
   assert.match(main, /parsed\.protocol !== 'https:' && parsed\.protocol !== 'mailto:'/);
@@ -311,7 +316,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(storeSource, /writeJson\(CONFIG_FILE, cfg, \{ mode: CONFIG_FILE_MODE \}\)/);
   assert.match(storeSource, /Unsupported vault metadata field/);
   assert.match(storeSource, /if \(states === null \|\| states === undefined\) return null/);
-  assert.match(storeSource, /Unsupported preferences field/);
+  assert.match(storeSource, /Unsupported patch field/);
 
   const cleanMeta = store.__test.sanitizeVaultMetaPatch({
     tags: [{ name: ' Novel Cast ', hue: 999 }, 'novel-research'],
@@ -487,6 +492,24 @@ test('AI high-risk capability policy remains disabled by default', () => {
   assert.match(action.reason, /Settings toggle/);
 });
 
+test('Store hardening validates trash ids, merge keys, and backup size', async () => {
+  await withIsolatedStore(async (store) => {
+    const vault = (await store.listVaults())[0];
+    await assert.rejects(
+      () => store.purgeDeletedNote(vault.id, '../bad'),
+      /Invalid trash id/
+    );
+    await assert.rejects(
+      () => store.setPrefs({ tweaks: { constructor: { polluted: true } } }),
+      /Unsupported patch field/
+    );
+    await assert.rejects(
+      () => store.importBackup(' '.repeat(51 * 1024 * 1024)),
+      /too large/
+    );
+  });
+});
+
 test('Data safety wiring exposes trash, versions, and save conflict recovery', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -508,8 +531,13 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   assert.match(preload, /restoreDeletedNote/);
 
   assert.match(app, /expectedModifiedAt: n\.diskModifiedAt/);
+  assert.match(app, /setSelectedId\(current => current === id/);
+  assert.match(app, /titleUpdateTimerRef/);
   assert.match(app, /MnSaveConflictDialog/);
   assert.match(app, /MnVersionHistoryDialog/);
+  assert.match(store, /MAX_BACKUP_IMPORT_BYTES/);
+  assert.match(store, /cleanMergePatch/);
+  assert.match(store, /validateTrashId\(trashId\)/);
   assert.match(settings, /Recently deleted/);
   assert.match(settings, /onRestoreDeletedNote/);
   assert.match(editor, /Version history/);

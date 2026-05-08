@@ -1,6 +1,14 @@
 // Preload: exposes a safe IPC bridge as window.mn for the renderer.
 const { contextBridge, ipcRenderer } = require('electron');
 
+function requestId(prefix) {
+  const crypto = globalThis.crypto;
+  const id = typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${String(id).replace(/[^a-zA-Z0-9_-]/g, '')}`;
+}
+
 contextBridge.exposeInMainWorld('mn', {
   // Vaults
   listVaults: () => ipcRenderer.invoke('mn:listVaults'),
@@ -48,36 +56,51 @@ contextBridge.exposeInMainWorld('mn', {
     status:    () => ipcRenderer.invoke('mn:ai.status'),
     connect:   () => ipcRenderer.invoke('mn:ai.connect'),
     ask:       (vaultId, query, options) => ipcRenderer.invoke('mn:ai.ask', vaultId, query, options),
-    askStream: (vaultId, query, options, onChunk) => {
-      const requestId = `ask-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const channel = `mn:ai.askStream.chunk:${requestId}`;
+    askStream: (vaultId, query, options = {}, onChunk) => {
+      const tokenHandler = typeof onChunk === 'function'
+        ? onChunk
+        : typeof options?.onToken === 'function' ? options.onToken : null;
+      const cleanOptions = { ...(options || {}) };
+      delete cleanOptions.onToken;
+      const id = requestId('ask');
+      const channel = `mn:ai.askStream.chunk:${id}`;
       const listener = (_event, chunk) => {
-        if (typeof onChunk === 'function') onChunk(String(chunk || ''));
+        if (typeof tokenHandler === 'function') tokenHandler(String(chunk || ''));
       };
       ipcRenderer.on(channel, listener);
-      return ipcRenderer.invoke('mn:ai.askStream', vaultId, query, { ...(options || {}), requestId })
+      return ipcRenderer.invoke('mn:ai.askStream', vaultId, query, { ...cleanOptions, requestId: id })
         .finally(() => ipcRenderer.removeListener(channel, listener));
     },
     edit:      (payload) => ipcRenderer.invoke('mn:ai.edit', payload),
-    editStream:(payload, onChunk) => {
-      const requestId = `edit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const channel = `mn:ai.editStream.chunk:${requestId}`;
+    editStream:(payload = {}, onChunk) => {
+      const tokenHandler = typeof onChunk === 'function'
+        ? onChunk
+        : typeof payload?.onToken === 'function' ? payload.onToken : null;
+      const cleanPayload = { ...(payload || {}) };
+      delete cleanPayload.onToken;
+      const id = requestId('edit');
+      const channel = `mn:ai.editStream.chunk:${id}`;
       const listener = (_event, chunk) => {
-        if (typeof onChunk === 'function') onChunk(String(chunk || ''));
+        if (typeof tokenHandler === 'function') tokenHandler(String(chunk || ''));
       };
       ipcRenderer.on(channel, listener);
-      return ipcRenderer.invoke('mn:ai.editStream', { ...payload, requestId })
+      return ipcRenderer.invoke('mn:ai.editStream', { ...cleanPayload, requestId: id })
         .finally(() => ipcRenderer.removeListener(channel, listener));
     },
     chat:      (payload) => ipcRenderer.invoke('mn:ai.chat', payload),
-    chatStream:(payload, onChunk) => {
-      const requestId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const channel = `mn:ai.chatStream.chunk:${requestId}`;
+    chatStream:(payload = {}, onChunk) => {
+      const tokenHandler = typeof onChunk === 'function'
+        ? onChunk
+        : typeof payload?.onToken === 'function' ? payload.onToken : null;
+      const cleanPayload = { ...(payload || {}) };
+      delete cleanPayload.onToken;
+      const id = requestId('chat');
+      const channel = `mn:ai.chatStream.chunk:${id}`;
       const listener = (_event, chunk) => {
-        if (typeof onChunk === 'function') onChunk(String(chunk || ''));
+        if (typeof tokenHandler === 'function') tokenHandler(String(chunk || ''));
       };
       ipcRenderer.on(channel, listener);
-      return ipcRenderer.invoke('mn:ai.chatStream', { ...(payload || {}), requestId })
+      return ipcRenderer.invoke('mn:ai.chatStream', { ...cleanPayload, requestId: id })
         .finally(() => ipcRenderer.removeListener(channel, listener));
     },
     cancel:    (jobId) => ipcRenderer.invoke('mn:ai.cancel', jobId),

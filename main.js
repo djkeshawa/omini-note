@@ -78,6 +78,8 @@ const PREF_TWEAK_DEFAULTS = {
 const PREF_TWEAK_KEYS = new Set(Object.keys(PREF_TWEAK_DEFAULTS));
 const PREF_STRING_LIMIT = 500;
 const PREF_SECRET_LIMIT = 4096;
+const AI_QUERY_LIMIT = 20000;
+const IPC_ID_RE = /^[A-Za-z0-9_-]+$/;
 
 function normalizeSpellWord(word) {
   return String(word || '').toLowerCase().replace(/^[^a-z']+|[^a-z']+$/g, '');
@@ -131,6 +133,7 @@ function sanitizeAiConfigForPrefs(aiConfig) {
   if (!isPlainObject(aiConfig)) throw new Error('Invalid AI config patch');
   const clean = {};
   for (const [key, value] of Object.entries(aiConfig)) {
+    if (key === '__proto__' || key === 'prototype' || key === 'constructor') throw new Error('Invalid AI config field: ' + key);
     if (typeof value === 'string') clean[key] = capString(value, key, PREF_SECRET_LIMIT);
     else if (typeof value === 'number' || typeof value === 'boolean' || value == null) clean[key] = value;
     else throw new Error('Invalid AI config field: ' + key);
@@ -580,10 +583,39 @@ function wrapWithEvent(fn) {
 async function setPrefsFromIpc(patch) {
   const cleanPatch = sanitizePrefsPatchFromIpc(patch);
   if (Object.prototype.hasOwnProperty.call(cleanPatch, 'aiConfig')) {
-    const config = ai.setConfig(cleanPatch.aiConfig);
-    return await store.setPrefs({ ...cleanPatch, aiConfig: config });
+    const config = ai.previewConfig(cleanPatch.aiConfig);
+    await store.setPrefs({ ...cleanPatch, aiConfig: config });
+    ai.setConfig(cleanPatch.aiConfig);
+    return config;
   }
   return await store.setPrefs(cleanPatch);
+}
+
+function sanitizeAiAskArgs(vaultId, query) {
+  const cleanVaultId = String(vaultId || '').trim();
+  if (!IPC_ID_RE.test(cleanVaultId)) throw new Error('Invalid vault id');
+  const cleanQuery = String(query || '');
+  if (!cleanQuery.trim()) throw new Error('AI query is empty');
+  if (cleanQuery.length > AI_QUERY_LIMIT) throw new Error('AI query is too long');
+  return { vaultId: cleanVaultId, query: cleanQuery };
+}
+
+async function askFromIpc(vaultId, query, options) {
+  const clean = sanitizeAiAskArgs(vaultId, query);
+  return ai.ask(clean.vaultId, clean.query, store, options || {});
+}
+
+async function askStreamFromIpc(evt, vaultId, query, options = {}) {
+  const clean = sanitizeAiAskArgs(vaultId, query);
+  const requestId = String(options.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+  const cleanOptions = { ...(options || {}) };
+  delete cleanOptions.requestId;
+  return await ai.askStream(clean.vaultId, clean.query, store, {
+    ...cleanOptions,
+    onToken: (token) => {
+      if (requestId) evt.sender.send(`mn:ai.askStream.chunk:${requestId}`, String(token || ''));
+    },
+  });
 }
 
 // Vault management
@@ -692,18 +724,8 @@ ipcMain.handle('mn:ai.connect',     wrap(async () => {
   if (result?.config?.provider === 'ollama') await store.setPrefs({ aiConfig: ai.getConfig() });
   return result;
 }));
-ipcMain.handle('mn:ai.ask',         wrap((vaultId, query, options) => ai.ask(vaultId, query, store, options || {})));
-ipcMain.handle('mn:ai.askStream', wrapWithEvent(async function askStream(evt, vaultId, query, options = {}) {
-  const requestId = String(options.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-  const cleanOptions = { ...(options || {}) };
-  delete cleanOptions.requestId;
-  return await ai.askStream(vaultId, query, store, {
-    ...cleanOptions,
-    onToken: (token) => {
-      if (requestId) evt.sender.send(`mn:ai.askStream.chunk:${requestId}`, String(token || ''));
-    },
-  });
-}));
+ipcMain.handle('mn:ai.ask',         wrap(askFromIpc));
+ipcMain.handle('mn:ai.askStream',   wrapWithEvent(askStreamFromIpc));
 ipcMain.handle('mn:ai.edit',        wrap((payload) => ai.editText(payload)));
 ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(evt, payload = {}) {
   const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
@@ -733,8 +755,9 @@ ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, 
 ipcMain.handle('mn:ai.related',     wrap(async (vaultId, noteId, options) => { await indexReadyPromise; return ai.relatedNotes(vaultId, noteId, store, options || {}); }));
 ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.getConfig()));
 ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {
-  const config = ai.setConfig(patch);
+  const config = ai.previewConfig(patch);
   await store.setPrefs({ aiConfig: config });
+  ai.setConfig(patch);
   return config;
 }));
 

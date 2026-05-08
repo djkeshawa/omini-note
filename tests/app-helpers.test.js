@@ -41,6 +41,43 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
     type: 'action',
     action: { type: 'create-note', title: 'Launch checklist' },
   });
+  assert.deepEqual(aiActions.classifyPrompt('summarize all my notes and create a new one and tag it under reading'), {
+    type: 'action',
+    action: {
+      type: 'action-plan',
+      title: 'Notes summary',
+      steps: [
+        {
+          type: 'notes-answer',
+          purpose: 'summary',
+          prompt: 'summarize all my notes and create a new one and tag it under reading\n\nReturn a concise markdown note body only. Focus on the notes, decisions, tasks, dates, and named references that matter.',
+        },
+        {
+          type: 'create-note',
+          title: 'Notes summary',
+          bodyFrom: 'previous-answer',
+          tags: ['reading'],
+        },
+        { type: 'tag-created-note', tag: 'reading' },
+      ],
+    },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('create a page called Launch checklist and tag it under reading'), {
+    type: 'action',
+    action: {
+      type: 'action-plan',
+      title: 'Launch checklist',
+      steps: [
+        {
+          type: 'create-note',
+          title: 'Launch checklist',
+          bodyFrom: 'generate',
+          tags: ['reading'],
+        },
+        { type: 'tag-created-note', tag: 'reading' },
+      ],
+    },
+  });
   assert.deepEqual(aiActions.classifyPrompt('summarize this page'), {
     type: 'action',
     action: { type: 'edit-current', action: 'summarize' },
@@ -68,6 +105,7 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
   assert.equal(aiActions.classifyPrompt('which notes are tagged reading?').type, 'notes');
   assert.equal(aiActions.classifyPrompt('find my Python notes').type, 'notes');
   assert.equal(aiActions.classifyPrompt('list notes tagged bash').type, 'notes');
+  assert.equal(aiActions.detectAction('tag it under reading'), null);
   assert.equal(aiActions.classifyPrompt('run a shell command to inspect files').action.type, 'high-risk-disabled');
 });
 

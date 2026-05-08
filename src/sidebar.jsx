@@ -41,15 +41,24 @@ function MnSidebar({
   const tagCreatorRef = React.useRef(null);
   const [renameId, setRenameId] = React.useState(null);
   const [renameVal, setRenameVal] = React.useState('');
+  const sidebarSectionsKey = activeVaultId ? `mn:sidebarSections:${activeVaultId}` : 'mn:sidebarSections';
   // Collapsible sections — persisted in localStorage
   const [openSections, setOpenSections] = React.useState(() => {
-    return window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
+    return window.MN_STORAGE?.getJson?.(sidebarSectionsKey, null) ||
+      window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
       { allnotes: true, vaults: true, workflow: false, tags: true };
   });
+  React.useEffect(() => {
+    setOpenSections(
+      window.MN_STORAGE?.getJson?.(sidebarSectionsKey, null) ||
+      window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
+      { allnotes: true, vaults: true, workflow: false, tags: true }
+    );
+  }, [sidebarSectionsKey]);
   const toggleSection = (key) => {
     setOpenSections(prev => {
       const next = { ...prev, [key]: !prev[key] };
-      window.MN_STORAGE?.setJson?.('mn:sidebarSections', next);
+      window.MN_STORAGE?.setJson?.(sidebarSectionsKey, next);
       return next;
     });
   };
