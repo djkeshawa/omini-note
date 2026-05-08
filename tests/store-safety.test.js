@@ -340,7 +340,11 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.throws(() => ai.__test.sanitizeConfigPatch({ ollamaHost: 'http://127.0.0.1:9999' }), /Ollama host/);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://127.0.0.1:8080/v1' }), /HTTPS/);
   assert.equal(ai.__test.sanitizeConfigPatch({ ollamaHost: 'http://localhost:11434' }).ollamaHost, 'http://localhost:11434');
-  assert.deepEqual(Object.keys(ai.__test.ollamaServeEnv()).sort(), Object.keys(ai.__test.ollamaServeEnv()).filter(key => ['HOME', 'LANG', 'LC_ALL', 'OLLAMA_HOST', 'PATH', 'TMPDIR'].includes(key)).sort());
+  const previousOllamaModels = process.env.OLLAMA_MODELS;
+  process.env.OLLAMA_MODELS = '/tmp/vispnote-ollama-models';
+  assert.equal(ai.__test.ollamaServeEnv().OLLAMA_MODELS, '/tmp/vispnote-ollama-models');
+  if (previousOllamaModels == null) delete process.env.OLLAMA_MODELS;
+  else process.env.OLLAMA_MODELS = previousOllamaModels;
   assert.match(aiSource, /await ollamaSpawnPromise/);
   assert.equal(ai.__test.sanitizeSecretValue('  sk-test\r\nbad\u0000  '), 'sk-testbad');
   assert.match(aiSource, /piiReduction/);

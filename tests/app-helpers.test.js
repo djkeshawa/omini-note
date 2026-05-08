@@ -49,6 +49,14 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
     type: 'action',
     action: { type: 'tag-current-note', tag: 'reading' },
   });
+  assert.deepEqual(aiActions.classifyPrompt('tag this note with reading'), {
+    type: 'action',
+    action: { type: 'tag-current-note', tag: 'reading' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('tag current page as reading'), {
+    type: 'action',
+    action: { type: 'tag-current-note', tag: 'reading' },
+  });
   assert.deepEqual(aiActions.classifyPrompt('tag for reading'), {
     type: 'action',
     action: { type: 'tag-current-note', tag: 'reading' },
@@ -58,6 +66,8 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
     action: { type: 'tag-current-note', tag: 'reading' },
   });
   assert.equal(aiActions.classifyPrompt('which notes are tagged reading?').type, 'notes');
+  assert.equal(aiActions.classifyPrompt('find my Python notes').type, 'notes');
+  assert.equal(aiActions.classifyPrompt('list notes tagged bash').type, 'notes');
   assert.equal(aiActions.classifyPrompt('run a shell command to inspect files').action.type, 'high-risk-disabled');
 });
 

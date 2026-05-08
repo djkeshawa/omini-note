@@ -340,6 +340,8 @@ function MnApp() {
   }, [navigateView, newAiSession]);
 
   const deleteAskAiChat = useCallbackA((id) => {
+    const target = askAiSessions.find(session => session.id === id);
+    if (target?.pending) return;
     const next = askAiSessions.filter(session => session.id !== id);
     if (!next.length) {
       setAskAiSessions([]);
@@ -361,6 +363,8 @@ function MnApp() {
   }, []);
 
   const archiveAskAiChat = useCallbackA((id, archived = true) => {
+    const target = askAiSessions.find(session => session.id === id);
+    if (target?.pending) return;
     const next = askAiSessions.map(session => session.id === id
       ? { ...session, archived: !!archived, updatedAt: new Date().toISOString() }
       : session);
@@ -394,10 +398,11 @@ function MnApp() {
   const vaultActivationSeq = useRefA(0);
   const noteMetadataHistoryRef = useRefA({ undo: [], redo: [], activeKey: null });
   const cloneNoteForMetadataHistory = useCallbackA((note) => note ? ({
-    ...note,
+    id: note.id,
+    title: note.title,
+    pinned: !!note.pinned,
     tags: [...(note.tags || [])],
-    blocks: mnCloneBlocks(note.blocks || []),
-  }) : null, [mnCloneBlocks]);
+  }) : null, []);
   const recordNoteMetadataHistory = useCallbackA((note, historyKey = null) => {
     if (!note) return;
     const state = noteMetadataHistoryRef.current;
@@ -1410,17 +1415,24 @@ function MnApp() {
     markDirty(id);
   }, [markDirty, recordNoteMetadataHistory]);
 
-  const restoreNoteMetadataSnapshot = useCallbackA((direction) => {
+  const restoreNoteMetadataSnapshot = useCallbackA((direction, noteId = null) => {
     const state = noteMetadataHistoryRef.current;
     const from = direction === 'redo' ? state.redo : state.undo;
     const to = direction === 'redo' ? state.undo : state.redo;
-    const snapshot = from.pop();
+    const index = noteId ? from.map(item => item?.id).lastIndexOf(noteId) : from.length - 1;
+    if (index < 0) return false;
+    const [snapshot] = from.splice(index, 1);
     if (!snapshot) return false;
     let current = null;
     setNotes(ns => ns.map(note => {
       if (note.id !== snapshot.id) return note;
       current = cloneNoteForMetadataHistory(note);
-      return cloneNoteForMetadataHistory(snapshot);
+      return {
+        ...note,
+        title: snapshot.title,
+        pinned: !!snapshot.pinned,
+        tags: [...(snapshot.tags || [])],
+      };
     }));
     if (current) {
       to.push(current);
@@ -1430,8 +1442,8 @@ function MnApp() {
     return true;
   }, [cloneNoteForMetadataHistory, markDirty]);
 
-  const undoNoteMetadataEdit = useCallbackA(() => restoreNoteMetadataSnapshot('undo'), [restoreNoteMetadataSnapshot]);
-  const redoNoteMetadataEdit = useCallbackA(() => restoreNoteMetadataSnapshot('redo'), [restoreNoteMetadataSnapshot]);
+  const undoNoteMetadataEdit = useCallbackA((noteId) => restoreNoteMetadataSnapshot('undo', noteId), [restoreNoteMetadataSnapshot]);
+  const redoNoteMetadataEdit = useCallbackA((noteId) => restoreNoteMetadataSnapshot('redo', noteId), [restoreNoteMetadataSnapshot]);
 
   const updateNoteBody = useCallbackA((id, bodyOrUpdater) => {
     setNotes(ns => ns.map(n => {
@@ -2192,8 +2204,8 @@ function MnApp() {
               onBlocksChange={(blocks) => updateNoteBlocks(selectedNote.id, blocks)}
               onTitleChange={(title) => updateNote(selectedNote.id, { title }, { historyKey: `note:${selectedNote.id}:title` })}
               onEndNoteMetadataEdit={endNoteMetadataEdit}
-              onUndoNoteEdit={undoNoteMetadataEdit}
-              onRedoNoteEdit={redoNoteMetadataEdit}
+              onUndoNoteEdit={() => undoNoteMetadataEdit(selectedNote.id)}
+              onRedoNoteEdit={() => redoNoteMetadataEdit(selectedNote.id)}
               onAddTag={(t) => updateNote(selectedNote.id, { tags: [...selectedNote.tags, t] }, { historyKey: `note:${selectedNote.id}:tag:${t}:add` })}
               onCreateTag={(raw) => {
                 const name = addTag(raw);

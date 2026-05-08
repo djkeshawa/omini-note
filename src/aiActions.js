@@ -4,7 +4,7 @@
   root.MN_AI_ACTIONS = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   const NOTEISH_RE = /\b(my|this|current|latest|recent|last|note|notes|page|pages|vault|tag|tags|task|tasks|todo|todos|reminder|reminders|decide|decided|wrote|writing|link|links|backlink|backlinks|summarize.*notes|search)\b/;
-  const HIGH_RISK_RE = /\b(execute|eval|script|shell|terminal|command|cmd|bash|python|node|plugin|filesystem|file system|read files?|write files?|network request|fetch url|http request)\b|\brun\s+(?:code|script|shell|terminal|command|cmd|bash|python|node|plugin)\b/;
+  const HIGH_RISK_RE = /\b(?:run|execute|exec|eval|spawn|launch|call|invoke|use)\s+(?:code|scripts?|shell|terminal|commands?|cmd|bash|python|node|plugins?)\b|\b(?:read|write|modify|delete|open|inspect|access)\s+(?:files?|filesystem|file system)\b|\b(?:make|send|perform)\s+(?:a\s+)?(?:network|http|https)\s+(?:request|call)\b|\b(?:fetch|curl|wget)\s+(?:url|https?:\/\/|\S+\.\w{2,})\b/;
 
   function cleanTitle(value) {
     return String(value || '').trim().replace(/[.?!]$/, '').trim();
@@ -33,7 +33,7 @@
   function extractTagName(q) {
     const quoted = q.match(/["“']#?([^"”']+)["”']/)?.[1];
     const hash = q.match(/#([a-zA-Z0-9][a-zA-Z0-9_-]{0,47})/)?.[1];
-    const preposition = q.match(/\b(?:tag|mark|label|categorize|file)\s+(?:this|current|page|note|it)?\s*(?:as|with|for|under)?\s+#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})/i)?.[1];
+    const preposition = q.match(/\b(?:tag|mark|label|categorize|file)\s+(?:(?:this|current)\s+)?(?:page|note|it)?\s*(?:as|with|for|under)?\s+#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})/i)?.[1];
     const addTag = q.match(/\b(?:add|apply|create|set)\s+(?:the\s+)?#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})\s+tag\b/i)?.[1];
     const raw = quoted || hash || preposition || addTag || '';
     return normalizeTagName(raw.replace(/\b(?:tag|to|this|current|page|note|it)\b.*$/i, ''));

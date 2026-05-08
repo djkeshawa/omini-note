@@ -770,6 +770,7 @@ function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDele
       y: e.clientY,
       sessionId: session.id,
       archived: !!session.archived,
+      pending: !!session.pending,
     });
   };
   const startRename = (id, currentTitle) => {
@@ -890,10 +891,12 @@ function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDele
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (session.pending) return;
                       onArchive?.(session.id, !session.archived);
                     }}
-                    title={session.archived ? 'Restore chat' : 'Archive chat'}
-                    style={mnAiRowActionButton(T)}>
+                    disabled={!!session.pending}
+                    title={session.pending ? 'Wait for this chat to finish before archiving' : (session.archived ? 'Restore chat' : 'Archive chat')}
+                    style={mnAiRowActionButton(T, false, !!session.pending)}>
                     {session.archived ? (
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.55">
                         <path d="M4 7L8 3L12 7" strokeLinecap="round" strokeLinejoin="round"/>
@@ -911,10 +914,12 @@ function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDele
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (session.pending) return;
                       onDelete?.(session.id);
                     }}
-                    title="Delete chat"
-                    style={mnAiRowActionButton(T, true)}>
+                    disabled={!!session.pending}
+                    title={session.pending ? 'Wait for this chat to finish before deleting' : 'Delete chat'}
+                    style={mnAiRowActionButton(T, true, !!session.pending)}>
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.55">
                       <path d="M3.5 4.5H12.5" strokeLinecap="round"/>
                       <path d="M6 4.5V3.2H10V4.5" strokeLinejoin="round"/>
@@ -986,7 +991,9 @@ function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDele
           </MnAiContextMenuItem>
           <MnAiContextMenuItem
             T={T}
+            disabled={!!contextMenu.pending}
             onClick={() => {
+              if (contextMenu.pending) return;
               onArchive?.(contextMenu.sessionId, !contextMenu.archived);
               setContextMenu(null);
             }}>
@@ -995,7 +1002,9 @@ function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDele
           <MnAiContextMenuItem
             T={T}
             danger
+            disabled={!!contextMenu.pending}
             onClick={() => {
+              if (contextMenu.pending) return;
               onDelete?.(contextMenu.sessionId);
               setContextMenu(null);
             }}>
@@ -1029,18 +1038,19 @@ function MnAiTabPill({ active, onClick, children, T, title }) {
   );
 }
 
-function mnAiRowActionButton(T, danger = false) {
+function mnAiRowActionButton(T, danger = false, disabled = false) {
   return {
     width: 24,
     height: 24,
     border: `1px solid ${T.lineSub}`,
     borderRadius: 5,
     background: T.bg,
-    color: danger ? (T.danger || T.warn || T.inkDim) : T.inkDim,
+    color: disabled ? T.inkDim : (danger ? (T.danger || T.warn || T.inkDim) : T.inkDim),
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: 'pointer',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.45 : 1,
     flexShrink: 0,
   };
 }

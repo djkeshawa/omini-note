@@ -88,8 +88,10 @@ test('Note metadata edits participate in undo and redo', () => {
 
   assert.match(app, /noteMetadataHistoryRef/);
   assert.match(app, /recordNoteMetadataHistory\(n, options\.historyKey\)/);
-  assert.match(app, /restoreNoteMetadataSnapshot\('undo'\)/);
-  assert.match(app, /restoreNoteMetadataSnapshot\('redo'\)/);
+  assert.match(app, /restoreNoteMetadataSnapshot\('undo', noteId\)/);
+  assert.match(app, /restoreNoteMetadataSnapshot\('redo', noteId\)/);
+  assert.match(app, /if \(note\.id !== snapshot\.id\) return note/);
+  assert.match(app, /title: snapshot\.title/);
   assert.match(app, /historyKey: `note:\$\{selectedNote\.id\}:title`/);
   assert.match(app, /historyKey: `note:\$\{selectedNote\.id\}:tag:\$\{t\}:remove`/);
   assert.match(editor, /className="mn-note-title-input"/);
