@@ -176,6 +176,8 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(app, /view === 'ai'/);
   assert.match(app, /<MnAiChatHistory/);
   assert.match(app, /archiveAskAiChat/);
+  assert.match(app, /if \(!next\.length\) \{/);
+  assert.doesNotMatch(app, /!next\.some\(session => !session\.archived\)/);
   assert.match(appShell, /function MnAiNotice/);
   assert.match(appShell, /AI response ready/);
   assert.match(app, /onOpen=\{openAskAi\}/);

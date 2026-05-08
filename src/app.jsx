@@ -341,13 +341,13 @@ function MnApp() {
 
   const deleteAskAiChat = useCallbackA((id) => {
     const next = askAiSessions.filter(session => session.id !== id);
-    if (!next.length || !next.some(session => !session.archived)) {
+    if (!next.length) {
       const session = newAiSession();
       setAskAiSessions([session, ...next]);
       setActiveAskAiSessionId(session.id);
       return;
     }
-    const nextActive = mnPickActiveAskAiSession(next, activeAskAiSessionId, { allowArchivedPreferred: false });
+    const nextActive = mnPickActiveAskAiSession(next, activeAskAiSessionId);
     setAskAiSessions(next);
     if (id === activeAskAiSessionId || !nextActive || nextActive.id !== activeAskAiSessionId) {
       setActiveAskAiSessionId(nextActive?.id || '');
