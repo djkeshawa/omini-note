@@ -2,7 +2,7 @@ const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShor
 const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
-const { pathToFileURL } = require('url');
+const { fileURLToPath } = require('url');
 const store = require('./lib/store');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
@@ -11,6 +11,7 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let indexReadyPromise = Promise.resolve();
+const indexVaultLocks = new Map();
 let updateState = {
   status: 'idle',
   currentVersion: app.getVersion(),
@@ -79,6 +80,7 @@ const PREF_TWEAK_KEYS = new Set(Object.keys(PREF_TWEAK_DEFAULTS));
 const PREF_STRING_LIMIT = 500;
 const PREF_SECRET_LIMIT = 4096;
 const AI_QUERY_LIMIT = 20000;
+const BACKUP_IMPORT_FILE_LIMIT = 50 * 1024 * 1024;
 const IPC_ID_RE = /^[A-Za-z0-9_-]+$/;
 
 function normalizeSpellWord(word) {
@@ -279,6 +281,8 @@ function openQuickCaptureFromShortcut() {
     }
   };
   if (mainWindow.webContents.isLoading()) {
+    const clear = () => mainWindow?.webContents?.removeListener?.('did-finish-load', send);
+    mainWindow.once('closed', clear);
     mainWindow.webContents.once('did-finish-load', send);
   } else {
     send();
@@ -465,8 +469,10 @@ function attachEditContextMenu(win) {
 function isAllowedAppNavigation(rawUrl) {
   try {
     const target = new URL(rawUrl);
-    const appUrl = new URL(pathToFileURL(path.join(__dirname, 'vispnote.html')).href);
-    return target.protocol === appUrl.protocol && target.pathname === appUrl.pathname;
+    if (target.protocol !== 'file:') return false;
+    const appPath = fs.realpathSync(path.join(__dirname, 'vispnote.html'));
+    const targetPath = fs.realpathSync(fileURLToPath(target));
+    return targetPath === appPath;
   } catch (e) {
     return false;
   }
@@ -483,6 +489,11 @@ function sanitizeExternalUrl(rawUrl) {
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'mailto:') {
     throw new Error('Unsupported external URL protocol');
+  }
+  if (parsed.protocol === 'mailto:') {
+    if (/[\r\n\x00-\x1f\x7f]/.test(value) || /%0d|%0a/i.test(value)) throw new Error('Invalid external URL');
+    const address = decodeURIComponent(parsed.pathname || '').trim();
+    if (!address || /\s/.test(address) || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) throw new Error('Invalid mailto URL');
   }
   return parsed.href;
 }
@@ -525,7 +536,7 @@ function createWindow() {
     : spellLanguages.includes('en-GB')
     ? 'en-GB'
     : spellLanguages.find(lang => /^en[-_]/i.test(lang));
-  if (spellLanguage) spellSession.setSpellCheckerLanguages([spellLanguage]);
+  spellSession.setSpellCheckerLanguages([spellLanguage || 'en-US']);
 
   win.loadFile('vispnote.html');
   mainWindow = win;
@@ -585,35 +596,61 @@ async function setPrefsFromIpc(patch) {
   if (Object.prototype.hasOwnProperty.call(cleanPatch, 'aiConfig')) {
     const config = ai.previewConfig(cleanPatch.aiConfig);
     await store.setPrefs({ ...cleanPatch, aiConfig: config });
-    ai.setConfig(cleanPatch.aiConfig);
+    ai.applyConfig(config);
     return config;
   }
   return await store.setPrefs(cleanPatch);
 }
 
-function sanitizeAiAskArgs(vaultId, query) {
+async function sanitizeAiAskArgs(vaultId, query) {
   const cleanVaultId = String(vaultId || '').trim();
   if (!IPC_ID_RE.test(cleanVaultId)) throw new Error('Invalid vault id');
   const cleanQuery = String(query || '');
   if (!cleanQuery.trim()) throw new Error('AI query is empty');
   if (cleanQuery.length > AI_QUERY_LIMIT) throw new Error('AI query is too long');
+  const cfg = await store.loadConfig();
+  if (!cfg.vaults?.some(v => v.id === cleanVaultId)) throw new Error('Vault not found: ' + cleanVaultId);
   return { vaultId: cleanVaultId, query: cleanQuery };
 }
 
 async function askFromIpc(vaultId, query, options) {
-  const clean = sanitizeAiAskArgs(vaultId, query);
+  const clean = await sanitizeAiAskArgs(vaultId, query);
   return ai.ask(clean.vaultId, clean.query, store, options || {});
 }
 
+function sendIpcChunk(evt, requestId, channel, token) {
+  if (!requestId || evt.sender?.isDestroyed?.()) return;
+  try {
+    evt.sender.send(`${channel}:${requestId}`, String(token || ''));
+  } catch (e) {
+    console.warn(`${channel} chunk delivery failed`, e?.message || String(e));
+  }
+}
+
+async function withIndexVaultLock(vaultId, fn) {
+  const key = String(vaultId || '');
+  const previous = indexVaultLocks.get(key) || Promise.resolve();
+  let release;
+  const current = previous.catch(() => {}).then(() => new Promise(resolve => { release = resolve; }));
+  indexVaultLocks.set(key, current);
+  await previous.catch(() => {});
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (indexVaultLocks.get(key) === current) indexVaultLocks.delete(key);
+  }
+}
+
 async function askStreamFromIpc(evt, vaultId, query, options = {}) {
-  const clean = sanitizeAiAskArgs(vaultId, query);
+  const clean = await sanitizeAiAskArgs(vaultId, query);
   const requestId = String(options.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
   const cleanOptions = { ...(options || {}) };
   delete cleanOptions.requestId;
   return await ai.askStream(clean.vaultId, clean.query, store, {
     ...cleanOptions,
     onToken: (token) => {
-      if (requestId) evt.sender.send(`mn:ai.askStream.chunk:${requestId}`, String(token || ''));
+      sendIpcChunk(evt, requestId, 'mn:ai.askStream.chunk', token);
     },
   });
 }
@@ -624,44 +661,54 @@ ipcMain.handle('mn:createVault',    wrap(async (name, options) => {
   const v = await store.createVault(name, options);
   // Index the seeded welcome note
   const data = await store.loadVault(v.id);
-  idx.rescanVault(v.id, data.notes);
+  await withIndexVaultLock(v.id, async () => idx.rescanVault(v.id, data.notes));
   return v;
 }));
 ipcMain.handle('mn:renameVault',    wrap(store.renameVault));
 ipcMain.handle('mn:deleteVault',    wrap(async (vaultId) => {
-  const result = await store.deleteVault(vaultId);
-  idx.removeVault(vaultId);
-  return result;
+  return await withIndexVaultLock(vaultId, async () => {
+    const result = await store.deleteVault(vaultId);
+    idx.removeVault(vaultId);
+    return result;
+  });
 }));
 ipcMain.handle('mn:setActiveVault', wrap(store.setActiveVault));
 
 // Notes
 ipcMain.handle('mn:loadVault',      wrap(store.loadVault));
 ipcMain.handle('mn:saveNote',       wrap(async (vaultId, note, options) => {
-  const saved = await store.saveNote(vaultId, note, options || {});
-  idx.indexNote(vaultId, saved);
-  ai.scheduleEmbed(vaultId, saved);  // fire-and-forget; no-op if Ollama down
-  return saved;
+  return await withIndexVaultLock(vaultId, async () => {
+    const saved = await store.saveNote(vaultId, note, options || {});
+    idx.indexNote(vaultId, saved);
+    ai.scheduleEmbed(vaultId, saved);  // fire-and-forget; no-op if Ollama down
+    return saved;
+  });
 }));
 ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId, noteSnapshot) => {
-  const result = await store.deleteNote(vaultId, noteId, noteSnapshot);
-  idx.removeNote(vaultId, noteId);
-  return result;
+  return await withIndexVaultLock(vaultId, async () => {
+    const result = await store.deleteNote(vaultId, noteId, noteSnapshot);
+    idx.removeNote(vaultId, noteId);
+    return result;
+  });
 }));
 ipcMain.handle('mn:listDeletedNotes', wrap(store.listDeletedNotes));
 ipcMain.handle('mn:restoreDeletedNote', wrap(async (vaultId, trashId) => {
-  const note = await store.restoreDeletedNote(vaultId, trashId);
-  idx.indexNote(vaultId, note);
-  ai.scheduleEmbed(vaultId, note);
-  return note;
+  return await withIndexVaultLock(vaultId, async () => {
+    const note = await store.restoreDeletedNote(vaultId, trashId);
+    idx.indexNote(vaultId, note);
+    ai.scheduleEmbed(vaultId, note);
+    return note;
+  });
 }));
 ipcMain.handle('mn:purgeDeletedNote', wrap(store.purgeDeletedNote));
 ipcMain.handle('mn:listNoteVersions', wrap(store.listNoteVersions));
 ipcMain.handle('mn:restoreNoteVersion', wrap(async (vaultId, noteId, versionId) => {
-  const note = await store.restoreNoteVersion(vaultId, noteId, versionId);
-  idx.indexNote(vaultId, note);
-  ai.scheduleEmbed(vaultId, note);
-  return note;
+  return await withIndexVaultLock(vaultId, async () => {
+    const note = await store.restoreNoteVersion(vaultId, noteId, versionId);
+    idx.indexNote(vaultId, note);
+    ai.scheduleEmbed(vaultId, note);
+    return note;
+  });
 }));
 ipcMain.handle('mn:listCanvases',   wrap(store.listCanvases));
 ipcMain.handle('mn:getCanvas',      wrap(store.getCanvas));
@@ -680,13 +727,16 @@ ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
 // Search / backlinks / tags (SQLite-backed)
 ipcMain.handle('mn:search',         wrap(async (vaultId, query, limit) => { await indexReadyPromise; return idx.search(vaultId, query, limit); }));
 ipcMain.handle('mn:searchDetailed', wrap(async (vaultId, query, limit) => { await indexReadyPromise; return idx.searchDetailed(vaultId, query, limit); }));
+ipcMain.handle('mn:searchDetailedStatus', wrap(async (vaultId, query, limit) => { await indexReadyPromise; return idx.searchDetailedStatus(vaultId, query, limit); }));
 ipcMain.handle('mn:backlinks',      wrap(async (vaultId, title, limit) => { await indexReadyPromise; return idx.backlinks(vaultId, title, limit); }));
 ipcMain.handle('mn:notesByTag',     wrap(async (vaultId, tag) => { await indexReadyPromise; return idx.notesByTag(vaultId, tag); }));
 ipcMain.handle('mn:tagCounts',      wrap(async (vaultId) => { await indexReadyPromise; return idx.tagCounts(vaultId); }));
 ipcMain.handle('mn:rebuildIndex',   wrap(async (vaultId) => {
-  const vault = await store.loadVault(vaultId);
-  idx.rescanVault(vaultId, vault.notes || []);
-  return { indexed: vault.notes?.length || 0 };
+  return await withIndexVaultLock(vaultId, async () => {
+    const vault = await store.loadVault(vaultId);
+    idx.rescanVault(vaultId, vault.notes || []);
+    return { indexed: vault.notes?.length || 0 };
+  });
 }));
 ipcMain.handle('mn:vaultHealth',    wrap((vaultId) => store.vaultHealth(vaultId)));
 ipcMain.handle('mn:exportBackup',   wrap(async (options = {}) => {
@@ -698,7 +748,16 @@ ipcMain.handle('mn:exportBackup',   wrap(async (options = {}) => {
     filters: [{ name: 'VispNote Backup', extensions: ['json'] }],
   });
   if (result.canceled || !result.filePath) return { canceled: true };
-  await fs.promises.writeFile(result.filePath, JSON.stringify(payload, null, 2), 'utf8');
+  try {
+    const targetStat = await fs.promises.lstat(result.filePath);
+    if (targetStat.isSymbolicLink()) throw new Error('Backup export target cannot be a symlink');
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  const backupText = JSON.stringify(payload, null, 2);
+  const tmp = path.join(path.dirname(result.filePath), `.${path.basename(result.filePath)}.${process.pid}.${Date.now()}.tmp`);
+  await fs.promises.writeFile(tmp, backupText, 'utf8');
+  await fs.promises.rename(tmp, result.filePath);
   return { canceled: false, filePath: result.filePath, vaultCount: payload.vaults.length };
 }));
 ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
@@ -708,6 +767,9 @@ ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
     filters: [{ name: 'VispNote Backup', extensions: ['json'] }],
   });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  const importStat = await fs.promises.lstat(result.filePaths[0]);
+  if (importStat.isSymbolicLink()) throw new Error('Backup import file cannot be a symlink');
+  if (importStat.size > BACKUP_IMPORT_FILE_LIMIT) throw new Error('Backup file is too large');
   const text = await fs.promises.readFile(result.filePaths[0], 'utf8');
   const imported = await store.importBackup(text, options || {});
   for (const vault of imported.importedVaults || []) {
@@ -734,7 +796,7 @@ ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(e
   return await ai.editTextStream({
     ...cleanPayload,
     onToken: (token) => {
-      if (requestId) evt.sender.send(`mn:ai.editStream.chunk:${requestId}`, String(token || ''));
+      sendIpcChunk(evt, requestId, 'mn:ai.editStream.chunk', token);
     },
   });
 }));
@@ -746,7 +808,7 @@ ipcMain.handle('mn:ai.chatStream', wrapWithEvent(async function chatStream(evt, 
   return await ai.chatStream({
     ...cleanPayload,
     onToken: (token) => {
-      if (requestId) evt.sender.send(`mn:ai.chatStream.chunk:${requestId}`, String(token || ''));
+      sendIpcChunk(evt, requestId, 'mn:ai.chatStream.chunk', token);
     },
   });
 }));
@@ -757,7 +819,7 @@ ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.getConfig()));
 ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {
   const config = ai.previewConfig(patch);
   await store.setPrefs({ aiConfig: config });
-  ai.setConfig(patch);
+  ai.applyConfig(config);
   return config;
 }));
 
@@ -811,9 +873,10 @@ app.whenReady().then(async () => {
     }
     idx.init();                 // opens / creates the local search index
     loadSpellWords().catch(e => console.error('spell dictionary preload failed', e));
-  } catch (e) {
-    console.error('boot init failed', e);
-  }
+    } catch (e) {
+      console.error('boot init failed', e);
+      dialog.showErrorBox('VispNote failed to initialize', e?.message || String(e));
+    }
   createTray();
   createWindow();
   indexReadyPromise = rescanAllVaults().catch(e => {

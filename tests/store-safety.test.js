@@ -239,7 +239,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const store = require('../lib/store');
   const ai = require('../lib/ai');
 
-  assert.match(main, /const \{ pathToFileURL \} = require\('url'\)/);
+  assert.match(main, /const \{ fileURLToPath \} = require\('url'\)/);
   assert.match(main, /function hardenWindow\(win\)/);
   assert.match(main, /function ipcErrorResponse\(name, e\)/);
   assert.match(main, /function wrapWithEvent\(fn\)/);
@@ -258,7 +258,10 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /Object\.prototype\.hasOwnProperty\.call\(cleanPatch, 'aiConfig'\)/);
   assert.match(main, /const config = ai\.previewConfig\(cleanPatch\.aiConfig\)/);
   assert.match(main, /store\.setPrefs\(\{ \.\.\.cleanPatch, aiConfig: config \}\)/);
-  assert.match(main, /ai\.setConfig\(cleanPatch\.aiConfig\)/);
+  assert.match(main, /ai\.applyConfig\(config\)/);
+  assert.match(main, /async function sanitizeAiAskArgs/);
+  assert.match(main, /cfg\.vaults\?\.some\(v => v\.id === cleanVaultId\)/);
+  assert.match(main, /function sendIpcChunk/);
   assert.match(main, /ipcMain\.handle\('mn:setPrefs',\s+wrap\(setPrefsFromIpc\)\)/);
   assert.doesNotMatch(main, /ipcMain\.handle\('mn:setPrefs',\s+wrap\(store\.setPrefs\)\)/);
   assert.match(main, /ai\.setConfig\(prefs\.aiConfig, \{ rejectUnknown: false \}\)/);
@@ -269,14 +272,17 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /ipcMain\.handle\('mn:ai\.setConfig',\s+wrap\(async \(patch\) => \{/);
   assert.match(main, /const config = ai\.previewConfig\(patch\)/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: config \}\)/);
-  assert.match(main, /ai\.setConfig\(patch\)/);
+  assert.match(main, /ai\.applyConfig\(config\)/);
   assert.match(main, /ipcMain\.handle\('mn:setTitle', wrapWithEvent/);
   assert.match(main, /function sanitizeExternalUrl\(rawUrl\)/);
   assert.match(main, /parsed\.protocol !== 'https:' && parsed\.protocol !== 'mailto:'/);
+  assert.match(main, /Backup import file cannot be a symlink/);
+  assert.match(main, /Backup export target cannot be a symlink/);
   assert.match(main, /shell\.openExternal\(sanitizeExternalUrl\(url\)\)/);
   assert.match(preload, /openExternal: \(url\) => ipcRenderer\.invoke\('mn:openExternal', url\)/);
   assert.match(main, /ipcMain\.handle\('mn:ai\.editStream', wrapWithEvent/);
   assert.match(main, /idx\.searchDetailed\(vaultId, query, limit\)/);
+  assert.match(main, /idx\.searchDetailedStatus\(vaultId, query, limit\)/);
   assert.match(main, /ipcMain\.handle\('mn:searchDetailed', wrap\(async \(vaultId, query, limit\) => \{ await indexReadyPromise; return idx\.searchDetailed\(vaultId, query, limit\); \}\)\)/);
   assert.match(main, /indexReadyPromise = rescanAllVaults\(\)\.catch/);
   assert.match(indexSource, /db\.transaction\(\(\) => \{/);
@@ -388,6 +394,10 @@ test('AI PII reduction masks hosted provider requests and restores local placeho
   assert.match(redacted, /\[ADDRESS_1\]/);
   assert.match(redacted, /\[SECRET_1\]/);
   assert.match(redacted, /\[IP_1\]/);
+  assert.equal(ai.__test.reducePiiText('plain eyJshort.payload.text'), 'plain eyJshort.payload.text');
+  assert.equal(ai.__test.isPrivateHost('::1'), true);
+  assert.equal(ai.__test.isPrivateHost('fd00::1'), true);
+  assert.equal(ai.__test.isPrivateHost('api.example.com'), false);
   assert.doesNotMatch(redacted, /jane\.doe@example\.com/);
   assert.equal(
     ai.__test.restorePiiText('Reply to [EMAIL_1] at [PHONE_1].', reduced.replacements),
@@ -507,6 +517,16 @@ test('Store hardening validates trash ids, merge keys, and backup size', async (
       () => store.importBackup(' '.repeat(51 * 1024 * 1024)),
       /too large/
     );
+    await assert.rejects(
+      () => store.saveNote(vault.id, {
+        id: 'n_big',
+        title: 'Too big',
+        date: new Date().toISOString(),
+        tags: [],
+        body: 'x'.repeat(store.__test.MAX_NOTE_BODY_BYTES + 1),
+      }),
+      /Note body is too large/
+    );
   });
 });
 
@@ -536,6 +556,8 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   assert.match(app, /MnSaveConflictDialog/);
   assert.match(app, /MnVersionHistoryDialog/);
   assert.match(store, /MAX_BACKUP_IMPORT_BYTES/);
+  assert.match(store, /MAX_NOTE_BODY_BYTES/);
+  assert.match(store, /MAX_CANVAS_JSON_BYTES/);
   assert.match(store, /cleanMergePatch/);
   assert.match(store, /validateTrashId\(trashId\)/);
   assert.match(settings, /Recently deleted/);

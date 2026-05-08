@@ -98,6 +98,15 @@ function mnAskAiJobId() {
   return `ask_${Date.now().toString(36)}_${Math.floor(Math.random() * 100000).toString(36)}`;
 }
 
+function mnAskMessageId(role = 'message') {
+  const id = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${role}-${String(id).replace(/[^a-zA-Z0-9_-]/g, '')}`;
+}
+
+function mnNormalizeAskMessages(messages = []) {
+  return (messages || []).map(m => m?.id ? m : { ...(m || {}), id: mnAskMessageId(m?.role || 'message') });
+}
+
 function mnAskStatusText(status) {
   if (!status) return 'Checking local AI';
   if (!status.reachable) return 'Ollama is offline';
@@ -125,8 +134,20 @@ function MnAskAI({
   const stoppedJobRef = useRefAI(null);
 
   const aiSession = session || localSession;
-  const updateSession = setSession || setLocalSession;
+  const rawUpdateSession = setSession || setLocalSession;
+  const updateSession = (updater) => {
+    rawUpdateSession(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return { ...(next || {}), messages: mnNormalizeAskMessages(next?.messages || []) };
+    });
+  };
   const messages = aiSession.messages || [];
+
+  useEffectAI(() => {
+    if ((aiSession.messages || []).some(m => !m?.id)) {
+      updateSession(prev => ({ ...(prev || {}), messages: mnNormalizeAskMessages(prev?.messages || []) }));
+    }
+  }, [aiSession.messages]);
   const pending = !!aiSession.pending;
   const error = aiSession.error || null;
   const activeAction = aiSession.activeAction || null;
@@ -178,6 +199,7 @@ function MnAskAI({
   };
 
   const askEdit = async ({ text, instruction, scope, jobId }) => {
+    if (!window.mn?.ai?.edit) throw new Error('AI editing is not available');
     const r = await window.mn.ai.edit({ text, instruction, scope, jobId });
     if (!r.ok) throw new Error(r.error || 'AI action failed');
     if (r.value && !r.value.ok) throw new Error(r.value.error || 'AI action failed');
@@ -185,6 +207,7 @@ function MnAskAI({
   };
 
   const askNotes = async ({ prompt, jobId }) => {
+    if (!window.mn?.ai?.ask) throw new Error('AI notes search is not available');
     const r = await window.mn.ai.ask(vaultId, prompt, { jobId, currentNoteId: currentNote?.id || null });
     if (!r.ok) throw new Error(r.error || 'AI action failed');
     if (r.value && !r.value.ok) throw new Error(r.value.error || 'AI action failed');
@@ -676,7 +699,7 @@ function MnAskAI({
             const previousUser = [...messages.slice(0, idx)].reverse().find(item => item.role === 'user')?.text || '';
             const canReport = m.role === 'assistant' && !m.error && !m.stopped && String(m.text || '').trim();
             return (
-            <div key={m.id || idx} data-mn-latest-response={idx === latestResponseIndex ? 'true' : undefined} style={{
+            <div key={m.id} data-mn-latest-response={idx === latestResponseIndex ? 'true' : undefined} style={{
               marginBottom: 14,
               display: 'flex',
               justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
@@ -831,10 +854,9 @@ function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDele
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
     const closeOnEsc = (e) => { if (e.key === 'Escape') close(); };
-    const timer = setTimeout(() => document.addEventListener('mousedown', close), 0);
+    document.addEventListener('mousedown', close);
     document.addEventListener('keydown', closeOnEsc);
     return () => {
-      clearTimeout(timer);
       document.removeEventListener('mousedown', close);
       document.removeEventListener('keydown', closeOnEsc);
     };

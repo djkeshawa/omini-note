@@ -542,6 +542,8 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const redoRef = useRefC([]);
   const svgRef = useRefC(null);
   const rootRef = useRefC(null);
+  const selectedIdsRef = useRefC([]);
+  const handlersRef = useRefC({});
 
   const selectedElement = (draft.elements || []).find(el => el.id === selectedIds[0]) || null;
   const selectedElements = (draft.elements || []).filter(el => selectedIds.includes(el.id));
@@ -554,6 +556,10 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     draftRef.current = next;
     setDraft(next);
   };
+
+  useEffectC(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
 
   useEffectC(() => {
     draftRef.current = canvas;
@@ -691,7 +697,9 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     try {
       const raw = await navigator.clipboard?.readText?.();
       const parsed = JSON.parse(raw || '');
-      if (parsed?.type === 'omini/canvas-elements' && Array.isArray(parsed.elements)) return parsed.elements;
+      if (parsed?.type === 'omini/canvas-elements' && Array.isArray(parsed.elements)) {
+        return parsed.elements.filter(el => el && typeof el === 'object' && el.id && el.type);
+      }
     } catch (e) {}
     return clipboardRef.current || [];
   };
@@ -704,6 +712,8 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     setSelectedIds(clones.map(el => el.id));
     setContextMenu(null);
   };
+
+  handlersRef.current = { undoCanvas, redoCanvas, removeElements, copyElements, pasteElements };
 
   const applyColor = (key, value) => {
     setStyle(prev => ({ ...prev, [key]: value }));
@@ -1029,29 +1039,30 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
       const key = (e.key || '').toLowerCase();
       if (isMod && key === 'z') {
         e.preventDefault();
-        if (e.shiftKey) redoCanvas();
-        else undoCanvas();
+        if (e.shiftKey) handlersRef.current.redoCanvas?.();
+        else handlersRef.current.undoCanvas?.();
         return;
       }
       if (isMod && key === 'y') {
         e.preventDefault();
-        redoCanvas();
+        handlersRef.current.redoCanvas?.();
         return;
       }
-      if ((e.key === 'Backspace' || e.key === 'Delete') && selectedIds.length) {
+      const currentSelectedIds = selectedIdsRef.current || [];
+      if ((e.key === 'Backspace' || e.key === 'Delete') && currentSelectedIds.length) {
         e.preventDefault();
-        removeElements(selectedIds);
+        handlersRef.current.removeElements?.(currentSelectedIds);
         return;
       }
       if (isMod && key === 'c') {
         e.preventDefault();
-        await copyElements();
+        await handlersRef.current.copyElements?.(selectedIdsRef.current || []);
       } else if (isMod && key === 'x') {
         e.preventDefault();
-        await copyElements(currentSelectionIds(), true);
+        await handlersRef.current.copyElements?.(selectedIdsRef.current || [], true);
       } else if (isMod && key === 'v') {
         e.preventDefault();
-        await pasteElements();
+        await handlersRef.current.pasteElements?.();
       }
     };
     const onKeyUp = (e) => {
@@ -1063,7 +1074,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [selectedIds]);
+  }, []);
 
   const viewport = draft.viewport || { x: 0, y: 0, scale: 1 };
   const activeStroke = selectedElement?.stroke || style.stroke;

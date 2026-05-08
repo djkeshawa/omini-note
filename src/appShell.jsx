@@ -83,14 +83,17 @@ const HAS_DISK = typeof window !== 'undefined' && !!window.mn;
 
 function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
   const cancelRef = useRefA(null);
+  const mountedRef = useRefA(false);
 
   useEffectA(() => {
+    mountedRef.current = true;
     const onKey = (e) => {
       if (e.key === 'Escape') onCancel && onCancel();
     };
     window.addEventListener('keydown', onKey);
-    const handle = setTimeout(() => cancelRef.current?.focus(), 0);
+    const handle = setTimeout(() => { if (mountedRef.current) cancelRef.current?.focus(); }, 0);
     return () => {
+      mountedRef.current = false;
       window.removeEventListener('keydown', onKey);
       clearTimeout(handle);
     };
@@ -253,15 +256,18 @@ function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
 
 function MnAppNoticeDialog({ notice, T, onClose }) {
   const closeRef = useRefA(null);
+  const mountedRef = useRefA(false);
 
   useEffectA(() => {
     if (!notice) return;
+    mountedRef.current = true;
     const onKey = (e) => {
       if (e.key === 'Escape' || e.key === 'Enter') onClose && onClose();
     };
     window.addEventListener('keydown', onKey);
-    const handle = setTimeout(() => closeRef.current?.focus(), 0);
+    const handle = setTimeout(() => { if (mountedRef.current) closeRef.current?.focus(); }, 0);
     return () => {
+      mountedRef.current = false;
       window.removeEventListener('keydown', onKey);
       clearTimeout(handle);
     };
@@ -796,11 +802,17 @@ function MnCommandPalette({ open, commands, onClose, T }) {
   const [query, setQuery] = useStateA('');
   const [active, setActive] = useStateA(0);
   const inputRef = useRefA(null);
+  const mountedRef = useRefA(false);
   useEffectA(() => {
     if (!open) return;
+    mountedRef.current = true;
     setQuery('');
     setActive(0);
-    setTimeout(() => inputRef.current?.focus(), 0);
+    const handle = setTimeout(() => { if (mountedRef.current) inputRef.current?.focus(); }, 0);
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(handle);
+    };
   }, [open]);
   const items = useMemoA(() => MN_APP_SHELL_HELPERS.filterCommands
     ? MN_APP_SHELL_HELPERS.filterCommands(commands, query, 12)
@@ -814,13 +826,13 @@ function MnCommandPalette({ open, commands, onClose, T }) {
     setTimeout(() => cmd.run?.(), 0);
   };
   return (
-    <div onClick={onClose} style={{
+    <div role="presentation" onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 260,
       background: 'color-mix(in oklab, oklch(0.2 0.02 240) 34%, transparent)',
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
       padding: '9vh 18px 18px',
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" aria-label="Command palette" onClick={e => e.stopPropagation()} style={{
         width: 'min(720px, 100%)',
         background: T.bg,
         color: T.ink,

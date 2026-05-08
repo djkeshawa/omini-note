@@ -217,6 +217,7 @@ function MnApp() {
   const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
   // make them available to other modules via globals too
+  window.MN_RUNTIME = window.MN_RUNTIME || Object.freeze({ mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk });
   window.mnMdToBlocks = mnMdToBlocks; window.mnBlocksToMd = mnBlocksToMd;
   window.mnWalk = mnWalk; window.mnLocate = mnLocate; window.mnCloneBlocks = mnCloneBlocks;
   window.mkBlock = mkBlock;
@@ -250,6 +251,7 @@ function MnApp() {
   const newAiSession = useCallbackA(() => mnNewAskAiSession(), []);
   const [askAiSessions, setAskAiSessions] = useStateA(() => [mnNewAskAiSession()]);
   const [activeAskAiSessionId, setActiveAskAiSessionId] = useStateA('');
+  const activeAskAiSessionIdRef = useRefA('');
   const [aiNotice, setAiNotice] = useStateA(null);
   const [captureOpen, setCaptureOpen] = useStateA(false);
   const [deleteTargetId, setDeleteTargetId] = useStateA(null);
@@ -257,14 +259,24 @@ function MnApp() {
   const [conflictNotice, setConflictNotice] = useStateA(null);
   const [versionTargetId, setVersionTargetId] = useStateA(null);
   const [toast, setToast] = useStateA(null);
+  const toastRef = useRefA(null);
   const [reminderCenterOpen, setReminderCenterOpen] = useStateA(false);
   const dismissedReminderKeys = useRefA(new Set());
   const quietedReminderKeys = useRefA(new Set());
+  const notesWithBodyCacheRef = useRefA(new Map());
   const [query, setQuery] = useStateA('');
 
   useEffectA(() => {
     askAiOpenRef.current = view === 'ai';
   }, [view]);
+
+  useEffectA(() => {
+    activeAskAiSessionIdRef.current = activeAskAiSessionId;
+  }, [activeAskAiSessionId]);
+
+  useEffectA(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   // Global-shortcut bridge: the main process registers an OS-level hotkey
   // (Ctrl/Cmd+Shift+N) and pushes an IPC event when it fires. We mirror the
@@ -324,12 +336,12 @@ function MnApp() {
 
   const setActiveAskAiSession = useCallbackA((updater) => {
     setAskAiSessions(prev => prev.map(session => {
-      if (session.id !== (activeAskAiSessionId || prev[0]?.id)) return session;
+      if (session.id !== (activeAskAiSessionIdRef.current || prev[0]?.id)) return session;
       const next = typeof updater === 'function' ? updater(session) : updater;
       const title = mnAskAiSessionTitle({ ...session, ...(next || {}) });
       return { ...session, ...(next || {}), title, updatedAt: new Date().toISOString() };
     }));
-  }, [activeAskAiSessionId]);
+  }, []);
 
   const createAskAiChat = useCallbackA(() => {
     const session = newAiSession();
@@ -449,6 +461,9 @@ function MnApp() {
     const vaultRes = await window.mn.loadVault(vaultId);
     if (!vaultRes.ok) throw new Error(vaultRes.error);
     const vault = vaultRes.value;
+    if (Array.isArray(vault.warnings) && vault.warnings.length) {
+      showAppNotice('Vault loaded with warnings', `${vault.warnings.length} note file${vault.warnings.length === 1 ? '' : 's'} could not be read.`, 'warn');
+    }
     let loadedCanvases = [];
     try {
       const canvasRes = await window.mn.listCanvases(vaultId);
@@ -469,7 +484,7 @@ function MnApp() {
       workflowStates: vault.workflowStates || null,
       novelistAiConfig: vault.novelistAiConfig || null,
     };
-  }, [mnMdToBlocks]);
+  }, [mnMdToBlocks, showAppNotice]);
 
   // ── Bootstrap from disk ─────────────────────────────────────────────────
   useEffectA(() => {
@@ -806,6 +821,9 @@ function MnApp() {
       try {
         const res = await window.mn.loadVault(id);
         if (!res.ok) throw new Error(res.error);
+        if (Array.isArray(res.value.warnings) && res.value.warnings.length) {
+          showAppNotice('Vault loaded with warnings', `${res.value.warnings.length} note file${res.value.warnings.length === 1 ? '' : 's'} could not be read.`, 'warn');
+        }
         targetNotes = normalizeNotes(res.value.notes, mnMdToBlocks);
         targetTags = res.value.tags || [];
         targetSel = targetNotes.some(note => note.id === res.value.lastSelectedId)
@@ -842,7 +860,7 @@ function MnApp() {
       : v));
     setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
     if (HAS_DISK) window.mn.setPrefs({ activeVaultId: id });
-  }, [activeVaultId, vaults, notes, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, refreshVaultRegistry, navigateView]);
+  }, [activeVaultId, vaults, notes, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, refreshVaultRegistry, navigateView, showAppNotice]);
 
   const persistNovelistSetup = async (vaultId, sourceNotes, sourceTags, sourceWorkflowStates = null, options = {}) => {
     const nextTags = mnEnsureNovelistTags(sourceTags);
@@ -1084,7 +1102,7 @@ function MnApp() {
     ...v,
     noteCount: v.id === activeVaultId ? notes.length : (v.notes?.length ?? 0),
     canvasCount: v.id === activeVaultId ? canvases.length : (v.canvases?.length ?? 0),
-  })), [vaults, activeVaultId, notes, canvases]);
+  })), [vaults, activeVaultId, notes.length, canvases.length]);
   const activeVault = useMemoA(() => vaults.find(v => v.id === activeVaultId) || null, [vaults, activeVaultId]);
 
   const updateNovelistAiConfig = useCallbackA((config) => {
@@ -1117,13 +1135,44 @@ function MnApp() {
   };
 
   // Keep body (markdown) in sync for backlinks / search / save
-  const notesWithBody = useMemoA(() => notes.map(n => ({
-    ...n,
-    body: mnNormalizeNoteBody(
-      Array.isArray(n.blocks) ? mnBlocksToMd(n.blocks || []) : (n.body || ''),
-      n.title || 'Untitled'
-    ),
-  })), [notes]);
+  const notesWithBody = useMemoA(() => {
+    const cache = notesWithBodyCacheRef.current;
+    const liveIds = new Set();
+    const next = notes.map(n => {
+      liveIds.add(n.id);
+      const cached = cache.get(n.id);
+      if (cached
+        && cached.noteRef === n
+        && cached.blocksRef === n.blocks
+        && cached.body === n.body
+        && cached.title === n.title
+        && cached.modifiedAt === n.modifiedAt
+        && cached.diskModifiedAt === n.diskModifiedAt) {
+        return cached.value;
+      }
+      const normalized = {
+        ...n,
+        body: mnNormalizeNoteBody(
+          Array.isArray(n.blocks) ? mnBlocksToMd(n.blocks || []) : (n.body || ''),
+          n.title || 'Untitled'
+        ),
+      };
+      cache.set(n.id, {
+        noteRef: n,
+        blocksRef: n.blocks,
+        body: n.body,
+        title: n.title,
+        modifiedAt: n.modifiedAt,
+        diskModifiedAt: n.diskModifiedAt,
+        value: normalized,
+      });
+      return normalized;
+    });
+    for (const key of cache.keys()) {
+      if (!liveIds.has(key)) cache.delete(key);
+    }
+    return next;
+  }, [notes]);
   const novelistStructure = useMemoA(() => mnBuildNovelistStructure(notesWithBody), [notesWithBody]);
   const novelistNotes = novelistStructure.novelNotes || [];
 
@@ -1300,7 +1349,7 @@ function MnApp() {
         if (byRank) return byRank;
         return (a.remindAt?.at || 0) - (b.remindAt?.at || 0);
       });
-  }, [notesWithBody, toast]);
+  }, [notesWithBody, toast?.key]);
 
   const reminderDueCount = reminderCenterItems.filter(item =>
     item.status === 'due' && !dismissedReminderKeys.current.has(item.key)
@@ -1960,12 +2009,22 @@ function MnApp() {
       } else if (isMod && isBackslashKey && !e.shiftKey) {
         e.preventDefault(); setSidebarHidden(v => !v);
       } else if (e.key === 'Escape') {
-        setSettingsOpen(false); setReminderCenterOpen(false);
+        if (commandPaletteOpen || settingsOpen || reminderCenterOpen || vaultHealthOpen || appNotice || conflictNotice || versionTargetId || deleteTargetId) {
+          e.preventDefault();
+          setCommandPaletteOpen(false);
+          setSettingsOpen(false);
+          setReminderCenterOpen(false);
+          setVaultHealthOpen(false);
+          setAppNotice(null);
+          setConflictNotice(null);
+          setVersionTargetId(null);
+          setDeleteTargetId(null);
+        }
       }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [createNote, view, navigateView, openAskAi]);
+  }, [appNotice, commandPaletteOpen, conflictNotice, createNote, deleteTargetId, navigateView, openAskAi, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
 
   useEffectA(() => {
     if (!toast?.key) return;
@@ -1985,7 +2044,7 @@ function MnApp() {
   useEffectA(() => {
     if (bootState !== 'ready') return;
     const check = () => {
-      if (toast) return;
+      if (toastRef.current) return;
       const now = Date.now();
       const today = new Date().toDateString();
       const snoozed = mnReadSnoozedReminders();
@@ -2008,7 +2067,7 @@ function MnApp() {
     check();
     const tm = setInterval(check, 60000);
     return () => clearInterval(tm);
-  }, [bootState, notesWithBody, tweaks.showOverdue, tweaks.reminderSound, toast]);
+  }, [bootState, notesWithBody, tweaks.showOverdue, tweaks.reminderSound, toast?.key]);
 
   // Push vault + selected note into the OS title bar
   useEffectA(() => {

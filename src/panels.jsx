@@ -2958,10 +2958,13 @@ function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
   const titleRef = useRefE(null);
 
   useEffectP(() => {
-    setTimeout(() => titleRef.current?.focus(), 60);
+    const focusHandle = setTimeout(() => titleRef.current?.focus(), 60);
     const esc = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
+    return () => {
+      clearTimeout(focusHandle);
+      window.removeEventListener('keydown', esc);
+    };
   }, []);
 
   const submit = () => {

@@ -660,6 +660,15 @@ function mnCreateBlockLabel() {
 }
 
 const MN_BLOCK_CLIPBOARD_TYPE = 'application/x-omininote-blocks';
+const MN_BLOCK_KINDS = new Set(['paragraph', 'heading', 'bullet', 'todo', 'quote', 'code', 'table', 'divider', 'plot-points']);
+
+function mnIsClipboardBlock(value) {
+  return !!value
+    && typeof value === 'object'
+    && typeof value.content === 'string'
+    && (!value.kind || MN_BLOCK_KINDS.has(value.kind))
+    && (!value.children || Array.isArray(value.children));
+}
 
 function mnReidBlocks(blocks) {
   let seq = 0;
@@ -2371,8 +2380,10 @@ function MnPopover({ children, T, wide, anchorRef }) {
     if (left < margin) left = margin;
     setPos(prev => (prev && prev.top === top && prev.left === left) ? prev : { top, left });
   }, [anchorRef, wide]);
-  // Re-measure every render (cheap; setState bails out via equality guard)
-  React.useLayoutEffect(() => { measure(); });
+  React.useLayoutEffect(() => {
+    const handle = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(handle);
+  }, [measure, children]);
   React.useLayoutEffect(() => {
     window.addEventListener('scroll', measure, true);
     window.addEventListener('resize', measure);
@@ -3297,7 +3308,7 @@ function MnOutliner({
     if (rawBlocks) {
       try {
         const parsed = JSON.parse(rawBlocks);
-        if (Array.isArray(parsed) && parsed.length) return mnReidBlocks(parsed);
+        if (Array.isArray(parsed) && parsed.length && parsed.every(mnIsClipboardBlock)) return mnReidBlocks(parsed);
       } catch (e) {}
     }
     const text = mnNormalizeClipboardMarkdown(
@@ -3421,8 +3432,8 @@ function MnOutliner({
     copySelectedBlocks: async () => {
       const current = selectionRef.current;
       if (current?.kind !== 'blocks') return false;
-      if (document.execCommand?.('copy')) return true;
       const copied = await writeBlocksToSystemClipboard(blocksForClipboardIds(current.blockIds || []));
+      if (!copied && document.execCommand?.('copy')) return true;
       if (copied) onShowToast && onShowToast('Copied block markdown');
       else onShowToast && onShowToast('Clipboard unavailable');
       return copied;
@@ -3430,8 +3441,8 @@ function MnOutliner({
     cutSelectedBlocks: async () => {
       const current = selectionRef.current;
       if (current?.kind !== 'blocks') return false;
-      if (document.execCommand?.('cut')) return true;
       const copied = await writeBlocksToSystemClipboard(blocksForClipboardIds(current.blockIds || []));
+      if (!copied && document.execCommand?.('cut')) return true;
       if (!copied) {
         onShowToast && onShowToast('Clipboard unavailable');
         return false;

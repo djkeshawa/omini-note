@@ -612,7 +612,7 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(main, /spellcheck: true/);
   assert.match(main, /setSpellCheckerEnabled\(true\)/);
   assert.match(main, /availableSpellCheckerLanguages/);
-  assert.match(main, /setSpellCheckerLanguages\(\[spellLanguage\]\)/);
+  assert.match(main, /setSpellCheckerLanguages\(\[spellLanguage \|\| 'en-US'\]\)/);
   assert.match(main, /ipcMain\.handle\('mn:spellcheck'/);
   assert.match(main, /role: 'cut'/);
   assert.match(main, /role: 'copy'/);
@@ -880,6 +880,8 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(ollama, /async function chatStream/);
   assert.match(ai, /window\.mn\?\.ai\?\.askStream/);
   assert.match(ai, /window\.mn\?\.ai\?\.chatStream/);
+  assert.match(ai, /function mnAskMessageId/);
+  assert.match(ai, /key=\{m\.id\}/);
   assert.match(ai, /onToken: appendAssistantToken/);
   assert.match(preload, /askStream: \(vaultId, query, options = \{\}, onChunk\)/);
   assert.match(preload, /chatStream:\(payload = \{\}, onChunk\)/);
@@ -887,6 +889,8 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(preload, /delete cleanPayload\.onToken/);
   assert.match(main, /mn:ai\.askStream/);
   assert.match(main, /mn:ai\.chatStream/);
+  assert.match(main, /function sendIpcChunk/);
+  assert.match(main, /evt\.sender\?\.isDestroyed\?\.\(\)/);
   assert.match(aiSource, /async function askStream/);
   assert.match(aiSource, /async function chatStream/);
   assert.match(ollama, /const CHAT_TIMEOUT_MS = 180000/);

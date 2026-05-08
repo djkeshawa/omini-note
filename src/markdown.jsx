@@ -8,6 +8,14 @@ const { useState, useMemo, useCallback, useEffect, useRef } = React;
 const MN_REMINDER_PATTERN = /@remind\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?/;
 const MN_REMINDER_INLINE_PATTERN = /@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g;
 
+function mnHeadingId(text, index) {
+  const base = String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return base ? `heading-${base}` : `heading-${index}`;
+}
+
 function mnDefaultReminderText() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -210,6 +218,7 @@ function MnMarkdown({ md, onOpen, onTagClick, onToggleCheck, T }) {
           const canCollapse = b.level >= 2;
           return (
             <Tag key={i}
+              id={mnHeadingId(b.text || b.content || '', i)}
               onClick={() => canCollapse && setCollapsed(c => ({ ...c, [i]: !c[i] }))}
               style={{
                 fontFamily: 'var(--mn-body)', fontSize: sizes[b.level] || 15,

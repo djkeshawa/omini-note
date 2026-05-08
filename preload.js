@@ -5,7 +5,7 @@ function requestId(prefix) {
   const crypto = globalThis.crypto;
   const id = typeof crypto?.randomUUID === 'function'
     ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    : Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('');
   return `${prefix}-${String(id).replace(/[^a-zA-Z0-9_-]/g, '')}`;
 }
 
@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('mn', {
   // Search / backlinks / tags (SQLite-backed)
   search:      (vaultId, query, limit) => ipcRenderer.invoke('mn:search', vaultId, query, limit),
   searchDetailed:(vaultId, query, limit) => ipcRenderer.invoke('mn:searchDetailed', vaultId, query, limit),
+  searchDetailedStatus:(vaultId, query, limit) => ipcRenderer.invoke('mn:searchDetailedStatus', vaultId, query, limit),
   backlinks:   (vaultId, title) => ipcRenderer.invoke('mn:backlinks', vaultId, title),
   notesByTag:  (vaultId, tag) => ipcRenderer.invoke('mn:notesByTag', vaultId, tag),
   tagCounts:   (vaultId) => ipcRenderer.invoke('mn:tagCounts', vaultId),

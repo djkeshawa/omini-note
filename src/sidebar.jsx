@@ -327,8 +327,18 @@ function MnSidebar({
                       background: active ? T.selBg : 'transparent',
                       border: `1px solid ${active ? T.selLine : 'transparent'}`,
                     }}
+                    role={isRenaming ? undefined : 'button'}
+                    tabIndex={isRenaming ? undefined : 0}
+                    aria-label={`Switch to vault ${v.name}`}
                     onMouseEnter={e => !active && !isRenaming && (e.currentTarget.style.background = T.bgHover)}
                     onMouseLeave={e => !active && !isRenaming && (e.currentTarget.style.background = 'transparent')}
+                    onKeyDown={(e) => {
+                      if (!isRenaming && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault();
+                        onSelectVault(v.id);
+                        setVaultOpen(false);
+                      }
+                    }}
                     onClick={() => { if (!isRenaming) { onSelectVault(v.id); setVaultOpen(false); } }}>
                       <MnVaultIcon T={T} size={20} active={active} />
                       {isRenaming ? (
