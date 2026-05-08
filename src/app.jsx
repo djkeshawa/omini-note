@@ -2055,7 +2055,7 @@ function MnApp() {
       position: 'relative',
       fontFamily: 'var(--mn-ui)', overflow: 'hidden',
       fontSize: 'var(--mn-app-font-size)',
-      padding: 8,
+      padding: 0,
     }}>
         <div style={{
           display: 'flex',
@@ -2063,7 +2063,7 @@ function MnApp() {
           minWidth: 0,
           overflow: 'hidden',
           border: `1px solid ${T.line}`,
-          borderRadius: 10,
+          borderRadius: 0,
           background: T.bg,
           boxShadow: typeof mnShadow === 'function'
             ? mnShadow(T, 'elevated')
