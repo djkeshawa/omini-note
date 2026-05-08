@@ -197,17 +197,23 @@ function MnNoteList({
           onSelect(n.id);
         }}
         style={{
-        padding: density === 'compact' || compact ? '9px 18px' : '14px 20px',
+        padding: density === 'compact' || compact ? '9px 13px' : '13px 15px',
         paddingLeft: 20 + depth * 16,
-        borderBottom: `1px solid ${T.lineSub}`,
+        margin: '0 8px 8px',
+        border: `1px solid ${active ? T.selLine : 'transparent'}`,
+        borderBottom: `1px solid ${active ? T.selLine : T.lineSub}`,
+        borderRadius: 8,
         cursor: 'grab',
-        background: active ? T.selBg : 'transparent',
+        background: active ? T.selBg : (T.bgElevated || T.bg),
         borderLeft: active ? `3px solid ${T.accent}` : '3px solid transparent',
         position: 'relative',
-        transition: 'background 80ms',
+        boxShadow: active
+          ? `0 10px 24px color-mix(in oklab, ${T.accent} 12%, transparent)`
+          : `0 1px 0 color-mix(in oklab, ${T.ink} 5%, transparent)`,
+        transition: 'background 80ms, border-color 80ms, box-shadow 80ms',
       }}
       onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
-      onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
+      onMouseLeave={e => !active && (e.currentTarget.style.background = T.bgElevated || T.bg)}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           {n.pinned && (
             <svg width="9" height="9" viewBox="0 0 10 10" fill={T.accent}>
@@ -247,7 +253,7 @@ function MnNoteList({
             <div style={{
               flex: 1, fontFamily: 'var(--mn-ui)',
               fontSize: 13.5, fontWeight: depth ? 500 : 600,
-              color: T.ink, letterSpacing: '-0.005em',
+              color: T.ink, letterSpacing: 0,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>{mnHighlight(n.title, query, T)}</div>
           )}
@@ -440,17 +446,18 @@ function MnNoteList({
   return (
     <div style={{
       width: density === 'compact' ? 270 : 320, height: '100%',
-      background: T.bg,
+      background: T.bgSub,
       borderRight: `1px solid ${T.line}`,
       display: 'flex', flexDirection: 'column', flexShrink: 0,
     }}>
       {/* Header */}
       <div style={{
-        padding: '40px 20px 12px', borderBottom: `1px solid ${T.lineSub}`,
+        padding: '24px 18px 14px', borderBottom: `1px solid ${T.lineSub}`,
+        background: `linear-gradient(180deg, ${T.bgElevated || T.bg}, ${T.bgSub})`,
       }}>
         <div style={{
           fontFamily: 'var(--mn-ui)', fontSize: 17, fontWeight: 600,
-          color: T.ink, letterSpacing: '-0.01em',
+          color: T.ink, letterSpacing: 0,
         }}>{title}</div>
         <div style={{
           fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
@@ -461,8 +468,8 @@ function MnNoteList({
         <div style={{
           marginTop: 12, position: 'relative',
           display: 'flex', alignItems: 'center',
-          background: T.bgInput || T.bgSub, borderRadius: 6,
-          border: `1px solid ${query ? T.line : 'transparent'}`,
+          background: T.bgInput || T.bgSub, borderRadius: 8,
+          border: `1px solid ${query ? T.selLine : T.lineSub}`,
           transition: 'border 120ms',
         }}>
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke={T.inkDim} strokeWidth="1.4"
@@ -497,7 +504,7 @@ function MnNoteList({
       </div>
 
       {/* List */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '10px 0 12px' }}>
         {notes.length === 0 && (
           <div style={{
             padding: '40px 20px', textAlign: 'center',

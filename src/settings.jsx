@@ -1398,7 +1398,7 @@ function Stat({ T, label, value }) {
     }}>
       <div style={{
         fontFamily: 'var(--mn-body)', fontSize: 22, fontWeight: 600,
-        color: T.ink, letterSpacing: '-0.02em', lineHeight: 1,
+        color: T.ink, letterSpacing: 0, lineHeight: 1,
       }}>{value}</div>
       <div style={{
         fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,

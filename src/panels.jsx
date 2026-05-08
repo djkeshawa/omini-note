@@ -171,7 +171,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
       }}>
         <div style={{
           fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 600,
-          color: T.ink, marginBottom: 3, letterSpacing: '-0.015em',
+          color: T.ink, marginBottom: 3, letterSpacing: 0,
         }}>Todos</div>
         <div style={{
           fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
@@ -219,7 +219,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
       <div style={{ maxWidth: 760, margin: '0 auto' }}>
         <div style={{
           fontFamily: 'var(--mn-ui)', fontSize: 26, fontWeight: 600,
-          color: T.ink, marginBottom: 3, letterSpacing: '-0.02em',
+          color: T.ink, marginBottom: 3, letterSpacing: 0,
         }}>Todos</div>
         <div style={{
           fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
@@ -2666,7 +2666,7 @@ function MnWorkflowPanel({
           <div style={{ minWidth: 180 }}>
             <div style={{
               fontFamily: 'var(--mn-ui)', fontSize: 25, fontWeight: 650,
-              color: T.ink, marginBottom: 4, letterSpacing: '-0.01em',
+              color: T.ink, marginBottom: 4, letterSpacing: 0,
             }}>Workflow</div>
             <div style={{
               fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
@@ -2890,7 +2890,7 @@ function MnTodayPanel({ notes, tags, onOpen, T, theme, rollupFormat = 'long' }) 
       <div style={{ maxWidth: 760, margin: '0 auto' }}>
         <div style={{
           fontFamily: 'var(--mn-ui)', fontSize: 26, fontWeight: 600,
-          color: T.ink, marginBottom: 3, letterSpacing: '-0.02em',
+          color: T.ink, marginBottom: 3, letterSpacing: 0,
         }}>Daily rollup</div>
         <div style={{
           fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
@@ -2905,7 +2905,7 @@ function MnTodayPanel({ notes, tags, onOpen, T, theme, rollupFormat = 'long' }) 
             }}>
               <div style={{
                 fontFamily: 'var(--mn-body)', fontSize: 16, fontWeight: 600,
-                color: T.ink, letterSpacing: '-0.01em',
+                color: T.ink, letterSpacing: 0,
               }}>{g.date.toLocaleDateString([], rollupFormat === 'short'
                 ? { weekday: 'short', month: 'short', day: 'numeric' }
                 : { weekday: 'long', month: 'long', day: 'numeric' })}</div>
@@ -3005,7 +3005,7 @@ function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
             style={{
               width: '100%', border: 'none', outline: 'none', background: 'transparent',
               fontFamily: 'var(--mn-body)', fontSize: 20, fontWeight: 600,
-              color: T.ink, letterSpacing: '-0.01em', marginBottom: 10,
+              color: T.ink, letterSpacing: 0, marginBottom: 10,
             }}/>
           <textarea value={body} onChange={(e) => setBody(e.target.value)}
             placeholder="Write a note… use [[double brackets]] to link, - [ ] for todos, @remind 2026-04-30 to schedule"

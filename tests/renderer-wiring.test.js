@@ -148,7 +148,8 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   assert.match(app, /setReminderCenterOpen\(false\)/);
   assert.match(appShell, /const visibleItems = items/);
   assert.doesNotMatch(appShell, /items\.slice\(0, 12\)/);
-  assert.match(editor, /padding: '14px clamp\(18px, 4vw, 76px\) 8px clamp\(18px, 3vw, 28px\)'/);
+  assert.match(editor, /padding: '12px clamp\(18px, 4vw, 76px\) 10px clamp\(18px, 3vw, 28px\)'/);
+  assert.match(editor, /borderBottom: `1px solid \$\{T\.lineSub\}`/);
 
   assert.match(editor, /spellCheck=\{spellCheck\}/);
   assert.match(outliner, /spellCheck=\{block\.kind === 'code' \? false : spellCheck\}/);

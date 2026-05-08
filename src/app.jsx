@@ -2030,11 +2030,27 @@ function MnApp() {
     <div style={{
       width: '100vw',
       height: '100vh',
-      background: T.bg, position: 'relative',
+      background: `
+        radial-gradient(circle at 18% 12%, color-mix(in oklab, ${T.accent} 12%, transparent), transparent 26%),
+        radial-gradient(circle at 92% 8%, color-mix(in oklab, ${T.success || T.accent} 10%, transparent), transparent 24%),
+        ${T.bgOuter || T.bg}`,
+      position: 'relative',
       fontFamily: 'var(--mn-ui)', overflow: 'hidden',
       fontSize: 'var(--mn-app-font-size)',
+      padding: 8,
     }}>
-        <div style={{ display: 'flex', height: '100%' }}>
+        <div style={{
+          display: 'flex',
+          height: '100%',
+          minWidth: 0,
+          overflow: 'hidden',
+          border: `1px solid ${T.line}`,
+          borderRadius: 10,
+          background: T.bg,
+          boxShadow: typeof mnShadow === 'function'
+            ? mnShadow(T, 'elevated')
+            : `0 18px 46px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+        }}>
           {!sidebarHidden && (
             <MnSidebar
               tags={tags} notes={notesWithBody}

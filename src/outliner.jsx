@@ -2293,7 +2293,7 @@ function mnGetFontStyle(block, T, editorFontSize) {
     const sizes = { 1: 26, 2: 20, 3: 17 };
     return {
       fontFamily: 'var(--mn-body)', fontSize: (sizes[block.level] || 17) * scale,
-      fontWeight: 600, color: T.ink, letterSpacing: '-0.015em', lineHeight: 1.25,
+      fontWeight: 600, color: T.ink, letterSpacing: 0, lineHeight: 1.25,
     };
   }
   if (block.kind === 'code') {

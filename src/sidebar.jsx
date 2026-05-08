@@ -209,9 +209,10 @@ function MnSidebar({
   return (
     <div style={{
       width: density === 'compact' ? 220 : 260, height: '100%',
-      background: T.bgSub, borderRight: `1px solid ${T.line}`,
+      background: `linear-gradient(180deg, ${T.bgElevated || T.bg} 0%, ${T.bgSub} 44%, color-mix(in oklab, ${T.bgSub} 92%, ${T.accent} 8%) 100%)`,
+      borderRight: `1px solid ${T.line}`,
       display: 'flex', flexDirection: 'column', flexShrink: 0,
-      paddingTop: 12,
+      paddingTop: 10,
     }}>
       {/* Vault switcher header */}
       <div style={{
@@ -237,7 +238,7 @@ function MnSidebar({
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
                 fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 600,
-                color: T.ink, letterSpacing: '-0.01em',
+                color: T.ink, letterSpacing: 0,
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{activeVault?.name || 'VispNote'}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, minWidth: 0 }}>
@@ -496,12 +497,13 @@ function MnSidebar({
           </>
         )}
 
-        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
           <button onClick={onNew} title="New note (⌘N)" style={{
-            flex: 1, padding: '6px 10px', borderRadius: 5, cursor: 'pointer',
-            background: T.bgElevated || T.bg, border: `1px solid ${T.line}`,
-            color: T.inkMed, fontFamily: 'var(--mn-ui)', fontSize: 12,
+            flex: 1, padding: '8px 10px', borderRadius: 7, cursor: 'pointer',
+            background: T.ink, border: `1px solid ${T.ink}`,
+            color: T.bg, fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 650,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            boxShadow: `0 8px 20px color-mix(in oklab, ${T.ink} 16%, transparent)`,
           }}>
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
               <path d="M6 2V10M2 6H10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
