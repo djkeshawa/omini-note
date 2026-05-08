@@ -60,6 +60,7 @@ function MnEditor({
   canvases = [], onOpenCanvas, onCreateCanvas,
   onOpen, onCreateLinkedNote, onOpenTag,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
+  onEndNoteMetadataEdit, onUndoNoteEdit, onRedoNoteEdit,
   onPinToggle, onDuplicate, onDelete, onOpenVersions, onOpenGraph, onBack,
   onToggleSidebar, sidebarHidden,
   onToggleNoteList, noteListHidden,
@@ -251,17 +252,22 @@ function MnEditor({
 
   return (
     <div style={{
-      flex: 1, height: '100%', background: T.bg,
+      flex: 1, height: '100%',
+      background: `
+        linear-gradient(180deg, ${T.bgElevated || T.bg} 0%, ${T.bg} 24%, ${T.bg} 100%)`,
       display: 'flex', flexDirection: 'column', position: 'relative',
       minWidth: 0,
     }}>
       {/* Toolbar */}
       <div style={{
-        padding: '14px clamp(18px, 4vw, 76px) 8px clamp(18px, 3vw, 28px)',
+        padding: '12px clamp(18px, 4vw, 76px) 10px clamp(18px, 3vw, 28px)',
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        minHeight: 52,
+        minHeight: 54,
+        borderBottom: `1px solid ${T.lineSub}`,
+        background: `color-mix(in oklab, ${T.bgElevated || T.bg} 88%, transparent)`,
+        backdropFilter: 'blur(12px)',
       }}>
         {onBack && (
           <button onClick={onBack} title="Back to previous view" style={iconBtn(T)}>
@@ -360,20 +366,34 @@ function MnEditor({
         </button>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 clamp(18px, 4.5vw, 56px) 40px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '0 clamp(18px, 4.5vw, 56px) 44px' }}>
         <div style={{
           maxWidth: editorWidth === 'narrow' ? 720
                   : editorWidth === 'wide' ? 1280
                   : editorWidth === 'full' ? 'none'
                   : 1000,
-          margin: '0 auto', paddingTop: 12,
+          margin: '0 auto', paddingTop: 22,
           fontSize: fontSize === 'small' ? '13px' : fontSize === 'large' ? '16px' : '14.5px',
         }}>
           <input
+            className="mn-note-title-input"
             value={note.title}
             onChange={(e) => onTitleChange(e.target.value)}
+            onBlur={() => onEndNoteMetadataEdit && onEndNoteMetadataEdit()}
             spellCheck={spellCheck}
             onKeyDown={(e) => {
+              const isMod = e.metaKey || e.ctrlKey;
+              const lower = String(e.key || '').toLowerCase();
+              if (isMod && lower === 'z' && !e.shiftKey && onUndoNoteEdit) {
+                e.preventDefault();
+                onUndoNoteEdit();
+                return;
+              }
+              if (((isMod && e.shiftKey && lower === 'z') || (isMod && lower === 'y')) && onRedoNoteEdit) {
+                e.preventDefault();
+                onRedoNoteEdit();
+                return;
+              }
               if (e.key === 'Enter' || e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
                 e.preventDefault();
                 // Focus first block in outliner
@@ -391,7 +411,7 @@ function MnEditor({
             placeholder="Untitled"
             style={{
               width: '100%', border: 'none', outline: 'none', background: 'transparent',
-              fontFamily: 'var(--mn-body)', fontSize: 'clamp(25px, 2.1vw, 30px)', fontWeight: 600,
+              fontFamily: 'var(--mn-body)', fontSize: 'clamp(27px, 2.3vw, 34px)', fontWeight: 600,
               color: T.ink, letterSpacing: 0, marginBottom: 12,
               padding: 0,
             }}
@@ -483,9 +503,12 @@ function MnEditor({
             rowGap: 3,
             alignItems: 'center',
             margin: hasMetadataRows || addingProperty ? '0 0 18px' : '-2px 0 18px',
-            padding: 0,
+            padding: hasMetadataRows || addingProperty ? '10px 12px' : 0,
             width: 'fit-content',
             maxWidth: '100%',
+            border: hasMetadataRows || addingProperty ? `1px solid ${T.lineSub}` : 'none',
+            borderRadius: hasMetadataRows || addingProperty ? 8 : 0,
+            background: hasMetadataRows || addingProperty ? T.bgSub : 'transparent',
           }}>
             {hasStatusRow && (
               <>

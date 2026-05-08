@@ -231,6 +231,8 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/markdown.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
@@ -264,6 +266,10 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /result\?\.config\?\.provider === 'ollama'/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: ai\.getConfig\(\) \}\)/);
   assert.match(main, /ipcMain\.handle\('mn:setTitle', wrapWithEvent/);
+  assert.match(main, /function sanitizeExternalUrl\(rawUrl\)/);
+  assert.match(main, /parsed\.protocol !== 'https:' && parsed\.protocol !== 'mailto:'/);
+  assert.match(main, /shell\.openExternal\(sanitizeExternalUrl\(url\)\)/);
+  assert.match(preload, /openExternal: \(url\) => ipcRenderer\.invoke\('mn:openExternal', url\)/);
   assert.match(main, /ipcMain\.handle\('mn:ai\.editStream', wrapWithEvent/);
   assert.match(main, /idx\.searchDetailed\(vaultId, query, limit\)/);
   assert.match(main, /ipcMain\.handle\('mn:searchDetailed', wrap\(async \(vaultId, query, limit\) => \{ await indexReadyPromise; return idx\.searchDetailed\(vaultId, query, limit\); \}\)\)/);
@@ -292,6 +298,11 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
 
   assert.doesNotMatch(markdown, /dangerouslySetInnerHTML/);
   assert.doesNotMatch(markdown, /\.innerHTML\s*=/);
+  assert.doesNotMatch(outliner, /ref\.current\.innerHTML\s*=/);
+  assert.match(outliner, /sandbox=""/);
+  assert.match(outliner, /function mnMermaidSvgHeight/);
+  assert.match(outliner, /pointerEvents: 'none'/);
+  assert.doesNotMatch(aiSource, /env:\s*\{\s*\.\.\.process\.env/);
 
   assert.match(storeSource, /function sanitizeVaultMetaPatch/);
   assert.match(storeSource, /CONFIG_FILE_MODE = 0o600/);
@@ -307,7 +318,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
     lastSelectedId: 'n_valid-1',
     novelistMode: true,
     workflowStates: [],
-    novelistAiConfig: { wordLimit: 900 },
+    novelistAiConfig: { wordLimit: 900, surprise: '<script>', prompts: [{ id: 'draft', prompt: 'Write.' }] },
   });
   assert.deepEqual(cleanMeta.tags, [
     { name: 'novel-cast', hue: 360 },
@@ -316,7 +327,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.equal(cleanMeta.lastSelectedId, 'n_valid-1');
   assert.equal(cleanMeta.novelistMode, true);
   assert.deepEqual(cleanMeta.workflowStates, []);
-  assert.deepEqual(cleanMeta.novelistAiConfig, { wordLimit: 900 });
+  assert.equal(cleanMeta.novelistAiConfig.wordLimit, 900);
+  assert.equal(cleanMeta.novelistAiConfig.surprise, undefined);
+  assert.deepEqual(cleanMeta.novelistAiConfig.prompts, [{ id: 'draft', name: '', prompt: 'Write.' }]);
   assert.throws(() => store.__test.sanitizeVaultMetaPatch({ slug: '../x' }), /Unsupported vault metadata field/);
   assert.throws(() => store.__test.sanitizeVaultMetaPatch({ lastSelectedId: '../x' }), /Invalid note id/);
   assert.throws(() => store.__test.sanitizeVaultMetaPatch({ novelistAiConfig: 'bad' }), /Invalid novelist AI config patch/);
@@ -324,6 +337,14 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(aiSource, /function sanitizeConfigPatch/);
   assert.match(aiSource, /SECRET_CONFIG_KEYS/);
   assert.match(aiSource, /let ollamaSpawnPromise = null/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ ollamaHost: 'http://127.0.0.1:9999' }), /Ollama host/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://127.0.0.1:8080/v1' }), /HTTPS/);
+  assert.equal(ai.__test.sanitizeConfigPatch({ ollamaHost: 'http://localhost:11434' }).ollamaHost, 'http://localhost:11434');
+  const previousOllamaModels = process.env.OLLAMA_MODELS;
+  process.env.OLLAMA_MODELS = '/tmp/vispnote-ollama-models';
+  assert.equal(ai.__test.ollamaServeEnv().OLLAMA_MODELS, '/tmp/vispnote-ollama-models');
+  if (previousOllamaModels == null) delete process.env.OLLAMA_MODELS;
+  else process.env.OLLAMA_MODELS = previousOllamaModels;
   assert.match(aiSource, /await ollamaSpawnPromise/);
   assert.equal(ai.__test.sanitizeSecretValue('  sk-test\r\nbad\u0000  '), 'sk-testbad');
   assert.match(aiSource, /piiReduction/);
@@ -332,10 +353,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'file:///tmp/model' }), /Invalid customBaseUrl protocol/);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ surprise: true }), /Unsupported AI config field/);
   assert.equal(ai.__test.sanitizeConfigPatch({ piiReduction: false }).piiReduction, false);
-  assert.equal(
-    ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://localhost:11434/v1/' }).customBaseUrl,
-    'http://localhost:11434/v1'
-  );
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://localhost:11434/v1/' }), /HTTPS/);
   assert.equal(
     ai.__test.publicConfig({ openaiApiKey: 'secret-key', provider: 'openai' }).openaiApiKey,
     'configured'
@@ -405,6 +423,68 @@ test('AI PII reduction masks hosted provider requests and restores local placeho
     global.fetch = originalFetch;
     ai.setConfig(originalConfig, { rejectUnknown: false });
   }
+});
+
+test('AI note traversal expands seed notes through links backlinks and tags', () => {
+  const ai = require('../lib/ai');
+  const notes = [
+    { id: 'seed', title: 'Seed', tags: ['reading'], body: 'See [[Linked]].' },
+    { id: 'linked', title: 'Linked', tags: [], body: 'Linked body' },
+    { id: 'backlink', title: 'Backlink', tags: [], body: 'Mentions [[Seed]].' },
+    { id: 'shared', title: 'Shared tag', tags: ['reading'], body: 'Same category' },
+    { id: 'other', title: 'Other', tags: [], body: 'Unrelated' },
+  ];
+  const expanded = ai.__test.expandTraversalCandidates(['seed'], notes, 'what is related to seed?');
+  assert.deepEqual(expanded.map(item => item.note.id).slice(0, 4), ['seed', 'linked', 'backlink', 'shared']);
+  assert.ok(expanded.find(item => item.note.id === 'linked').reasons.some(reason => reason.includes('linked from')));
+  assert.ok(expanded.find(item => item.note.id === 'backlink').reasons.some(reason => reason.includes('backlinks')));
+  assert.ok(expanded.find(item => item.note.id === 'shared').reasons.some(reason => reason.includes('shares #reading')));
+});
+
+test('AI recursive note research uses only bounded read-only note tools', async () => {
+  const ai = require('../lib/ai');
+  const notes = [
+    { id: 'seed', title: 'Seed', tags: ['topic'], body: 'See [[Linked]].' },
+    { id: 'linked', title: 'Linked', tags: [], body: 'Linked body' },
+    { id: 'backlink', title: 'Backlink', tags: [], body: 'Mentions [[Seed]].' },
+    { id: 'shared', title: 'Shared tag', tags: ['topic'], body: 'Same category' },
+    { id: 'other', title: 'Other', tags: [], body: 'Unrelated' },
+  ];
+  const research = await ai.__test.runRecursiveNoteResearch({
+    query: 'explain Seed connections',
+    allNotes: notes,
+    seedIds: ['seed'],
+    options: {
+      planNoteResearch: async ({ round }) => round === 1
+        ? [
+          { tool: 'get_links', args: { id: 'seed' } },
+          { tool: 'get_backlinks', args: { id: 'seed' } },
+          { tool: 'get_notes_by_tag', args: { tag: 'topic' } },
+          { tool: 'read_file', args: { path: '/etc/passwd' } },
+        ]
+        : [{ tool: 'finish' }],
+    },
+  });
+
+  assert.deepEqual(research.notes.map(note => note.id).slice(0, 4), ['seed', 'linked', 'backlink', 'shared']);
+  assert.equal(research.toolLog.some(entry => entry.tool === 'read_file' && /Rejected unknown/.test(entry.summary)), true);
+  assert.equal(research.toolCalls, 5);
+});
+
+test('AI recursive note research is gated for simple specific queries unless forced', () => {
+  const ai = require('../lib/ai');
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('open Alpha note', ['a', 'b', 'c'], {}), false);
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('what did I decide about Alpha?', ['a', 'b', 'c'], {}), true);
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('open Alpha note', ['a', 'b', 'c'], { recursiveResearch: true }), true);
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('what did I decide about Alpha?', ['a'], { recursiveResearch: false }), false);
+});
+
+test('AI high-risk capability policy remains disabled by default', () => {
+  const aiActions = require('../src/aiActions.js');
+  const action = aiActions.classifyPrompt('run python code over my notes').action;
+  assert.equal(action.type, 'high-risk-disabled');
+  assert.match(action.reason, /not enabled/);
+  assert.match(action.reason, /Settings toggle/);
 });
 
 test('Data safety wiring exposes trash, versions, and save conflict recovery', () => {

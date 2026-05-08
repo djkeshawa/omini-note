@@ -1,6 +1,6 @@
 {
   "name": "vispnote",
-  "version": "0.1.16",
+  "version": "0.1.19",
   "description": "VispNote — a local-first, block-based note-taking desktop app",
   "license": "Apache-2.0",
   "author": {
@@ -47,15 +47,20 @@
     "prebuild:win:portable": "npm run build:renderer",
     "build:win:portable": "electron-builder --win portable --publish never",
     "start": "npm run build:renderer && electron .",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "lint": "eslint ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "electron": "^41.3.0",
     "electron-builder": "^26.8.1",
-    "esbuild": "^0.28.0"
+    "esbuild": "^0.28.0",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0"
   },
   "dependencies": {
     "better-sqlite3": "^12.9.0",
+    "electron-updater": "^6.8.3",
     "katex": "^0.16.45",
     "mermaid": "^11.14.0",
     "react": "^18.3.1",

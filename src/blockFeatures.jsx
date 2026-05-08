@@ -295,9 +295,10 @@ function MnBlockContextMenu({
       if (!e.target.closest('.mn-block-ctx-menu')) onClose();
     };
     const onEsc = (e) => { if (e.key === 'Escape') onClose(); };
-    setTimeout(() => document.addEventListener('mousedown', onDown), 0);
+    const timer = setTimeout(() => document.addEventListener('mousedown', onDown), 0);
     document.addEventListener('keydown', onEsc);
     return () => {
+      clearTimeout(timer);
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onEsc);
     };
@@ -451,7 +452,7 @@ function MnZoomBar({ block, noteTitle, onExit, onCopyRef, T, onChangeContent }) 
         onClick={() => setEditing(true)}
         style={{
           fontFamily: 'var(--mn-body)', fontSize: 24, fontWeight: 600,
-          color: T.ink, letterSpacing: '-0.015em', lineHeight: 1.25,
+          color: T.ink, letterSpacing: 0, lineHeight: 1.25,
           padding: '4px 0 12px', cursor: 'text',
           borderBottom: `1px solid ${T.lineSub}`,
           marginBottom: 12,

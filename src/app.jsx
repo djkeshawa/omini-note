@@ -132,20 +132,51 @@ function mnReminderKey(item) {
 }
 
 function mnReadSnoozedReminders() {
-  try { return JSON.parse(localStorage.getItem('mn:snoozedReminders') || '{}') || {}; }
-  catch { return {}; }
+  return window.MN_STORAGE?.getJson?.('mn:snoozedReminders', {}) || {};
 }
 
 function mnWriteSnoozedReminder(key, until) {
   const data = mnReadSnoozedReminders();
   data[key] = until;
-  try { localStorage.setItem('mn:snoozedReminders', JSON.stringify(data)); } catch (e) {}
+  window.MN_STORAGE?.setJson?.('mn:snoozedReminders', data);
 }
 
 function mnCollectReminderItems(notes) {
   return MN_APP_HELPERS.collectReminderItems
     ? MN_APP_HELPERS.collectReminderItems(notes, window.MN_REMIND, window.mnWalk)
     : [];
+}
+
+function mnNewAskAiSession() {
+  const now = new Date().toISOString();
+  return {
+    id: `chat_${Date.now().toString(36)}_${Math.floor(Math.random() * 100000).toString(36)}`,
+    title: 'New chat',
+    messages: [],
+    pending: false,
+    error: null,
+    activeAction: null,
+    background: false,
+    archived: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function mnAskAiSessionTitle(session) {
+  const messages = session?.messages || [];
+  const firstUser = messages.find(message => message.role === 'user' && message.text)?.text || '';
+  if (session?.title && (session.title !== 'New chat' || !firstUser)) return session.title;
+  return firstUser ? firstUser.slice(0, 54) : 'New chat';
+}
+
+function mnPickActiveAskAiSession(sessions, preferredId = '', options = {}) {
+  const preferred = sessions.find(session => session.id === preferredId);
+  if (preferred && options.allowArchivedPreferred !== false) return preferred;
+  if (preferred && !preferred.archived) return preferred;
+  return sessions.find(session => !session.archived)
+    || sessions[0]
+    || null;
 }
 
 function mnPlayReminderSound() {
@@ -213,16 +244,11 @@ function MnApp() {
   const [view, setView] = useStateA('notes');
   const [graphFilter, setGraphFilter] = useStateA('all-novelist');
   const lastViewRef = useRefA('notes');
-  const [askAiOpen, setAskAiOpen] = useStateA(false);
   const [askAiSeed, setAskAiSeed] = useStateA('');
   const askAiOpenRef = useRefA(false);
-  const [askAiSession, setAskAiSession] = useStateA({
-    messages: [],
-    pending: false,
-    error: null,
-    activeAction: null,
-    background: false,
-  });
+  const newAiSession = useCallbackA(() => mnNewAskAiSession(), []);
+  const [askAiSessions, setAskAiSessions] = useStateA(() => [mnNewAskAiSession()]);
+  const [activeAskAiSessionId, setActiveAskAiSessionId] = useStateA('');
   const [aiNotice, setAiNotice] = useStateA(null);
   const [captureOpen, setCaptureOpen] = useStateA(false);
   const [deleteTargetId, setDeleteTargetId] = useStateA(null);
@@ -236,8 +262,8 @@ function MnApp() {
   const [query, setQuery] = useStateA('');
 
   useEffectA(() => {
-    askAiOpenRef.current = askAiOpen;
-  }, [askAiOpen]);
+    askAiOpenRef.current = view === 'ai';
+  }, [view]);
 
   // Global-shortcut bridge: the main process registers an OS-level hotkey
   // (Ctrl/Cmd+Shift+N) and pushes an IPC event when it fires. We mirror the
@@ -283,8 +309,79 @@ function MnApp() {
   const openAskAi = useCallbackA((initialQuery = '') => {
     setAiNotice(null);
     setAskAiSeed(typeof initialQuery === 'string' ? initialQuery : '');
-    setAskAiOpen(true);
+    navigateView('ai');
+  }, [navigateView]);
+
+  const activeAskAiSession = useMemoA(
+    () => mnPickActiveAskAiSession(askAiSessions, activeAskAiSessionId),
+    [askAiSessions, activeAskAiSessionId]
+  );
+
+  useEffectA(() => {
+    if (!activeAskAiSession && askAiSessions[0]) setActiveAskAiSessionId(askAiSessions[0].id);
+    else if (activeAskAiSession && activeAskAiSession.id !== activeAskAiSessionId) setActiveAskAiSessionId(activeAskAiSession.id);
+  }, [activeAskAiSession, activeAskAiSessionId, askAiSessions]);
+
+  const setActiveAskAiSession = useCallbackA((updater) => {
+    setAskAiSessions(prev => prev.map(session => {
+      if (session.id !== (activeAskAiSessionId || prev[0]?.id)) return session;
+      const next = typeof updater === 'function' ? updater(session) : updater;
+      const title = mnAskAiSessionTitle({ ...session, ...(next || {}) });
+      return { ...session, ...(next || {}), title, updatedAt: new Date().toISOString() };
+    }));
+  }, [activeAskAiSessionId]);
+
+  const createAskAiChat = useCallbackA(() => {
+    const session = newAiSession();
+    setAskAiSessions(prev => [session, ...prev]);
+    setActiveAskAiSessionId(session.id);
+    setAskAiSeed('');
+    navigateView('ai');
+  }, [navigateView, newAiSession]);
+
+  const deleteAskAiChat = useCallbackA((id) => {
+    const target = askAiSessions.find(session => session.id === id);
+    if (target?.pending) return;
+    const next = askAiSessions.filter(session => session.id !== id);
+    if (!next.length) {
+      setAskAiSessions([]);
+      setActiveAskAiSessionId('');
+      return;
+    }
+    const nextActive = mnPickActiveAskAiSession(next, activeAskAiSessionId);
+    setAskAiSessions(next);
+    if (id === activeAskAiSessionId || !nextActive || nextActive.id !== activeAskAiSessionId) {
+      setActiveAskAiSessionId(nextActive?.id || '');
+    }
+  }, [activeAskAiSessionId, askAiSessions]);
+
+  const renameAskAiChat = useCallbackA((id, title) => {
+    const next = String(title || 'New chat').slice(0, 80) || 'New chat';
+    setAskAiSessions(prev => prev.map(session => session.id === id
+      ? { ...session, title: next, updatedAt: new Date().toISOString() }
+      : session));
   }, []);
+
+  const archiveAskAiChat = useCallbackA((id, archived = true) => {
+    const target = askAiSessions.find(session => session.id === id);
+    if (target?.pending) return;
+    const next = askAiSessions.map(session => session.id === id
+      ? { ...session, archived: !!archived, updatedAt: new Date().toISOString() }
+      : session);
+    if (archived && id === activeAskAiSessionId) {
+      const nextActive = mnPickActiveAskAiSession(next, activeAskAiSessionId, { allowArchivedPreferred: false });
+      if (nextActive && !nextActive.archived) {
+        setAskAiSessions(next);
+        setActiveAskAiSessionId(nextActive.id);
+      } else {
+        const session = newAiSession();
+        setAskAiSessions([session, ...next]);
+        setActiveAskAiSessionId(session.id);
+      }
+      return;
+    }
+    setAskAiSessions(next);
+  }, [activeAskAiSessionId, askAiSessions, newAiSession]);
 
   const notifyAskAiComplete = useCallbackA((notice) => {
     if (askAiOpenRef.current) return;
@@ -299,6 +396,25 @@ function MnApp() {
   // different vaults cannot overwrite each other's pending saves.
   const [dirtyNotes, setDirtyNotes] = useStateA(() => new Map());
   const vaultActivationSeq = useRefA(0);
+  const noteMetadataHistoryRef = useRefA({ undo: [], redo: [], activeKey: null });
+  const cloneNoteForMetadataHistory = useCallbackA((note) => note ? ({
+    id: note.id,
+    title: note.title,
+    pinned: !!note.pinned,
+    tags: [...(note.tags || [])],
+  }) : null, []);
+  const recordNoteMetadataHistory = useCallbackA((note, historyKey = null) => {
+    if (!note) return;
+    const state = noteMetadataHistoryRef.current;
+    if (historyKey && state.activeKey === historyKey) return;
+    state.undo.push(cloneNoteForMetadataHistory(note));
+    if (state.undo.length > 40) state.undo.shift();
+    state.redo = [];
+    state.activeKey = historyKey || null;
+  }, [cloneNoteForMetadataHistory]);
+  const endNoteMetadataEdit = useCallbackA(() => {
+    noteMetadataHistoryRef.current.activeKey = null;
+  }, []);
   const markDirty = useCallbackA((id) => {
     if (!id || !activeVaultId) return;
     setDirtyNotes(s => {
@@ -446,8 +562,7 @@ function MnApp() {
   useEffectA(() => {
     if (!HAS_DISK) return;
     if (!tweakInitialized.current) { tweakInitialized.current = true; return; }
-    const t = setTimeout(() => { window.mn.setPrefs({ tweaks }); }, 250);
-    return () => clearTimeout(t);
+    window.mn.setPrefs({ tweaks });
   }, [tweaks]);
 
   const findNotesForVault = useCallbackA((vaultId, currentNotes = notes, currentVaults = vaults) => {
@@ -1164,7 +1279,7 @@ function MnApp() {
 
   const selectedNote = notes.find(n => n.id === selectedId);
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
-  const blockingOverlayOpen = captureOpen || settingsOpen || commandPaletteOpen || vaultHealthOpen || askAiOpen || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
+  const blockingOverlayOpen = captureOpen || settingsOpen || commandPaletteOpen || vaultHealthOpen || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
 
   const reminderCenterItems = useMemoA(() => {
     const now = Date.now();
@@ -1289,13 +1404,46 @@ function MnApp() {
     return id;
   }, [notesWithBody, mnBlocksToMd, mnMdToBlocks, mkBlock, uniqueNoteTitle, markDirty, navigateView]);
 
-  const updateNote = (id, patch) => {
+  const updateNote = useCallbackA((id, patch, options = {}) => {
     setNotes(ns => ns.map(n => {
       if (n.id !== id) return n;
+      if (options.noteHistory !== false && options.historyKey) {
+        recordNoteMetadataHistory(n, options.historyKey);
+      }
       return MN_APP_MUTATIONS.applyNotePatch(n, patch);
     }));
     markDirty(id);
-  };
+  }, [markDirty, recordNoteMetadataHistory]);
+
+  const restoreNoteMetadataSnapshot = useCallbackA((direction, noteId = null) => {
+    const state = noteMetadataHistoryRef.current;
+    const from = direction === 'redo' ? state.redo : state.undo;
+    const to = direction === 'redo' ? state.undo : state.redo;
+    const index = noteId ? from.map(item => item?.id).lastIndexOf(noteId) : from.length - 1;
+    if (index < 0) return false;
+    const [snapshot] = from.splice(index, 1);
+    if (!snapshot) return false;
+    let current = null;
+    setNotes(ns => ns.map(note => {
+      if (note.id !== snapshot.id) return note;
+      current = cloneNoteForMetadataHistory(note);
+      return {
+        ...note,
+        title: snapshot.title,
+        pinned: !!snapshot.pinned,
+        tags: [...(snapshot.tags || [])],
+      };
+    }));
+    if (current) {
+      to.push(current);
+      markDirty(snapshot.id);
+    }
+    state.activeKey = null;
+    return true;
+  }, [cloneNoteForMetadataHistory, markDirty]);
+
+  const undoNoteMetadataEdit = useCallbackA((noteId) => restoreNoteMetadataSnapshot('undo', noteId), [restoreNoteMetadataSnapshot]);
+  const redoNoteMetadataEdit = useCallbackA((noteId) => restoreNoteMetadataSnapshot('redo', noteId), [restoreNoteMetadataSnapshot]);
 
   const updateNoteBody = useCallbackA((id, bodyOrUpdater) => {
     setNotes(ns => ns.map(n => {
@@ -1416,6 +1564,18 @@ function MnApp() {
     markTagsDirty();
     return clean;
   };
+
+  const tagCurrentNoteFromAi = useCallbackA((name) => {
+    if (!selectedNote) return null;
+    const clean = addTag(name);
+    if (!clean) return null;
+    const currentTags = selectedNote.tags || [];
+    const alreadyHadTag = currentTags.includes(clean);
+    if (!alreadyHadTag) {
+      updateNote(selectedNote.id, { tags: [...currentTags, clean] }, { historyKey: `note:${selectedNote.id}:tag:${clean}:ai-add` });
+    }
+    return { tag: clean, alreadyHadTag };
+  }, [selectedNote, updateNote, tags]);
 
   const removeTag = (name) => {
     const clean = normalizeTagName(name);
@@ -1798,7 +1958,7 @@ function MnApp() {
       } else if (isMod && isBackslashKey && !e.shiftKey) {
         e.preventDefault(); setSidebarHidden(v => !v);
       } else if (e.key === 'Escape') {
-        setSettingsOpen(false); setAskAiOpen(false); setReminderCenterOpen(false);
+        setSettingsOpen(false); setReminderCenterOpen(false);
       }
     };
     window.addEventListener('keydown', h);
@@ -1858,7 +2018,8 @@ function MnApp() {
   }, [activeVaultId, vaults, selectedNote]);
 
   const noteListVisible = view === 'notes' || view === 'graph' || view === 'workflow';
-  const reminderCenterTop = view === 'workflow' ? 30 : view === 'graph' ? 12 : 13;
+  const aiChatListVisible = view === 'ai';
+  const reminderCenterTop = view === 'ai' ? 17 : 14;
   const noteListTitle = query.trim()
     ? 'Search'
     : selectedTag
@@ -1881,11 +2042,27 @@ function MnApp() {
     <div style={{
       width: '100vw',
       height: '100vh',
-      background: T.bg, position: 'relative',
+      background: `
+        radial-gradient(circle at 18% 12%, color-mix(in oklab, ${T.accent} 12%, transparent), transparent 26%),
+        radial-gradient(circle at 92% 8%, color-mix(in oklab, ${T.success || T.accent} 10%, transparent), transparent 24%),
+        ${T.bgOuter || T.bg}`,
+      position: 'relative',
       fontFamily: 'var(--mn-ui)', overflow: 'hidden',
       fontSize: 'var(--mn-app-font-size)',
+      padding: 8,
     }}>
-        <div style={{ display: 'flex', height: '100%' }}>
+        <div style={{
+          display: 'flex',
+          height: '100%',
+          minWidth: 0,
+          overflow: 'hidden',
+          border: `1px solid ${T.line}`,
+          borderRadius: 10,
+          background: T.bg,
+          boxShadow: typeof mnShadow === 'function'
+            ? mnShadow(T, 'elevated')
+            : `0 18px 46px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+        }}>
           {!sidebarHidden && (
             <MnSidebar
               tags={tags} notes={notesWithBody}
@@ -1912,6 +2089,7 @@ function MnApp() {
               novelistCount={novelistNotes.length}
               canvasActive={view === 'canvas'}
               canvasCount={canvases.length}
+              aiActive={view === 'ai'}
               onNewTag={promptNewTag}
               onDeleteTag={removeTag}
               onNew={() => setCaptureOpen(true)}
@@ -1963,6 +2141,25 @@ function MnApp() {
             <MnPanelGripPeek onExpand={() => setNoteListHidden(false)} T={T} title="Show note list" />
           )}
 
+          {aiChatListVisible && !noteListHidden && (
+            <MnAiChatHistory
+              sessions={askAiSessions}
+              activeId={activeAskAiSession?.id || ''}
+              onSelect={setActiveAskAiSessionId}
+              onNew={createAskAiChat}
+              onDelete={deleteAskAiChat}
+              onArchive={archiveAskAiChat}
+              onRename={renameAskAiChat}
+              T={T}
+            />
+          )}
+          {aiChatListVisible && !noteListHidden && (
+            <MnPanelGrip side="notelist" onCollapse={() => setNoteListHidden(true)} T={T} />
+          )}
+          {aiChatListVisible && noteListHidden && (
+            <MnPanelGripPeek onExpand={() => setNoteListHidden(false)} T={T} title="Show AI chats" />
+          )}
+
           {view === 'notes' && selectedNote && (
             <MnEditor
               note={selectedNote} notes={notesWithBody} tags={tags} links={links}
@@ -2005,16 +2202,19 @@ function MnApp() {
                 setSelectedTag(t); setSelectedWorkflow(null); navigateView('notes');
               }}
               onBlocksChange={(blocks) => updateNoteBlocks(selectedNote.id, blocks)}
-              onTitleChange={(title) => updateNote(selectedNote.id, { title })}
-              onAddTag={(t) => updateNote(selectedNote.id, { tags: [...selectedNote.tags, t] })}
+              onTitleChange={(title) => updateNote(selectedNote.id, { title }, { historyKey: `note:${selectedNote.id}:title` })}
+              onEndNoteMetadataEdit={endNoteMetadataEdit}
+              onUndoNoteEdit={() => undoNoteMetadataEdit(selectedNote.id)}
+              onRedoNoteEdit={() => redoNoteMetadataEdit(selectedNote.id)}
+              onAddTag={(t) => updateNote(selectedNote.id, { tags: [...selectedNote.tags, t] }, { historyKey: `note:${selectedNote.id}:tag:${t}:add` })}
               onCreateTag={(raw) => {
                 const name = addTag(raw);
                 if (name && !selectedNote.tags.includes(name)) {
-                  updateNote(selectedNote.id, { tags: [...selectedNote.tags, name] });
+                  updateNote(selectedNote.id, { tags: [...selectedNote.tags, name] }, { historyKey: `note:${selectedNote.id}:tag:${name}:create` });
                 }
               }}
-              onRemoveTag={(t) => updateNote(selectedNote.id, { tags: selectedNote.tags.filter(x => x !== t) })}
-              onPinToggle={() => updateNote(selectedNote.id, { pinned: !selectedNote.pinned })}
+              onRemoveTag={(t) => updateNote(selectedNote.id, { tags: selectedNote.tags.filter(x => x !== t) }, { historyKey: `note:${selectedNote.id}:tag:${t}:remove` })}
+              onPinToggle={() => updateNote(selectedNote.id, { pinned: !selectedNote.pinned }, { historyKey: `note:${selectedNote.id}:pin:${selectedNote.pinned ? 'off' : 'on'}` })}
               onDuplicate={() => duplicateNote(selectedNote.id)}
               onDelete={() => requestDeleteNote(selectedNote.id)}
               onOpenVersions={HAS_DISK ? () => setVersionTargetId(selectedNote.id) : null}
@@ -2040,6 +2240,61 @@ function MnApp() {
               onSetWorkflowStatus={(status) => updateWorkflowNoteStatus(selectedNote.id, null, status)}
               theme={theme} T={T}
             />
+          )}
+
+          {view === 'ai' && activeAskAiSession && (
+            <MnAskAI
+              vaultId={activeVaultId}
+              currentNote={selectedNote ? {
+                ...selectedNote,
+                body: mnNormalizeNoteBody(mnBlocksToMd(selectedNote.blocks || []), selectedNote.title || 'Untitled'),
+              } : null}
+              allNotes={notesWithBody}
+              initialQuery={askAiSeed}
+              onClose={goBackView}
+              onOpenNote={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] }, { open: false })}
+              onTagCurrentNote={tagCurrentNoteFromAi}
+              onApplyCurrentPageBody={(body) => {
+                if (!selectedNote) return;
+                const cleanBody = mnNormalizeNoteBody(body, selectedNote.title || 'Untitled');
+                updateNote(selectedNote.id, { body: cleanBody, blocks: mnMdToBlocks(cleanBody) });
+              }}
+              session={activeAskAiSession}
+              setSession={setActiveAskAiSession}
+              onBackgroundComplete={notifyAskAiComplete}
+              embedded
+              T={T} />
+          )}
+
+          {view === 'ai' && !activeAskAiSession && (
+            <div style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 32,
+              color: T.inkMed,
+            }}>
+              <div style={{ textAlign: 'center', maxWidth: 320 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 8 }}>No AI chats</div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.45, color: T.inkDim, marginBottom: 14 }}>
+                  Start a new chat when you need note-aware help.
+                </div>
+                <button onClick={createAskAiChat} style={{
+                  border: `1px solid ${T.line}`,
+                  borderRadius: 7,
+                  background: T.ink,
+                  color: T.bg,
+                  padding: '7px 12px',
+                  fontFamily: 'var(--mn-ui)',
+                  fontSize: 12.5,
+                  fontWeight: 650,
+                  cursor: 'pointer',
+                }}>New chat</button>
+              </div>
+            </div>
           )}
 
           {view === 'graph' && (
@@ -2194,18 +2449,20 @@ function MnApp() {
         />
 
         {/* FAB */}
-        <button onClick={() => setCaptureOpen(true)} title="Quick capture (⌘⇧N)"
-          style={{
-            position: 'absolute', bottom: 22, right: 22, zIndex: 20,
-            width: 44, height: 44, borderRadius: '50%', cursor: 'pointer',
-            background: T.ink, color: T.bg, border: 'none',
-            boxShadow: `0 8px 24px color-mix(in oklab, ${T.ink} 30%, transparent)`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
-            <path d="M8 3V13M3 8H13" strokeLinecap="round"/>
-          </svg>
-        </button>
+        {view !== 'ai' && (
+          <button onClick={() => setCaptureOpen(true)} title="Quick capture (⌘⇧N)"
+            style={{
+              position: 'absolute', bottom: 22, right: 22, zIndex: 20,
+              width: 44, height: 44, borderRadius: '50%', cursor: 'pointer',
+              background: T.ink, color: T.bg, border: 'none',
+              boxShadow: `0 8px 24px color-mix(in oklab, ${T.ink} 30%, transparent)`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
+              <path d="M8 3V13M3 8H13" strokeLinecap="round"/>
+            </svg>
+          </button>
+        )}
 
         {settingsOpen && (
           <MnSettingsModal tweaks={tweaks} setTweak={setTweak} T={T}
@@ -2257,28 +2514,6 @@ function MnApp() {
             onClose={() => setVersionTargetId(null)}
             onRestore={restoreNoteVersion}
           />
-        )}
-        {askAiOpen && (
-          <MnAskAI
-            vaultId={activeVaultId}
-            currentNote={selectedNote ? {
-              ...selectedNote,
-              body: mnNormalizeNoteBody(mnBlocksToMd(selectedNote.blocks || []), selectedNote.title || 'Untitled'),
-            } : null}
-            allNotes={notesWithBody}
-            initialQuery={askAiSeed}
-            onClose={() => setAskAiOpen(false)}
-            onOpenNote={(id) => { setSelectedId(id); navigateView('notes'); }}
-            onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] })}
-            onApplyCurrentPageBody={(body) => {
-              if (!selectedNote) return;
-              const cleanBody = mnNormalizeNoteBody(body, selectedNote.title || 'Untitled');
-              updateNote(selectedNote.id, { body: cleanBody, blocks: mnMdToBlocks(cleanBody) });
-            }}
-            session={askAiSession}
-            setSession={setAskAiSession}
-            onBackgroundComplete={notifyAskAiComplete}
-            T={T} />
         )}
     </div>
   );

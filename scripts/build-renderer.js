@@ -8,12 +8,15 @@ const OUT_FILE = path.join(OUT_DIR, 'app.js');
 
 const SOURCES = [
   'src/theme.jsx',
+  'src/storageUtils.js',
   'src/data.jsx',
   'src/markdown.jsx',
   'src/blockFeatures.jsx',
   'src/tableOps.js',
   'src/outline.jsx',
   'src/editorOps.js',
+  'src/codeHighlighter.jsx',
+  'src/outlinerHistory.js',
   'src/outliner.jsx',
   'src/graph.jsx',
   'src/sidebar.jsx',
@@ -23,6 +26,7 @@ const SOURCES = [
   'src/panels.jsx',
   'src/canvas.jsx',
   'src/settings.jsx',
+  'src/aiActions.js',
   'src/ai.jsx',
   'src/appHelpers.js',
   'src/appNovelist.js',

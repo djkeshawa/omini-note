@@ -25,6 +25,7 @@ function MnSidebar({
   onSelectWorkflow, onOpenWorkflowPanel, workflowActive,
   onOpenNovelist, novelistActive, novelistEnabled, novelistCount = 0,
   onOpenCanvas, canvasActive, canvasCount = 0,
+  aiActive = false,
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
@@ -42,16 +43,13 @@ function MnSidebar({
   const [renameVal, setRenameVal] = React.useState('');
   // Collapsible sections — persisted in localStorage
   const [openSections, setOpenSections] = React.useState(() => {
-    try {
-      const raw = localStorage.getItem('mn:sidebarSections');
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return { allnotes: true, vaults: true, workflow: false, tags: true };
+    return window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
+      { allnotes: true, vaults: true, workflow: false, tags: true };
   });
   const toggleSection = (key) => {
     setOpenSections(prev => {
       const next = { ...prev, [key]: !prev[key] };
-      try { localStorage.setItem('mn:sidebarSections', JSON.stringify(next)); } catch (e) {}
+      window.MN_STORAGE?.setJson?.('mn:sidebarSections', next);
       return next;
     });
   };
@@ -211,9 +209,10 @@ function MnSidebar({
   return (
     <div style={{
       width: density === 'compact' ? 220 : 260, height: '100%',
-      background: T.bgSub, borderRight: `1px solid ${T.line}`,
+      background: `linear-gradient(180deg, ${T.bgElevated || T.bg} 0%, ${T.bgSub} 44%, color-mix(in oklab, ${T.bgSub} 92%, ${T.accent} 8%) 100%)`,
+      borderRight: `1px solid ${T.line}`,
       display: 'flex', flexDirection: 'column', flexShrink: 0,
-      paddingTop: 12,
+      paddingTop: 10,
     }}>
       {/* Vault switcher header */}
       <div style={{
@@ -239,7 +238,7 @@ function MnSidebar({
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
                 fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 600,
-                color: T.ink, letterSpacing: '-0.01em',
+                color: T.ink, letterSpacing: 0,
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{activeVault?.name || 'VispNote'}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, minWidth: 0 }}>
@@ -438,9 +437,11 @@ function MnSidebar({
                   </div>
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: 5,
-                    margin: '6px 0 0 29px',
+                    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                    gap: 8,
+                    margin: '7px 0 0',
+                    width: '100%',
+                    boxSizing: 'border-box',
                   }}>
                     {[
                       { id: 'notes', label: 'Notes vault' },
@@ -451,13 +452,20 @@ function MnSidebar({
                         type="button"
                         onClick={() => setNewVaultType(type.id)}
                         style={{
-                          padding: '5px 7px',
-                          borderRadius: 5,
+                          minWidth: 0,
+                          minHeight: 32,
+                          padding: '0 10px',
+                          borderRadius: 6,
                           border: `1px solid ${newVaultType === type.id ? T.selLine : T.lineSub}`,
-                          background: newVaultType === type.id ? T.accentSoft : T.bgSub,
+                          background: newVaultType === type.id ? T.accentSoft : T.bg,
                           color: newVaultType === type.id ? T.accent : T.inkMed,
                           fontFamily: 'var(--mn-ui)',
                           fontSize: 11.5,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          textAlign: 'center',
+                          boxSizing: 'border-box',
                           cursor: 'pointer',
                         }}>{type.label}</button>
                     ))}
@@ -489,12 +497,13 @@ function MnSidebar({
           </>
         )}
 
-        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
           <button onClick={onNew} title="New note (⌘N)" style={{
-            flex: 1, padding: '6px 10px', borderRadius: 5, cursor: 'pointer',
-            background: T.bgElevated || T.bg, border: `1px solid ${T.line}`,
-            color: T.inkMed, fontFamily: 'var(--mn-ui)', fontSize: 12,
+            flex: 1, padding: '8px 10px', borderRadius: 7, cursor: 'pointer',
+            background: T.ink, border: `1px solid ${T.ink}`,
+            color: T.bg, fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 650,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            boxShadow: `0 8px 20px color-mix(in oklab, ${T.ink} 16%, transparent)`,
           }}>
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
               <path d="M6 2V10M2 6H10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -509,7 +518,7 @@ function MnSidebar({
       {openSections.allnotes && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
-               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive}
+               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive && !aiActive}
                onClick={() => onSelectTag(null)} />
           <Row icon={iconToday} label="Daily rollup" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
@@ -529,7 +538,7 @@ function MnSidebar({
                active={canvasActive}
                onClick={onOpenCanvas} accent={T.accent} />
           {onOpenAskAI && (
-            <Row icon={iconAI} label="Ask AI" onClick={onOpenAskAI} />
+            <Row icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
           )}
         </div>
       )}

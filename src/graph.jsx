@@ -173,7 +173,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
 
     rafRef.current = requestAnimationFrame(step);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [edges, style, W, H, opts.linkDistance, opts.repulsion, opts.center]); // eslint-disable-line
+  }, [edges, style, W, H, opts.linkDistance, opts.repulsion, opts.center]);
 
   const nodeById = useMemo(() => Object.fromEntries((nodes || []).map(n => [n.id, n])), [nodes]);
   const themeName = T === MN_THEMES.dark ? 'dark' : 'light';

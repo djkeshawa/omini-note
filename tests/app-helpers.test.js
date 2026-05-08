@@ -11,6 +11,7 @@ const appNovelist = require('../src/appNovelist.js');
 const appMutations = require('../src/appMutations.js');
 const appCanvasActions = require('../src/appCanvasActions.js');
 const panelHelpers = require('../src/panelHelpers.js');
+const aiActions = require('../src/aiActions.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
 test('App helpers expand templates, rank commands, and decorate search results', () => {
@@ -33,6 +34,41 @@ test('App helpers expand templates, rank commands, and decorate search results',
   assert.equal(decorated[0].__searchSnippet, undefined);
   assert.equal(decorated[1].__searchSnippet, 'matched body');
   assert.deepEqual(decorated[1].__matchedFields, ['body']);
+});
+
+test('Ask AI action classifier routes app functions and high-risk prompts safely', () => {
+  assert.deepEqual(aiActions.classifyPrompt('create a page called Launch checklist'), {
+    type: 'action',
+    action: { type: 'create-note', title: 'Launch checklist' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('summarize this page'), {
+    type: 'action',
+    action: { type: 'edit-current', action: 'summarize' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('tag this for reading'), {
+    type: 'action',
+    action: { type: 'tag-current-note', tag: 'reading' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('tag this note with reading'), {
+    type: 'action',
+    action: { type: 'tag-current-note', tag: 'reading' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('tag current page as reading'), {
+    type: 'action',
+    action: { type: 'tag-current-note', tag: 'reading' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('tag for reading'), {
+    type: 'action',
+    action: { type: 'tag-current-note', tag: 'reading' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('add reading tag'), {
+    type: 'action',
+    action: { type: 'tag-current-note', tag: 'reading' },
+  });
+  assert.equal(aiActions.classifyPrompt('which notes are tagged reading?').type, 'notes');
+  assert.equal(aiActions.classifyPrompt('find my Python notes').type, 'notes');
+  assert.equal(aiActions.classifyPrompt('list notes tagged bash').type, 'notes');
+  assert.equal(aiActions.classifyPrompt('run a shell command to inspect files').action.type, 'high-risk-disabled');
 });
 
 test('App helpers collect reminders and workflow notes without renderer state', () => {

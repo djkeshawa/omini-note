@@ -36,3 +36,19 @@ test('Markdown round-trip preserves heading children used by novelist links', ()
   assert.deepEqual(Array.from(plotBlocks[0].contexts), ['[[Alice]]']);
   assert.match(outlineApi.mnBlocksToMd(plotBlocks), /::: plot-points\n- Find the key\n  - context:: \[\[Alice\]\]\n:::/);
 });
+
+test('Markdown round-trip preserves adjacent prose paragraphs', () => {
+  const outlineApi = loadOutlineForTest();
+  const blocks = [
+    outlineApi.mkBlock({ kind: 'paragraph', content: 'The room fell quiet.' }),
+    outlineApi.mkBlock({ kind: 'paragraph', content: 'Mara counted the seconds before anyone spoke.' }),
+  ];
+
+  const markdown = outlineApi.mnBlocksToMd(blocks);
+  assert.equal(markdown, 'The room fell quiet.\n\nMara counted the seconds before anyone spoke.');
+
+  const roundTrip = outlineApi.mnMdToBlocks(markdown);
+  assert.equal(roundTrip.length, 2);
+  assert.equal(roundTrip[0].content, 'The room fell quiet.');
+  assert.equal(roundTrip[1].content, 'Mara counted the seconds before anyone spoke.');
+});

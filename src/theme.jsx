@@ -3,19 +3,19 @@
 
 const MN_THEMES = {
   light: {
-    bgOuter: 'oklch(0.955 0.004 240)',     // desk behind window
-    bg:      'oklch(0.991 0.003 240)',     // primary canvas
-    bgSub:   'oklch(0.975 0.004 240)',     // sidebar / list pane
-    bgElevated: 'oklch(1 0.002 240)',
-    bgInput: 'oklch(0.968 0.004 240)',
-    bgHover: 'oklch(0.955 0.006 240)',
-    bgActive:'oklch(0.935 0.010 250)',
-    line:    'oklch(0.905 0.006 240)',
-    lineSub: 'oklch(0.945 0.005 240)',
-    lineStrong: 'oklch(0.835 0.012 245)',
-    ink:     'oklch(0.22 0.012 250)',
-    inkMed:  'oklch(0.45 0.012 250)',
-    inkDim:  'oklch(0.62 0.010 250)',
+    bgOuter: 'oklch(0.935 0.012 248)',     // desk behind window
+    bg:      'oklch(0.992 0.004 255)',     // primary canvas
+    bgSub:   'oklch(0.968 0.008 252)',     // sidebar / list pane
+    bgElevated: 'oklch(1 0.003 255)',
+    bgInput: 'oklch(0.982 0.006 252)',
+    bgHover: 'oklch(0.948 0.012 252)',
+    bgActive:'oklch(0.925 0.018 258)',
+    line:    'oklch(0.875 0.010 250)',
+    lineSub: 'oklch(0.925 0.008 250)',
+    lineStrong: 'oklch(0.78 0.018 248)',
+    ink:     'oklch(0.20 0.016 252)',
+    inkMed:  'oklch(0.43 0.016 252)',
+    inkDim:  'oklch(0.59 0.014 252)',
     accent:  'oklch(0.52 0.14 258)',       // indigo
     accentSoft: 'oklch(0.93 0.04 258)',
     danger:  'oklch(0.58 0.18 25)',
@@ -28,8 +28,8 @@ const MN_THEMES = {
     selLine: 'oklch(0.88 0.03 258)',
     focus:   'oklch(0.60 0.16 258)',
     overlay: 'oklch(0.22 0.012 250 / 0.32)',
-    shadowSoft: 'color-mix(in oklab, oklch(0.22 0.012 250) 7%, transparent)',
-    shadowElevated: 'color-mix(in oklab, oklch(0.22 0.012 250) 18%, transparent)',
+    shadowSoft: 'color-mix(in oklab, oklch(0.20 0.016 252) 9%, transparent)',
+    shadowElevated: 'color-mix(in oklab, oklch(0.20 0.016 252) 20%, transparent)',
   },
   dark: {
     bgOuter: 'oklch(0.14 0.010 250)',
