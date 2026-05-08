@@ -902,9 +902,9 @@ function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDele
                       </svg>
                     ) : (
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.55">
-                        <path d="M3.5 6.5H12.5V12.5H3.5V6.5Z" strokeLinejoin="round"/>
-                        <path d="M5 3.5H11L12.5 6.5H3.5L5 3.5Z" strokeLinejoin="round"/>
-                        <path d="M6.5 8.5H9.5" strokeLinecap="round"/>
+                        <path d="M3.25 6.25H12.75V12.5H3.25V6.25Z" strokeLinejoin="round"/>
+                        <path d="M5 3.5H11L12.75 6.25H3.25L5 3.5Z" strokeLinejoin="round"/>
+                        <path d="M6.25 8.25H9.75" strokeLinecap="round"/>
                       </svg>
                     )}
                   </button>

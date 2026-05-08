@@ -2249,13 +2249,16 @@ function MnApp() {
               padding: 32,
               color: T.inkMed,
             }}>
-              <div style={{ textAlign: 'center' }}>
+              <div style={{ textAlign: 'center', maxWidth: 320 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 8 }}>No AI chats</div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.45, color: T.inkDim, marginBottom: 14 }}>
+                  Start a new chat when you need note-aware help.
+                </div>
                 <button onClick={createAskAiChat} style={{
                   border: `1px solid ${T.line}`,
                   borderRadius: 7,
-                  background: T.bg,
-                  color: T.ink,
+                  background: T.ink,
+                  color: T.bg,
                   padding: '7px 12px',
                   fontFamily: 'var(--mn-ui)',
                   fontSize: 12.5,
