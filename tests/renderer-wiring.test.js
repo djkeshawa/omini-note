@@ -177,7 +177,12 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(app, /<MnAiChatHistory/);
   assert.match(app, /archiveAskAiChat/);
   assert.match(app, /if \(!next\.length\) \{/);
+  assert.match(app, /setAskAiSessions\(\[\]\)/);
+  assert.match(app, /No AI chats/);
   assert.doesNotMatch(app, /!next\.some\(session => !session\.archived\)/);
+  const deleteChatMatch = app.match(/const deleteAskAiChat = useCallbackA\([\s\S]*?\n  \}, \[activeAskAiSessionId, askAiSessions\]\);/);
+  assert.ok(deleteChatMatch);
+  assert.doesNotMatch(deleteChatMatch[0], /newAiSession/);
   assert.match(appShell, /function MnAiNotice/);
   assert.match(appShell, /AI response ready/);
   assert.match(app, /onOpen=\{openAskAi\}/);

@@ -342,9 +342,8 @@ function MnApp() {
   const deleteAskAiChat = useCallbackA((id) => {
     const next = askAiSessions.filter(session => session.id !== id);
     if (!next.length) {
-      const session = newAiSession();
-      setAskAiSessions([session, ...next]);
-      setActiveAskAiSessionId(session.id);
+      setAskAiSessions([]);
+      setActiveAskAiSessionId('');
       return;
     }
     const nextActive = mnPickActiveAskAiSession(next, activeAskAiSessionId);
@@ -352,7 +351,7 @@ function MnApp() {
     if (id === activeAskAiSessionId || !nextActive || nextActive.id !== activeAskAiSessionId) {
       setActiveAskAiSessionId(nextActive?.id || '');
     }
-  }, [activeAskAiSessionId, askAiSessions, newAiSession]);
+  }, [activeAskAiSessionId, askAiSessions]);
 
   const renameAskAiChat = useCallbackA((id, title) => {
     const next = String(title || 'New chat').slice(0, 80) || 'New chat';
@@ -2238,6 +2237,33 @@ function MnApp() {
               onBackgroundComplete={notifyAskAiComplete}
               embedded
               T={T} />
+          )}
+
+          {view === 'ai' && !activeAskAiSession && (
+            <div style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 32,
+              color: T.inkMed,
+            }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 8 }}>No AI chats</div>
+                <button onClick={createAskAiChat} style={{
+                  border: `1px solid ${T.line}`,
+                  borderRadius: 7,
+                  background: T.bg,
+                  color: T.ink,
+                  padding: '7px 12px',
+                  fontFamily: 'var(--mn-ui)',
+                  fontSize: 12.5,
+                  fontWeight: 650,
+                  cursor: 'pointer',
+                }}>New chat</button>
+              </div>
+            </div>
           )}
 
           {view === 'graph' && (
