@@ -40,6 +40,7 @@ asarUnpack:
 
 npmRebuild: true
 buildDependenciesFromSource: false
+beforePack: scripts/before-pack.js
 
 mac:
   category: public.app-category.productivity

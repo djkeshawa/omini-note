@@ -657,6 +657,7 @@ test('Release metadata targets renamed VispNote repository', () => {
     'lib/',
     'src/',
     'scripts/linux-after-install.sh',
+    'scripts/before-pack.js',
     'scripts/build-renderer.js',
     'scripts/verify-packaged-renderer.js',
     'electron-builder.yml',
@@ -671,6 +672,10 @@ test('Release metadata targets renamed VispNote repository', () => {
   assert.match(rendererBuild, /esbuild\.transformSync/);
   assert.match(rendererBuild, /\(function \(\) \{/);
   assert.match(rendererBuild, /React\.createElement\(window\.MnApp\)/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8'), /beforePack: scripts\/before-pack\.js/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../scripts/before-pack.js'), 'utf8'), /Refusing to package/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../scripts/verify-packaged-renderer.js'), 'utf8'), /Wrong-platform better-sqlite3 native module/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../scripts/verify-packaged-renderer.js'), 'utf8'), /Wrong-platform sqlite-vec package/);
   assert.match(workflow, /name: VispNote-\$\{\{ matrix\.name \}\}/);
   assert.match(workflow, /Verify packaged renderer bundle/);
   assert.match(workflow, /--title "VispNote \$\{tag\}"/);

@@ -16,6 +16,7 @@
     "lib/",
     "src/",
     "scripts/linux-after-install.sh",
+    "scripts/before-pack.js",
     "scripts/build-renderer.js",
     "scripts/verify-packaged-renderer.js",
     "electron-builder.yml"

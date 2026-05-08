@@ -140,6 +140,7 @@ Before publishing a release:
 - Run `npm run test:editor`
 - Run `npm run check:main`
 - Run the Electron smoke test
+- Build each desktop installer on its matching OS; the app ships native SQLite modules
 - Confirm `.gitignore` is not allowing local vault data or database files
 - Review `git status --ignored` if local tool or generated files are present
 

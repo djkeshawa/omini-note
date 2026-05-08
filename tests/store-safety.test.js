@@ -283,7 +283,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /ipcMain\.handle\('mn:ai\.editStream', wrapWithEvent/);
   assert.match(main, /idx\.searchDetailed\(vaultId, query, limit\)/);
   assert.match(main, /idx\.searchDetailedStatus\(vaultId, query, limit\)/);
-  assert.match(main, /ipcMain\.handle\('mn:searchDetailed', wrap\(async \(vaultId, query, limit\) => \{ await indexReadyPromise; return idx\.searchDetailed\(vaultId, query, limit\); \}\)\)/);
+  assert.match(main, /ipcMain\.handle\('mn:searchDetailed', wrap\(async \(vaultId, query, limit\) => \{ await indexReadyPromise; assertSearchIndexAvailable\(\); return idx\.searchDetailed\(vaultId, query, limit\); \}\)\)/);
   assert.match(main, /indexReadyPromise = rescanAllVaults\(\)\.catch/);
   assert.match(indexSource, /db\.transaction\(\(\) => \{/);
   assert.match(indexSource, /DROP TABLE note_embeddings/);

@@ -11,6 +11,8 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let indexReadyPromise = Promise.resolve();
+let searchIndexAvailable = false;
+let searchIndexError = null;
 const indexVaultLocks = new Map();
 let updateState = {
   status: 'idle',
@@ -591,6 +593,40 @@ function wrapWithEvent(fn) {
   };
 }
 
+function noteSearchIndexFailure(context, error) {
+  searchIndexAvailable = false;
+  searchIndexError = error?.message || String(error);
+  console.error(`[search-index] ${context} failed`, error);
+}
+
+function initializeSearchIndex() {
+  try {
+    idx.init();
+    searchIndexAvailable = true;
+    searchIndexError = null;
+    return true;
+  } catch (e) {
+    noteSearchIndexFailure('init', e);
+    return false;
+  }
+}
+
+function runOptionalSearchIndexTask(context, fn) {
+  if (!searchIndexAvailable) return null;
+  try {
+    return fn();
+  } catch (e) {
+    console.error(`[search-index] ${context} failed`, e);
+    return null;
+  }
+}
+
+function assertSearchIndexAvailable() {
+  if (!searchIndexAvailable) {
+    throw new Error(searchIndexError ? `Search index unavailable: ${searchIndexError}` : 'Search index unavailable');
+  }
+}
+
 async function setPrefsFromIpc(patch) {
   const cleanPatch = sanitizePrefsPatchFromIpc(patch);
   if (Object.prototype.hasOwnProperty.call(cleanPatch, 'aiConfig')) {
@@ -661,14 +697,14 @@ ipcMain.handle('mn:createVault',    wrap(async (name, options) => {
   const v = await store.createVault(name, options);
   // Index the seeded welcome note
   const data = await store.loadVault(v.id);
-  await withIndexVaultLock(v.id, async () => idx.rescanVault(v.id, data.notes));
+  await withIndexVaultLock(v.id, async () => runOptionalSearchIndexTask('rescan created vault', () => idx.rescanVault(v.id, data.notes)));
   return v;
 }));
 ipcMain.handle('mn:renameVault',    wrap(store.renameVault));
 ipcMain.handle('mn:deleteVault',    wrap(async (vaultId) => {
   return await withIndexVaultLock(vaultId, async () => {
     const result = await store.deleteVault(vaultId);
-    idx.removeVault(vaultId);
+    runOptionalSearchIndexTask('remove vault from index', () => idx.removeVault(vaultId));
     return result;
   });
 }));
@@ -679,15 +715,15 @@ ipcMain.handle('mn:loadVault',      wrap(store.loadVault));
 ipcMain.handle('mn:saveNote',       wrap(async (vaultId, note, options) => {
   return await withIndexVaultLock(vaultId, async () => {
     const saved = await store.saveNote(vaultId, note, options || {});
-    idx.indexNote(vaultId, saved);
-    ai.scheduleEmbed(vaultId, saved);  // fire-and-forget; no-op if Ollama down
+    const indexed = runOptionalSearchIndexTask('index note', () => idx.indexNote(vaultId, saved));
+    if (indexed !== null) ai.scheduleEmbed(vaultId, saved);  // fire-and-forget; no-op if Ollama down
     return saved;
   });
 }));
 ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId, noteSnapshot) => {
   return await withIndexVaultLock(vaultId, async () => {
     const result = await store.deleteNote(vaultId, noteId, noteSnapshot);
-    idx.removeNote(vaultId, noteId);
+    runOptionalSearchIndexTask('remove note from index', () => idx.removeNote(vaultId, noteId));
     return result;
   });
 }));
@@ -695,8 +731,8 @@ ipcMain.handle('mn:listDeletedNotes', wrap(store.listDeletedNotes));
 ipcMain.handle('mn:restoreDeletedNote', wrap(async (vaultId, trashId) => {
   return await withIndexVaultLock(vaultId, async () => {
     const note = await store.restoreDeletedNote(vaultId, trashId);
-    idx.indexNote(vaultId, note);
-    ai.scheduleEmbed(vaultId, note);
+    const indexed = runOptionalSearchIndexTask('index restored note', () => idx.indexNote(vaultId, note));
+    if (indexed !== null) ai.scheduleEmbed(vaultId, note);
     return note;
   });
 }));
@@ -705,8 +741,8 @@ ipcMain.handle('mn:listNoteVersions', wrap(store.listNoteVersions));
 ipcMain.handle('mn:restoreNoteVersion', wrap(async (vaultId, noteId, versionId) => {
   return await withIndexVaultLock(vaultId, async () => {
     const note = await store.restoreNoteVersion(vaultId, noteId, versionId);
-    idx.indexNote(vaultId, note);
-    ai.scheduleEmbed(vaultId, note);
+    const indexed = runOptionalSearchIndexTask('index restored note version', () => idx.indexNote(vaultId, note));
+    if (indexed !== null) ai.scheduleEmbed(vaultId, note);
     return note;
   });
 }));
@@ -725,14 +761,15 @@ ipcMain.handle('mn:setPrefs',       wrap(setPrefsFromIpc));
 ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
 
 // Search / backlinks / tags (SQLite-backed)
-ipcMain.handle('mn:search',         wrap(async (vaultId, query, limit) => { await indexReadyPromise; return idx.search(vaultId, query, limit); }));
-ipcMain.handle('mn:searchDetailed', wrap(async (vaultId, query, limit) => { await indexReadyPromise; return idx.searchDetailed(vaultId, query, limit); }));
-ipcMain.handle('mn:searchDetailedStatus', wrap(async (vaultId, query, limit) => { await indexReadyPromise; return idx.searchDetailedStatus(vaultId, query, limit); }));
-ipcMain.handle('mn:backlinks',      wrap(async (vaultId, title, limit) => { await indexReadyPromise; return idx.backlinks(vaultId, title, limit); }));
-ipcMain.handle('mn:notesByTag',     wrap(async (vaultId, tag) => { await indexReadyPromise; return idx.notesByTag(vaultId, tag); }));
-ipcMain.handle('mn:tagCounts',      wrap(async (vaultId) => { await indexReadyPromise; return idx.tagCounts(vaultId); }));
+ipcMain.handle('mn:search',         wrap(async (vaultId, query, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.search(vaultId, query, limit); }));
+ipcMain.handle('mn:searchDetailed', wrap(async (vaultId, query, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.searchDetailed(vaultId, query, limit); }));
+ipcMain.handle('mn:searchDetailedStatus', wrap(async (vaultId, query, limit) => { await indexReadyPromise; if (!searchIndexAvailable) return { ok: false, results: [], error: searchIndexError || 'Search index unavailable' }; return idx.searchDetailedStatus(vaultId, query, limit); }));
+ipcMain.handle('mn:backlinks',      wrap(async (vaultId, title, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.backlinks(vaultId, title, limit); }));
+ipcMain.handle('mn:notesByTag',     wrap(async (vaultId, tag) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.notesByTag(vaultId, tag); }));
+ipcMain.handle('mn:tagCounts',      wrap(async (vaultId) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.tagCounts(vaultId); }));
 ipcMain.handle('mn:rebuildIndex',   wrap(async (vaultId) => {
   return await withIndexVaultLock(vaultId, async () => {
+    if (!searchIndexAvailable && !initializeSearchIndex()) assertSearchIndexAvailable();
     const vault = await store.loadVault(vaultId);
     idx.rescanVault(vaultId, vault.notes || []);
     return { indexed: vault.notes?.length || 0 };
@@ -774,7 +811,7 @@ ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
   const imported = await store.importBackup(text, options || {});
   for (const vault of imported.importedVaults || []) {
     const loaded = await store.loadVault(vault.id);
-    idx.rescanVault(vault.id, loaded.notes || []);
+    runOptionalSearchIndexTask('rescan imported vault', () => idx.rescanVault(vault.id, loaded.notes || []));
   }
   return { ...imported, canceled: false, filePath: result.filePaths[0] };
 }));
@@ -814,7 +851,7 @@ ipcMain.handle('mn:ai.chatStream', wrapWithEvent(async function chatStream(evt, 
 }));
 ipcMain.handle('mn:ai.cancel',      wrap((jobId) => ai.cancelJob(jobId)));
 ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, store)));
-ipcMain.handle('mn:ai.related',     wrap(async (vaultId, noteId, options) => { await indexReadyPromise; return ai.relatedNotes(vaultId, noteId, store, options || {}); }));
+ipcMain.handle('mn:ai.related',     wrap(async (vaultId, noteId, options) => { await indexReadyPromise; assertSearchIndexAvailable(); return ai.relatedNotes(vaultId, noteId, store, options || {}); }));
 ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.getConfig()));
 ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {
   const config = ai.previewConfig(patch);
@@ -840,11 +877,12 @@ ipcMain.handle('mn:updates.install', wrap(() => {
 // ── Boot scan: populate the index from disk ──────────────────────────────────
 
 async function rescanAllVaults() {
+  if (!searchIndexAvailable) return;
   const cfg = await store.loadConfig();
   for (const v of cfg.vaults) {
     try {
       const data = await store.loadVault(v.id);
-      idx.rescanVault(v.id, data.notes);
+      runOptionalSearchIndexTask('boot vault rescan', () => idx.rescanVault(v.id, data.notes));
     } catch (e) {
       console.error('rescan failed for vault', v.id, e);
     }
@@ -871,12 +909,12 @@ app.whenReady().then(async () => {
         console.error('saved AI config ignored', e);
       }
     }
-    idx.init();                 // opens / creates the local search index
     loadSpellWords().catch(e => console.error('spell dictionary preload failed', e));
-    } catch (e) {
-      console.error('boot init failed', e);
-      dialog.showErrorBox('VispNote failed to initialize', e?.message || String(e));
-    }
+  } catch (e) {
+    console.error('boot init failed', e);
+    dialog.showErrorBox('VispNote failed to initialize', e?.message || String(e));
+  }
+  initializeSearchIndex();      // opens / creates the local search index
   createTray();
   createWindow();
   indexReadyPromise = rescanAllVaults().catch(e => {
