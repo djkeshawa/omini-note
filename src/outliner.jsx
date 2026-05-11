@@ -14,6 +14,13 @@ const {
   mnBlocksToMd, mnMdToBlocks, mnNormalizeBlockLabels,
 } = window.MN_OUTLINE;
 const MnInline = window.MnInline;
+const MnWorkflowPill = window.MnWorkflowPill;
+const MnPropertyRow = window.MnPropertyRow;
+const MnPageEmbed = window.MnPageEmbed;
+const MnBlockEmbed = window.MnBlockEmbed;
+const MnCanvasEmbed = window.MnCanvasEmbed;
+const MnBlockContextMenu = window.MnBlockContextMenu;
+const MnZoomBar = window.MnZoomBar;
 const {
   clearAnnotationRange: mnClearAnnotationRange,
   applyAnnotationRange: mnApplyAnnotationRange,

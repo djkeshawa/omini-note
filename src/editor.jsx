@@ -1,6 +1,8 @@
 // Editor pane: VispNote block outliner. Shows note title, date, tags, backlinks.
 
 const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useEffectE } = React;
+const { mkBlock } = window.MN_OUTLINE || {};
+const MnOutliner = window.MnOutliner;
 
 function mnEditorPropertyParts(content = '') {
   const match = String(content || '').match(/^\s*([a-zA-Z][a-zA-Z0-9_-]*)::\s*(.*)$/);

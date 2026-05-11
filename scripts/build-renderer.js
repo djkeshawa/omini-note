@@ -5,37 +5,18 @@ const esbuild = require('esbuild');
 const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'build', 'renderer');
 const OUT_FILE = path.join(OUT_DIR, 'app.js');
+const ENTRY = 'src/main.jsx';
 
-const SOURCES = [
-  'src/theme.jsx',
-  'src/storageUtils.js',
-  'src/data.jsx',
-  'src/markdown.jsx',
-  'src/blockFeatures.jsx',
-  'src/tableOps.js',
-  'src/outline.jsx',
-  'src/editorOps.js',
-  'src/codeHighlighter.jsx',
-  'src/outlinerHistory.js',
-  'src/outliner.jsx',
-  'src/graph.jsx',
-  'src/sidebar.jsx',
-  'src/notelist.jsx',
-  'src/editor.jsx',
-  'src/panelHelpers.js',
-  'src/panels.jsx',
-  'src/canvas.jsx',
-  'src/plugins.js',
-  'src/settings.jsx',
-  'src/aiActions.js',
-  'src/ai.jsx',
-  'src/appHelpers.js',
-  'src/appNovelist.js',
-  'src/appMutations.js',
-  'src/appCanvasActions.js',
-  'src/appShell.jsx',
-  'src/app.jsx',
-];
+function readEntrySources() {
+  const entryPath = path.join(ROOT, ENTRY);
+  const entry = fs.readFileSync(entryPath, 'utf8');
+  const imports = [...entry.matchAll(/^\s*import\s+['"]\.\/([^'"]+)['"]\s*;?\s*$/gm)]
+    .map(match => path.join('src', match[1]).replace(/\\/g, '/'));
+  if (!imports.length) throw new Error(`${ENTRY} must declare renderer side-effect imports`);
+  return imports;
+}
+
+const SOURCES = readEntrySources();
 
 function transformSource(relativePath) {
   const absolutePath = path.join(ROOT, relativePath);

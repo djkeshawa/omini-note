@@ -12,6 +12,7 @@ const appMutations = require('../src/appMutations.js');
 const appCanvasActions = require('../src/appCanvasActions.js');
 const panelHelpers = require('../src/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
+const projectPaths = require('./helpers/paths.js');
 
 test('AI menu buttons open option menus instead of running Improve directly', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
@@ -287,7 +288,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
 
 test('Canvas workspace is wired through storage, navigation, and note embeds', () => {
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
+  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -299,7 +300,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
 
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  assert.match(rendererBuild, /'src\/canvas\.jsx'/);
+  assert.match(rendererEntry, /import '\.\/canvas\.jsx';/);
   assert.match(store, /function canvasDir\(slug\)/);
   assert.match(store, /async function listCanvases\(vaultId\)/);
   assert.match(store, /async function saveCanvas\(vaultId, canvas\)/);
@@ -921,7 +922,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/appNovelist.js'), 'utf8');
   const panelHelpersSource = fs.readFileSync(path.join(__dirname, '../src/panelHelpers.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
+  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
@@ -933,11 +934,12 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
 
   assert.match(appShell, /function MnAppNoticeDialog/);
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  assert.ok(rendererBuild.indexOf("'src/appHelpers.js'") < rendererBuild.indexOf("'src/app.jsx'"));
-  assert.ok(rendererBuild.indexOf("'src/appHelpers.js'") < rendererBuild.indexOf("'src/appMutations.js'"));
-  assert.ok(rendererBuild.indexOf("'src/appMutations.js'") < rendererBuild.indexOf("'src/app.jsx'"));
-  assert.ok(rendererBuild.indexOf("'src/appMutations.js'") < rendererBuild.indexOf("'src/appCanvasActions.js'"));
-  assert.ok(rendererBuild.indexOf("'src/appCanvasActions.js'") < rendererBuild.indexOf("'src/app.jsx'"));
+  const entryIndex = source => rendererEntry.indexOf(`import './${source}';`);
+  assert.ok(entryIndex('appHelpers.js') < entryIndex('app.jsx'));
+  assert.ok(entryIndex('appHelpers.js') < entryIndex('appMutations.js'));
+  assert.ok(entryIndex('appMutations.js') < entryIndex('app.jsx'));
+  assert.ok(entryIndex('appMutations.js') < entryIndex('appCanvasActions.js'));
+  assert.ok(entryIndex('appCanvasActions.js') < entryIndex('app.jsx'));
   assert.match(app, /const MN_APP_HELPERS = window\.MN_APP_HELPERS/);
   assert.match(app, /const MN_APP_MUTATIONS = window\.MN_APP_MUTATIONS/);
   assert.match(app, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);

@@ -12,6 +12,7 @@ const appMutations = require('../src/appMutations.js');
 const appCanvasActions = require('../src/appCanvasActions.js');
 const panelHelpers = require('../src/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
+const projectPaths = require('./helpers/paths.js');
 
 test('Enter in the middle splits content and annotations without duplicating the tail', () => {
   const first = block('hello world', [
@@ -204,10 +205,10 @@ test('Block area selection can delete as one undoable operation and redo it', ()
 
 test('Typing in a section groups into one undo entry per edit session', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
+  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
 
   assert.match(outliner, /contentEditHistoryRef/);
-  assert.match(rendererBuild, /'src\/outlinerHistory\.js'/);
+  assert.match(rendererEntry, /import '\.\/outlinerHistory\.js';/);
   assert.match(outliner, /mnCreateEditorHistory/);
   assert.match(outliner, /mnShareBlockTree/);
   assert.match(outliner, /const MnMemoBlockRow = React\.memo\(MnBlockRow, mnBlockRowMemoEqual\)/);
@@ -238,12 +239,12 @@ test('Visible block context menu options are wired to real operations', () => {
 
 test('Table blocks are parsed, rendered, copied, and pasted as formatted markdown', () => {
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
+  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
 
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  assert.match(rendererBuild, /'src\/tableOps\.js'/);
+  assert.match(rendererEntry, /import '\.\/tableOps\.js';/);
   assert.match(outline, /readMarkdownTable\(lines, i\)/);
   assert.match(outline, /kind: 'table'/);
   assert.match(outline, /b\.kind === 'table'/);

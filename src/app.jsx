@@ -216,6 +216,24 @@ const {
   MnCommandPalette,
   MnVaultHealthDialog,
 } = MN_APP_SHELL;
+const {
+  MnSidebar,
+  MnPanelGrip,
+  MnPanelGripPeek,
+  MnNoteList,
+  MnAiChatHistory,
+  MnEditor,
+  MnAskAI,
+  MnGraph,
+  MnTodosPanel,
+  MnWorkflowPanel,
+  MnNovelistPanel,
+  MnTodayPanel,
+  MnCanvasPanel,
+  MnQuickCapture,
+  MnReminderToast,
+  MnSettingsModal,
+} = window;
 
 function MnApp() {
   const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
