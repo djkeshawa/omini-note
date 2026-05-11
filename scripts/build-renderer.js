@@ -25,6 +25,7 @@ const SOURCES = [
   'src/panelHelpers.js',
   'src/panels.jsx',
   'src/canvas.jsx',
+  'src/plugins.js',
   'src/settings.jsx',
   'src/aiActions.js',
   'src/ai.jsx',

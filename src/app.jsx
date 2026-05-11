@@ -29,6 +29,7 @@ const MN_TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "snoozeMinutes": "15",
   "weekStart": "monday",
   "workflowStates": null,
+  "plugins": null,
   "autoSave": true,
   "storageFormat": "markdown",
   "sync": "local"
@@ -39,6 +40,7 @@ const MN_APP_MUTATIONS = window.MN_APP_MUTATIONS || {};
 const MN_APP_CANVAS_ACTIONS = window.MN_APP_CANVAS_ACTIONS || {};
 const MN_APP_NOVELIST = window.MN_APP_NOVELIST || {};
 const MN_NOTE_TEMPLATES = MN_APP_HELPERS.NOTE_TEMPLATES || [];
+const MN_PLUGIN_API = window.MN_PLUGINS || {};
 const {
   MN_NOVELIST_TAGS = [],
   MN_NOVELIST_WORKFLOW_STATES = [],
@@ -1943,6 +1945,33 @@ function MnApp() {
     }
   }, [activeVaultId, showAppNotice]);
 
+  const plugins = useMemoA(() => (MN_PLUGIN_API.normalizeAll ? MN_PLUGIN_API.normalizeAll(tweaks.plugins) : []), [tweaks.plugins]);
+
+  const runPlugin = useCallbackA((plugin) => {
+    if (!plugin || plugin.enabled === false) return;
+    const expand = MN_PLUGIN_API.expandTokens || (value => String(value || ''));
+    if (plugin.type === 'note-template') {
+      const title = uniqueNoteTitle(expand(plugin.config?.title || plugin.name || 'Plugin note'));
+      const body = expand(plugin.config?.body || '');
+      const noteTags = MN_PLUGIN_API.tags ? MN_PLUGIN_API.tags(plugin) : [];
+      createNote({ title, body, tags: noteTags });
+      return;
+    }
+    if (plugin.type === 'quick-capture') {
+      setCaptureOpen(true);
+      return;
+    }
+    if (plugin.type === 'open-url') {
+      const url = expand(plugin.config?.url || '').trim();
+      if (!/^https?:\/\//i.test(url)) {
+        showAppNotice('Plugin needs a URL', `${plugin.name || 'This plugin'} must start with http:// or https://.`);
+        return;
+      }
+      if (window.mn?.openExternal) window.mn.openExternal(url);
+      else window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }, [createNote, showAppNotice, uniqueNoteTitle]);
+
   const commands = useMemoA(() => {
     const base = [
       { id: 'new-note', title: 'New note', section: 'Create', shortcut: 'Ctrl+N', keywords: 'page capture', run: () => createNote() },
@@ -1958,6 +1987,14 @@ function MnApp() {
       { id: 'export-backup', title: 'Export backup', section: 'Vault', enabled: HAS_DISK, run: exportBackup },
       { id: 'import-backup', title: 'Import backup', section: 'Vault', enabled: HAS_DISK, run: importBackup },
       { id: 'rebuild-index', title: 'Rebuild search index', section: 'Vault', enabled: HAS_DISK, run: rebuildIndex },
+
+      ...plugins.filter(plugin => plugin.enabled !== false).map(plugin => ({
+        id: `plugin-${plugin.id}`,
+        title: MN_PLUGIN_API.commandTitle ? MN_PLUGIN_API.commandTitle(plugin) : plugin.name,
+        section: 'Plugins',
+        keywords: `${plugin.type} ${plugin.purpose || ''}`,
+        run: () => runPlugin(plugin),
+      })),
       ...MN_NOTE_TEMPLATES.map(template => ({
         id: `template-${template.id}`,
         title: `New ${template.title}`,
@@ -1982,7 +2019,7 @@ function MnApp() {
       })),
     ];
     return base;
-  }, [activeVaultId, createDailyNote, createNote, createNoteFromTemplate, exportBackup, importBackup, notesWithBody, openAskAi, openCanvasDashboard, rebuildIndex, selectVault, vaultsForSidebar, navigateView]);
+  }, [activeVaultId, createDailyNote, createNote, createNoteFromTemplate, exportBackup, importBackup, notesWithBody, openAskAi, openCanvasDashboard, plugins, rebuildIndex, runPlugin, selectVault, vaultsForSidebar, navigateView]);
 
   useEffectA(() => {
     const h = (e) => {

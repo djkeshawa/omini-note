@@ -74,6 +74,7 @@ const PREF_TWEAK_DEFAULTS = {
   snoozeMinutes: '15',
   weekStart: 'monday',
   workflowStates: null,
+  plugins: null,
   autoSave: true,
   storageFormat: 'markdown',
   sync: 'local',
@@ -113,6 +114,30 @@ function sanitizeWorkflowStatesForPrefs(value) {
   });
 }
 
+function sanitizePluginsForPrefs(value) {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > 30) throw new Error('Invalid plugins preference');
+  return value.map((plugin, index) => {
+    if (!isPlainObject(plugin)) throw new Error('Invalid plugin preference');
+    const config = isPlainObject(plugin.config) ? plugin.config : {};
+    const type = capString(plugin.type, `plugins[${index}].type`, 40);
+    if (!['note-template', 'quick-capture', 'open-url'].includes(type)) throw new Error('Invalid plugin type');
+    return {
+      id: capString(plugin.id, `plugins[${index}].id`, 80),
+      name: capString(plugin.name, `plugins[${index}].name`, 80),
+      purpose: capString(plugin.purpose, `plugins[${index}].purpose`, 180),
+      type,
+      enabled: plugin.enabled !== false,
+      config: {
+        title: capString(config.title, `plugins[${index}].config.title`, 160),
+        body: capString(config.body, `plugins[${index}].config.body`, 4000),
+        tags: capString(config.tags, `plugins[${index}].config.tags`, 240),
+        url: capString(config.url, `plugins[${index}].config.url`, 500),
+      },
+    };
+  });
+}
+
 function sanitizeTweaksForPrefs(tweaks) {
   if (!isPlainObject(tweaks)) throw new Error('Invalid tweaks patch');
   const clean = {};
@@ -121,6 +146,8 @@ function sanitizeTweaksForPrefs(tweaks) {
     const defaultValue = PREF_TWEAK_DEFAULTS[key];
     if (key === 'workflowStates') {
       clean.workflowStates = sanitizeWorkflowStatesForPrefs(value);
+    } else if (key === 'plugins') {
+      clean.plugins = sanitizePluginsForPrefs(value);
     } else if (typeof defaultValue === 'boolean') {
       if (typeof value !== 'boolean') throw new Error('Invalid tweak field: ' + key);
       clean[key] = value;
