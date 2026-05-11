@@ -10,6 +10,12 @@ const ai = require('./lib/ai');
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let flushBeforeCloseSeq = 0;
+let quickCaptureShortcutState = {
+  accelerator: null,
+  registered: false,
+  error: null,
+};
 let indexReadyPromise = Promise.resolve();
 let searchIndexAvailable = false;
 let searchIndexError = null;
@@ -83,6 +89,9 @@ const PREF_TWEAK_KEYS = new Set(Object.keys(PREF_TWEAK_DEFAULTS));
 const PREF_STRING_LIMIT = 500;
 const PREF_SECRET_LIMIT = 4096;
 const AI_QUERY_LIMIT = 20000;
+const AI_EDIT_TEXT_LIMIT = 120000;
+const AI_MESSAGE_TEXT_LIMIT = 20000;
+const AI_MAX_TOKENS_LIMIT = 8192;
 const BACKUP_IMPORT_FILE_LIMIT = 50 * 1024 * 1024;
 const IPC_ID_RE = /^[A-Za-z0-9_-]+$/;
 
@@ -96,6 +105,12 @@ function isPlainObject(value) {
 
 function capString(value, field, maxLength = PREF_STRING_LIMIT) {
   const clean = String(value || '').replace(/\0/g, '').trim();
+  if (clean.length > maxLength) throw new Error(`${field} is too long`);
+  return clean;
+}
+
+function capText(value, field, maxLength) {
+  const clean = String(value || '').replace(/\0/g, '');
   if (clean.length > maxLength) throw new Error(`${field} is too long`);
   return clean;
 }
@@ -367,11 +382,11 @@ function configureUpdates() {
 
 async function checkForUpdates(manual = false) {
   const mode = linuxUpdaterMode();
-  if (!app.isPackaged || mode === 'manual') {
+  if (!app.isPackaged || mode === 'manual' || process.platform === 'darwin') {
     return emitUpdateState({
-      status: mode === 'manual' ? 'manual' : 'not-available',
+      status: mode === 'manual' || process.platform === 'darwin' ? 'manual' : 'not-available',
       lastCheckedAt: new Date().toISOString(),
-      error: null,
+      error: process.platform === 'darwin' && app.isPackaged ? 'Automatic updates are disabled for unsigned macOS builds.' : null,
       updateInfo: null,
     });
   }
@@ -393,9 +408,13 @@ function registerQuickCaptureShortcut() {
   // still works without it — capture stays available via the in-app button.
   try {
     if (!globalShortcut.register(QUICK_CAPTURE_SHORTCUT, openQuickCaptureFromShortcut)) {
+      quickCaptureShortcutState = { accelerator: QUICK_CAPTURE_SHORTCUT, registered: false, error: 'Shortcut is already in use or unavailable.' };
       console.warn('quick capture shortcut not registered:', QUICK_CAPTURE_SHORTCUT);
+      return;
     }
+    quickCaptureShortcutState = { accelerator: QUICK_CAPTURE_SHORTCUT, registered: true, error: null };
   } catch (e) {
+    quickCaptureShortcutState = { accelerator: QUICK_CAPTURE_SHORTCUT, registered: false, error: e?.message || String(e) };
     console.error('quick capture shortcut registration failed', e);
   }
 }
@@ -567,12 +586,26 @@ function createWindow() {
     : spellLanguages.find(lang => /^en[-_]/i.test(lang));
   spellSession.setSpellCheckerLanguages([spellLanguage || 'en-US']);
 
-  win.loadFile('vispnote.html');
+  win.loadFile(path.join(__dirname, 'vispnote.html'));
   mainWindow = win;
   attachEditContextMenu(win);
 
   win.on('close', (event) => {
-    if (isQuitting) return;
+    if (isQuitting) {
+      if (win.__vispnoteFlushComplete) return;
+      event.preventDefault();
+      if (win.__vispnoteFlushInProgress) return;
+      win.__vispnoteFlushInProgress = true;
+      flushRendererDirtyNotes(win).finally(() => {
+        win.__vispnoteFlushComplete = true;
+        win.__vispnoteFlushInProgress = false;
+        if (!win.isDestroyed()) win.close();
+        setImmediate(() => {
+          if (isQuitting) app.quit();
+        });
+      });
+      return;
+    }
     event.preventDefault();
     win.hide();
     updateTrayMenu();
@@ -585,6 +618,34 @@ function createWindow() {
   });
 
   return win;
+}
+
+function flushRendererDirtyNotes(win, timeoutMs = 3500) {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return Promise.resolve({ ok: true, skipped: true });
+  const requestId = `flush_${Date.now().toString(36)}_${++flushBeforeCloseSeq}`;
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ipcMain.removeListener('mn:flushDirtyNotesResult', onResult);
+      resolve(result || { ok: true });
+    };
+    const onResult = (_event, id, result) => {
+      if (id === requestId) finish(result);
+    };
+    const timer = setTimeout(() => {
+      console.warn('timed out waiting for renderer dirty-note flush');
+      finish({ ok: false, error: 'Timed out waiting for dirty-note flush' });
+    }, timeoutMs);
+    ipcMain.on('mn:flushDirtyNotesResult', onResult);
+    try {
+      win.webContents.send('mn:flushDirtyNotes', requestId);
+    } catch (e) {
+      finish({ ok: false, error: e?.message || String(e) });
+    }
+  });
 }
 
 // ── IPC handlers ─────────────────────────────────────────────────────────────
@@ -678,7 +739,7 @@ async function sanitizeAiAskArgs(vaultId, query) {
 
 async function askFromIpc(vaultId, query, options) {
   const clean = await sanitizeAiAskArgs(vaultId, query);
-  return ai.ask(clean.vaultId, clean.query, store, options || {});
+  return ai.ask(clean.vaultId, clean.query, store, sanitizeAiAskOptions(options || {}));
 }
 
 function sendIpcChunk(evt, requestId, channel, token) {
@@ -708,14 +769,80 @@ async function withIndexVaultLock(vaultId, fn) {
 async function askStreamFromIpc(evt, vaultId, query, options = {}) {
   const clean = await sanitizeAiAskArgs(vaultId, query);
   const requestId = String(options.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-  const cleanOptions = { ...(options || {}) };
-  delete cleanOptions.requestId;
+  const cleanOptions = sanitizeAiAskOptions(options || {});
   return await ai.askStream(clean.vaultId, clean.query, store, {
     ...cleanOptions,
     onToken: (token) => {
       sendIpcChunk(evt, requestId, 'mn:ai.askStream.chunk', token);
     },
   });
+}
+
+function sanitizeAiJobId(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) || undefined;
+}
+
+function sanitizeAiMaxTokens(value) {
+  if (value == null || value === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(128, Math.min(AI_MAX_TOKENS_LIMIT, Math.round(n))) : undefined;
+}
+
+function sanitizeAiAskOptions(options = {}) {
+  return {
+    jobId: sanitizeAiJobId(options.jobId),
+    recursiveResearch: options.recursiveResearch === true,
+  };
+}
+
+function sanitizeAiEditPayload(payload = {}) {
+  if (!isPlainObject(payload)) throw new Error('Invalid AI edit payload');
+  const clean = {
+    text: capText(payload.text, 'text', AI_EDIT_TEXT_LIMIT),
+    instruction: capString(payload.instruction || 'Improve the writing.', 'instruction', 4000),
+    scope: capString(payload.scope || 'text', 'scope', 120),
+    jobId: sanitizeAiJobId(payload.jobId),
+  };
+  if (payload.vaultId != null && payload.vaultId !== '') {
+    const vaultId = capString(payload.vaultId, 'vaultId', 120);
+    if (!IPC_ID_RE.test(vaultId)) throw new Error('Invalid vault id');
+    clean.vaultId = vaultId;
+  }
+  clean.useNovelistConfig = payload.useNovelistConfig === true;
+  return clean;
+}
+
+async function prepareAiEditPayload(payload = {}) {
+  const clean = sanitizeAiEditPayload(payload);
+  if (!clean.useNovelistConfig || !clean.vaultId) return clean;
+  const vault = await store.loadVault(clean.vaultId);
+  const config = isPlainObject(vault?.novelistAiConfig) ? vault.novelistAiConfig : null;
+  if (!config) return clean;
+  const advanced = isPlainObject(config.advanced) ? config.advanced : {};
+  const maxTokens = sanitizeAiMaxTokens(advanced.maxTokens);
+  return {
+    ...clean,
+    systemMessage: config.systemMessage ? capString(config.systemMessage, 'systemMessage', 12000) : '',
+    model: config.model ? capString(config.model, 'model', 120) : '',
+    maxTokens,
+  };
+}
+
+function sanitizeAiChatPayload(payload = {}) {
+  if (!isPlainObject(payload)) throw new Error('Invalid AI chat payload');
+  const clean = {
+    jobId: sanitizeAiJobId(payload.jobId),
+  };
+  if (Array.isArray(payload.messages)) {
+    clean.messages = payload.messages
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant'))
+      .slice(-8)
+      .map(m => ({ role: m.role, content: capText(m.content, 'message', AI_MESSAGE_TEXT_LIMIT) }))
+      .filter(m => m.content.trim());
+  } else {
+    clean.text = capText(payload.text || '', 'text', AI_MESSAGE_TEXT_LIMIT);
+  }
+  return clean;
 }
 
 // Vault management
@@ -819,9 +946,7 @@ ipcMain.handle('mn:exportBackup',   wrap(async (options = {}) => {
     if (e.code !== 'ENOENT') throw e;
   }
   const backupText = JSON.stringify(payload, null, 2);
-  const tmp = path.join(path.dirname(result.filePath), `.${path.basename(result.filePath)}.${process.pid}.${Date.now()}.tmp`);
-  await fs.promises.writeFile(tmp, backupText, 'utf8');
-  await fs.promises.rename(tmp, result.filePath);
+  await store.atomicWriteFile(result.filePath, backupText, 'utf8');
   return { canceled: false, filePath: result.filePath, vaultCount: payload.vaults.length };
 }));
 ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
@@ -852,11 +977,10 @@ ipcMain.handle('mn:ai.connect',     wrap(async () => {
 }));
 ipcMain.handle('mn:ai.ask',         wrap(askFromIpc));
 ipcMain.handle('mn:ai.askStream',   wrapWithEvent(askStreamFromIpc));
-ipcMain.handle('mn:ai.edit',        wrap((payload) => ai.editText(payload)));
+ipcMain.handle('mn:ai.edit',        wrap(async (payload) => ai.editText(await prepareAiEditPayload(payload))));
 ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(evt, payload = {}) {
   const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-  const cleanPayload = { ...payload };
-  delete cleanPayload.requestId;
+  const cleanPayload = await prepareAiEditPayload(payload);
   return await ai.editTextStream({
     ...cleanPayload,
     onToken: (token) => {
@@ -864,11 +988,10 @@ ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(e
     },
   });
 }));
-ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(payload)));
+ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(sanitizeAiChatPayload(payload))));
 ipcMain.handle('mn:ai.chatStream', wrapWithEvent(async function chatStream(evt, payload = {}) {
   const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-  const cleanPayload = { ...payload };
-  delete cleanPayload.requestId;
+  const cleanPayload = sanitizeAiChatPayload(payload);
   return await ai.chatStream({
     ...cleanPayload,
     onToken: (token) => {
@@ -893,6 +1016,7 @@ ipcMain.handle('mn:setTitle', wrapWithEvent((evt, title) => {
   if (win && typeof title === 'string') win.setTitle(title);
 }));
 ipcMain.handle('mn:openExternal', wrap((url) => shell.openExternal(sanitizeExternalUrl(url))));
+ipcMain.handle('mn:shortcutStatus', wrap(() => quickCaptureShortcutState));
 ipcMain.handle('mn:updates.status', wrap(() => emitUpdateState()));
 ipcMain.handle('mn:updates.check', wrap(() => checkForUpdates(true)));
 ipcMain.handle('mn:updates.install', wrap(() => {
@@ -922,7 +1046,20 @@ app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 if (process.platform === 'linux') app.setDesktopName('vispnote.desktop');
 
-app.whenReady().then(async () => {
+const singleInstanceBypassForSmoke = process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE === '1'
+  && process.argv.some(arg => /scripts[\\/]+smoke-electron\.js$/.test(arg));
+const singleInstanceLock = singleInstanceBypassForSmoke
+  ? true
+  : app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    showMainWindow();
+  });
+}
+
+if (singleInstanceLock) app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   configureUpdates();
   if (process.platform === 'darwin') app.dock?.setIcon(createAppIcon());

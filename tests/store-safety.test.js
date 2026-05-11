@@ -305,7 +305,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(html, /react-dom\.production\.min\.js/);
   assert.match(html, /build\/renderer\/app\.js/);
   assert.match(html, /object-src 'none'/);
-  assert.match(html, /frame-ancestors 'none'/);
+  assert.doesNotMatch(html, /frame-ancestors/);
 
   assert.doesNotMatch(markdown, /dangerouslySetInnerHTML/);
   assert.doesNotMatch(markdown, /\.innerHTML\s*=/);

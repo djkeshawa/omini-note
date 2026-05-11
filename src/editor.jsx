@@ -75,6 +75,7 @@ function MnEditor({
   const [tagDraft, setTagDraft] = useStateE('');
   const [zoomBlockId, setZoomBlockId] = useStateE(null);
   const [toast, setToast] = useStateE(null);
+  const toastTimerRef = useRefE(null);
   const propertySplit = useMemoE(
     () => mnEditorSplitPropertyBlocks(note.blocks || []),
     [note.blocks]
@@ -93,9 +94,16 @@ function MnEditor({
   useEffectE(() => { setZoomBlockId(null); }, [note.id]);
 
   const onShowToast = (msg) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(msg);
-    setTimeout(() => setToast(null), 2200);
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2200);
   };
+  useEffectE(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   const tagHue = useMemoE(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;

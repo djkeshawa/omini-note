@@ -579,7 +579,7 @@ const MN_SLASH_CMDS = [
   { id: 'block-label', label: 'Label',  hint: 'Add attention label to this block', kbd: '/label', icon: 'Lbl', blockLabelAction: true },
   { id: 'date',   label: "Today's date", hint: 'Insert YYYY-MM-DD',  kbd: '@today', icon: '☉',
     insertFn: () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }},
-  { id: 'remind', label: 'Reminder',   hint: 'Schedule reminder',   kbd: '@remind', icon: '⏰', insertFn: () => window.MN_REMIND?.defaultText?.() || '@remind 2026-04-30 09:00 ' },
+  { id: 'remind', label: 'Reminder',   hint: 'Schedule reminder',   kbd: '@remind', icon: '⏰', insertFn: () => window.MN_REMIND?.defaultText?.() || '@remind YYYY-MM-DD 09:00 ' },
   { id: 'ai-improve-page', label: 'AI: Improve writing on this page', hint: 'Rewrite the whole page body', kbd: '/ai improve', icon: '✦', aiAction: 'improve', aiScope: 'page' },
   { id: 'ai-format-page', label: 'AI: Format this page', hint: 'Clean up the whole page body', kbd: '/ai format', icon: 'AI', aiAction: 'format', aiScope: 'page' },
   { id: 'ai-summarize-page', label: 'AI: Summarize this page', hint: 'Replace page body with a summary', kbd: '/ai summary', icon: 'Σ', aiAction: 'summarize', aiScope: 'page' },
@@ -2807,6 +2807,7 @@ function MnOutliner({
   const zoomBlockRef = useRefOE(null);
   const keyboardEditActionsRef = useRefOE(null);
   const localClipboardRef = useRefOE(null);
+  const clipboardHandlersRef = useRefOE(null);
   const contentEditHistoryRef = useRefOE({ blockId: null, armed: false });
 
   const snapshotBlocks = (value = blocks) => mnCloneBlocks(value || []);
@@ -2815,7 +2816,7 @@ function MnOutliner({
     undoStack.current = [];
     redoStack.current = [];
     historyRef.current?.clear?.();
-  }, [noteId, noteTitle]);
+  }, [noteId]);
 
   useEffectOE(() => {
     noteIdRef.current = noteId || '';
@@ -3338,6 +3339,15 @@ function MnOutliner({
     setFocusId(first.id);
   };
 
+  clipboardHandlersRef.current = {
+    blocksForClipboardIds,
+    writeBlocksToClipboard,
+    deleteSelection,
+    parseClipboardBlocks,
+    insertBlocksAfter,
+    onShowToast,
+  };
+
   const contextClipboardIds = (blockId) => {
     if (selection?.kind === 'blocks' && (selection.blockIds || []).includes(blockId)) return selection.blockIds || [];
     return [blockId];
@@ -3526,35 +3536,38 @@ function MnOutliner({
       return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
     };
     const onCopy = (e) => {
+      const handlers = clipboardHandlersRef.current || {};
       const current = selectionRef.current;
       if (current?.kind !== 'blocks' || !isInsideOutliner(e.target)) return;
-      const selectedBlocks = blocksForClipboardIds(current.blockIds || []);
+      const selectedBlocks = handlers.blocksForClipboardIds?.(current.blockIds || []) || [];
       if (!selectedBlocks.length) return;
       e.preventDefault();
-      const copied = writeBlocksToClipboard(selectedBlocks, e.clipboardData);
-      if (copied) onShowToast && onShowToast('Copied block markdown');
+      const copied = handlers.writeBlocksToClipboard?.(selectedBlocks, e.clipboardData);
+      if (copied) handlers.onShowToast && handlers.onShowToast('Copied block markdown');
     };
     const onCut = (e) => {
+      const handlers = clipboardHandlersRef.current || {};
       const current = selectionRef.current;
       if (current?.kind !== 'blocks' || !isInsideOutliner(e.target)) return;
-      const selectedBlocks = blocksForClipboardIds(current.blockIds || []);
+      const selectedBlocks = handlers.blocksForClipboardIds?.(current.blockIds || []) || [];
       if (!selectedBlocks.length) return;
       e.preventDefault();
-      const copied = writeBlocksToClipboard(selectedBlocks, e.clipboardData);
+      const copied = handlers.writeBlocksToClipboard?.(selectedBlocks, e.clipboardData);
       if (!copied) return;
-      deleteSelection();
-      onShowToast && onShowToast('Cut block markdown');
+      handlers.deleteSelection?.();
+      handlers.onShowToast && handlers.onShowToast('Cut block markdown');
     };
     const onPaste = (e) => {
+      const handlers = clipboardHandlersRef.current || {};
       if (!isInsideOutliner(e.target) || isFormField(e.target)) return;
-      const pasted = parseClipboardBlocks(e.clipboardData, { allowSingle: true });
+      const pasted = handlers.parseClipboardBlocks?.(e.clipboardData, { allowSingle: true }) || [];
       if (!pasted.length) return;
       e.preventDefault();
       const current = selectionRef.current;
       const targetId = current?.kind === 'blocks' && current.blockIds?.length
         ? current.blockIds[current.blockIds.length - 1]
         : focusIdRef.current;
-      insertBlocksAfter(targetId, pasted);
+      handlers.insertBlocksAfter?.(targetId, pasted);
     };
     document.addEventListener('copy', onCopy);
     document.addEventListener('cut', onCut);
@@ -3564,7 +3577,7 @@ function MnOutliner({
       document.removeEventListener('cut', onCut);
       document.removeEventListener('paste', onPaste);
     };
-  });
+  }, []);
 
   const parseAiBlocks = (text) => {
     const parsed = mnMdToBlocks(String(text || '').trim());
@@ -3574,16 +3587,14 @@ function MnOutliner({
   const requestAiEdit = async (actionId, scope, sourceText, instructionOverride, options = {}) => {
     const action = mnAiAction(actionId);
     const novelConfig = readNovelistAiConfig();
-    const maxTokens = Number(novelConfig?.advanced?.maxTokens);
     if (!window.mn?.ai?.edit) throw new Error('AI editing is not available');
-    const payload = {
-      text: sourceText,
-      instruction: instructionOverride || action.instruction,
-      scope,
-      systemMessage: novelConfig?.systemMessage || '',
-      model: novelConfig?.model || '',
-      maxTokens: Number.isFinite(maxTokens) ? maxTokens : null,
-    };
+	    const payload = {
+	      text: sourceText,
+	      instruction: instructionOverride || action.instruction,
+	      scope,
+	      vaultId,
+	      useNovelistConfig: !!novelConfig,
+	    };
     const res = options.onToken && window.mn.ai.editStream
       ? await window.mn.ai.editStream(payload, options.onToken)
       : await window.mn.ai.edit(payload);

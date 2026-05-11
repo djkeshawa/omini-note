@@ -39,6 +39,8 @@ const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
 const MN_APP_MUTATIONS = window.MN_APP_MUTATIONS || {};
 const MN_APP_CANVAS_ACTIONS = window.MN_APP_CANVAS_ACTIONS || {};
 const MN_APP_NOVELIST = window.MN_APP_NOVELIST || {};
+const MN_AUTOSAVE_DEBOUNCE_MS = 500;
+const MN_AUTOSAVE_MAX_WAIT_MS = 5000;
 const MN_NOTE_TEMPLATES = MN_APP_HELPERS.NOTE_TEMPLATES || [];
 const MN_PLUGIN_API = window.MN_PLUGINS || {};
 const {
@@ -273,6 +275,11 @@ function MnApp() {
   }, [view]);
 
   useEffectA(() => {
+    dismissedReminderKeys.current.clear();
+    quietedReminderKeys.current.clear();
+  }, [activeVaultId]);
+
+  useEffectA(() => {
     activeAskAiSessionIdRef.current = activeAskAiSessionId;
   }, [activeAskAiSessionId]);
 
@@ -409,6 +416,9 @@ function MnApp() {
   // dirtyNotes is keyed by vault+note so same-title novelist starter notes in
   // different vaults cannot overwrite each other's pending saves.
   const [dirtyNotes, setDirtyNotes] = useStateA(() => new Map());
+  const dirtyNotesRef = useRefA(dirtyNotes);
+  const dirtyRevisionRef = useRefA(0);
+  const dirtyMissingWarnedRef = useRefA(new Set());
   const vaultActivationSeq = useRefA(0);
   const noteMetadataHistoryRef = useRefA({ undo: [], redo: [], activeKey: null });
   const cloneNoteForMetadataHistory = useCallbackA((note) => note ? ({
@@ -433,7 +443,14 @@ function MnApp() {
     if (!id || !activeVaultId) return;
     setDirtyNotes(s => {
       const n = new Map(s);
-      n.set(mnDirtyNoteKey(activeVaultId, id), { id, vaultId: activeVaultId });
+      const key = mnDirtyNoteKey(activeVaultId, id);
+      const existing = n.get(key);
+      n.set(key, {
+        id,
+        vaultId: activeVaultId,
+        dirtyAt: existing?.dirtyAt || Date.now(),
+        revision: ++dirtyRevisionRef.current,
+      });
       return n;
     });
   }, [activeVaultId]);
@@ -587,15 +604,29 @@ function MnApp() {
     return currentVaults.find(v => v.id === vaultId)?.notes || [];
   }, [activeVaultId, notes, vaults]);
 
+  useEffectA(() => {
+    dirtyNotesRef.current = dirtyNotes;
+  }, [dirtyNotes]);
+
   const saveDirtyNotesNow = useCallbackA(async (entries, currentNotes = notes, currentVaults = vaults) => {
     if (!HAS_DISK || !entries?.length) return;
     for (const entry of entries) {
       const id = entry?.id;
       const vaultId = entry?.vaultId;
+      const revision = entry?.revision;
       if (!id || !vaultId) continue;
       const noteList = findNotesForVault(vaultId, currentNotes, currentVaults);
       const n = noteList.find(x => x.id === id);
-      if (!n) continue;
+      const dirtyKey = mnDirtyNoteKey(vaultId, id);
+      if (!n) {
+        if (!dirtyMissingWarnedRef.current.has(dirtyKey)) {
+          dirtyMissingWarnedRef.current.add(dirtyKey);
+          showAppNotice('Could not autosave note', 'A dirty note could not be matched to its vault. Switch back to the vault or reload before closing.', 'warn');
+        }
+        console.warn('dirty note could not be matched for autosave', { vaultId, id });
+        continue;
+      }
+      dirtyMissingWarnedRef.current.delete(dirtyKey);
       try {
         const res = await window.mn.saveNote(
           vaultId,
@@ -625,10 +656,11 @@ function MnApp() {
             : v));
         }
         setDirtyNotes(cur => {
-          const key = mnDirtyNoteKey(vaultId, id);
-          if (cur.get(key)?.vaultId !== vaultId) return cur;
+          const current = cur.get(dirtyKey);
+          if (!current || current.vaultId !== vaultId) return cur;
+          if (revision != null && current.revision !== revision) return cur;
           const next = new Map(cur);
-          next.delete(key);
+          next.delete(dirtyKey);
           return next;
         });
       } catch (e) {
@@ -641,11 +673,25 @@ function MnApp() {
   // ── Persist dirty notes (debounced) ────────────────────────────────────
   useEffectA(() => {
     if (!HAS_DISK || !dirtyNotes.size) return;
+    const now = Date.now();
+    const firstDirtyAt = Math.min(...[...dirtyNotes.values()].map(entry => Number(entry.dirtyAt) || now));
+    const maxWaitRemaining = Math.max(0, MN_AUTOSAVE_MAX_WAIT_MS - (now - firstDirtyAt));
+    const delay = Math.min(MN_AUTOSAVE_DEBOUNCE_MS, maxWaitRemaining);
     const handle = setTimeout(async () => {
       await saveDirtyNotesNow([...dirtyNotes.values()]);
-    }, 500);
+    }, delay);
     return () => clearTimeout(handle);
   }, [dirtyNotes, saveDirtyNotesNow]);
+
+  useEffectA(() => {
+    if (!HAS_DISK || !window.mn?.onFlushDirtyNotes) return undefined;
+    return window.mn.onFlushDirtyNotes(async () => {
+      const entries = [...dirtyNotesRef.current.values()];
+      if (entries.length) await saveDirtyNotesNow(entries);
+      await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
+      return { dirtyRemaining: dirtyNotesRef.current.size };
+    });
+  }, [activeVaultId, tags, selectedId, saveDirtyNotesNow, saveVaultMetaNow]);
 
   // ── Persist tags + lastSelectedId ──────────────────────────────────────
   useEffectA(() => {
@@ -788,8 +834,10 @@ function MnApp() {
   };
 
   const theme = tweaks.theme;
-  const T = MN_THEMES[theme];
-  const fonts = MN_FONTS[tweaks.fontChoice] || MN_FONTS['Editorial (Newsreader + Inter)'];
+  const themeMap = window.MN_THEMES || {};
+  const fontMap = window.MN_FONTS || {};
+  const T = themeMap[theme] || themeMap.light || {};
+  const fonts = fontMap[tweaks.fontChoice] || fontMap['Editorial (Newsreader + Inter)'] || { ui: 'sans-serif', body: 'serif', mono: 'monospace' };
   useEffectA(() => {
     const root = document.documentElement;
     root.style.setProperty('--mn-ui', fonts.ui);
@@ -1229,8 +1277,7 @@ function MnApp() {
   // SQLite-backed search: debounced IPC call returns matching IDs;
   // we intersect with in-memory notes for tag-filter compatibility.
   // searchHits = null  → no active query
-  // searchHits = []    → query active but zero matches
-  // searchHits = [...] → matched note ids in rank order
+  // searchHits.ids     → matched note ids in rank order for searchHits.vaultId
   const [searchHits, setSearchHits] = useStateA(null);
   const [searchDetails, setSearchDetails] = useStateA(new Map());
   const searchSeq = useRefA(0);
@@ -1249,7 +1296,7 @@ function MnApp() {
         n.tags.some(t => t.toLowerCase().includes(lc))
       ).map(n => n.id);
       if (seq === searchSeq.current) {
-        setSearchHits(ids);
+        setSearchHits({ vaultId: activeVaultId || '', query: q, ids });
         setSearchDetails(new Map());
       }
       return;
@@ -1260,13 +1307,17 @@ function MnApp() {
         const res = await api(activeVaultId, q, 100);
         if (seq === searchSeq.current && res.ok) {
           const rows = res.value || [];
-          setSearchHits(rows.map(r => r.id));
+          setSearchHits({ vaultId: activeVaultId || '', query: q, ids: rows.map(r => r.id) });
           setSearchDetails(new Map(rows.map(r => [r.id, r])));
         }
       } catch (e) { console.error('search failed', e); }
     }, 150);
     return () => clearTimeout(handle);
   }, [query, activeVaultId, notesWithBody, dirtyNotes]);
+
+  const searchHitIds = searchHits?.vaultId === activeVaultId && searchHits.query === query.trim()
+    ? searchHits.ids
+    : null;
 
   const filteredNotes = useMemoA(() => {
     let ns = [...notesWithBody];
@@ -1275,8 +1326,8 @@ function MnApp() {
       const ids = workflowData.noteIdsByState[selectedWorkflow] || new Set();
       ns = ns.filter(n => ids.has(n.id));
     }
-    if (searchHits != null) {
-      const order = new Map(searchHits.map((id, i) => [id, i]));
+    if (searchHitIds != null) {
+      const order = new Map(searchHitIds.map((id, i) => [id, i]));
       ns = ns.filter(n => order.has(n.id));
       ns = MN_APP_HELPERS.decorateNotesWithSearchDetails
         ? MN_APP_HELPERS.decorateNotesWithSearchDetails(ns, searchDetails)
@@ -1302,7 +1353,7 @@ function MnApp() {
       return new Date(b.modifiedAt || b.date || 0) - new Date(a.modifiedAt || a.date || 0);
     });
     return ns;
-  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHits, searchDetails, tweaks.sortBy, tweaks.pinnedFirst]);
+  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHitIds, searchDetails, tweaks.sortBy, tweaks.pinnedFirst]);
 
   const graphVisibleNotes = useMemoA(() => {
     if (!activeVault?.novelistMode) return filteredNotes;
@@ -2194,7 +2245,7 @@ function MnApp() {
               aiActive={view === 'ai'}
               onNewTag={promptNewTag}
               onDeleteTag={removeTag}
-              onNew={() => setCaptureOpen(true)}
+              onNew={() => createNote()}
               onOpenSettings={() => setSettingsOpen(true)}
               onCollapse={() => setSidebarHidden(true)}
               vaults={vaultsForSidebar}

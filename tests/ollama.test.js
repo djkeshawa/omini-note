@@ -91,3 +91,29 @@ test('Chat returns setup guidance instead of failing when Ollama is unavailable'
     global.fetch = originalFetch;
   }
 });
+
+test('AI edit setup failures are not returned as replacement text', async () => {
+  const ai = require('../lib/ai');
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('offline'); };
+  ai.setConfig({ provider: 'ollama', chatModel: 'gemma3', enabled: true }, { rejectUnknown: false });
+  try {
+    const result = await ai.editText({ text: 'Keep this text', instruction: 'Improve it' });
+    assert.equal(result.ok, false);
+    assert.equal(result.setupRequired, true);
+    assert.equal(result.text, undefined);
+    assert.match(result.error, /Ollama not reachable|Local chat model/i);
+
+    const chunks = [];
+    const streamed = await ai.editTextStream({
+      text: 'Keep this text',
+      instruction: 'Improve it',
+      onToken: token => chunks.push(token),
+    });
+    assert.equal(streamed.ok, false);
+    assert.equal(streamed.setupRequired, true);
+    assert.deepEqual(chunks, []);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

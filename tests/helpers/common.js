@@ -6,18 +6,18 @@ const vm = require('node:vm');
 const tableOps = require('../../src/tableOps.js');
 
 async function withIsolatedStore(fn) {
-  const previousHome = process.env.HOME;
+  const previousVispnoteHome = process.env.VISPNOTE_HOME;
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-store-'));
   const storePath = require.resolve('../../lib/store');
   delete require.cache[storePath];
-  process.env.HOME = tmpHome;
+  process.env.VISPNOTE_HOME = tmpHome;
   try {
     const store = require('../../lib/store');
     return await fn(store, tmpHome);
   } finally {
     delete require.cache[storePath];
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
+    if (previousVispnoteHome === undefined) delete process.env.VISPNOTE_HOME;
+    else process.env.VISPNOTE_HOME = previousVispnoteHome;
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 }

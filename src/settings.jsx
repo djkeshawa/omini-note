@@ -1,5 +1,5 @@
 // Standardized settings modal with tabbed sections.
-const { useState: useStateS, useEffect: useEffectS } = React;
+const { useState: useStateS, useEffect: useEffectS, useRef: useRefS } = React;
 const MN_SETTINGS_PLUGINS = window.MN_PLUGINS || {};
 
 function MnSettingsModal({
@@ -10,11 +10,15 @@ function MnSettingsModal({
 }) {
   const [section, setSection] = useStateS('appearance');
   const [updateState, setUpdateState] = useStateS(null);
+  const [shortcutStatus, setShortcutStatus] = useStateS(null);
 
   useEffectS(() => {
     let alive = true;
     window.mn?.updates?.status?.().then(res => {
       if (alive && res?.ok) setUpdateState(res.value);
+    }).catch(() => {});
+    window.mn?.shortcutStatus?.().then(res => {
+      if (alive && res?.ok) setShortcutStatus(res.value);
     }).catch(() => {});
     const off = window.mn?.updates?.onState?.(state => {
       if (alive) setUpdateState(state);
@@ -210,7 +214,7 @@ function MnSettingsModal({
                 onRebuildIndex={onRebuildIndex}
               />
             )}
-            {section === 'shortcuts' && <SectionShortcuts T={T} />}
+            {section === 'shortcuts' && <SectionShortcuts T={T} shortcutStatus={shortcutStatus} />}
             {section === 'about' && <SectionAbout T={T} stats={stats} updateState={updateState} setUpdateState={setUpdateState} />}
           </div>
         </div>
@@ -992,19 +996,22 @@ function SectionData({
   const [deletedNotes, setDeletedNotes] = useStateS([]);
   const [deletedBusy, setDeletedBusy] = useStateS(false);
   const [deletedError, setDeletedError] = useStateS('');
+  const deletedLoadSeq = useRefS(0);
   const currentVault = activeVault || vaults.find(v => v.id === activeVaultId) || null;
   const canDeleteVault = !!currentVault && vaults.length > 1;
   const deleteReady = canDeleteVault && confirmText.trim() === currentVault.name;
   const loadDeletedNotes = async () => {
     if (!onListDeletedNotes) return;
+    const seq = ++deletedLoadSeq.current;
     setDeletedBusy(true);
     setDeletedError('');
     try {
-      setDeletedNotes(await onListDeletedNotes());
+      const next = await onListDeletedNotes();
+      if (seq === deletedLoadSeq.current) setDeletedNotes(next);
     } catch (e) {
-      setDeletedError(e.message || String(e));
+      if (seq === deletedLoadSeq.current) setDeletedError(e.message || String(e));
     } finally {
-      setDeletedBusy(false);
+      if (seq === deletedLoadSeq.current) setDeletedBusy(false);
     }
   };
   useEffectS(() => {
@@ -1401,7 +1408,7 @@ function StaticValue({ T, children }) {
   );
 }
 
-function SectionShortcuts({ T }) {
+function SectionShortcuts({ T, shortcutStatus }) {
   const sc = [
     { k: '⌘ N', v: 'New note' },
     { k: '⌘ ⇧ N', v: 'Quick capture' },
@@ -1428,6 +1435,18 @@ function SectionShortcuts({ T }) {
     <div>
       <H T={T} label="Keyboard shortcuts" sub="All the ways to get around faster." />
       <SettingsCard T={T}>
+        {shortcutStatus && shortcutStatus.registered === false && (
+          <div style={{
+            display: 'flex', alignItems: 'center',
+            padding: '9px 14px',
+            borderBottom: `1px solid ${T.lineSub}`,
+            background: `color-mix(in oklab, ${T.warn || '#b7791f'} 10%, ${T.bg})`,
+            color: T.ink,
+            fontFamily: 'var(--mn-ui)', fontSize: 12.5,
+          }}>
+            Global Quick Capture shortcut {shortcutStatus.accelerator || 'Ctrl+Shift+N'} is unavailable.
+          </div>
+        )}
         {sc.map((s, i) => (
           <div key={i} style={{
             display: 'flex', alignItems: 'center',

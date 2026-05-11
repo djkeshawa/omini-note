@@ -303,6 +303,11 @@ function MnNovelistPanel({
   const editInputRef = useRefP(null);
   const linkNoticeTimer = useRefP(null);
   useEffectP(() => {
+    return () => {
+      if (linkNoticeTimer.current) window.clearTimeout(linkNoticeTimer.current);
+    };
+  }, []);
+  useEffectP(() => {
     const next = mnNormalizeNovelistAiConfig(initialAiConfig || mnReadNovelistAiConfig(vaultId));
     setAiConfig(next);
     setAiWordLimitDraft(String(next.wordLimit));
@@ -1935,6 +1940,7 @@ function MnWorkflowPanel({
   const [stateDraft, setStateDraft] = useStateP('');
   const dragItemRef = useRefP(null);
   const suppressCardClickRef = useRefP(false);
+  const cardDragCleanupRef = useRefP(null);
   const tagHue = useMemoP(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
@@ -1997,6 +2003,12 @@ function MnWorkflowPanel({
     setDragOverState(null);
     setDragPreview(null);
   };
+  useEffectP(() => {
+    return () => {
+      cardDragCleanupRef.current?.();
+      cardDragCleanupRef.current = null;
+    };
+  }, []);
   const updateDragPreview = (item, state, event) => {
     if (!item || !event?.clientX || !event?.clientY) return;
     setDragPreview({
@@ -2036,15 +2048,21 @@ function MnWorkflowPanel({
       moveEvent.preventDefault();
     };
     const onUp = (upEvent) => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+      cleanup();
       const stateId = active ? workflowStateFromPoint(upEvent.clientX, upEvent.clientY) : '';
       if (stateId) moveItem(item, stateId);
       clearActiveDragItem();
       if (active) window.setTimeout(() => { suppressCardClickRef.current = false; }, 0);
     };
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if (cardDragCleanupRef.current === cleanup) cardDragCleanupRef.current = null;
+    };
+    cardDragCleanupRef.current?.();
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    cardDragCleanupRef.current = cleanup;
   };
 
   const archiveNote = (noteId, archived) => {
@@ -2955,7 +2973,7 @@ function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
   const [title, setTitle] = useStateP('');
   const [body, setBody] = useStateP('');
   const [selected, setSelected] = useStateP([]);
-  const titleRef = useRefE(null);
+  const titleRef = useRefP(null);
 
   useEffectP(() => {
     const focusHandle = setTimeout(() => titleRef.current?.focus(), 60);
@@ -3011,7 +3029,7 @@ function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
               color: T.ink, letterSpacing: 0, marginBottom: 10,
             }}/>
           <textarea value={body} onChange={(e) => setBody(e.target.value)}
-            placeholder="Write a note… use [[double brackets]] to link, - [ ] for todos, @remind 2026-04-30 to schedule"
+            placeholder="Write a note… use [[double brackets]] to link, - [ ] for todos, @remind YYYY-MM-DD to schedule"
             style={{
               width: '100%', minHeight: 120,
               fontFamily: 'var(--mn-body)', fontSize: 14.5, lineHeight: 1.6,

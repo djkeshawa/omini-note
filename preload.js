@@ -114,6 +114,7 @@ contextBridge.exposeInMainWorld('mn', {
   // Window
   setTitle: (title) => ipcRenderer.invoke('mn:setTitle', title),
   openExternal: (url) => ipcRenderer.invoke('mn:openExternal', url),
+  shortcutStatus: () => ipcRenderer.invoke('mn:shortcutStatus'),
   updates: {
     status: () => ipcRenderer.invoke('mn:updates.status'),
     check: () => ipcRenderer.invoke('mn:updates.check'),
@@ -133,5 +134,18 @@ contextBridge.exposeInMainWorld('mn', {
     const listener = () => { try { callback(); } catch (e) { console.error('onOpenQuickCapture handler', e); } };
     ipcRenderer.on('mn:openQuickCapture', listener);
     return () => ipcRenderer.removeListener('mn:openQuickCapture', listener);
+  },
+  onFlushDirtyNotes: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = async (_event, requestId) => {
+      try {
+        const value = await callback();
+        ipcRenderer.send('mn:flushDirtyNotesResult', requestId, { ok: true, value });
+      } catch (e) {
+        ipcRenderer.send('mn:flushDirtyNotesResult', requestId, { ok: false, error: e?.message || String(e) });
+      }
+    };
+    ipcRenderer.on('mn:flushDirtyNotes', listener);
+    return () => ipcRenderer.removeListener('mn:flushDirtyNotes', listener);
   },
 });

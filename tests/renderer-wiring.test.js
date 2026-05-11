@@ -110,7 +110,8 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(store, /async function deleteVault\(id\)/);
   assert.match(store, /const APP_DIR_NAME = 'VispNote'/);
   assert.match(store, /const LEGACY_APP_DIR_NAMES = \['OminiNote', 'MyNote'\]/);
-  assert.match(store, /const ROOT = !fs\.existsSync\(PRIMARY_ROOT\) && LEGACY_ROOT \? LEGACY_ROOT : PRIMARY_ROOT/);
+  assert.match(store, /const OVERRIDE_ROOT = process\.env\.VISPNOTE_HOME/);
+  assert.match(store, /const ROOT = OVERRIDE_ROOT \|\| \(!fs\.existsSync\(PRIMARY_ROOT\) && LEGACY_ROOT \? LEGACY_ROOT : PRIMARY_ROOT\)/);
   assert.match(store, /async function repairConfigVaults\(cfg\)/);
   assert.match(store, /async function vaultDirectoryExists\(slug\)/);
   assert.match(store, /cfg\.vaults = validVaults/);
@@ -266,6 +267,9 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(aiLib, /EMBED_MODEL_UNSUPPORTED/);
   assert.match(aiLib, /embedModelReason/);
   assert.match(aiLib, /String\(systemMessage \|\| ''\)\.trim\(\) \|\| EDIT_SYSTEM_PROMPT/);
+  assert.match(main, /async function prepareAiEditPayload/);
+  assert.doesNotMatch(main, /payload\.systemMessage \? capString\(payload\.systemMessage/);
+  assert.doesNotMatch(main, /payload\.model \? capString\(payload\.model/);
   assert.match(ollama, /async function embed\(model, text, opts = \{\}\)/);
   assert.match(ollama, /signal: opts\.signal/);
   assert.match(ollama, /keep_alive: opts\.keep_alive/);
@@ -370,8 +374,10 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /const vaultActivationSeq = useRefA\(0\)/);
   assert.match(app, /const activationSeq = \+\+vaultActivationSeq\.current/);
   assert.match(app, /if \(activationSeq !== vaultActivationSeq\.current\) return/);
-  assert.match(app, /n\.set\(mnDirtyNoteKey\(activeVaultId, id\), \{ id, vaultId: activeVaultId \}\)/);
-  assert.match(app, /saveDirtyNotesNow\(\[\.\.\.dirtyNotes\.values\(\)\]\)/);
+  assert.match(app, /const dirtyRevisionRef = useRefA\(0\)/);
+  assert.match(app, /revision: \+\+dirtyRevisionRef\.current/);
+  assert.match(app, /current\.revision !== revision/);
+  assert.match(app, /window\.mn\.onFlushDirtyNotes/);
   assert.match(app, /entry\.vaultId === activeVaultId/);
   assert.match(app, /notes: targetNotes, tags: targetTags/);
   assert.match(app, /saveVaultMeta\(activeVaultId, \{ novelistMode: false, workflowStates: null \}\)/);
@@ -749,13 +755,13 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const appShell = fs.readFileSync(path.join(__dirname, '../src/appShell.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
-  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
   const ai = fs.readFileSync(path.join(__dirname, '../src/ai.jsx'), 'utf8');
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
@@ -922,6 +928,8 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 
   assert.match(appShell, /function MnAppNoticeDialog/);
   assert.match(html, /src="build\/renderer\/app\.js"/);
@@ -956,6 +964,10 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(blockFeatures, /Block marker/);
 
   assert.match(store, /novelistAiConfig/);
+  assert.match(main, /flushRendererDirtyNotes/);
+  assert.match(preload, /onFlushDirtyNotes/);
+  assert.match(app, /onNew=\{\(\) => createNote\(\)\}/);
+  assert.match(app, /const themeMap = window\.MN_THEMES \|\| \{\}/);
   assert.match(panels, /initialAiConfig = null/);
   assert.match(panels, /onAiConfigChange && onAiConfigChange\(next\)/);
   assert.match(appNovelistSource, /function mnReplaceWikiLinkTitle/);

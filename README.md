@@ -56,7 +56,7 @@ npm run check:main
 Run the Electron smoke test:
 
 ```bash
-HOME=/tmp/vispnote-smoke npm run smoke:electron
+VISPNOTE_HOME=/tmp/vispnote-smoke npm run smoke:electron
 ```
 
 ## Project Structure

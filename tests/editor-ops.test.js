@@ -322,7 +322,8 @@ test('Block clipboard preserves multi-block formatting for copy cut paste', () =
   assert.match(outliner, /await navigator\.clipboard\.writeText\(payload\.markdown\)/);
   assert.match(outliner, /catch \(e\) \{[\s\S]*return false;/);
   assert.match(outliner, /const copied = await writeBlocksToSystemClipboard/);
-  assert.match(outliner, /const copied = writeBlocksToClipboard\(selectedBlocks, e\.clipboardData\)/);
+  assert.match(outliner, /const copied = handlers\.writeBlocksToClipboard\?\.\(selectedBlocks, e\.clipboardData\)/);
+  assert.match(outliner, /clipboardHandlersRef\.current = \{/);
 
   assert.match(blockFeatures, /label="Copy block"/);
   assert.match(blockFeatures, /label="Cut block"/);

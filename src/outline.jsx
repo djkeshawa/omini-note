@@ -107,7 +107,7 @@ function mnCleanCodeLanguage(value) {
     text: '',
     txt: '',
   };
-  return aliases.hasOwnProperty(raw) ? aliases[raw] : raw;
+  return Object.prototype.hasOwnProperty.call(aliases, raw) ? aliases[raw] : raw;
 }
 
 // Convert legacy markdown into typed blocks.

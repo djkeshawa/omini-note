@@ -1,27 +1,73 @@
-const { app } = require('electron');
-const store = require('../lib/store');
-const idx = require('../lib/index');
+const { app, BrowserWindow } = require('electron');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE = '1';
+const smokeHome = process.env.VISPNOTE_HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-smoke-'));
+process.env.VISPNOTE_HOME = smokeHome;
+require('../main');
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForMainWindow(timeoutMs = 30000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const win = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
+    if (win) return win;
+    await wait(100);
+  }
+  throw new Error('Smoke test timed out waiting for BrowserWindow');
+}
+
+async function waitForRenderer(win, timeoutMs = 30000) {
+  win.webContents.on('console-message', (_event, details) => {
+    const level = details?.level ?? 'log';
+    const message = details?.message ?? '';
+    const sourceId = details?.sourceId ?? '';
+    const line = details?.lineNumber ?? 0;
+    console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`);
+  });
+  const started = Date.now();
+  let lastState = null;
+  while (Date.now() - started < timeoutMs) {
+    if (win.isDestroyed()) throw new Error('Smoke test window was destroyed');
+    let state = null;
+    try {
+      state = await win.webContents.executeJavaScript(`
+        (() => {
+          const root = document.querySelector('#root');
+          const splash = document.querySelector('.mn-boot-splash');
+          const text = document.body?.textContent || '';
+          return {
+            mounted: Boolean(root?.children.length),
+            loading: Boolean(splash) && text.includes('Opening vault and indexing notes'),
+            error: Boolean(splash) && text.includes('Launch interrupted'),
+            text: text.slice(0, 300),
+          };
+        })()
+      `);
+    } catch {}
+    if (state) {
+      lastState = state;
+      if (state.mounted && !state.loading && !state.error) return;
+      if (state.error) throw new Error(`Renderer boot failed: ${state.text}`);
+    }
+    await wait(250);
+  }
+  throw new Error(`Smoke test timed out waiting for renderer boot: ${JSON.stringify(lastState)}`);
+}
 
 app.whenReady().then(async () => {
-  const cfg = await store.loadConfig();
-  idx.init();
-
-  for (const vault of cfg.vaults) {
-    const data = await store.loadVault(vault.id);
-    idx.rescanVault(vault.id, data.notes);
-    const firstNote = data.notes[0] || {};
-    const query = (firstNote.title || firstNote.body || '').match(/[A-Za-z0-9]+/)?.[0] || 'note';
-    const result = idx.search(vault.id, query, 5);
-    if (data.notes.length && !result.length) {
-      throw new Error(`Search smoke failed for ${vault.name} with query "${query}"`);
-    }
-    console.log(`${vault.name}: ${data.notes.length} notes, ${result.length} search hits`);
-  }
-
-  idx.close();
+  const win = await waitForMainWindow();
+  await waitForRenderer(win);
+  console.log('Renderer smoke booted');
+  if (!process.env.VISPNOTE_KEEP_SMOKE_HOME) fs.rmSync(smokeHome, { recursive: true, force: true });
   app.quit();
 }).catch((error) => {
   console.error(error);
-  try { idx.close(); } catch {}
+  if (!process.env.VISPNOTE_KEEP_SMOKE_HOME) fs.rmSync(smokeHome, { recursive: true, force: true });
   app.exit(1);
 });

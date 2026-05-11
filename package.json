@@ -28,14 +28,14 @@
   },
   "main": "main.js",
   "engines": {
-    "node": ">=24.15.0 <25",
+    "node": ">=22.16.0 <25",
     "npm": ">=11"
   },
   "scripts": {
     "build:renderer": "node scripts/build-renderer.js",
     "verify:package-renderer": "node scripts/verify-packaged-renderer.js",
     "check:main": "npm run lint -- --quiet=false && node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js",
-    "test:editor": "node --test tests/*.test.js",
+    "test:editor": "node scripts/run-node-tests.js",
     "smoke:electron": "npm run build:renderer && electron --no-sandbox scripts/smoke-electron.js",
     "prebuild": "npm run build:renderer",
     "build": "electron-builder --publish never",
@@ -49,7 +49,7 @@
     "build:win:portable": "electron-builder --win portable --publish never",
     "start": "npm run build:renderer && electron .",
     "postinstall": "electron-builder install-app-deps",
-    "lint": "eslint ."
+    "lint": "eslint . --max-warnings 0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

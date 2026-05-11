@@ -39,7 +39,7 @@ Plan a small project from rough idea to next action.
 
 ## Next steps
 - [ ] Write the first outline
-- [ ] @remind 2026-04-22 10:00 Review the plan
+- [ ] @remind 2026-06-01 10:00 Review the plan
 - [ ] Link any useful [[Reading notes]]
 
 Back to [[Welcome to VispNote]].`
