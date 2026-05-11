@@ -109,8 +109,8 @@ function mnNormalizeAskMessages(messages = []) {
 
 function mnAskStatusText(status) {
   if (!status) return 'Checking local AI';
-  if (!status.reachable) return 'Ollama is offline';
-  if (!status.chatModelOk) return `Missing ${status?.config?.chatModel || 'chat model'}`;
+  if (!status.reachable) return 'Setup needed';
+  if (!status.chatModelOk) return 'Setup needed';
   if (!status.embedModelOk) return 'Keyword search mode';
   return 'Semantic search ready';
 }
@@ -517,7 +517,7 @@ function MnAskAI({
   const reachable = status?.reachable;
   const chatOk = status?.chatModelOk;
   const embedOk = status?.embedModelOk;
-  const canAsk = reachable && chatOk;
+  const canAsk = status ? true : false;
   const statusText = mnAskStatusText(status);
 
   const content = (
@@ -632,9 +632,9 @@ function MnAskAI({
           }}>
             <div style={{ flex: 1, fontSize: 11, color: T.inkDim, fontFamily: 'var(--mn-mono)' }}>
               {reachable === false
-                ? 'Ollama not running — start it with `ollama serve`'
+                ? 'Local AI setup needed — Ask can still search notes and show setup steps'
                 : (!chatOk && status)
-                  ? `Chat model not installed: \`ollama pull ${status?.config?.chatModel}\``
+                  ? 'Local chat model setup needed — Ask can still search notes and show setup steps'
                 : (!embedOk && status)
                     ? (status?.embedModelReason || `Using keyword search. For semantic search: \`ollama pull ${status?.config?.embedModel}\``)
                 : embedded ? '⌘+Enter to ask' : '⌘+Enter to ask · Esc to close'
@@ -1191,10 +1191,10 @@ function StatusPill({ status, T }) {
     <Pill T={T} color={T.inkDim}>checking…</Pill>
   );
   if (!status.reachable) return (
-    <Pill T={T} color="#c33">offline</Pill>
+    <Pill T={T} color="#a60">setup needed</Pill>
   );
   if (!status.chatModelOk) return (
-    <Pill T={T} color="#a60">model missing</Pill>
+    <Pill T={T} color="#a60">setup needed</Pill>
   );
   if (!status.embedModelOk) return (
     <Pill T={T} color="#a60">keyword mode</Pill>

@@ -646,7 +646,7 @@ function SectionAI({ T }) {
   const aiStatusText = provider === 'ollama'
     ? (reachable
       ? (status?.chatModelOk === false
-        ? `Chat model missing: ${status?.config?.chatModel || config?.chatModel}`
+        ? `Local chat setup needed. Install a model with: ollama pull ${status?.config?.chatModel || config?.chatModel}`
         : status?.embedModelOk === false
           ? (status?.embedModelReason || `${models.length} Ollama model${models.length === 1 ? '' : 's'} available. Ask AI will use keyword search until ${status?.config?.embedModel || config?.embedModel} is installed.`)
           : `${models.length} Ollama model${models.length === 1 ? '' : 's'} available`)

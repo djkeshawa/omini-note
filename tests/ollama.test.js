@@ -45,3 +45,49 @@ test('Ollama chat stream surfaces provider error chunks', async () => {
     global.fetch = originalFetch;
   }
 });
+
+test('Ask AI returns setup guidance with note snippets when Ollama is unavailable', async () => {
+  const ai = require('../lib/ai');
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('offline'); };
+  ai.setConfig({ provider: 'ollama', chatModel: 'gemma3', enabled: true }, { rejectUnknown: false });
+  const storeApi = {
+    async loadVault() {
+      return {
+        notes: [
+          {
+            id: 'n1',
+            title: 'Certification notes',
+            body: 'Microsoft certification should not fail when local AI setup is incomplete.',
+            modifiedAt: '2026-05-10T00:00:00.000Z',
+          },
+        ],
+      };
+    },
+  };
+  try {
+    const result = await ai.ask('vault', 'What about certification?', storeApi);
+    assert.equal(result.ok, true);
+    assert.equal(result.setupRequired, true);
+    assert.match(result.answer, /Local chat model|Ollama not reachable/);
+    assert.match(result.answer, /Certification notes/);
+    assert.equal(result.sources.length, 1);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('Chat returns setup guidance instead of failing when Ollama is unavailable', async () => {
+  const ai = require('../lib/ai');
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('offline'); };
+  ai.setConfig({ provider: 'ollama', chatModel: 'gemma3', enabled: true }, { rejectUnknown: false });
+  try {
+    const result = await ai.chat({ text: 'hello' });
+    assert.equal(result.ok, true);
+    assert.equal(result.setupRequired, true);
+    assert.match(result.answer, /enable generated chat responses/i);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
