@@ -1887,29 +1887,42 @@ function MnApp() {
 
   const plugins = useMemoA(() => (MN_PLUGIN_API.normalizeAll ? MN_PLUGIN_API.normalizeAll(tweaks.plugins) : []), [tweaks.plugins]);
 
-  const runPlugin = useCallbackA((plugin) => {
-    if (!plugin || plugin.enabled === false) return;
+  const runPlugin = useCallbackA(async (plugin) => {
+    if (!plugin || plugin.enabled === false) return { ok: false, message: 'Plugin is unavailable.' };
     const expand = MN_PLUGIN_API.expandTokens || (value => String(value || ''));
     if (plugin.type === 'note-template') {
       const title = uniqueNoteTitle(expand(plugin.config?.title || plugin.name || 'Plugin note'));
       const body = expand(plugin.config?.body || '');
       const noteTags = MN_PLUGIN_API.tags ? MN_PLUGIN_API.tags(plugin) : [];
-      createNote({ title, body, tags: noteTags });
-      return;
+      const id = createNote({ title, body, tags: noteTags });
+      return { message: `Created ${title}.`, affected: [{ type: 'note', id, title }] };
     }
     if (plugin.type === 'quick-capture') {
       setCaptureOpen(true);
-      return;
+      return { message: 'Opened Quick Capture.' };
     }
     if (plugin.type === 'open-url') {
       const url = expand(plugin.config?.url || '').trim();
-      if (!/^https?:\/\//i.test(url)) {
-        showAppNotice('Plugin needs a URL', `${plugin.name || 'This plugin'} must start with http:// or https://.`);
-        return;
+      if (!/^(https:\/\/|mailto:)/i.test(url)) {
+        const message = `${plugin.name || 'This plugin'} must start with https:// or mailto:.`;
+        showAppNotice('Plugin needs a safe URL', message);
+        return { ok: false, message };
       }
-      if (window.mn?.openExternal) window.mn.openExternal(url);
-      else window.open(url, '_blank', 'noopener,noreferrer');
+      try {
+        if (window.mn?.openExternal) {
+          const res = await window.mn.openExternal(url);
+          if (res && res.ok === false) throw new Error(res.error || 'Could not open external URL');
+        } else {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
+        return { message: 'Opened external URL.' };
+      } catch (e) {
+        const message = e.message || String(e);
+        showAppNotice('Could not open link', message);
+        return { ok: false, message };
+      }
     }
+    return { ok: false, message: 'Unsupported plugin type.' };
   }, [createNote, showAppNotice, uniqueNoteTitle]);
 
   const appActionRegistry = useMemoA(() => {
@@ -2543,7 +2556,7 @@ function MnApp() {
         risk: 'external',
         inputSchema: objectSchema(),
         preview: () => ({ title: MN_PLUGIN_API.commandTitle ? MN_PLUGIN_API.commandTitle(plugin) : plugin.name, message: `Run plugin "${plugin.name || plugin.id}".`, steps: [plugin.type === 'open-url' ? 'Open external URL' : 'Run plugin action'], affected: [{ type: 'plugin', id: plugin.id, title: plugin.name }] }),
-        run: () => { runPlugin(plugin); return { message: `Ran ${plugin.name || 'plugin'}.`, affected: [{ type: 'plugin', id: plugin.id, title: plugin.name }] }; },
+        run: async () => runPlugin(plugin),
       })),
       ...MN_NOTE_TEMPLATES.map(template => ({
         id: `template-${template.id}`,

@@ -678,6 +678,20 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(linuxAfterInstall, /xdg-icon-resource forceupdate --theme hicolor/);
 });
 
+test('URL plugins follow the external URL security policy and surface failures', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const plugins = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
+
+  assert.match(plugins, /Launch a trusted HTTPS page or mail link/);
+  assert.match(app, /const runPlugin = useCallbackA\(async \(plugin\) =>/);
+  assert.ok(app.includes("if (!/^(https:\\/\\/|mailto:)/i.test(url)) {"));
+  assert.match(app, /must start with https:\/\/ or mailto:/);
+  assert.match(app, /const res = await window\.mn\.openExternal\(url\)/);
+  assert.match(app, /if \(res && res\.ok === false\) throw new Error/);
+  assert.match(app, /showAppNotice\('Could not open link'/);
+  assert.doesNotMatch(app, /must start with http:\/\/ or https:\/\//);
+});
+
 test('Release metadata targets renamed VispNote repository', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '../package-lock.json'), 'utf8'));
