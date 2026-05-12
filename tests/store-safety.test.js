@@ -261,6 +261,23 @@ test('Store preserves unreadable metadata and soft-deletes vault folders', async
   });
 });
 
+test('Vault loading falls back from unsafe note front matter ids', async () => {
+  await withIsolatedStore(async (store) => {
+    const vault = (await store.listVaults()).find(item => item.name === 'Personal');
+    const notePath = path.join(store.ROOT, vault.slug, 'n_safe.md');
+    fs.writeFileSync(
+      notePath,
+      '---\nid: ../bad\ntitle: Unsafe front matter\n---\n\nBody survives with safe file id.\n',
+      'utf8'
+    );
+
+    const loaded = await store.loadVault(vault.id);
+    const note = loaded.notes.find(item => item.title === 'Unsafe front matter');
+    assert.equal(note.id, 'n_safe');
+    assert.equal(note.body.trim(), 'Body survives with safe file id.');
+  });
+});
+
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
