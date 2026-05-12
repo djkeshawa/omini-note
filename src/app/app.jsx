@@ -2553,7 +2553,7 @@ function MnApp() {
         description: plugin.purpose || `Run ${plugin.name || 'plugin'}.`,
         section: 'Plugins',
         keywords: `${plugin.type} ${plugin.purpose || ''}`,
-        risk: 'external',
+        risk: plugin.type === 'open-url' ? 'external' : 'safe',
         inputSchema: objectSchema(),
         preview: () => ({ title: MN_PLUGIN_API.commandTitle ? MN_PLUGIN_API.commandTitle(plugin) : plugin.name, message: `Run plugin "${plugin.name || plugin.id}".`, steps: [plugin.type === 'open-url' ? 'Open external URL' : 'Run plugin action'], affected: [{ type: 'plugin', id: plugin.id, title: plugin.name }] }),
         run: async () => runPlugin(plugin),
@@ -2637,7 +2637,7 @@ function MnApp() {
       risk: action.risk,
       run: async () => {
         try {
-          const result = await appActionRegistry.run(action.id, {}, {});
+          const result = await appActionRegistry.run(action.id, {}, { confirmed: action.risk === 'external' });
           handleAppActionResult(result);
         } catch (e) {
           showAppNotice('Command failed', e.message || String(e));

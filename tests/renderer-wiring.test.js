@@ -682,6 +682,8 @@ test('URL plugins follow the external URL security policy and surface failures',
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const plugins = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
 
+  assert.match(app, /appActionRegistry\.run\(action\.id, \{\}, \{ confirmed: action\.risk === 'external' \}\)/);
+  assert.match(app, /risk: plugin\.type === 'open-url' \? 'external' : 'safe'/);
   assert.match(plugins, /Launch a trusted HTTPS page or mail link/);
   assert.match(app, /const runPlugin = useCallbackA\(async \(plugin\) =>/);
   assert.ok(app.includes("if (!/^(https:\\/\\/|mailto:)/i.test(url)) {"));
