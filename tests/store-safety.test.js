@@ -567,6 +567,42 @@ test('Store hardening validates trash ids, merge keys, and backup size', async (
   });
 });
 
+test('Backup import preserves duplicate note and canvas ids without overwriting', async () => {
+  await withIsolatedStore(async (store) => {
+    const backup = {
+      format: 'vispnote.backup.v1',
+      app: 'VispNote',
+      exportedAt: new Date().toISOString(),
+      vaults: [{
+        name: 'Imported duplicates',
+        meta: { tags: [], lastSelectedId: 'n_same' },
+        notes: [
+          { id: 'n_same', title: 'First duplicate', date: '2026-05-12T00:00:00.000Z', tags: [], body: 'one' },
+          { id: 'n_same', title: 'Second duplicate', date: '2026-05-12T00:00:00.000Z', tags: [], body: 'two' },
+          { title: 'Missing id', date: '2026-05-12T00:00:00.000Z', tags: [], body: 'three' },
+        ],
+        canvases: [
+          { id: 'c_same', title: 'First canvas', elements: [] },
+          { id: 'c_same', title: 'Second canvas', elements: [] },
+          { title: 'Missing canvas id', elements: [] },
+        ],
+      }],
+    };
+
+    const result = await store.importBackup(JSON.stringify(backup));
+    const importedVault = result.importedVaults[0];
+    const loaded = await store.loadVault(importedVault.id);
+    const canvases = await store.listCanvases(importedVault.id);
+
+    assert.equal(loaded.notes.length, 3);
+    assert.equal(new Set(loaded.notes.map(note => note.id)).size, 3);
+    assert.deepEqual(loaded.notes.map(note => note.title).sort(), ['First duplicate', 'Missing id', 'Second duplicate']);
+    assert.equal(canvases.length, 3);
+    assert.equal(new Set(canvases.map(canvas => canvas.id)).size, 3);
+    assert.deepEqual(canvases.map(canvas => canvas.title).sort(), ['First canvas', 'Missing canvas id', 'Second canvas']);
+  });
+});
+
 test('Data safety wiring exposes trash, versions, and save conflict recovery', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
