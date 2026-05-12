@@ -60,6 +60,25 @@ test('index search handles unicode, tags, and removed notes', async () => {
   });
 });
 
+test('index search clamps oversized limits from callers', async () => {
+  await withIsolatedIndex(async (idx) => {
+    idx.init();
+    const notes = Array.from({ length: 250 }, (_unused, index) => ({
+      id: `n${index}`,
+      title: `Common note ${index}`,
+      date: `2026-01-${String((index % 28) + 1).padStart(2, '0')}`,
+      tags: ['bulk'],
+      body: `common body ${index}`,
+    }));
+    idx.rescanVault('vault_a', notes);
+
+    assert.equal(idx.search('vault_a', 'common', 10000).length, 200);
+    assert.equal(idx.searchDetailed('vault_a', 'common', 10000).length, 200);
+    assert.equal(idx.lexicalContextSearch('vault_a', 'common', 10000).length, 200);
+    assert.equal(idx.search('vault_a', 'common', 0).length, 1);
+  });
+});
+
 test('chunkNote hard-caps long sentences', async () => {
   await withIsolatedIndex(async (idx) => {
     const longSentence = 'x'.repeat(1400);
