@@ -3,7 +3,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const tableOps = require('../../src/tableOps.js');
+const tableOps = require('../../src/editor/tableOps.js');
 
 async function withIsolatedStore(fn) {
   const previousVispnoteHome = process.env.VISPNOTE_HOME;
@@ -23,7 +23,7 @@ async function withIsolatedStore(fn) {
 }
 
 function loadOutlineForTest() {
-  const code = fs.readFileSync(path.join(__dirname, '../../src/outline.jsx'), 'utf8');
+  const code = fs.readFileSync(path.join(__dirname, '../../src/editor/outline.jsx'), 'utf8');
   const sandbox = {
     React: {
       useState() {},

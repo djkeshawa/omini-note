@@ -1,33 +1,46 @@
 // Renderer entry manifest.
 //
-// The current renderer is still a browser-global bundle. Keeping the load
-// sequence in one entry file makes the modularization target explicit while
-// scripts/build-renderer.js continues to wrap each source in an isolated scope.
-import './theme.jsx';
-import './storageUtils.js';
-import './data.jsx';
-import './markdown.jsx';
-import './blockFeatures.jsx';
-import './tableOps.js';
-import './outline.jsx';
-import './editorOps.js';
-import './codeHighlighter.jsx';
-import './outlinerHistory.js';
-import './outliner.jsx';
-import './graph.jsx';
-import './sidebar.jsx';
-import './notelist.jsx';
-import './editor.jsx';
-import './panelHelpers.js';
-import './panels.jsx';
-import './canvas.jsx';
-import './plugins.js';
-import './settings.jsx';
-import './aiActions.js';
-import './ai.jsx';
-import './appHelpers.js';
-import './appNovelist.js';
-import './appMutations.js';
-import './appCanvasActions.js';
-import './appShell.jsx';
-import './app.jsx';
+// The renderer still exposes browser-global component bridges for compatibility.
+// Keeping the load sequence in one entry file makes those dependencies explicit
+// while scripts/build-renderer.js bundles the feature folders.
+import './shared/theme.jsx';
+import './shared/storageUtils.js';
+import './shared/data.jsx';
+import './shared/markdown.jsx';
+import './editor/blockFeatures.jsx';
+import './editor/tableOps.js';
+import './editor/outline.jsx';
+import './editor/editorOps.js';
+import './editor/codeHighlighter.jsx';
+import './editor/outlinerHistory.js';
+import './editor/outlinerRenderers.jsx';
+import './editor/outliner.jsx';
+import './panels/graph.jsx';
+import './panels/sidebar.jsx';
+import './panels/notelist.jsx';
+import './editor/editor.jsx';
+import './panels/panelHelpers.js';
+import './panels/panelShared.jsx';
+import './panels/todosPanel.jsx';
+import './panels/panels.jsx';
+import './panels/utilityPanels.jsx';
+import './canvas/canvasModel.js';
+import './canvas/canvas.jsx';
+import './shared/plugins.js';
+import './settings/settingsControls.jsx';
+import './settings/settings.jsx';
+import './ai/aiActions.js';
+import './ai/aiRuntime.js';
+import './app/appActions.js';
+import './ai/aiUi.jsx';
+import './ai/ai.jsx';
+import './app/appHelpers.js';
+import './app/appNovelist.js';
+import './app/appMutations.js';
+import './app/appCanvasActions.js';
+import './app/appRuntime.js';
+import './app/appShell.jsx';
+import './app/app.jsx';
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(window.MnApp));

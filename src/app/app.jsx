@@ -4,48 +4,19 @@
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useCallback: useCallbackA, useRef: useRefA } = React;
 
-const MN_TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "theme": "light",
-  "density": "comfortable",
-  "graphStyle": "force",
-  "todoVariant": "list",
-  "toastVariant": "card",
-  "fontChoice": "Editorial (Newsreader + Inter)",
-  "showNoteList": true,
-  "showSidebar": true,
-  "editorWidth": "medium",
-  "fontSize": "default",
-  "appFontSize": "default",
-  "indentGuides": true,
-  "spellCheck": true,
-  "autoLink": true,
-  "collapseByDefault": false,
-  "sortBy": "modified",
-  "defaultTags": "",
-  "pinnedFirst": true,
-  "rollupFormat": "long",
-  "reminderSound": false,
-  "showOverdue": true,
-  "snoozeMinutes": "15",
-  "weekStart": "monday",
-  "workflowStates": null,
-  "plugins": null,
-  "autoSave": true,
-  "storageFormat": "markdown",
-  "sync": "local"
-}/*EDITMODE-END*/;
-
-const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
-const MN_APP_MUTATIONS = window.MN_APP_MUTATIONS || {};
-const MN_APP_CANVAS_ACTIONS = window.MN_APP_CANVAS_ACTIONS || {};
-const MN_APP_NOVELIST = window.MN_APP_NOVELIST || {};
-const MN_AUTOSAVE_DEBOUNCE_MS = 500;
-const MN_AUTOSAVE_MAX_WAIT_MS = 5000;
-const MN_NOTE_TEMPLATES = MN_APP_HELPERS.NOTE_TEMPLATES || [];
-const MN_PLUGIN_API = window.MN_PLUGINS || {};
 const {
-  MN_NOVELIST_TAGS = [],
-  MN_NOVELIST_WORKFLOW_STATES = [],
+  MN_TWEAK_DEFAULTS,
+  MN_APP_HELPERS,
+  MN_APP_MUTATIONS,
+  MN_APP_CANVAS_ACTIONS,
+  MN_APP_NOVELIST,
+  MN_APP_ACTIONS_FACTORY,
+  MN_AUTOSAVE_DEBOUNCE_MS,
+  MN_AUTOSAVE_MAX_WAIT_MS,
+  MN_NOTE_TEMPLATES,
+  MN_PLUGIN_API,
+  MN_NOVELIST_TAGS,
+  MN_NOVELIST_WORKFLOW_STATES,
   mnNovelistNoteId,
   mnEnsureNovelistTags,
   mnBuildNovelistStarterNotes,
@@ -76,132 +47,24 @@ const {
   mnNovelEnsureWikiLinkInSection,
   mnNovelUpsertPropertyLink,
   mnBuildNovelistStructure,
-} = MN_APP_NOVELIST;
-
-// Convert raw notes (with markdown body) to runtime form (with parsed blocks).
-function normalizeNotes(notes, mnMdToBlocks) {
-  return MN_APP_HELPERS.normalizeNotes(notes, mnMdToBlocks);
-}
-
-// Strip in-memory-only fields before persisting to disk.
-function noteForDisk(n, mnBlocksToMd) {
-  return MN_APP_HELPERS.noteForDisk(n, mnBlocksToMd);
-}
-
-function mnNormalizeNoteStatus(raw, states = []) {
-  return MN_APP_HELPERS.normalizeWorkflowStatus
-    ? MN_APP_HELPERS.normalizeWorkflowStatus(raw, states, window.MN_LOGSEQ?.mnNormalizeWorkflowId)
-    : (() => {
-      const id = String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
-      return (states || []).some(state => state.id === id) ? id : '';
-    })();
-}
-
-function mnWorkflowNotePreview(note) {
-  return MN_APP_HELPERS.workflowNotePreview ? MN_APP_HELPERS.workflowNotePreview(note) : String(note?.body || '').slice(0, 180);
-}
-
-function collectWorkflowNotes(notes, states) {
-  return MN_APP_HELPERS.collectWorkflowNotes
-    ? MN_APP_HELPERS.collectWorkflowNotes(notes, states, {
-      propertyValue: mnBodyPropertyValue,
-      normalizeId: window.MN_LOGSEQ?.mnNormalizeWorkflowId,
-    })
-    : { counts: {}, byState: {}, noteIdsByState: {}, archivedNotes: [], total: 0 };
-}
-
-function collectWorkflowBlocks(notes, states) {
-  return collectWorkflowNotes(notes, states);
-}
-
-function normalizeTagName(name) {
-  return MN_APP_HELPERS.normalizeTagName(name);
-}
-
-function mnParseDefaultTags(value) {
-  return MN_APP_HELPERS.parseDefaultTags(value);
-}
-
-function mnNormalizeWorkflowStatesForApp(states) {
-  if (Array.isArray(states) && states.length === 0) return [];
-  return (window.MN_LOGSEQ?.mnNormalizeWorkflowStates || ((value) => value))(
-    Array.isArray(states) && states.length
-      ? states
-      : (window.MN_LOGSEQ?.DEFAULT_WORKFLOW_STATES || window.MN_LOGSEQ?.WORKFLOW_STATES || [])
-  );
-}
-
-function mnReminderKey(item) {
-  return MN_APP_HELPERS.reminderKey ? MN_APP_HELPERS.reminderKey(item) : [item.noteId, item.line ?? item.blockId ?? '', item.remindAt?.date || '', item.remindAt?.time || '', item.text || ''].join('|');
-}
-
-function mnReadSnoozedReminders() {
-  return window.MN_STORAGE?.getJson?.('mn:snoozedReminders', {}) || {};
-}
-
-function mnWriteSnoozedReminder(key, until) {
-  const data = mnReadSnoozedReminders();
-  data[key] = until;
-  window.MN_STORAGE?.setJson?.('mn:snoozedReminders', data);
-}
-
-function mnCollectReminderItems(notes) {
-  return MN_APP_HELPERS.collectReminderItems
-    ? MN_APP_HELPERS.collectReminderItems(notes, window.MN_REMIND, window.mnWalk)
-    : [];
-}
-
-function mnNewAskAiSession() {
-  const now = new Date().toISOString();
-  return {
-    id: `chat_${Date.now().toString(36)}_${Math.floor(Math.random() * 100000).toString(36)}`,
-    title: 'New chat',
-    messages: [],
-    pending: false,
-    error: null,
-    activeAction: null,
-    background: false,
-    archived: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function mnAskAiSessionTitle(session) {
-  const messages = session?.messages || [];
-  const firstUser = messages.find(message => message.role === 'user' && message.text)?.text || '';
-  if (session?.title && (session.title !== 'New chat' || !firstUser)) return session.title;
-  return firstUser ? firstUser.slice(0, 54) : 'New chat';
-}
-
-function mnPickActiveAskAiSession(sessions, preferredId = '', options = {}) {
-  const preferred = sessions.find(session => session.id === preferredId);
-  if (preferred && options.allowArchivedPreferred !== false) return preferred;
-  if (preferred && !preferred.archived) return preferred;
-  return sessions.find(session => !session.archived)
-    || sessions[0]
-    || null;
-}
-
-function mnPlayReminderSound() {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = 740;
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.05, ctx.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.24);
-    setTimeout(() => ctx.close?.(), 400);
-  } catch (e) {}
-}
+  normalizeNotes,
+  noteForDisk,
+  mnNormalizeNoteStatus,
+  mnWorkflowNotePreview,
+  collectWorkflowNotes,
+  collectWorkflowBlocks,
+  normalizeTagName,
+  mnParseDefaultTags,
+  mnNormalizeWorkflowStatesForApp,
+  mnReminderKey,
+  mnReadSnoozedReminders,
+  mnWriteSnoozedReminder,
+  mnCollectReminderItems,
+  mnNewAskAiSession,
+  mnAskAiSessionTitle,
+  mnPickActiveAskAiSession,
+  mnPlayReminderSound,
+} = window.MN_APP_RUNTIME || {};
 
 const MN_APP_SHELL = window.MN_APP_SHELL || {};
 const {
@@ -578,7 +441,6 @@ function MnApp() {
           window.MN_LOGSEQ?.setWorkflowStates?.(mnNormalizeWorkflowStatesForApp(mergedTweaks.workflowStates));
           setTweaks(t => ({ ...t, ...prefs.tweaks }));
         }
-        if (prefs.aiConfig && window.mn?.ai) await window.mn.ai.setConfig(prefs.aiConfig);
 
         const vlistRes = await window.mn.listVaults();
         if (!vlistRes.ok) throw new Error(vlistRes.error);
@@ -692,7 +554,11 @@ function MnApp() {
   useEffectA(() => {
     if (!HAS_DISK || !dirtyNotes.size) return;
     const now = Date.now();
-    const firstDirtyAt = Math.min(...[...dirtyNotes.values()].map(entry => Number(entry.dirtyAt) || now));
+    let firstDirtyAt = now;
+    for (const entry of dirtyNotes.values()) {
+      const dirtyAt = Number(entry.dirtyAt);
+      if (Number.isFinite(dirtyAt) && dirtyAt < firstDirtyAt) firstDirtyAt = dirtyAt;
+    }
     const maxWaitRemaining = Math.max(0, MN_AUTOSAVE_MAX_WAIT_MS - (now - firstDirtyAt));
     const delay = Math.min(MN_AUTOSAVE_DEBOUNCE_MS, maxWaitRemaining);
     const handle = setTimeout(async () => {
@@ -1429,8 +1295,13 @@ function MnApp() {
   const nextStoryOrder = useCallbackA((kind, parentId = null) => {
     const noteById = new Map(notesWithBody.map(note => [note.id, note]));
     const values = (items, step, base) => {
-      const ordered = items.map(mnNoteOrderValue).filter(value => value != null);
-      return ordered.length ? Math.max(...ordered) + step : base + step;
+      let maxOrder = null;
+      for (const item of items) {
+        const value = mnNoteOrderValue(item);
+        if (value == null) continue;
+        maxOrder = maxOrder == null ? value : Math.max(maxOrder, value);
+      }
+      return maxOrder != null ? maxOrder + step : base + step;
     };
     if (kind === 'act') return values(novelistStructure.acts || [], 100, 0);
     if (kind === 'chapter') {
@@ -2041,54 +1912,740 @@ function MnApp() {
     }
   }, [createNote, showAppNotice, uniqueNoteTitle]);
 
-  const commands = useMemoA(() => {
-    const base = [
-      { id: 'new-note', title: 'New note', section: 'Create', shortcut: 'Ctrl+N', keywords: 'page capture', run: () => createNote() },
-      { id: 'quick-capture', title: 'Quick capture', section: 'Create', shortcut: 'Ctrl+Shift+N', keywords: 'inbox', run: () => setCaptureOpen(true) },
-      { id: 'daily-note', title: 'Open daily note', section: 'Create', keywords: 'today journal', run: createDailyNote },
-      { id: 'ask-ai', title: 'Ask AI', section: 'AI', shortcut: 'Ctrl+Shift+K', keywords: 'assistant chat', enabled: HAS_DISK, run: () => openAskAi() },
-      { id: 'settings', title: 'Open settings', section: 'System', keywords: 'preferences', run: () => setSettingsOpen(true) },
-      { id: 'graph', title: 'Open graph', section: 'Navigate', shortcut: 'Ctrl+G', run: () => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); } },
-      { id: 'today', title: 'Open Today', section: 'Navigate', run: () => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); } },
-      { id: 'todos', title: 'Open Todos', section: 'Navigate', run: () => { navigateView('todos'); setSelectedTag(null); setSelectedWorkflow(null); } },
-      { id: 'canvas', title: 'Open canvas dashboard', section: 'Navigate', run: openCanvasDashboard },
-      { id: 'vault-health', title: 'Open vault health', section: 'Vault', enabled: HAS_DISK, run: () => setVaultHealthOpen(true) },
-      { id: 'export-backup', title: 'Export backup', section: 'Vault', enabled: HAS_DISK, run: exportBackup },
-      { id: 'import-backup', title: 'Import backup', section: 'Vault', enabled: HAS_DISK, run: importBackup },
-      { id: 'rebuild-index', title: 'Rebuild search index', section: 'Vault', enabled: HAS_DISK, run: rebuildIndex },
+  const appActionRegistry = useMemoA(() => {
+    const makeRegistry = MN_APP_ACTIONS_FACTORY.createRegistry || ((actions) => ({
+      list: () => actions,
+      run: (id) => actions.find(action => action.id === id)?.run?.(),
+      preview: () => null,
+      describeForAi: () => [],
+      findForText: () => null,
+    }));
+    const stringArg = (maxLength = 160) => ({ type: 'string', maxLength });
+    const integerArg = (defaultValue = 8) => ({ type: 'integer', default: defaultValue });
+    const objectSchema = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
+    const byNoteId = (id) => notesWithBody.find(note => note.id === id) || null;
+    const normalizeNoteLookupText = (value) => String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^(?:the|a|an)\s+/, '')
+      .replace(/\s+/g, ' ');
+    const normalizeNoteLookupKey = (value) => normalizeNoteLookupText(value).replace(/[^a-z0-9]+/g, '');
+    const noteTitleArg = (args = {}) => String(args.noteTitle || args.targetNoteTitle || '').trim();
+    const scoreNoteTitleMatch = (note, queryTitle) => {
+      const queryText = normalizeNoteLookupText(queryTitle);
+      const queryKey = normalizeNoteLookupKey(queryTitle);
+      const titleText = normalizeNoteLookupText(note.title || '');
+      const titleKey = normalizeNoteLookupKey(note.title || '');
+      if (!queryKey || !titleKey) return 0;
+      if (titleKey === queryKey) return 1000;
+      let score = 0;
+      if (titleText === queryText) score += 900;
+      if (titleText.includes(queryText) || queryText.includes(titleText)) score += 150;
+      const terms = queryText.split(/[^a-z0-9_-]+/).filter(Boolean);
+      const meaningfulTerms = terms.filter(term => !['note', 'page'].includes(term));
+      let titleHits = 0;
+      let meaningfulHits = 0;
+      for (const term of terms) {
+        if (titleText.includes(term)) {
+          score += term.length >= 4 ? 18 : 8;
+          titleHits += 1;
+          if (!['note', 'page'].includes(term)) meaningfulHits += 1;
+        }
+      }
+      if (meaningfulTerms.length >= 2 && meaningfulHits === meaningfulTerms.length) score += 90;
+      if (terms.length && titleHits === terms.length) score += 80;
+      return score;
+    };
+    const noteByTitle = (title) => {
+      const cleanTitle = String(title || '').trim();
+      if (!cleanTitle) return null;
+      const scored = notesWithBody
+        .map(note => ({ note, score: scoreNoteTitleMatch(note, cleanTitle) }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score);
+      const best = scored[0];
+      if (!best) return null;
+      if (best.score >= 1000) return best.note;
+      const second = scored[1]?.score || 0;
+      return best.score >= 80 && best.score >= second + 20 ? best.note : null;
+    };
+    const currentOrArgNote = (args = {}) => {
+      if (args.noteId) return byNoteId(args.noteId);
+      const title = noteTitleArg(args);
+      return title ? noteByTitle(title) : selectedNote || null;
+    };
+    const metadataNote = (args = {}) => {
+      if (args.noteId) return byNoteId(args.noteId);
+      const title = noteTitleArg(args);
+      return title ? noteByTitle(title) : selectedNote || null;
+    };
+    const writableMetadataNote = (args = {}) => metadataNote(args);
+    const writableBodyNote = (args = {}) => currentOrArgNote(args);
+    const noteAffected = (note) => note ? [{ type: 'note', id: note.id, title: note.title || 'Untitled' }] : [];
+    const updateNoteTagsById = (noteId, updater) => {
+      if (!noteId) return;
+      setNotes(ns => ns.map(note => {
+        if (note.id !== noteId) return note;
+        const nextTags = typeof updater === 'function' ? updater(note.tags || []) : updater;
+        return MN_APP_MUTATIONS.applyNotePatch(note, { tags: Array.isArray(nextTags) ? nextTags : [] });
+      }));
+      markDirty(noteId);
+    };
+    const appendToBody = (note, content) => {
+      const clean = String(content || '').trim();
+      if (!note || !clean) return false;
+      updateNoteBody(note.id, body => {
+        const base = String(body || '').trimEnd();
+        return `${base}${base ? '\n' : ''}${clean}`;
+      });
+      return true;
+    };
+    const cleanWikiTitle = (title) => String(title || '')
+      .trim()
+      .replace(/^\[\[|\]\]$/g, '')
+      .replace(/[#[\]\n\r]/g, '')
+      .slice(0, 180);
+    const resolveCanvas = (args = {}) => {
+      if (args.canvasId) return (canvases || []).find(item => item.id === args.canvasId) || null;
+      const title = String(args.canvasTitle || args.title || '').trim().toLowerCase();
+      if (!title) return activeCanvas || null;
+      return (canvases || []).find(item => String(item.title || '').trim().toLowerCase() === title)
+        || (canvases || []).find(item => String(item.title || '').trim().toLowerCase().includes(title))
+        || null;
+    };
+    const resolveVault = (args = {}) => {
+      const id = String(args.vaultId || '').trim();
+      if (id) return vaultsForSidebar.find(vault => vault.id === id) || null;
+      const name = String(args.vaultName || args.name || '').trim().toLowerCase();
+      if (!name) return activeVault || null;
+      return vaultsForSidebar.find(vault => String(vault.name || '').trim().toLowerCase() === name)
+        || vaultsForSidebar.find(vault => String(vault.name || '').trim().toLowerCase().includes(name))
+        || null;
+    };
+    const scoreNoteForQuery = (note, terms) => {
+      const title = String(note.title || '').toLowerCase();
+      const tags = (note.tags || []).join(' ').toLowerCase();
+      const body = String(note.body || '').toLowerCase();
+      let score = 0;
+      for (const term of terms) {
+        if (!term) continue;
+        if (title.includes(term)) score += 12;
+        if (tags.includes(term)) score += 8;
+        if (body.includes(term)) score += 2;
+      }
+      return score;
+    };
+    const searchNotesFast = async (query, limit = 8) => {
+      const cleanQuery = String(query || '').trim();
+      const max = Math.max(1, Math.min(Number(limit) || 8, 30));
+      if (!cleanQuery) return [];
+      if (HAS_DISK && activeVaultId && window.mn?.searchDetailedStatus) {
+        try {
+          const res = await window.mn.searchDetailedStatus(activeVaultId, cleanQuery, max);
+          const value = res?.value;
+          const rows = Array.isArray(value?.results) ? value.results
+            : Array.isArray(value?.value?.results) ? value.value.results
+              : Array.isArray(value) ? value
+                : [];
+          if (rows.length) {
+            return rows.slice(0, max).map(row => ({
+              id: row.id || row.noteId,
+              title: row.title || 'Untitled',
+              snippet: row.snippet || row.preview || row.bodySnippet || '',
+              score: Number(row.score || row.rank || 0),
+            })).filter(row => row.id);
+          }
+        } catch (e) {
+          // Fall back to the in-memory search below; command execution should stay fast.
+        }
+      }
+      const terms = cleanQuery.toLowerCase().split(/[^a-z0-9_-]+/).filter(Boolean);
+      return notesWithBody
+        .map(note => ({
+          id: note.id,
+          title: note.title || 'Untitled',
+          snippet: String(note.body || '').replace(/\s+/g, ' ').trim().slice(0, 220),
+          score: scoreNoteForQuery(note, terms),
+        }))
+        .filter(row => row.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, max);
+    };
+    const clearFilters = () => { setSelectedTag(null); setSelectedWorkflow(null); };
+    const openView = (nextView) => {
+      clearFilters();
+      navigateView(nextView);
+      return { message: `Opened ${nextView}.` };
+    };
+    const noteActionSchema = objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180) });
+    const titleActionSchema = objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), title: stringArg(180) }, ['title']);
+    const tagActionSchema = objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), tag: stringArg(64) }, ['tag']);
+    const canvasActionSchema = objectSchema({ canvasId: stringArg(120), canvasTitle: stringArg(180), title: stringArg(180) });
+    const vaultActionSchema = objectSchema({ vaultId: stringArg(120), vaultName: stringArg(180), name: stringArg(180) });
 
+    const actions = [
+      {
+        id: 'new-note',
+        label: 'New note',
+        description: 'Create a blank note or a note with a supplied title, body, and tags.',
+        section: 'Create',
+        shortcut: 'Ctrl+N',
+        keywords: 'page capture create',
+        inputSchema: objectSchema({ title: stringArg(180), body: stringArg(20000), tags: { type: 'array', items: stringArg(64) }, open: { type: 'boolean' } }),
+        run: (args) => {
+          const title = args.title || undefined;
+          const id = createNote({ title, body: args.body || '', tags: args.tags || [] }, { open: args.open !== false });
+          return { title: 'Note created', message: `Created "${title || 'Untitled'}".`, affected: [{ type: 'note', id, title: title || 'Untitled' }] };
+        },
+      },
+      {
+        id: 'quick-capture',
+        label: 'Quick capture',
+        description: 'Open the quick capture dialog.',
+        section: 'Create',
+        shortcut: 'Ctrl+Shift+N',
+        keywords: 'inbox capture',
+        inputSchema: objectSchema(),
+        run: () => { setCaptureOpen(true); return { message: 'Opened quick capture.' }; },
+      },
+      {
+        id: 'daily-note',
+        label: 'Open daily note',
+        description: 'Open or create today’s daily note.',
+        section: 'Create',
+        keywords: 'today journal daily',
+        inputSchema: objectSchema(),
+        run: () => {
+          const id = createDailyNote();
+          return { message: 'Opened daily note.', affected: id ? [{ type: 'note', id, title: 'Daily note' }] : [] };
+        },
+      },
+      {
+        id: 'ask-ai',
+        label: 'Ask AI',
+        description: 'Open the Ask AI workspace.',
+        section: 'AI',
+        shortcut: 'Ctrl+Shift+K',
+        keywords: 'assistant chat',
+        enabled: HAS_DISK,
+        inputSchema: objectSchema({ query: stringArg(1000) }),
+        run: (args) => { openAskAi(args.query || ''); return { message: 'Opened Ask AI.' }; },
+      },
+      {
+        id: 'settings',
+        label: 'Open settings',
+        description: 'Open settings, optionally with a named section request.',
+        section: 'System',
+        keywords: 'preferences configuration',
+        inputSchema: objectSchema({ section: stringArg(80) }),
+        run: () => { setSettingsOpen(true); return { message: 'Opened settings.' }; },
+      },
+      { id: 'graph', label: 'Open graph', description: 'Show the note graph.', section: 'Navigate', shortcut: 'Ctrl+G', inputSchema: objectSchema(), run: () => openView('graph') },
+      { id: 'today', label: 'Open Today', description: 'Show today rollup.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
+      { id: 'todos', label: 'Open Todos', description: 'Show task and todo rollup.', section: 'Navigate', keywords: 'tasks checklist', inputSchema: objectSchema(), run: () => openView('todos') },
+      { id: 'canvas', label: 'Open canvas dashboard', description: 'Open the canvas dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => { openCanvasDashboard(); return { message: 'Opened canvas dashboard.' }; } },
+      {
+        id: 'vault-health',
+        label: 'Open vault health',
+        description: 'Open vault health diagnostics.',
+        section: 'Vault',
+        enabled: HAS_DISK,
+        inputSchema: objectSchema(),
+        run: () => { setVaultHealthOpen(true); return { message: 'Opened vault health.' }; },
+      },
+      {
+        id: 'export-backup',
+        label: 'Export backup',
+        description: 'Export a backup through the operating system save dialog.',
+        section: 'Vault',
+        risk: 'external',
+        enabled: HAS_DISK,
+        inputSchema: objectSchema(),
+        preview: () => ({ title: 'Export backup', message: 'VispNote will open a save dialog and write a backup file to the selected location.', steps: ['Open save dialog', 'Write backup JSON'], affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }] }),
+        run: async () => { await exportBackup(); return { message: 'Backup export finished or was cancelled.' }; },
+      },
+      {
+        id: 'import-backup',
+        label: 'Import backup',
+        description: 'Import a backup into new vaults through the operating system open dialog.',
+        section: 'Vault',
+        risk: 'destructive',
+        enabled: HAS_DISK,
+        inputSchema: objectSchema(),
+        preview: () => ({ title: 'Import backup', message: 'VispNote will read a selected backup file and create imported vaults.', steps: ['Open file dialog', 'Read backup JSON', 'Create imported vaults'], affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }] }),
+        run: async () => { await importBackup(); return { message: 'Backup import finished or was cancelled.' }; },
+      },
+      {
+        id: 'rebuild-index',
+        label: 'Rebuild search index',
+        description: 'Rebuild the full text search index for the active vault.',
+        section: 'Vault',
+        enabled: HAS_DISK,
+        inputSchema: objectSchema(),
+        run: async () => { await rebuildIndex(); return { message: 'Search index rebuild requested.' }; },
+      },
+      {
+        id: 'ai-backfill',
+        label: 'Refresh AI index',
+        description: 'Backfill missing embeddings for the active vault.',
+        section: 'AI',
+        enabled: HAS_DISK,
+        inputSchema: objectSchema(),
+        run: async () => {
+          const res = await window.mn?.ai?.backfill?.(activeVaultId);
+          if (res && !res.ok) throw new Error(res.error || 'AI index backfill failed');
+          const value = res?.value || {};
+          const embedded = Number(value.embedded || 0);
+          showAppNotice('AI index refreshed', value.reason || `${embedded} note${embedded === 1 ? '' : 's'} embedded.`, value.ok === false ? 'warn' : 'info');
+          return { message: value.reason || `AI index refreshed (${embedded} embedded).` };
+        },
+      },
+      {
+        id: 'rename-note',
+        label: 'Rename note',
+        description: 'Rename a note and update wiki links that point to its old title.',
+        section: 'Notes',
+        inputSchema: titleActionSchema,
+        preview: (args) => {
+          const note = currentOrArgNote(args);
+          return { title: 'Rename note', message: `Rename "${note?.title || 'current note'}" to "${args.title}".`, steps: ['Rename note title', 'Update matching wiki links'], affected: noteAffected(note) };
+        },
+        run: (args) => {
+          const note = currentOrArgNote(args);
+          if (!note) return { ok: false, message: 'No note is available to rename.' };
+          renameNoteTitle(note.id, args.title);
+          return { message: `Renamed "${note.title || 'Untitled'}" to "${args.title}".`, affected: noteAffected({ ...note, title: args.title }) };
+        },
+      },
+      {
+        id: 'duplicate-note',
+        label: 'Duplicate note',
+        description: 'Duplicate the current or selected note.',
+        section: 'Notes',
+        inputSchema: noteActionSchema,
+        run: (args) => {
+          const note = currentOrArgNote(args);
+          if (!note) return { ok: false, message: 'No note is available to duplicate.' };
+          const id = duplicateNote(note.id);
+          return { title: 'Note duplicated', message: `Duplicated "${note.title || 'Untitled'}".`, affected: [{ type: 'note', id, title: `${note.title || 'Untitled'} copy` }] };
+        },
+      },
+      {
+        id: 'delete-note',
+        label: 'Delete note',
+        description: 'Move the current or selected note to recently deleted.',
+        section: 'Notes',
+        risk: 'destructive',
+        inputSchema: noteActionSchema,
+        preview: (args) => {
+          const note = currentOrArgNote(args);
+          return { title: 'Delete note', message: `Move "${note?.title || 'current note'}" to recently deleted.`, steps: ['Remove note from the active vault', 'Keep it recoverable in trash'], affected: noteAffected(note) };
+        },
+        run: async (args) => {
+          const note = currentOrArgNote(args);
+          if (!note) return { ok: false, message: 'No note is available to delete.' };
+          await deleteNote(note.id);
+          return { message: `Deleted "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
+        },
+      },
+      {
+        id: 'search-notes',
+        label: 'Search notes',
+        description: 'Search note titles, tags, and indexed content for matching notes. Use this before editing or linking when the target note is not explicit.',
+        section: 'Notes',
+        kind: 'read',
+        readOnly: true,
+        idempotent: true,
+        keywords: 'find lookup content semantic keyword vector full text',
+        examples: ['search notes for reading list', 'find notes about quarterly planning'],
+        inputSchema: objectSchema({ query: stringArg(500), limit: integerArg(8) }, ['query']),
+        outputSchema: objectSchema({ results: { type: 'array', items: { type: 'object', additionalProperties: true } } }),
+        run: async (args) => {
+          const results = await searchNotesFast(args.query, args.limit || 8);
+          const affected = results.map(row => ({ type: 'note', id: row.id, title: row.title || 'Untitled' }));
+          return {
+            title: 'Search complete',
+            message: results.length ? `Found ${results.length} matching note${results.length === 1 ? '' : 's'}.` : 'No matching notes found.',
+            affected,
+            results,
+          };
+        },
+      },
+      {
+        id: 'read-note',
+        label: 'Read note',
+        description: 'Read a note by note id or note title before deciding what action to take.',
+        section: 'Notes',
+        kind: 'read',
+        readOnly: true,
+        idempotent: true,
+        requires: ['noteId or noteTitle'],
+        examples: ['read Daily Updates Checklist', 'inspect the note called Project Plan'],
+        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180) }),
+        outputSchema: objectSchema({ note: { type: 'object', additionalProperties: true } }),
+        run: (args) => {
+          const note = currentOrArgNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note was specified.' };
+          return {
+            title: 'Note read',
+            message: `Read "${note.title || 'Untitled'}".`,
+            affected: noteAffected(note),
+            note: {
+              id: note.id,
+              title: note.title || 'Untitled',
+              tags: note.tags || [],
+              modifiedAt: note.modifiedAt || note.date || null,
+              body: String(note.body || '').slice(0, 12000),
+            },
+          };
+        },
+      },
+      {
+        id: 'open-note',
+        label: 'Open note',
+        description: 'Open a note by note id or note title.',
+        section: 'Notes',
+        kind: 'read',
+        readOnly: true,
+        idempotent: true,
+        requires: ['noteId or noteTitle'],
+        examples: ['open Daily Updates Checklist', 'show the note called Project Plan'],
+        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180) }),
+        run: (args) => {
+          const note = currentOrArgNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note was specified.' };
+          setSelectedId(note.id);
+          navigateView('notes');
+          return { message: `Opened "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
+        },
+      },
+      {
+        id: 'append-to-note',
+        label: 'Append to note',
+        description: 'Append plain Markdown content to the current or selected note.',
+        section: 'Notes',
+        kind: 'write',
+        requires: ['current note unless noteId or noteTitle is provided'],
+        examples: ['append these meeting notes to the current note'],
+        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), content: stringArg(20000) }, ['content']),
+        run: (args) => {
+          const note = writableBodyNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
+          if (!appendToBody(note, args.content)) return { ok: false, message: 'There is no content to append.' };
+          return { message: `Updated "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
+        },
+      },
+      {
+        id: 'add-todo-to-note',
+        label: 'Add todo to note',
+        description: 'Append a Markdown todo item to the current or selected note.',
+        section: 'Notes',
+        kind: 'write',
+        requires: ['current note unless noteId or noteTitle is provided'],
+        examples: ['add todo call Nimal to this note', 'add a task to follow up on the draft'],
+        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), text: stringArg(500) }, ['text']),
+        run: (args) => {
+          const note = writableBodyNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
+          const text = String(args.text || '').replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '').trim();
+          if (!text) return { ok: false, message: 'Todo text is empty.' };
+          appendToBody(note, `- [ ] ${text}`);
+          return { message: `Added a todo to "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
+        },
+      },
+      {
+        id: 'add-reminder-to-note',
+        label: 'Add reminder to note',
+        description: 'Append a todo-style reminder to the current or selected note. Date and time can be supplied when the user gives them.',
+        section: 'Notes',
+        kind: 'write',
+        requires: ['current note unless noteId or noteTitle is provided'],
+        examples: ['remind me to renew the license tomorrow', 'add reminder follow up on invoice on 2026-05-20'],
+        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), text: stringArg(500), date: stringArg(80), time: stringArg(40) }, ['text']),
+        run: (args) => {
+          const note = writableBodyNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
+          const text = String(args.text || '').replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '').trim();
+          if (!text) return { ok: false, message: 'Reminder text is empty.' };
+          const date = String(args.date || '').trim();
+          const time = String(args.time || '').trim();
+          const suffix = [date, time].filter(Boolean).join(' ');
+          appendToBody(note, `- [ ] ${text}${suffix ? ` @remind ${suffix}` : ' @remind'}`);
+          return { message: `Added a reminder to "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
+        },
+      },
+      {
+        id: 'link-note',
+        label: 'Link note',
+        description: 'Add a wiki link from the current or selected note to another note title.',
+        section: 'Notes',
+        kind: 'write',
+        requires: ['current note unless noteId or noteTitle is provided', 'target note title'],
+        examples: ['link this note to Reading List', 'connect the current note with Project Plan'],
+        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), targetTitle: stringArg(180) }, ['targetTitle']),
+        run: (args) => {
+          const note = writableBodyNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
+          const targetTitle = cleanWikiTitle(args.targetTitle);
+          if (!targetTitle) return { ok: false, message: 'Target note title is empty.' };
+          const link = `[[${targetTitle}]]`;
+          if (String(note.body || '').includes(link)) {
+            return { message: `"${note.title || 'Untitled'}" already links to "${targetTitle}".`, affected: noteAffected(note) };
+          }
+          appendToBody(note, `Related: ${link}`);
+          const target = notesWithBody.find(item => String(item.title || '').toLowerCase() === targetTitle.toLowerCase());
+          return {
+            message: `Linked "${note.title || 'Untitled'}" to "${targetTitle}".`,
+            affected: [...noteAffected(note), ...noteAffected(target)],
+          };
+        },
+      },
+      {
+        id: 'tag-note',
+        label: 'Tag note',
+        description: 'Apply a tag to the current, selected, or named note.',
+        section: 'Notes',
+        requires: ['current note unless noteId or noteTitle is provided'],
+        examples: ['tag this note under reading', 'tag Daily update checklist as todo'],
+        inputSchema: tagActionSchema,
+        run: (args) => {
+          const note = writableMetadataNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to tag.' };
+          const clean = addTag(args.tag);
+          if (!clean) return { ok: false, message: 'Tag name is empty.' };
+          if (!(note.tags || []).includes(clean)) updateNoteTagsById(note.id, tags => tags.includes(clean) ? tags : [...tags, clean]);
+          return { message: (note.tags || []).includes(clean) ? `"${note.title}" already has #${clean}.` : `Tagged "${note.title}" with #${clean}.`, affected: noteAffected(note) };
+        },
+      },
+      {
+        id: 'untag-note',
+        label: 'Remove note tag',
+        description: 'Remove a tag from the current, selected, or named note.',
+        section: 'Notes',
+        requires: ['current note unless noteId or noteTitle is provided'],
+        inputSchema: tagActionSchema,
+        run: (args) => {
+          const note = writableMetadataNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to untag.' };
+          const clean = normalizeTagName(args.tag);
+          updateNoteTagsById(note.id, tags => tags.filter(tag => tag !== clean));
+          return { message: `Removed #${clean} from "${note.title}".`, affected: noteAffected(note) };
+        },
+      },
+      {
+        id: 'set-workflow-status',
+        label: 'Set workflow status',
+        description: 'Set the workflow status property on the current, selected, or named note.',
+        section: 'Workflow',
+        keywords: 'todo doing done draft review status',
+        requires: ['current note unless noteId or noteTitle is provided'],
+        examples: ['move Daily update checklist to inprogress', 'set this note status to done'],
+        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), status: stringArg(80) }, ['status']),
+        run: (args) => {
+          const note = writableMetadataNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
+          const status = mnNormalizeNoteStatus(args.status, workflowStates) || String(args.status || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
+          updateWorkflowNoteStatus(note.id, null, status);
+          return { message: `Set "${note.title}" to ${status || 'no status'}.`, affected: noteAffected(note) };
+        },
+      },
+      {
+        id: 'archive-workflow-note',
+        label: 'Archive workflow note',
+        description: 'Archive or restore the current or selected workflow note.',
+        section: 'Workflow',
+        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), archived: { type: 'boolean', default: true } }),
+        run: (args) => {
+          const note = writableMetadataNote(args);
+          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to archive.' };
+          updateWorkflowArchived(note.id, args.archived !== false);
+          return { message: `${args.archived === false ? 'Restored' : 'Archived'} "${note.title}".`, affected: noteAffected(note) };
+        },
+      },
+      {
+        id: 'create-canvas',
+        label: 'Create canvas',
+        description: 'Create a new canvas.',
+        section: 'Canvas',
+        inputSchema: canvasActionSchema,
+        run: async (args) => {
+          const canvas = await createCanvas(args.title || 'Untitled canvas');
+          return { message: `Created "${canvas?.title || args.title || 'Untitled canvas'}".`, affected: canvas ? [{ type: 'canvas', id: canvas.id, title: canvas.title }] : [] };
+        },
+      },
+      {
+        id: 'open-canvas',
+        label: 'Open canvas',
+        description: 'Open a specific canvas or the canvas dashboard.',
+        section: 'Canvas',
+        inputSchema: canvasActionSchema,
+        run: async (args) => {
+          const target = resolveCanvas(args);
+          const canvas = target?.id ? await openCanvas(target.id) : null;
+          if (!target?.id) openCanvasDashboard();
+          return { message: canvas ? `Opened "${canvas.title}".` : 'Opened canvas dashboard.', affected: canvas ? [{ type: 'canvas', id: canvas.id, title: canvas.title }] : [] };
+        },
+      },
+      {
+        id: 'delete-canvas',
+        label: 'Delete canvas',
+        description: 'Move a canvas to recently deleted.',
+        section: 'Canvas',
+        risk: 'destructive',
+        inputSchema: canvasActionSchema,
+        preview: (args) => {
+          const canvas = resolveCanvas(args);
+          return { title: 'Delete canvas', message: `Move "${canvas?.title || 'the canvas'}" to recently deleted.`, steps: ['Remove canvas from the dashboard', 'Keep it recoverable in trash'], affected: canvas ? [{ type: 'canvas', id: canvas.id, title: canvas.title }] : [] };
+        },
+        run: async (args) => {
+          const canvasId = resolveCanvas(args)?.id;
+          if (!canvasId) return { ok: false, message: 'No canvas is available to delete.' };
+          await deleteCanvas(canvasId);
+          return { message: 'Canvas deleted.' };
+        },
+      },
+      {
+        id: 'switch-vault',
+        label: 'Switch vault',
+        description: 'Switch to a vault by id or name.',
+        section: 'Vaults',
+        kind: 'read',
+        readOnly: true,
+        idempotent: true,
+        inputSchema: vaultActionSchema,
+        run: (args) => {
+          const vault = resolveVault(args);
+          if (!vault) return { ok: false, message: args.vaultName || args.name ? `Could not find a vault matching "${args.vaultName || args.name}".` : 'No vault was specified.' };
+          selectVault(vault.id);
+          return { message: `Switched to ${vault.name}.`, affected: [{ type: 'vault', id: vault.id, title: vault.name }] };
+        },
+      },
+      {
+        id: 'restore-trash-item',
+        label: 'Restore trash item',
+        description: 'Restore a deleted note or canvas by trash id.',
+        section: 'Vault',
+        risk: 'confirm',
+        enabled: HAS_DISK,
+        inputSchema: objectSchema({ trashId: stringArg(140), sourceType: stringArg(20) }, ['trashId']),
+        preview: (args) => ({ title: 'Restore trash item', message: `Restore trash item ${args.trashId}.`, steps: ['Read recently deleted item', 'Restore it to the active vault'], affected: [{ type: args.sourceType || 'trash', id: args.trashId, title: args.trashId }] }),
+        run: async (args) => {
+          const result = await restoreDeletedNote({ trashId: args.trashId, sourceType: args.sourceType || 'note' });
+          return result?.ok === false ? { ok: false, message: result.error || 'Could not restore trash item.' } : { message: 'Trash item restored.' };
+        },
+      },
       ...plugins.filter(plugin => plugin.enabled !== false).map(plugin => ({
         id: `plugin-${plugin.id}`,
-        title: MN_PLUGIN_API.commandTitle ? MN_PLUGIN_API.commandTitle(plugin) : plugin.name,
+        label: MN_PLUGIN_API.commandTitle ? MN_PLUGIN_API.commandTitle(plugin) : plugin.name,
+        description: plugin.purpose || `Run ${plugin.name || 'plugin'}.`,
         section: 'Plugins',
         keywords: `${plugin.type} ${plugin.purpose || ''}`,
-        run: () => runPlugin(plugin),
+        risk: 'external',
+        inputSchema: objectSchema(),
+        preview: () => ({ title: MN_PLUGIN_API.commandTitle ? MN_PLUGIN_API.commandTitle(plugin) : plugin.name, message: `Run plugin "${plugin.name || plugin.id}".`, steps: [plugin.type === 'open-url' ? 'Open external URL' : 'Run plugin action'], affected: [{ type: 'plugin', id: plugin.id, title: plugin.name }] }),
+        run: () => { runPlugin(plugin); return { message: `Ran ${plugin.name || 'plugin'}.`, affected: [{ type: 'plugin', id: plugin.id, title: plugin.name }] }; },
       })),
       ...MN_NOTE_TEMPLATES.map(template => ({
         id: `template-${template.id}`,
-        title: `New ${template.title}`,
+        label: `New ${template.title}`,
+        description: `Create a note from the ${template.title} template.`,
         section: 'Templates',
-        keywords: `${template.id} template`,
-        run: () => createNoteFromTemplate(template.id),
+        keywords: `${template.id} template create note`,
+        inputSchema: objectSchema(),
+        run: () => {
+          const id = createNoteFromTemplate(template.id);
+          return { message: `Created ${template.title}.`, affected: id ? [{ type: 'note', id, title: template.title }] : [] };
+        },
       })),
       ...vaultsForSidebar.map(vault => ({
         id: `vault-${vault.id}`,
-        title: `Switch to ${vault.name}`,
+        label: `Switch to ${vault.name}`,
+        description: `Switch active vault to ${vault.name}.`,
         section: 'Vaults',
-        keywords: 'switch workspace',
+        keywords: 'switch workspace vault',
         enabled: vault.id !== activeVaultId,
-        run: () => selectVault(vault.id),
+        inputSchema: objectSchema(),
+        run: () => { selectVault(vault.id); return { message: `Switched to ${vault.name}.`, affected: [{ type: 'vault', id: vault.id, title: vault.name }] }; },
+      })),
+      ...canvases.slice(0, 60).map(canvas => ({
+        id: `canvas-${canvas.id}`,
+        label: canvas.title || 'Untitled canvas',
+        description: 'Open canvas.',
+        section: 'Canvases',
+        keywords: 'canvas board',
+        inputSchema: objectSchema(),
+        run: async () => {
+          const opened = await openCanvas(canvas.id);
+          return { message: `Opened ${opened?.title || canvas.title || 'canvas'}.`, affected: [{ type: 'canvas', id: canvas.id, title: canvas.title }] };
+        },
       })),
       ...notesWithBody.slice(0, 120).map(note => ({
         id: `note-${note.id}`,
-        title: note.title || 'Untitled',
+        label: note.title || 'Untitled',
+        description: 'Open note.',
         section: 'Notes',
         keywords: `${(note.tags || []).join(' ')} ${note.body || ''}`.slice(0, 500),
-        run: () => { setSelectedId(note.id); navigateView('notes'); },
+        inputSchema: objectSchema(),
+        run: () => {
+          setSelectedId(note.id);
+          navigateView('notes');
+          return { message: `Opened "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
+        },
       })),
     ];
-    return base;
-  }, [activeVaultId, createDailyNote, createNote, createNoteFromTemplate, exportBackup, importBackup, notesWithBody, openAskAi, openCanvasDashboard, plugins, rebuildIndex, runPlugin, selectVault, vaultsForSidebar, navigateView]);
+    return makeRegistry(actions);
+  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, plugins, rebuildIndex, restoreDeletedNote, runPlugin, selectVault, selectedNote, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+
+  useEffectA(() => {
+    window.MN_APP_ACTIONS = appActionRegistry;
+    return () => {
+      if (window.MN_APP_ACTIONS === appActionRegistry) delete window.MN_APP_ACTIONS;
+    };
+  }, [appActionRegistry]);
+
+  const handleAppActionResult = useCallbackA((result) => {
+    if (!result) return;
+    const tone = result.ok === false ? 'warn' : 'info';
+    if (result.requiresConfirmation) {
+      showAppNotice('Review required', result.preview?.message || result.message || 'This action needs confirmation.', 'warn');
+      return;
+    }
+    if (result.message && !/opened/i.test(result.message)) showAppNotice(result.title || 'Action complete', result.message, tone);
+  }, [showAppNotice]);
+
+  const commands = useMemoA(() => {
+    return appActionRegistry.list({ includeHidden: false }).map(action => ({
+      id: action.id,
+      title: action.title || action.label,
+      section: action.section,
+      shortcut: action.shortcut,
+      keywords: action.keywords || action.description,
+      enabled: action.enabled,
+      risk: action.risk,
+      run: async () => {
+        try {
+          const result = await appActionRegistry.run(action.id, {}, {});
+          handleAppActionResult(result);
+        } catch (e) {
+          showAppNotice('Command failed', e.message || String(e));
+        }
+      },
+    }));
+  }, [appActionRegistry, handleAppActionResult, showAppNotice]);
+
+  const runNaturalCommand = useCallbackA(async (plan) => {
+    if (!plan?.steps?.length) return;
+    for (const step of plan.steps) {
+      try {
+        const result = await appActionRegistry.run(step.actionId, step.args || {}, {});
+        handleAppActionResult(result);
+        if (result?.requiresConfirmation) break;
+      } catch (e) {
+        showAppNotice('Command failed', e.message || String(e));
+        break;
+      }
+    }
+  }, [appActionRegistry, handleAppActionResult, showAppNotice]);
 
   useEffectA(() => {
     const h = (e) => {
@@ -2553,6 +3110,7 @@ function MnApp() {
         <MnCommandPalette
           open={commandPaletteOpen}
           commands={commands}
+          onNaturalAction={runNaturalCommand}
           onClose={() => setCommandPaletteOpen(false)}
           T={T}
         />

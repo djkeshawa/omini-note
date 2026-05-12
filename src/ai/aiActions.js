@@ -13,6 +13,8 @@
   function normalizeTagName(value) {
     return String(value || '')
       .trim()
+      .replace(/^(?:it|this|current|new|the)\s+(?:under|as|with|for|in)\s+/i, '')
+      .replace(/^(?:it|this|current|new|the)\s+/i, '')
       .replace(/^#/, '')
       .toLowerCase()
       .replace(/[^a-z0-9_-]+/g, '-')
@@ -23,8 +25,8 @@
   function extractCreateTitle(q) {
     const quoted = q.match(/["“']([^"”']+)["”']/)?.[1];
     const explicit = quoted ||
-      q.match(/\b(?:called|titled|named)\s+(.+?)(?:\s+(?:and|with)\s+(?:tag|tags?|#)|[.?!]?$)/i)?.[1] ||
-      q.match(/\b(?:page|note)\s+(?:about|for)\s+(.+?)(?:\s+(?:and|with)\s+(?:tag|tags?|#)|[.?!]?$)/i)?.[1];
+      q.match(/\b(?:called|titled|named)\s+(.+?)(?:\s+(?:and|then|also|after that|with)\s+(?=(?:tag|tags?|#|summari[sz]e|summary|add|append|link|connect|remind|set|open|create|make|put|file)\b)|[.?!]?$)/i)?.[1] ||
+      q.match(/\b(?:page|note|not)\s+(?:about|for)\s+(.+?)(?:\s+(?:and|then|also|after that|with)\s+(?=(?:tag|tags?|#|summari[sz]e|summary|add|append|link|connect|remind|set|open|create|make|put|file)\b)|[.?!]?$)/i)?.[1];
     if (explicit) return cleanTitle(explicit);
     if (wantsVaultSummary(q)) return 'Notes summary';
     return 'AI draft';
@@ -38,7 +40,10 @@
       if (clean && !found.includes(clean)) found.push(clean);
     };
     for (const match of text.matchAll(/#([a-zA-Z0-9][a-zA-Z0-9_-]{0,47})/g)) add(match[1]);
-    for (const match of text.matchAll(/\b(?:tag|tags|tagged|mark|label|categorize|file)\s+(?:it|this|current|(?:this|current)\s+(?:page|note)|the\s+(?:new\s+)?(?:page|note|one))?\s*(?:as|with|for|under|in)\s+#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})/gi)) {
+    for (const match of text.matchAll(/\b(?:tag|tags|tagged|mark|label|categorize|file)\s+(?:it|this|current|(?:this|current)\s+(?:page|note)|the\s+(?:new\s+)?(?:page|note|one)|(?:new\s+)?one)?\s*(?:as|with|for|under|in)\s+#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})/gi)) {
+      add(match[1].replace(/\b(?:and|then|after|also)\b.*$/i, ''));
+    }
+    for (const match of text.matchAll(/\b(?:put|file|categorize)\s+(?:it|this|current|(?:new\s+)?(?:note|page|one))\s+(?:under|in|as|with|for)\s+#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})/gi)) {
       add(match[1].replace(/\b(?:and|then|after|also)\b.*$/i, ''));
     }
     for (const match of text.matchAll(/\b(?:under|with|as|for)\s+#?([a-zA-Z0-9][a-zA-Z0-9 _-]{0,60})\s+(?:tag|tags?)\b/gi)) add(match[1]);
@@ -52,14 +57,15 @@
 
   function wantsCreateNote(q) {
     const s = String(q || '').toLowerCase();
-    return /\b(create|make|new)\b.*\b(page|note|one)\b/.test(s) ||
-      /\b(summarize|summary)\b.*\bnotes?\b.*\b(create|make|new)\b/.test(s);
+    return /\b(create|make|new)\b.*\b(page|note|not|one)\b/.test(s) ||
+      /\b(create|make)\s+(?:a\s+)?new\s+one\b/.test(s) ||
+      /\b(summarize|summarise|summary)\b.*\bnotes?\b.*\b(create|make|new)\b/.test(s);
   }
 
   function wantsVaultSummary(q) {
     const s = String(q || '').toLowerCase();
-    return /\b(summarize|summary)\b.*\b(all|my|vault|notes?)\b.*\bnotes?\b/.test(s) ||
-      /\b(all|my|vault)\b.*\bnotes?\b.*\b(summarize|summary)\b/.test(s);
+    return /\b(summarize|summarise|summary)\b.*\b(all|my|vault|notes?)\b.*\bnotes?\b/.test(s) ||
+      /\b(all|my|vault)\b.*\bnotes?\b.*\b(summarize|summarise|summary)\b/.test(s);
   }
 
   function wantsCurrentTarget(q) {
@@ -93,7 +99,7 @@
     });
     tags.forEach(tag => steps.push({ type: 'tag-created-note', tag }));
     if (steps.length > 1 || summary || tags.length) {
-      return { type: 'action-plan', title, steps };
+      return { type: 'action-plan', title, confidence: 'high', source: 'direct-router', steps };
     }
     return null;
   }
@@ -115,7 +121,7 @@
     if (tagName && (wantsCurrentTarget(text) || addTagCommand) && /\b(tag|mark|label|categorize|file|add|apply|set)\b/.test(s) && !asksTagLookup) {
       return { type: 'tag-current-note', tag: tagName };
     }
-    if (/\b(create|make|new)\b.*\b(page|note)\b/.test(s)) {
+    if (/\b(create|make|new)\b.*\b(page|note|not)\b/.test(s)) {
       return { type: 'create-note', title: extractCreateTitle(text) };
     }
     if (/\b(link|wikilink|connect)\b.*\b(page|note|this|things|together)\b/.test(s)) {

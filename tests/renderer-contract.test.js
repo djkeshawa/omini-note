@@ -9,9 +9,16 @@ function read(file) {
 }
 
 function srcFiles() {
-  return fs.readdirSync(paths.srcRoot)
-    .filter(file => /\.(jsx?|mjs)$/.test(file))
-    .map(file => path.join(paths.srcRoot, file));
+  const out = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(jsx?|mjs)$/.test(entry.name)) out.push(full);
+    }
+  };
+  walk(paths.srcRoot);
+  return out;
 }
 
 test('renderer bundle entry and HTML shell contract stay stable', () => {
@@ -20,10 +27,10 @@ test('renderer bundle entry and HTML shell contract stay stable', () => {
   const entry = read(paths.src.main);
 
   assert.match(buildRenderer, /const ENTRY = 'src\/main\.jsx'/);
-  assert.match(buildRenderer, /readEntrySources\(\)/);
-  assert.doesNotMatch(buildRenderer, /const SOURCES = \[/);
+  assert.match(buildRenderer, /esbuild\.buildSync\(\{/);
+  assert.match(buildRenderer, /bundle: true/);
   assert.match(html, /<script src="build\/renderer\/app\.js"><\/script>/);
-  assert.match(entry, /import '\.\/app\.jsx';/);
+  assert.match(entry, /import '\.\/app\/app\.jsx';/);
 });
 
 test('renderer modules declare cross-file globals explicitly during migration', () => {
@@ -40,17 +47,24 @@ test('renderer modules declare cross-file globals explicitly during migration', 
 test('renderer globals are explicitly allowlisted until ESM migration removes them', () => {
   const allowedGlobals = new Set([
     'MN_AI_REPORT',
+    'MN_AI_UI',
+    'MN_APP_ACTIONS',
+    'MN_APP_RUNTIME',
     'MN_APP_SHELL',
+    'MN_CANVAS_MODEL',
     'MN_CODE_HIGHLIGHTER',
     'MN_CODE_LANGUAGES',
     'MN_DATA',
     'MN_FONTS',
     'MN_LOGSEQ',
     'MN_OUTLINE',
+    'MN_OUTLINER_RENDERERS',
     'MN_OUTLINER_HISTORY',
+    'MN_PANEL_COMPONENTS',
     'MN_PLUGINS',
     'MN_REMIND',
     'MN_RUNTIME',
+    'MN_SETTINGS_CONTROLS',
     'MN_THEMES',
     'MnAiChatHistory',
     'MnApp',
@@ -119,6 +133,11 @@ test('renderer globals are explicitly allowlisted until ESM migration removes th
 
 test('modularization target feature folders exist', () => {
   for (const folder of ['app', 'editor', 'canvas', 'ai', 'settings', 'panels', 'shared']) {
-    assert.ok(fs.statSync(path.join(paths.srcRoot, folder)).isDirectory(), `${folder} folder is missing`);
+    const dir = path.join(paths.srcRoot, folder);
+    assert.ok(fs.statSync(dir).isDirectory(), `${folder} folder is missing`);
+    assert.ok(
+      fs.readdirSync(dir).some(file => /\.(jsx?|mjs)$/.test(file)),
+      `${folder} folder has no source files`
+    );
   }
 });

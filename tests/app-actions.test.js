@@ -1,0 +1,301 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const appActions = require('../src/app/appActions.js');
+const aiRuntime = require('../src/ai/aiRuntime.js');
+
+test('App Action Registry validates schemas and blocks unknown actions', async () => {
+  let created = null;
+  const registry = appActions.createRegistry([
+    {
+      id: 'create-note',
+      label: 'Create note',
+      inputSchema: {
+        type: 'object',
+        properties: { title: { type: 'string', maxLength: 12 } },
+        required: ['title'],
+        additionalProperties: false,
+      },
+      run: (args) => {
+        created = args.title;
+        return { message: `Created ${args.title}`, affected: [{ type: 'note', id: 'n1', title: args.title }] };
+      },
+    },
+  ]);
+
+  assert.equal(registry.list()[0].risk, 'safe');
+  assert.throws(() => registry.validate('missing', {}), /Unknown app action/);
+  assert.throws(() => registry.validate('create-note', { title: 'Draft', extra: true }), /Unsupported action argument/);
+  const result = await registry.run('create-note', { title: 'Long title value' });
+  assert.equal(result.ok, true);
+  assert.equal(created, 'Long title v');
+  assert.equal(result.affected[0].id, 'n1');
+});
+
+test('Confirm-risk App Actions preview without mutation until confirmed', async () => {
+  let deleted = false;
+  const registry = appActions.createRegistry([
+    {
+      id: 'delete-note',
+      label: 'Delete note',
+      risk: 'destructive',
+      inputSchema: {
+        type: 'object',
+        properties: { noteId: { type: 'string' } },
+        required: ['noteId'],
+        additionalProperties: false,
+      },
+      preview: (args) => ({ title: 'Delete note', message: `Delete ${args.noteId}`, affected: [{ type: 'note', id: args.noteId }] }),
+      run: () => {
+        deleted = true;
+        return { message: 'Deleted' };
+      },
+    },
+  ]);
+
+  const preview = await registry.run('delete-note', { noteId: 'n1' });
+  assert.equal(preview.requiresConfirmation, true);
+  assert.equal(deleted, false);
+  assert.equal(preview.preview.affected[0].id, 'n1');
+
+  const confirmed = await registry.run('delete-note', { noteId: 'n1' }, { confirmed: true });
+  assert.equal(confirmed.ok, true);
+  assert.equal(deleted, true);
+});
+
+test('App Action natural plans include confidence and avoid summary-create interception', () => {
+  const registry = appActions.createRegistry([
+    {
+      id: 'tag-note',
+      label: 'Tag note',
+      inputSchema: {
+        type: 'object',
+        properties: { tag: { type: 'string' } },
+        required: ['tag'],
+        additionalProperties: false,
+      },
+      run: () => ({}),
+    },
+    {
+      id: 'settings',
+      label: 'Open settings',
+      inputSchema: { type: 'object', additionalProperties: false },
+      run: () => ({}),
+    },
+  ]);
+
+  const tagPlan = registry.findForText('tag this note under reading');
+  assert.equal(tagPlan.confidence, 'high');
+  assert.equal(tagPlan.source, 'direct-router');
+  assert.equal(tagPlan.steps[0].actionId, 'tag-note');
+  assert.equal(tagPlan.steps[0].args.tag, 'reading');
+  assert.equal(appActions.extractTagName('tag it under reading'), 'reading');
+  assert.equal(registry.findForText('summarise all my notes and create a new one then tag it under reading'), null);
+});
+
+test('App Action natural plans compound named-note status and tag updates', () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      noteId: { type: 'string' },
+      noteTitle: { type: 'string' },
+      targetTitle: { type: 'string' },
+      status: { type: 'string' },
+      tag: { type: 'string' },
+    },
+    additionalProperties: false,
+  };
+  const registry = appActions.createRegistry([
+    { id: 'todos', label: 'Open todos', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
+    { id: 'settings', label: 'Open settings', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
+    { id: 'set-workflow-status', label: 'Set workflow status', inputSchema: { ...schema, required: ['status'] }, run: () => ({}) },
+    { id: 'tag-note', label: 'Tag note', inputSchema: { ...schema, required: ['tag'] }, run: () => ({}) },
+  ]);
+
+  const plan = registry.findForText('can you move the daily update check list to inprogress, and tag it under todo');
+  assert.equal(plan.intent, 'update-note');
+  assert.deepEqual(plan.steps.map(step => step.actionId), ['set-workflow-status', 'tag-note']);
+  assert.equal(plan.steps[0].args.noteTitle, 'daily update check list');
+  assert.equal(plan.steps[0].args.status, 'inprogress');
+  assert.equal(plan.steps[1].args.noteTitle, 'daily update check list');
+  assert.equal(plan.steps[1].args.tag, 'todo');
+
+  const tagOnlyPlan = registry.findForText('can you tag daily updates note to todos');
+  assert.equal(tagOnlyPlan.confidence, 'high');
+  assert.equal(tagOnlyPlan.steps[0].actionId, 'tag-note');
+  assert.equal(tagOnlyPlan.steps[0].args.noteTitle, 'daily updates');
+  assert.equal(tagOnlyPlan.steps[0].args.tag, 'todos');
+
+  const tagOnlyRoute = aiRuntime.routeRequest({ query: 'can you tag daily updates note to todos', appRegistry: registry });
+  assert.equal(tagOnlyRoute.type, 'app_action');
+  assert.equal(tagOnlyRoute.plan.steps[0].actionId, 'tag-note');
+
+  const route = aiRuntime.routeRequest({ query: 'move daily update check list to inprogress and tag it under todo', appRegistry: registry });
+  assert.equal(route.type, 'app_action');
+  assert.equal(route.plan.steps[0].actionId, 'set-workflow-status');
+  assert.notEqual(route.plan.steps[0].actionId, 'todos');
+
+  const settingsPlan = registry.findForText('change settings to dark mode');
+  assert.equal(settingsPlan.steps[0].actionId, 'settings');
+
+  assert.equal(registry.findForText('open todos').steps[0].actionId, 'todos');
+  assert.equal(registry.findForText('todo').steps[0].actionId, 'todos');
+});
+
+test('App Action natural plans cover fast AI note operations', () => {
+  const schema = { type: 'object', additionalProperties: true };
+  const registry = appActions.createRegistry([
+    { id: 'new-note', label: 'New note', inputSchema: schema, run: () => ({}) },
+    { id: 'search-notes', label: 'Search notes', inputSchema: schema, run: () => ({}) },
+    { id: 'add-todo-to-note', label: 'Add todo to note', inputSchema: schema, run: () => ({}) },
+    { id: 'add-reminder-to-note', label: 'Add reminder to note', inputSchema: schema, run: () => ({}) },
+    { id: 'link-note', label: 'Link note', inputSchema: schema, run: () => ({}) },
+    { id: 'append-to-note', label: 'Append to note', inputSchema: schema, run: () => ({}) },
+  ]);
+
+  const searchPlan = registry.findForText('search notes for reading list');
+  assert.equal(searchPlan.steps[0].actionId, 'search-notes');
+  assert.equal(searchPlan.steps[0].args.query, 'reading list');
+
+  const quotedCreatePlan = registry.findForText('create new note called "AI hope"');
+  assert.equal(quotedCreatePlan.steps[0].actionId, 'new-note');
+  assert.equal(quotedCreatePlan.steps[0].args.title, 'AI hope');
+
+  const typoCreatePlan = registry.findForText('create new not called AI hope');
+  assert.equal(typoCreatePlan.steps[0].actionId, 'new-note');
+  assert.equal(typoCreatePlan.steps[0].args.title, 'AI hope');
+
+  const ampersandTitlePlan = registry.findForText('create a note called Research and Development');
+  assert.equal(ampersandTitlePlan.steps[0].actionId, 'new-note');
+  assert.equal(ampersandTitlePlan.steps[0].args.title, 'Research and Development');
+
+  const todoPlan = registry.findForText('add todo to this note call the publisher');
+  assert.equal(todoPlan.steps[0].actionId, 'add-todo-to-note');
+  assert.equal(todoPlan.steps[0].args.text, 'call the publisher');
+
+  const reminderPlan = registry.findForText('remind me to renew the license tomorrow');
+  assert.equal(reminderPlan.steps[0].actionId, 'add-reminder-to-note');
+  assert.equal(reminderPlan.steps[0].args.text, 'renew the license tomorrow');
+
+  const linkPlan = registry.findForText('link this note to Reading List');
+  assert.equal(linkPlan.steps[0].actionId, 'link-note');
+  assert.equal(linkPlan.steps[0].args.targetTitle, 'Reading List');
+
+  const quotedLinkPlan = registry.findForText('link this note to "AI hope"');
+  assert.equal(quotedLinkPlan.steps[0].actionId, 'link-note');
+  assert.equal(quotedLinkPlan.steps[0].args.targetTitle, 'AI hope');
+
+  const appendPlan = registry.findForText('append reviewed by AI to this note');
+  assert.equal(appendPlan.steps[0].actionId, 'append-to-note');
+  assert.equal(appendPlan.steps[0].args.content, 'reviewed by AI');
+});
+
+test('App Action AI descriptions omit dynamic note, vault, and canvas commands', () => {
+  const registry = appActions.createRegistry([
+    { id: 'settings', label: 'Open settings', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
+    { id: 'note-n1', label: 'Welcome', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
+    { id: 'vault-v1', label: 'Switch vault', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
+    { id: 'canvas-c1', label: 'Canvas', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
+  ]);
+  const names = registry.describeForAi().map(item => item.name);
+  assert.deepEqual(names, ['settings']);
+});
+
+test('AI execution runtime routes safely and validates planner tool calls', () => {
+  const registry = appActions.createRegistry([
+    {
+      id: 'settings',
+      label: 'Open settings',
+      inputSchema: { type: 'object', additionalProperties: false },
+      run: () => ({}),
+      examples: ['open settings'],
+    },
+    {
+      id: 'tag-note',
+      label: 'Tag note',
+      inputSchema: {
+        type: 'object',
+        properties: { tag: { type: 'string' } },
+        required: ['tag'],
+        additionalProperties: false,
+      },
+      run: () => ({}),
+    },
+  ]);
+
+  assert.equal(aiRuntime.routeRequest({ query: 'fix it', appRegistry: registry }).type, 'clarify');
+  assert.equal(aiRuntime.routeRequest({ query: 'can you summarize all my notes', appRegistry: registry }).type, 'notes');
+  assert.equal(aiRuntime.routeRequest({ query: 'open settings', appRegistry: registry }).type, 'app_action');
+  assert.equal(aiRuntime.routeRequest({ query: 'find notes about reading', appRegistry: registry }).type, 'app_action');
+
+  const traceItem = aiRuntime.recordTrace(aiRuntime.makeRun({ runId: 'r1' }), 'tool.run', { actionId: 'tag-note' });
+  assert.match(traceItem.label, /Running tag-note/);
+
+  const toolShape = registry.describeForAi().find(item => item.name === 'tag-note');
+  assert.equal(toolShape.title, 'Tag note');
+  assert.equal(toolShape.inputSchema.properties.tag.type, 'string');
+  assert.equal(toolShape.input_schema.properties.tag.type, 'string');
+
+  const planned = aiRuntime.plannerOutputToPlan({
+    registry,
+    answer: JSON.stringify({
+      intent: 'tag-current-note',
+      mode: 'app_action',
+      confidence: 'high',
+      plan: [{ tool: 'tag-note', args: { tag: 'reading' }, reason: 'Apply requested tag' }],
+    }),
+  });
+  assert.equal(planned.kind, 'plan');
+  assert.equal(planned.plan.steps[0].actionId, 'tag-note');
+  assert.equal(planned.plan.steps[0].args.tag, 'reading');
+
+  const toolPlanned = aiRuntime.toolPlanResultToPlan({
+    registry,
+    result: {
+      ok: true,
+      native: true,
+      toolCalls: [{ name: 'tag-note', args: { tag: 'todos' }, reason: 'Apply the requested tag' }],
+    },
+  });
+  assert.equal(toolPlanned.kind, 'plan');
+  assert.equal(toolPlanned.plan.source, 'provider-tools');
+  assert.equal(toolPlanned.plan.steps[0].actionId, 'tag-note');
+  assert.equal(toolPlanned.plan.steps[0].args.tag, 'todos');
+
+  const rejected = aiRuntime.plannerOutputToPlan({
+    registry,
+    answer: JSON.stringify({
+      intent: 'bad',
+      mode: 'app_action',
+      confidence: 'high',
+      plan: [{ tool: 'shell', args: { cmd: 'rm -rf .' } }],
+    }),
+  });
+  assert.equal(rejected.kind, 'invalid');
+  assert.match(rejected.message, /Unknown app action/);
+});
+
+test('AI runtime builds local vault summaries without model calls', () => {
+  const result = aiRuntime.buildFastVaultSummary([
+    {
+      id: 'n1',
+      title: 'Project plan',
+      tags: ['work', 'reading'],
+      body: '# Goals\n- [ ] Finish the app AI runtime\nDecision: keep actions validated.',
+      modifiedAt: '2026-05-12T01:00:00.000Z',
+    },
+    {
+      id: 'n2',
+      title: 'Book notes',
+      tags: ['reading'],
+      body: 'Useful note about retrieval and summaries.',
+      modifiedAt: '2026-05-11T01:00:00.000Z',
+    },
+  ]);
+  assert.equal(result.mode, 'local-vault-summary');
+  assert.match(result.answer, /Notes reviewed: 2/);
+  assert.match(result.answer, /\[\[Project plan\]\]/);
+  assert.match(result.answer, /#reading \(2\)/);
+  assert.match(result.answer, /Finish the app AI runtime/);
+  assert.equal(result.sources.length, 2);
+});

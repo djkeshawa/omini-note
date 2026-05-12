@@ -4,14 +4,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ops = require('../src/editorOps.js');
-const tableOps = require('../src/tableOps.js');
-const appHelpers = require('../src/appHelpers.js');
-const appNovelist = require('../src/appNovelist.js');
-const appMutations = require('../src/appMutations.js');
-const appCanvasActions = require('../src/appCanvasActions.js');
-const panelHelpers = require('../src/panelHelpers.js');
-const aiActions = require('../src/aiActions.js');
+const ops = require('../src/editor/editorOps.js');
+const tableOps = require('../src/editor/tableOps.js');
+const appHelpers = require('../src/app/appHelpers.js');
+const appNovelist = require('../src/app/appNovelist.js');
+const appMutations = require('../src/app/appMutations.js');
+const appCanvasActions = require('../src/app/appCanvasActions.js');
+const panelHelpers = require('../src/panels/panelHelpers.js');
+const aiActions = require('../src/ai/aiActions.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
 test('App helpers expand templates, rank commands, and decorate search results', () => {
@@ -41,11 +41,39 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
     type: 'action',
     action: { type: 'create-note', title: 'Launch checklist' },
   });
+  assert.deepEqual(aiActions.classifyPrompt('create new not called AI hope'), {
+    type: 'action',
+    action: { type: 'create-note', title: 'AI hope' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('create a page called AI hope and summarise all notes'), {
+    type: 'action',
+    action: {
+      type: 'action-plan',
+      title: 'AI hope',
+      confidence: 'high',
+      source: 'direct-router',
+      steps: [
+        {
+          type: 'notes-answer',
+          purpose: 'summary',
+          prompt: 'create a page called AI hope and summarise all notes\n\nReturn a concise markdown note body only. Focus on the notes, decisions, tasks, dates, and named references that matter.',
+        },
+        {
+          type: 'create-note',
+          title: 'AI hope',
+          bodyFrom: 'previous-answer',
+          tags: [],
+        },
+      ],
+    },
+  });
   assert.deepEqual(aiActions.classifyPrompt('summarize all my notes and create a new one and tag it under reading'), {
     type: 'action',
     action: {
       type: 'action-plan',
       title: 'Notes summary',
+      confidence: 'high',
+      source: 'direct-router',
       steps: [
         {
           type: 'notes-answer',
@@ -67,6 +95,8 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
     action: {
       type: 'action-plan',
       title: 'Launch checklist',
+      confidence: 'high',
+      source: 'direct-router',
       steps: [
         {
           type: 'create-note',
@@ -81,6 +111,9 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
   assert.deepEqual(aiActions.classifyPrompt('summarize this page'), {
     type: 'action',
     action: { type: 'edit-current', action: 'summarize' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('can you summarise all my notes'), {
+    type: 'notes',
   });
   assert.deepEqual(aiActions.classifyPrompt('tag this for reading'), {
     type: 'action',
@@ -106,6 +139,29 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
   assert.equal(aiActions.classifyPrompt('find my Python notes').type, 'notes');
   assert.equal(aiActions.classifyPrompt('list notes tagged bash').type, 'notes');
   assert.equal(aiActions.detectAction('tag it under reading'), null);
+  assert.deepEqual(aiActions.classifyPrompt('summarise all my notes and create a new one to add that. then tag it under reading'), {
+    type: 'action',
+    action: {
+      type: 'action-plan',
+      title: 'Notes summary',
+      confidence: 'high',
+      source: 'direct-router',
+      steps: [
+        {
+          type: 'notes-answer',
+          purpose: 'summary',
+          prompt: 'summarise all my notes and create a new one to add that. then tag it under reading\n\nReturn a concise markdown note body only. Focus on the notes, decisions, tasks, dates, and named references that matter.',
+        },
+        {
+          type: 'create-note',
+          title: 'Notes summary',
+          bodyFrom: 'previous-answer',
+          tags: ['reading'],
+        },
+        { type: 'tag-created-note', tag: 'reading' },
+      ],
+    },
+  });
   assert.equal(aiActions.classifyPrompt('run a shell command to inspect files').action.type, 'high-risk-disabled');
 });
 
@@ -399,8 +455,8 @@ test('Novelist order and note-level status properties drive visible workflow', (
     'act:: [[Arc 1]]\n## Acts'
   );
 
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   assert.doesNotMatch(panels, /## Chapters\\n- '\s*}/);
   assert.doesNotMatch(panels, /## Scenes\\n- '\s*}/);
   assert.doesNotMatch(panels, /body: '# (Story Root|Act|Chapter|Scene|Character|Location|Plot Thread|Research|Revision Note)/);
@@ -411,8 +467,8 @@ test('Novelist order and note-level status properties drive visible workflow', (
   assert.match(editor, /\+ property/);
   assert.match(editor, /removeMetadataProperty/);
   assert.doesNotMatch(editor, /borderTop: `1px solid \$\{T\.lineSub\}`,[\s\S]*borderBottom: `1px solid \$\{T\.lineSub\}`/);
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   assert.match(outliner, /id: 'block-label'/);
   assert.match(outliner, /blockLabelAction/);
   assert.match(outliner, /Marker: \$\{state\.id\}/);

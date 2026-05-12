@@ -80,8 +80,12 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
     });
 
     if (style === 'timeline' && ns.length) {
-      const dates = ns.map(n => n.date);
-      const minD = Math.min(...dates), maxD = Math.max(...dates);
+      let minD = Infinity;
+      let maxD = -Infinity;
+      for (const n of ns) {
+        if (n.date < minD) minD = n.date;
+        if (n.date > maxD) maxD = n.date;
+      }
       ns.forEach(n => {
         n.x = 70 + ((n.date - minD) / (maxD - minD || 1)) * (W - 140);
         n.y = H / 2 + (Math.random() - 0.5) * 90;

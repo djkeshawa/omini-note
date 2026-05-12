@@ -4,23 +4,24 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ops = require('../src/editorOps.js');
-const tableOps = require('../src/tableOps.js');
-const appHelpers = require('../src/appHelpers.js');
-const appNovelist = require('../src/appNovelist.js');
-const appMutations = require('../src/appMutations.js');
-const appCanvasActions = require('../src/appCanvasActions.js');
-const panelHelpers = require('../src/panelHelpers.js');
+const ops = require('../src/editor/editorOps.js');
+const tableOps = require('../src/editor/tableOps.js');
+const appHelpers = require('../src/app/appHelpers.js');
+const appNovelist = require('../src/app/appNovelist.js');
+const appMutations = require('../src/app/appMutations.js');
+const appCanvasActions = require('../src/app/appCanvasActions.js');
+const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
 test('Canvas editor supports expected drawing, color, clipboard, and delete interactions', () => {
-  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
+  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas/canvas.jsx'), 'utf8');
+  const canvasModel = fs.readFileSync(path.join(__dirname, '../src/canvas/canvasModel.js'), 'utf8');
 
-  assert.match(canvas, /id: 'pen'/);
-  assert.match(canvas, /id: 'arrow'/);
-  assert.match(canvas, /id: 'diamond'/);
-  assert.match(canvas, /id: 'triangle'/);
-  assert.match(canvas, /id: 'eraser'/);
+  assert.match(canvasModel, /id: 'pen'/);
+  assert.match(canvasModel, /id: 'arrow'/);
+  assert.match(canvasModel, /id: 'diamond'/);
+  assert.match(canvasModel, /id: 'triangle'/);
+  assert.match(canvasModel, /id: 'eraser'/);
   assert.match(canvas, /function MnCanvasToolIcon/);
   assert.match(canvas, /aria-label=\{tool\.label\}/);
   assert.match(canvas, /mnCanvasIconToolButton/);
@@ -53,8 +54,8 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvas, /saveTitle\(\); onBack && onBack\(\)/);
   assert.doesNotMatch(canvas, /if \(action\.mode === 'create'\) setTool\('select'\)/);
   assert.match(canvas, /const \[selectedIds, setSelectedIds\]/);
-  assert.match(canvas, /function mnCanvasSelectionBounds/);
-  assert.match(canvas, /function mnCanvasMoveElement/);
+  assert.match(canvasModel, /function mnCanvasSelectionBounds/);
+  assert.match(canvasModel, /function mnCanvasMoveElement/);
   assert.match(canvas, /const undoCanvas = \(\) =>/);
   assert.match(canvas, /const redoCanvas = \(\) =>/);
   assert.match(canvas, /isMod && key === 'z'/);
@@ -77,13 +78,13 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvas, /e\.button === 0 && tool !== 'select'/);
   assert.match(canvas, /beginCreate\(e, toCanvasPoint\(e\)\)/);
 
-  const canvasActions = fs.readFileSync(path.join(__dirname, '../src/appCanvasActions.js'), 'utf8');
+  const canvasActions = fs.readFileSync(path.join(__dirname, '../src/app/appCanvasActions.js'), 'utf8');
   assert.match(canvasActions, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
 });
 
 test('Note delete confirmation uses themed in-app dialog', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/appShell.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
 
   assert.match(appShell, /function MnDeleteNoteDialog/);
   assert.match(appShell, /className="mn-delete-note-dialog"/);
@@ -98,8 +99,8 @@ test('Note delete confirmation uses themed in-app dialog', () => {
 
 test('Launch screen uses VispNote logo with pastel blooming light design', () => {
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/appShell.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
   const loadingLogo = fs.statSync(path.join(__dirname, '../assets/vispnote-loading-transparent.png'));
   const appIcon = fs.statSync(path.join(__dirname, '../assets/vispnote-icon.png'));
 
@@ -163,14 +164,16 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
 });
 
 test('App and editor font size settings use stepper controls', () => {
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const settingsControls = fs.readFileSync(path.join(__dirname, '../src/settings/settingsControls.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
-  assert.match(settings, /function FontSizeStepper/);
+  assert.match(settingsControls, /function FontSizeStepper/);
   assert.match(settings, /label="App font size"/);
   assert.match(settings, /label="Font size"/);
-  assert.match(app, /"appFontSize": "default"/);
+  assert.match(appRuntime, /"appFontSize": "default"/);
   assert.match(app, /--mn-app-font-size/);
   assert.match(app, /width: '100vw'/);
   assert.match(app, /height: '100vh'/);

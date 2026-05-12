@@ -19,7 +19,7 @@ The project is designed around a simple rule: your notes should stay usable as p
 
 - Electron
 - React
-- Babel standalone for renderer JSX loading
+- esbuild-bundled React renderer
 - SQLite via `better-sqlite3`
 - `sqlite-vec` for vector indexing support
 - Ollama integration for optional local AI
@@ -75,21 +75,14 @@ VISPNOTE_HOME=/tmp/vispnote-regression npm run regression:renderer
 │   ├── ollama.js            # Ollama client helpers
 │   └── seed.js              # First-run seed vaults
 ├── src/
-│   ├── app.jsx              # App shell and state orchestration
-│   ├── editor.jsx           # Note editor pane
-│   ├── outliner.jsx         # Block editor UI
-│   ├── editorOps.js         # Pure editor operations
-│   ├── outline.jsx          # Block model and markdown conversion
-│   ├── sidebar.jsx          # Vault/tag/navigation sidebar
-│   ├── notelist.jsx         # Note list pane
-│   ├── graph.jsx            # Knowledge graph view
-│   ├── panels.jsx           # Todos, today, workflow panels
-│   ├── settings.jsx         # Settings modal
-│   ├── blockFeatures.jsx    # Block menu, refs, embeds, and workflow helpers
-│   ├── ai.jsx               # Ask AI modal
-│   ├── markdown.jsx         # Inline markdown rendering
-│   ├── theme.jsx            # Design tokens
-│   └── data.jsx             # Browser fallback seed data
+│   ├── main.jsx             # Renderer bootstrap and import order
+│   ├── app/                 # App shell, mutations, canvas actions, App API registry
+│   ├── ai/                  # Ask AI UI and AI action planning helpers
+│   ├── editor/              # Note editor, outliner, markdown model, editor operations
+│   ├── panels/              # Sidebar, note list, graph, todos, today, workflow panels
+│   ├── canvas/              # Canvas dashboard view
+│   ├── settings/            # Settings modal
+│   └── shared/              # Theme, markdown rendering, plugins, storage utilities
 ├── tests/
 │   └── editor-ops.test.js   # Regression tests for editor behavior
 └── scripts/

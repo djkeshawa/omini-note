@@ -19,6 +19,10 @@ const MN_ASK_SUGGESTIONS = [
   'Format this page and link things together',
 ];
 
+const MN_AI_PLANNER_TIMEOUT_MS = 8000;
+const MN_AI_CHAT_TIMEOUT_MS = 45000;
+const MN_AI_NOTES_TIMEOUT_MS = 90000;
+
 const MN_AI_REPORT_TARGETS = {
   openai: {
     label: 'OpenAI',
@@ -107,6 +111,107 @@ function mnNormalizeAskMessages(messages = []) {
   return (messages || []).map(m => m?.id ? m : { ...(m || {}), id: mnAskMessageId(m?.role || 'message') });
 }
 
+function mnAskMessageThreadText(message = {}) {
+  const text = String(message.text || message.content || '').trim();
+  const sources = Array.isArray(message.sources) ? message.sources : [];
+  const sourceText = sources.slice(0, 5)
+    .map(source => {
+      const title = String(source?.title || source?.id || '').trim();
+      const snippet = String(source?.snippet || '').trim();
+      return title ? `- ${title}${snippet ? `: ${snippet}` : ''}` : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+  return [
+    text,
+    sourceText ? `Referenced notes:\n${sourceText}` : '',
+  ].filter(Boolean).join('\n\n').slice(0, 4000);
+}
+
+function mnBuildAskThreadMessages(priorMessages = [], currentQuery = '', options = {}) {
+  const limit = Math.max(1, Math.min(Number(options.limit) || 8, 12));
+  const history = (priorMessages || [])
+    .filter(message => message && (message.role === 'user' || message.role === 'assistant'))
+    .map(message => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: mnAskMessageThreadText(message),
+    }))
+    .filter(message => message.content)
+    .slice(-limit);
+  const query = String(currentQuery || '').trim();
+  return query ? [...history, { role: 'user', content: query }] : history;
+}
+
+function mnBuildAskThreadPrompt(priorMessages = [], currentQuery = '') {
+  const history = mnBuildAskThreadMessages(priorMessages, '', { limit: 6 });
+  const query = String(currentQuery || '').trim();
+  if (!history.length) return query;
+  return [
+    'Conversation so far:',
+    ...history.map(message => `${message.role}: ${message.content}`),
+    '',
+    `Current question: ${query}`,
+  ].join('\n');
+}
+
+function mnRecentAskThreadNote(priorMessages = []) {
+  for (const message of [...(priorMessages || [])].reverse()) {
+    const source = (message.sources || []).find(item => item?.id && item?.title);
+    if (source) {
+      return {
+        id: source.id,
+        title: source.title,
+        snippet: source.snippet || '',
+      };
+    }
+  }
+  return null;
+}
+
+function mnLastAskMessage(priorMessages = [], role = '') {
+  return [...(priorMessages || [])].reverse().find(message => message?.role === role) || null;
+}
+
+function mnLooksLikeNoteEditRequest(text) {
+  return /\b(add|append|include|insert|write|draft|create|make|format|rewrite|improve|summari[sz]e|compare|comparison|table|list|bullet|update)\b/i.test(String(text || ''));
+}
+
+function mnMentionsThreadNote(text) {
+  return /\b(above|that|same|previous|created|new|current|this|it)\s+(note|page)\b/i.test(String(text || '')) ||
+    /\b(to|in|into|for)\s+(the\s+)?(above|that|same|previous|created|new|current|this)\b/i.test(String(text || ''));
+}
+
+function mnAssistantAskedForActionDetail(message = {}) {
+  const text = String(message.text || message.content || '').toLowerCase();
+  return !!message.clarify ||
+    /\bplease provide\b/.test(text) ||
+    /\bspecific (differences|details|points|formatting)\b/.test(text) ||
+    /\bformatting preferences\b/.test(text);
+}
+
+function mnBuildContextualActionQuery(priorMessages = [], currentQuery = '') {
+  const query = String(currentQuery || '').trim();
+  if (!query) return query;
+  const note = mnRecentAskThreadNote(priorMessages);
+  if (!note) return query;
+
+  const previousUser = mnLastAskMessage(priorMessages, 'user');
+  const previousAssistant = mnLastAskMessage(priorMessages, 'assistant');
+  const previousUserText = String(previousUser?.text || previousUser?.content || '').trim();
+  const previousWasNoteEdit = mnLooksLikeNoteEditRequest(previousUserText) && mnMentionsThreadNote(previousUserText);
+  const currentIsNoteEdit = mnLooksLikeNoteEditRequest(query) && mnMentionsThreadNote(query);
+  const currentLooksLikeDetail = !mnMentionsThreadNote(query) &&
+    /\b(table|markdown|format|formatting|bullet|list|nice|comparison|compare|difference|different|details?)\b/i.test(query);
+
+  if (currentIsNoteEdit) {
+    return `${query}\n\nTarget note from this chat: "${note.title}" (${note.id}).`;
+  }
+  if (previousWasNoteEdit && mnAssistantAskedForActionDetail(previousAssistant) && currentLooksLikeDetail) {
+    return `${previousUserText}\n\nAdditional detail from the user: ${query}\n\nTarget note from this chat: "${note.title}" (${note.id}).`;
+  }
+  return query;
+}
+
 function mnAskStatusText(status) {
   if (!status) return 'Checking local AI';
   if (!status.reachable) return 'Setup needed';
@@ -130,6 +235,8 @@ function MnAskAI({
   });
   const inputRef = useRefAI(null);
   const scrollRef = useRefAI(null);
+  const scrollBottomRef = useRefAI(null);
+  const shouldAutoScrollRef = useRefAI(true);
   const backgroundRef = useRefAI(false);
   const stoppedJobRef = useRefAI(null);
 
@@ -142,6 +249,7 @@ function MnAskAI({
     });
   };
   const messages = aiSession.messages || [];
+  const aiRuntime = window.MN_AI_RUNTIME || {};
 
   useEffectAI(() => {
     if ((aiSession.messages || []).some(m => !m?.id)) {
@@ -154,6 +262,13 @@ function MnAskAI({
   const latestResponseIndex = messages.reduce((found, message, index) => (
     message.role === 'assistant' && !message.error && !message.stopped ? index : found
   ), -1);
+  const scrollVersion = messages.map(message => [
+    message.id || '',
+    String(message.text || '').length,
+    message.streaming ? 'streaming' : '',
+    message.sources?.length || 0,
+    message.review ? 'review' : '',
+  ].join(':')).join('|');
 
   useEffectAI(() => {
     inputRef.current?.focus();
@@ -171,16 +286,21 @@ function MnAskAI({
   useEffectAI(() => {
     const scrollNode = scrollRef.current;
     if (!scrollNode) return;
+    const shouldScroll = pending || shouldAutoScrollRef.current || messages.length <= 1;
     const handle = requestAnimationFrame(() => {
-      const target = pending
-        ? scrollNode.querySelector('[data-mn-pending-response="true"]')
-        : scrollNode.querySelector('[data-mn-latest-response="true"]');
-      scrollNode.scrollTop = target
-        ? Math.max(0, target.offsetTop - scrollNode.offsetTop - 12)
-        : 0;
+      if (!shouldScroll) return;
+      scrollBottomRef.current?.scrollIntoView?.({ block: 'end' });
+      scrollNode.scrollTop = scrollNode.scrollHeight;
     });
     return () => cancelAnimationFrame(handle);
-  }, [messages.length, pending]);
+  }, [scrollVersion, pending, activeAction]);
+
+  const rememberScrollPosition = () => {
+    const scrollNode = scrollRef.current;
+    if (!scrollNode) return;
+    const distanceFromBottom = scrollNode.scrollHeight - scrollNode.scrollTop - scrollNode.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 160;
+  };
 
   const setActiveAction = (label) => {
     updateSession(prev => ({ ...(prev || {}), activeAction: label }));
@@ -198,6 +318,141 @@ function MnAskAI({
     return (window.MN_AI_ACTIONS?.classifyPrompt || (() => ({ type: 'notes' })))(q);
   };
 
+  const isClearlyNoteQuestion = (q) => {
+    const text = String(q || '').trim().toLowerCase();
+    if (!text) return false;
+    if (/\b(summari[sz]e|summary|explain|find|search|list|show|what|who|when|where|why|how)\b/.test(text) &&
+        /\b(my|all|this|current|latest|recent|vault|notes?|pages?|tasks?|todos?|tags?|links?|backlinks?)\b/.test(text)) {
+      return true;
+    }
+    return /^(can you|could you|please)?\s*(summari[sz]e|explain|tell me|what|who|when|where|why|how)\b/.test(text) &&
+      /\bnotes?|vault|page|tasks?|todos?\b/.test(text);
+  };
+
+  const initialAppPlan = (q) => {
+    const text = String(q || '').trim();
+    if (isClearlyNoteQuestion(text) && !/\b(create|make|new|delete|rename|duplicate|tag|untag|archive|restore|import|export|rebuild|backfill|refresh|open settings|go to settings)\b/i.test(text)) {
+      return null;
+    }
+    if (/^(what|who|when|where|why|how|which|summari[sz]e|explain|tell me)\b/i.test(text) &&
+        !/\b(create|make|new|open|show|go to|delete|rename|duplicate|tag|untag|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|canvas|todos?)\b/i.test(text)) {
+      return null;
+    }
+    if (!window.MN_APP_ACTIONS?.findForText) return null;
+    try { return window.MN_APP_ACTIONS.findForText(q); } catch (e) { return null; }
+  };
+
+  const shouldUseModelPlanner = (plan, q) => {
+    if (window.mn?.ai?.toolPlan) return true;
+    if (!plan) return true;
+    if (plan.confidence === 'high' && plan.source === 'direct-router') return false;
+    if (isClearlyNoteQuestion(q)) return false;
+    const text = String(q || '').toLowerCase();
+    if (/\b(open|show|go to|settings|graph|todos?|tasks?|canvas|tag|untag|rename|duplicate|delete|archive|restore|import|export|rebuild|backfill|refresh)\b/.test(text)) {
+      return plan.confidence !== 'high';
+    }
+    return false;
+  };
+
+  const planAppActionsWithModel = async (q, fallbackPlan, jobId, run, priorMessages = []) => {
+    const registry = window.MN_APP_ACTIONS;
+    if (!registry?.describeForAi || !registry?.validate || !window.mn?.ai?.toolPlan) return fallbackPlan;
+    const functions = registry.describeForAi()
+      .slice(0, 100);
+    if (!functions.length) return fallbackPlan;
+    const isInspectionStep = (step) => ['search-notes', 'read-note'].includes(step?.actionId);
+    const isPureInspectionRequest = (text) => {
+      const lower = String(text || '').toLowerCase();
+      return /\b(search|find|read|show|list)\b/.test(lower) &&
+        !/\b(create|make|new|delete|rename|duplicate|tag|untag|label|mark|move|set|change|update|archive|restore|add|append|todo|task|remind|reminder|link|wikilink)\b/.test(lower);
+    };
+    const toolMessages = mnBuildAskThreadMessages(priorMessages, q, { limit: 8 });
+    const appendToolResults = (results) => {
+      toolMessages.push({
+        role: 'assistant',
+        content: `Tool results:\n${JSON.stringify(results, null, 2).slice(0, 12000)}`,
+      });
+      toolMessages.push({
+        role: 'user',
+        content: 'Use those tool results to choose the next VispNote tool call. If the requested action is now clear, call the write/navigation tool. If it is still ambiguous, ask for clarification.',
+      });
+    };
+    const executeReadSteps = async (steps) => {
+      const out = [];
+      for (const step of steps.slice(0, 4)) {
+        const args = registry.validate(step.actionId, step.args || {});
+        const result = await registry.run(step.actionId, args, {});
+        out.push({
+          tool: step.actionId,
+          args,
+          ok: result?.ok !== false,
+          message: result?.message || '',
+          structuredContent: {
+            results: result?.results || undefined,
+            note: result?.note || undefined,
+            affected: result?.affected || [],
+          },
+        });
+      }
+      return out;
+    };
+    const askPlanner = async (feedback = '') => {
+      setActiveAction('Planning app actions...');
+      aiRuntime.recordTrace?.(run, 'planner.request', { feedback: !!feedback, tools: functions.length });
+      const messages = feedback
+        ? [...toolMessages, { role: 'user', content: `Previous invalid tool plan feedback: ${feedback}` }]
+        : toolMessages;
+      return await window.mn.ai.toolPlan({
+        jobId,
+        timeoutMs: MN_AI_PLANNER_TIMEOUT_MS,
+        maxTokens: 700,
+        tools: functions,
+        messages,
+      });
+    };
+    const parsePlan = (answer) => {
+      if (aiRuntime.toolPlanResultToPlan) {
+        const planned = aiRuntime.toolPlanResultToPlan({ result: answer, registry, fallbackPlan });
+        if (planned.kind === 'plan') return planned.plan;
+        if (planned.kind === 'clarify') return { type: 'clarify', message: planned.message };
+        throw new Error(planned.message || 'Planner output did not validate.');
+      }
+      return fallbackPlan;
+    };
+    try {
+      for (let round = 0; round < 3; round++) {
+        const r = await askPlanner();
+        if (!r.ok || (r.value && r.value.ok === false)) return fallbackPlan;
+        const plan = parsePlan(r.value || r);
+        aiRuntime.recordTrace?.(run, 'planner.result', { source: plan?.source || 'fallback', confidence: plan?.confidence || '', round: round + 1 });
+        if (plan?.type === 'clarify') return plan;
+        const inspectionSteps = (plan?.steps || []).filter(isInspectionStep);
+        const onlyInspectionSteps = inspectionSteps.length > 0 && inspectionSteps.length === (plan?.steps || []).length;
+        if (onlyInspectionSteps && isPureInspectionRequest(q)) return plan;
+        if (inspectionSteps.length && round < 2) {
+          const results = await executeReadSteps(inspectionSteps);
+          aiRuntime.recordTrace?.(run, 'tool.done', { actionId: inspectionSteps.map(step => step.actionId).join(','), actionLabel: 'read tools', affected: results.length });
+          appendToolResults(results);
+          continue;
+        }
+        return plan;
+      }
+      return fallbackPlan;
+    } catch (e) {
+      try {
+        const feedback = e.message || 'Planner output did not validate against registered actions.';
+        const r = await askPlanner(feedback);
+        if (!r.ok || (r.value && r.value.ok === false)) return fallbackPlan;
+        const plan = parsePlan(r.value || r);
+        aiRuntime.recordTrace?.(run, 'planner.repaired', { source: plan?.source || 'fallback', confidence: plan?.confidence || '' });
+        return plan;
+      } catch (e2) {
+        aiRuntime.recordTrace?.(run, 'planner.failed', { error: e2.message || String(e2) });
+        return fallbackPlan;
+      }
+    }
+  };
+
   const askEdit = async ({ text, instruction, scope, jobId }) => {
     if (!window.mn?.ai?.edit) throw new Error('AI editing is not available');
     const r = await window.mn.ai.edit({ text, instruction, scope, jobId });
@@ -208,13 +463,27 @@ function MnAskAI({
 
   const askNotes = async ({ prompt, jobId }) => {
     if (!window.mn?.ai?.ask) throw new Error('AI notes search is not available');
-    const r = await window.mn.ai.ask(vaultId, prompt, { jobId, currentNoteId: currentNote?.id || null });
+    const r = await window.mn.ai.ask(vaultId, prompt, { jobId, currentNoteId: currentNote?.id || null, timeoutMs: MN_AI_NOTES_TIMEOUT_MS });
     if (!r.ok) throw new Error(r.error || 'AI action failed');
     if (r.value && !r.value.ok) throw new Error(r.value.error || 'AI action failed');
     return {
       answer: String(r.value?.answer || '').trim(),
       sources: r.value?.sources || [],
     };
+  };
+
+  const askVaultSummary = async ({ prompt, jobId }) => {
+    if (window.mn?.ai?.summarizeVault) {
+      setActiveAction('Summarizing notes in batches...');
+      const r = await window.mn.ai.summarizeVault(vaultId, prompt, { jobId, currentNoteId: currentNote?.id || null, timeoutMs: MN_AI_NOTES_TIMEOUT_MS });
+      if (!r.ok) throw new Error(r.error || 'AI summary failed');
+      if (r.value && !r.value.ok) throw new Error(r.value.error || 'AI summary failed');
+      return {
+        answer: String(r.value?.answer || '').trim(),
+        sources: r.value?.sources || [],
+      };
+    }
+    return askNotes({ prompt, jobId });
   };
 
   const runActionPlan = async (q, plan, jobId) => {
@@ -232,7 +501,9 @@ function MnAskAI({
       if (!step || !step.type) continue;
       if (step.type === 'notes-answer') {
         setActiveAction(step.purpose === 'summary' ? 'Summarizing notes...' : 'Researching notes...');
-        const result = await askNotes({ prompt: step.prompt || q, jobId });
+        const result = step.purpose === 'summary'
+          ? await askVaultSummary({ prompt: step.prompt || q, jobId })
+          : await askNotes({ prompt: step.prompt || q, jobId });
         previousAnswer = result.answer;
         result.sources.forEach(source => {
           if (source?.id && !sources.some(item => item.id === source.id)) sources.push(source);
@@ -278,6 +549,141 @@ function MnAskAI({
       ],
       action: true,
     };
+  };
+
+  const runAppActionPlan = async (q, plan, jobId, run) => {
+    const registry = window.MN_APP_ACTIONS;
+    if (!registry?.run) throw new Error('App actions are not available');
+    if (!Array.isArray(plan?.steps) || !plan.steps.length) throw new Error('No app action steps found');
+    const completed = [];
+    const sources = [];
+    let lastNote = null;
+    const noteFollowupActions = new Set(['append-to-note', 'add-todo-to-note', 'add-reminder-to-note', 'link-note', 'tag-note', 'untag-note', 'set-workflow-status']);
+    for (const step of plan.steps) {
+      setActiveAction(step.label || 'Running app action...');
+      const args = { ...(step.args || {}) };
+      if (!args.noteId && lastNote && noteFollowupActions.has(step.actionId)) {
+        args.noteId = lastNote.id;
+      }
+      aiRuntime.recordTrace?.(run, 'tool.preview', { actionId: step.actionId, actionLabel: step.label || step.actionId, risk: step.risk || '' });
+      if (step.actionId === 'new-note' && !String(args.body || '').trim()) {
+        setActiveAction('Drafting page...');
+        args.body = await askEdit({
+          scope: 'new page',
+          instruction: 'Create a useful markdown note body for this request. Return only the body; do not include a title heading unless it adds value.',
+          text: q,
+          jobId,
+        });
+      }
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: step.actionId, actionLabel: step.label || step.actionId, args });
+      const result = await registry.run(step.actionId, args, {});
+      run?.toolCalls?.push?.({ actionId: step.actionId, args, ok: result?.ok !== false, requiresConfirmation: !!result?.requiresConfirmation });
+      if (result.requiresConfirmation) {
+        return {
+          answer: result.preview?.message || result.message || 'Review this action before it runs.',
+          action: true,
+          review: aiRuntime.makeReview
+            ? aiRuntime.makeReview({ query: q, plan, result })
+            : {
+                query: q,
+                title: result.preview?.title || result.title || 'Review action',
+                message: result.preview?.message || result.message || '',
+                risk: result.risk,
+                steps: plan.steps,
+                preview: result.preview,
+              },
+          sources,
+        };
+      }
+      if (result.ok === false) throw new Error(result.message || 'App action failed');
+      aiRuntime.recordTrace?.(run, 'tool.done', { actionId: step.actionId, actionLabel: step.label || step.actionId, affected: result.affected?.length || 0 });
+      const noteAffected = (result.affected || []).find(item => item?.type === 'note' && item.id);
+      if (noteAffected) lastNote = { id: noteAffected.id, title: noteAffected.title || noteAffected.id };
+      completed.push(result.message || result.title || step.actionId);
+      (result.affected || []).forEach(item => {
+        if (item?.id && !sources.some(source => source.id === item.id)) {
+          sources.push({ id: item.id, title: item.title || item.id, snippet: item.type || 'App action' });
+        }
+      });
+    }
+    return {
+      answer: completed.length ? completed.join('\n') : 'Done.',
+      sources,
+      action: true,
+    };
+  };
+
+  const confirmReview = async (messageId, review) => {
+    const registry = window.MN_APP_ACTIONS;
+    if (!registry?.run || !review?.steps?.length) return;
+    updateSession(prev => ({
+      ...(prev || {}),
+      messages: (prev?.messages || []).map(m => m.id === messageId ? { ...m, reviewBusy: true } : m),
+    }));
+    try {
+      const completed = [];
+      const sources = [];
+      for (const step of review.steps) {
+        const result = await registry.run(step.actionId, step.args || {}, { confirmed: true });
+        if (result.ok === false) throw new Error(result.message || 'App action failed');
+        completed.push(result.message || result.title || step.actionId);
+        (result.affected || []).forEach(item => {
+          if (item?.id && !sources.some(source => source.id === item.id)) sources.push({ id: item.id, title: item.title || item.id, snippet: item.type || 'App action' });
+        });
+      }
+      updateSession(prev => ({
+        ...(prev || {}),
+        messages: (prev?.messages || []).map(m => m.id === messageId
+          ? { ...m, text: completed.join('\n') || 'Confirmed and completed.', sources, review: null, reviewBusy: false }
+          : m),
+      }));
+    } catch (e) {
+      updateSession(prev => ({
+        ...(prev || {}),
+        messages: (prev?.messages || []).map(m => m.id === messageId
+          ? { ...m, text: e.message || String(e), error: true, review: null, reviewBusy: false }
+          : m),
+      }));
+    }
+  };
+
+  const cancelReview = (messageId) => {
+    updateSession(prev => ({
+      ...(prev || {}),
+      messages: (prev?.messages || []).map(m => m.id === messageId
+        ? { ...m, text: 'Cancelled.', review: null, reviewBusy: false, stopped: true }
+        : m),
+    }));
+  };
+
+  const editReviewArgs = async (messageId, review) => {
+    const registry = window.MN_APP_ACTIONS;
+    if (!registry?.validate || !review?.steps?.length) return;
+    const currentSteps = review.steps.map(step => ({ actionId: step.actionId, args: step.args || {} }));
+    const raw = window.prompt?.('Edit action arguments as JSON.', JSON.stringify(currentSteps, null, 2));
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      const nextSteps = (Array.isArray(parsed) ? parsed : [parsed]).map((item, index) => {
+        const original = review.steps[index] || review.steps[0];
+        const actionId = String(item.actionId || item.tool || original.actionId || '').trim();
+        const args = registry.validate(actionId, item.args && typeof item.args === 'object' ? item.args : {});
+        return { ...original, actionId, args };
+      });
+      updateSession(prev => ({
+        ...(prev || {}),
+        messages: (prev?.messages || []).map(m => m.id === messageId
+          ? { ...m, review: { ...review, steps: nextSteps, message: 'Review updated. Confirm to run the edited action.' } }
+          : m),
+      }));
+    } catch (e) {
+      updateSession(prev => ({
+        ...(prev || {}),
+        messages: (prev?.messages || []).map(m => m.id === messageId
+          ? { ...m, text: e.message || String(e), error: true, reviewBusy: false }
+          : m),
+      }));
+    }
   };
 
   const runAction = async (q, action, jobId) => {
@@ -338,8 +744,19 @@ function MnAskAI({
     const q = query.trim();
     if (!q || pending) return;
     const jobId = mnAskAiJobId();
-    const route = classifyPrompt(q);
     const priorMessages = messages;
+    const actionQuery = mnBuildContextualActionQuery(priorMessages, q);
+    const route = aiRuntime.routeRequest
+      ? aiRuntime.routeRequest({ query: actionQuery, aiActions: window.MN_AI_ACTIONS, appRegistry: window.MN_APP_ACTIONS })
+      : (() => {
+          const classifiedRoute = classifyPrompt(actionQuery);
+          const appPlan = classifiedRoute.type === 'action' ? null : initialAppPlan(actionQuery);
+          return classifiedRoute.type === 'action'
+            ? classifiedRoute
+            : (appPlan ? { type: 'app-action', plan: appPlan } : classifiedRoute);
+        })();
+    const run = aiRuntime.makeRun ? aiRuntime.makeRun({ runId: jobId, query: q, mode: route.mode || route.type }) : null;
+    aiRuntime.recordTrace?.(run, 'route.selected', { routeType: route.type, mode: route.mode || route.type, hasPlan: !!route.plan, contextual: actionQuery !== q });
     const userMsg = { role: 'user', text: q };
     backgroundRef.current = false;
     stoppedJobRef.current = null;
@@ -348,9 +765,10 @@ function MnAskAI({
       messages: [...(prev?.messages || []), userMsg],
       pending: true,
       error: null,
-      activeAction: route.type === 'notes' ? 'Researching notes...' : route.type === 'chat' ? 'Thinking...' : 'Starting task...',
+      activeAction: route.activeLabel || (route.type === 'notes' ? 'Researching notes...' : route.type === 'chat' ? 'Thinking...' : 'Starting task...'),
       background: false,
       jobId,
+      activeRun: run,
       lastQuery: q,
       completedAt: null,
     }));
@@ -398,52 +816,89 @@ function MnAskAI({
       });
     };
     try {
-      if (route.type === 'action') {
-        const actionResult = await runAction(q, route.action, jobId);
-        if (stoppedJobRef.current === jobId) return;
+      if (route.type === 'clarify') {
+        const actionResult = aiRuntime.makeClarify ? aiRuntime.makeClarify(route.message) : { answer: route.message || 'I need more detail before I can do that.' };
         updateSession(prev => ({
           ...(prev || {}),
-          messages: [...(prev?.messages || []), { role: 'assistant', text: actionResult.answer, sources: actionResult.sources || [], action: true }],
+          messages: [...(prev?.messages || []), { role: 'assistant', text: actionResult.answer, clarify: true, trace: run?.trace || [] }],
+        }));
+        aiRuntime.recordTrace?.(run, 'run.clarify', { message: actionResult.answer });
+      } else if (route.type === 'app_action' || route.type === 'app-action') {
+        putAssistant({ text: '', streaming: true, action: true });
+        const plan = shouldUseModelPlanner(route.plan, actionQuery)
+          ? await planAppActionsWithModel(actionQuery, route.plan, jobId, run, priorMessages)
+          : route.plan;
+        if (plan?.type === 'clarify') {
+          const actionResult = aiRuntime.makeClarify ? aiRuntime.makeClarify(plan.message) : { answer: plan.message, sources: [] };
+          aiRuntime.recordTrace?.(run, 'run.clarify', { message: actionResult.answer });
+          putAssistant({ text: actionResult.answer, streaming: false, clarify: true, trace: run?.trace || [] });
+          return;
+        }
+        if (!plan?.steps?.length) {
+          const actionResult = aiRuntime.makeClarify ? aiRuntime.makeClarify('I need a more specific app command before I can run that.') : { answer: 'I need a more specific app command before I can run that.', sources: [] };
+          aiRuntime.recordTrace?.(run, 'run.clarify', { message: actionResult.answer });
+          putAssistant({ text: actionResult.answer, streaming: false, clarify: true, trace: run?.trace || [] });
+          return;
+        }
+        if (plan?.source === 'direct-router') {
+          setActiveAction('Planned locally...');
+          aiRuntime.recordTrace?.(run, 'planner.direct', { steps: plan.steps.length });
+        }
+        if (plan?.confidence && plan.confidence !== 'high') {
+          const msg = aiRuntime.lowConfidenceMessage ? aiRuntime.lowConfidenceMessage(plan) : 'I could not confidently map that request to an app action.';
+          aiRuntime.recordTrace?.(run, 'run.low_confidence', { confidence: plan.confidence });
+          putAssistant({ text: msg, streaming: false, clarify: true, trace: run?.trace || [] });
+          return;
+        }
+        const actionResult = await runAppActionPlan(actionQuery, plan, jobId, run);
+        if (stoppedJobRef.current === jobId) return;
+        aiRuntime.recordTrace?.(run, actionResult.review ? 'run.review_required' : 'run.completed', { action: true });
+        putAssistant({ text: actionResult.answer, sources: actionResult.sources || [], action: true, review: actionResult.review || null, streaming: false, trace: run?.trace || [] });
+      } else if (route.type === 'legacy_action' || route.type === 'action') {
+        const actionResult = await runAction(actionQuery, route.action, jobId);
+        if (stoppedJobRef.current === jobId) return;
+        aiRuntime.recordTrace?.(run, 'run.completed', { legacyAction: route.action?.type || '' });
+        updateSession(prev => ({
+          ...(prev || {}),
+          messages: [...(prev?.messages || []), { role: 'assistant', text: actionResult.answer, sources: actionResult.sources || [], action: true, trace: run?.trace || [] }],
         }));
       } else if (route.type === 'notes') {
         setActiveAction('Researching notes...');
-        const qForAsk = priorMessages.length
-          ? `Conversation so far:\n${priorMessages.slice(-6).map(m => `${m.role}: ${m.text}`).join('\n')}\n\nCurrent question: ${q}`
-          : q;
+        const qForAsk = mnBuildAskThreadPrompt(priorMessages, q);
         putAssistant({ text: '', streaming: true });
         const askStream = window.mn?.ai?.askStream;
         const r = askStream
-          ? await askStream(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null, onToken: appendAssistantToken })
-          : await window.mn.ai.ask(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null });
+          ? await askStream(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null, timeoutMs: MN_AI_NOTES_TIMEOUT_MS, onToken: appendAssistantToken })
+          : await window.mn.ai.ask(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null, timeoutMs: MN_AI_NOTES_TIMEOUT_MS });
         if (stoppedJobRef.current === jobId) return;
         if (!r.ok) {
           throw new Error(r.error || 'Unknown error');
         } else if (r.value && !r.value.ok) {
           throw new Error(r.value.error || 'Unknown error');
         } else {
-          putAssistant({ text: r.value.answer, sources: r.value.sources || [], streaming: false });
+          aiRuntime.recordTrace?.(run, 'run.completed', { sources: r.value.sources?.length || 0 });
+          putAssistant({ text: r.value.answer, sources: r.value.sources || [], streaming: false, trace: run?.trace || [] });
         }
       } else {
         setActiveAction('Thinking...');
-        const chatMessages = [
-          ...priorMessages.slice(-6).map(m => ({ role: m.role, content: m.text })),
-          { role: 'user', content: q },
-        ];
+        const chatMessages = mnBuildAskThreadMessages(priorMessages, q, { limit: 8 });
         putAssistant({ text: '', streaming: true });
         const chatStream = window.mn?.ai?.chatStream;
         const r = chatStream
-          ? await chatStream({ messages: chatMessages, jobId, onToken: appendAssistantToken })
-          : await window.mn.ai.chat({ messages: chatMessages, jobId });
+          ? await chatStream({ messages: chatMessages, jobId, timeoutMs: MN_AI_CHAT_TIMEOUT_MS, maxTokens: 700, onToken: appendAssistantToken })
+          : await window.mn.ai.chat({ messages: chatMessages, jobId, timeoutMs: MN_AI_CHAT_TIMEOUT_MS, maxTokens: 700 });
         if (stoppedJobRef.current === jobId) return;
         if (!r.ok) throw new Error(r.error || 'Unknown error');
         if (r.value && !r.value.ok) throw new Error(r.value.error || 'Unknown error');
-        putAssistant({ text: r.value.answer, streaming: false });
+        aiRuntime.recordTrace?.(run, 'run.completed', { chat: true });
+        putAssistant({ text: r.value.answer, streaming: false, trace: run?.trace || [] });
       }
     } catch (e) {
       const msg = e.message || String(e);
       stopped = stoppedJobRef.current === jobId || /abort|cancel/i.test(msg);
       if (stopped) return;
       finalError = msg;
+      aiRuntime.recordTrace?.(run, 'run.failed', { error: msg });
       if (streamingAssistantId) {
         putAssistant({ text: msg, error: true, streaming: false });
         updateSession(prev => ({ ...(prev || {}), error: msg }));
@@ -461,6 +916,7 @@ function MnAskAI({
           pending: false,
           activeAction: null,
           jobId: null,
+          activeRun: null,
           completedAt: new Date().toISOString(),
         }));
       }
@@ -482,6 +938,7 @@ function MnAskAI({
       activeAction: null,
       background: false,
       jobId: null,
+      activeRun: null,
       error: null,
       completedAt: new Date().toISOString(),
       messages: [...(prev?.messages || []), { role: 'assistant', text: 'Stopped.', stopped: true }],
@@ -497,6 +954,7 @@ function MnAskAI({
       activeAction: null,
       background: false,
       jobId: null,
+      activeRun: null,
       completedAt: null,
       lastQuery: null,
     }));
@@ -672,7 +1130,7 @@ function MnAskAI({
           </div>
         </div>
 
-        <div ref={scrollRef} style={{ order: 2, flex: 1, overflow: 'auto', padding: '18px 18px', position: 'relative', background: T.bg }}>
+        <div ref={scrollRef} onScroll={rememberScrollPosition} style={{ order: 2, flex: 1, overflow: 'auto', padding: '18px 18px', position: 'relative', background: T.bg }}>
           <style>{`
             .mn-ask-ai-shimmer {
               animation: mnAskAiShimmer 1.5s ease-in-out infinite;
@@ -698,6 +1156,13 @@ function MnAskAI({
           {messages.map((m, idx) => {
             const previousUser = [...messages.slice(0, idx)].reverse().find(item => item.role === 'user')?.text || '';
             const canReport = m.role === 'assistant' && !m.error && !m.stopped && String(m.text || '').trim();
+            const traceLabels = m.role === 'assistant' && m.streaming
+              ? (aiSession.activeRun?.trace || [])
+                .map(item => item?.label || aiRuntime.traceLabel?.(item) || item?.event)
+                .filter(Boolean)
+                .filter((label, index, arr) => label !== arr[index - 1])
+                .slice(-5)
+              : [];
             return (
             <div key={m.id} data-mn-latest-response={idx === latestResponseIndex ? 'true' : undefined} style={{
               marginBottom: 14,
@@ -728,6 +1193,102 @@ function MnAskAI({
                   </div>
                 )}
                 {m.text || (m.streaming ? activeAction || 'Thinking...' : '')}
+                {traceLabels.length > 0 && (
+                  <div style={{
+                    marginTop: 10,
+                    display: 'grid',
+                    gap: 5,
+                    fontFamily: 'var(--mn-mono)',
+                    fontSize: 11,
+                    color: T.inkDim,
+                    whiteSpace: 'normal',
+                  }}>
+                    {traceLabels.map((label, traceIndex) => (
+                      <div key={`${label}-${traceIndex}`} style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                        <span style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: 6,
+                          background: traceIndex === traceLabels.length - 1 ? (T.accent || T.ink) : T.line,
+                          flex: '0 0 auto',
+                        }} />
+                        <span>{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {m.review && (
+                  <div style={{
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 8,
+                    background: T.bgSub,
+                    border: `1px solid color-mix(in oklab, ${T.warn || T.danger || T.ink} 34%, ${T.lineSub})`,
+                    color: T.ink,
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 720, color: T.ink }}>{m.review.title || 'Review action'}</div>
+                    {m.review.risk && (
+                      <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, textTransform: 'uppercase' }}>
+                        {m.review.risk} action
+                      </div>
+                    )}
+                    {m.review.preview?.steps?.length > 0 && (
+                      <div style={{ marginTop: 9, display: 'grid', gap: 5 }}>
+                        {m.review.preview.steps.map((step, reviewIndex) => (
+                          <div key={reviewIndex} style={{ fontSize: 12.5, color: T.inkMed }}>{reviewIndex + 1}. {step}</div>
+                        ))}
+                      </div>
+                    )}
+                    {m.review.preview?.affected?.length > 0 && (
+                      <div style={{ marginTop: 9, fontSize: 12, color: T.inkDim }}>
+                        Affects {m.review.preview.affected.map(item => item.title || item.id).join(', ')}
+                      </div>
+                    )}
+                    {m.review.message && (
+                      <div style={{ marginTop: 9, fontSize: 12.5, color: T.inkMed }}>{m.review.message}</div>
+                    )}
+                    {m.review.steps?.length > 0 && (
+                      <pre style={{
+                        marginTop: 9,
+                        padding: 8,
+                        borderRadius: 6,
+                        background: T.bg,
+                        border: `1px solid ${T.lineSub}`,
+                        color: T.inkDim,
+                        fontFamily: 'var(--mn-mono)',
+                        fontSize: 11,
+                        whiteSpace: 'pre-wrap',
+                        overflow: 'auto',
+                        maxHeight: 150,
+                      }}>{JSON.stringify(m.review.steps.map(step => ({ actionId: step.actionId, args: step.args || {} })), null, 2)}</pre>
+                    )}
+                    <div style={{ marginTop: 12, display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => cancelReview(m.id)}
+                        disabled={m.reviewBusy}
+                        style={mnAskSecondaryButton(T)}>
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => editReviewArgs(m.id, m.review)}
+                        disabled={m.reviewBusy}
+                        style={mnAskSecondaryButton(T)}>
+                        Edit Args
+                      </button>
+                      <button
+                        onClick={() => confirmReview(m.id, m.review)}
+                        disabled={m.reviewBusy}
+                        style={{
+                          ...mnAskPrimaryButton(T),
+                          background: m.reviewBusy ? T.bgSub : T.ink,
+                          color: m.reviewBusy ? T.inkDim : T.bg,
+                          opacity: m.reviewBusy ? 0.7 : 1,
+                        }}>
+                        {m.reviewBusy ? 'Working...' : 'Confirm'}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {m.sources?.length > 0 && (
                 <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.lineSub}` }}>
                   <div style={{
@@ -815,6 +1376,7 @@ function MnAskAI({
               Answers cite note sources when they use your notes.
             </div>
           )}
+          <div ref={scrollBottomRef} data-mn-chat-bottom="true" style={{ height: 1 }} />
         </div>
       </div>
   );
@@ -839,421 +1401,12 @@ function MnAskAI({
   );
 }
 
-function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDelete, onArchive, onRename, T }) {
-  const [showArchived, setShowArchived] = useStateAI(false);
-  const [contextMenu, setContextMenu] = useStateAI(null);
-  const [renameId, setRenameId] = useStateAI(null);
-  const [renameValue, setRenameValue] = useStateAI('');
-  const visibleSessions = sessions
-    .filter(session => !!session.archived === showArchived)
-    .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-  const activeCount = sessions.filter(session => !session.archived).length;
-  const archivedCount = sessions.filter(session => session.archived).length;
-
-  useEffectAI(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    const closeOnEsc = (e) => { if (e.key === 'Escape') close(); };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', closeOnEsc);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', closeOnEsc);
-    };
-  }, [contextMenu]);
-
-  const openContextMenu = (e, session) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      sessionId: session.id,
-      archived: !!session.archived,
-      pending: !!session.pending,
-    });
-  };
-  const startRename = (id, currentTitle) => {
-    setRenameId(id);
-    setRenameValue(currentTitle || '');
-    setContextMenu(null);
-  };
-  const submitRename = () => {
-    if (renameId && onRename) onRename(renameId, renameValue.trim() || 'New chat');
-    setRenameId(null);
-    setRenameValue('');
-  };
-  const cancelRename = () => {
-    setRenameId(null);
-    setRenameValue('');
-  };
-
-  return (
-    <aside style={{
-      width: 264,
-      height: '100%',
-      borderRight: `1px solid ${T.line}`,
-      background: T.bgSub,
-      display: 'flex',
-      flexDirection: 'column',
-      flexShrink: 0,
-      minWidth: 0,
-      position: 'relative',
-    }}>
-      <div style={{
-        padding: '12px 12px 10px',
-        borderBottom: `1px solid ${T.lineSub}`,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-      }}>
-        <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 650, color: T.ink }}>AI chats</div>
-        <button onClick={onNew} title="New AI chat" style={iconBtn(T)}>
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
-            <path d="M8 3V13M3 8H13" strokeLinecap="round"/>
-          </svg>
-        </button>
-      </div>
-      <div style={{
-        display: 'flex',
-        gap: 4,
-        padding: '8px 10px 0',
-      }}>
-        <MnAiTabPill active={!showArchived} onClick={() => setShowArchived(false)} T={T} title="Show active chats">
-          Active <span style={{ opacity: 0.55, marginLeft: 3 }}>{activeCount}</span>
-        </MnAiTabPill>
-        <MnAiTabPill active={showArchived} onClick={() => setShowArchived(true)} T={T} title="Show archived chats">
-          Archived <span style={{ opacity: 0.55, marginLeft: 3 }}>{archivedCount}</span>
-        </MnAiTabPill>
-      </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '8px 8px 10px' }}>
-        {visibleSessions.map(session => {
-          const active = session.id === activeId;
-          const renaming = session.id === renameId;
-          const messages = session.messages || [];
-          const last = [...messages].reverse().find(m => m.text)?.text || 'No messages yet';
-          return (
-            <div
-              key={session.id}
-              onClick={() => { if (!renaming) onSelect?.(session.id); }}
-              onContextMenu={(e) => openContextMenu(e, session)}
-              onDoubleClick={(e) => {
-                if (renaming) return;
-                e.preventDefault();
-                startRename(session.id, session.title);
-              }}
-              style={{
-                padding: '8px 10px',
-                marginBottom: 4,
-                borderRadius: 7,
-                border: `1px solid ${active ? T.selLine : 'transparent'}`,
-                background: active ? T.accentSoft : 'transparent',
-                cursor: renaming ? 'default' : 'pointer',
-              }}
-              onMouseEnter={(e) => { if (!active && !renaming) e.currentTarget.style.background = T.bgHover; }}
-              onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
-              {renaming ? (
-                <input
-                  autoFocus
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  onBlur={submitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); submitRename(); }
-                    else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '3px 6px',
-                    border: `1px solid ${T.selLine}`,
-                    borderRadius: 5,
-                    background: T.bg,
-                    color: T.ink,
-                    fontFamily: 'var(--mn-ui)',
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    outline: 'none',
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{
-                    minWidth: 0,
-                    flex: 1,
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    color: active ? T.accent : T.ink,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}>{session.title || 'New chat'}</div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (session.pending) return;
-                      onArchive?.(session.id, !session.archived);
-                    }}
-                    disabled={!!session.pending}
-                    title={session.pending ? 'Wait for this chat to finish before archiving' : (session.archived ? 'Restore chat' : 'Archive chat')}
-                    style={mnAiRowActionButton(T, false, !!session.pending)}>
-                    {session.archived ? (
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.55">
-                        <path d="M4 7L8 3L12 7" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M8 3V12" strokeLinecap="round"/>
-                        <path d="M3 12.5H13" strokeLinecap="round"/>
-                      </svg>
-                    ) : (
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.55">
-                        <path d="M3.25 6.25H12.75V12.5H3.25V6.25Z" strokeLinejoin="round"/>
-                        <path d="M5 3.5H11L12.75 6.25H3.25L5 3.5Z" strokeLinejoin="round"/>
-                        <path d="M6.25 8.25H9.75" strokeLinecap="round"/>
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (session.pending) return;
-                      onDelete?.(session.id);
-                    }}
-                    disabled={!!session.pending}
-                    title={session.pending ? 'Wait for this chat to finish before deleting' : 'Delete chat'}
-                    style={mnAiRowActionButton(T, true, !!session.pending)}>
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.55">
-                      <path d="M3.5 4.5H12.5" strokeLinecap="round"/>
-                      <path d="M6 4.5V3.2H10V4.5" strokeLinejoin="round"/>
-                      <path d="M5 6.5L5.5 13H10.5L11 6.5" strokeLinejoin="round"/>
-                    </svg>
-                  </button>
-                </div>
-              )}
-              <div style={{
-                marginTop: 3,
-                fontSize: 11.25,
-                color: T.inkDim,
-                lineHeight: 1.35,
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}>{last}</div>
-            </div>
-          );
-        })}
-        {!visibleSessions.length && (
-          <div style={{
-            padding: 16,
-            color: T.inkDim,
-            fontSize: 12,
-            lineHeight: 1.5,
-            textAlign: 'center',
-          }}>
-            {showArchived ? 'No archived chats' : 'No chats yet — start one with “New”.'}
-          </div>
-        )}
-      </div>
-      {!showArchived && (
-        <div style={{
-          padding: '8px 12px 10px',
-          borderTop: `1px solid ${T.lineSub}`,
-          fontFamily: 'var(--mn-mono)',
-          fontSize: 9.5,
-          color: T.inkDim,
-          textAlign: 'center',
-        }}>
-          Use the row buttons or right-click for chat actions
-        </div>
-      )}
-      {contextMenu && (
-        <div
-          role="menu"
-          onMouseDown={(e) => e.stopPropagation()}
-          style={{
-            position: 'fixed',
-            top: contextMenu.y,
-            left: contextMenu.x,
-            zIndex: 60,
-            background: T.bg,
-            border: `1px solid ${T.line}`,
-            borderRadius: 6,
-            padding: 4,
-            minWidth: 160,
-            boxShadow: `0 12px 28px color-mix(in oklab, ${T.ink} 18%, transparent)`,
-          }}>
-          <MnAiContextMenuItem
-            T={T}
-            onClick={() => {
-              const sess = sessions.find(s => s.id === contextMenu.sessionId);
-              startRename(contextMenu.sessionId, sess?.title || '');
-            }}>
-            Rename
-          </MnAiContextMenuItem>
-          <MnAiContextMenuItem
-            T={T}
-            disabled={!!contextMenu.pending}
-            onClick={() => {
-              if (contextMenu.pending) return;
-              onArchive?.(contextMenu.sessionId, !contextMenu.archived);
-              setContextMenu(null);
-            }}>
-            {contextMenu.archived ? 'Restore chat' : 'Archive chat'}
-          </MnAiContextMenuItem>
-          <MnAiContextMenuItem
-            T={T}
-            danger
-            disabled={!!contextMenu.pending}
-            onClick={() => {
-              if (contextMenu.pending) return;
-              onDelete?.(contextMenu.sessionId);
-              setContextMenu(null);
-            }}>
-            Delete chat
-          </MnAiContextMenuItem>
-        </div>
-      )}
-    </aside>
-  );
-}
-
-function MnAiTabPill({ active, onClick, children, T, title }) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      style={{
-        flex: 1,
-        padding: '5px 9px',
-        border: `1px solid ${active ? T.selLine : T.lineSub}`,
-        background: active ? T.accentSoft : T.bg,
-        color: active ? T.accent : T.inkMed,
-        borderRadius: 6,
-        fontFamily: 'var(--mn-ui)',
-        fontSize: 11.5,
-        fontWeight: 600,
-        cursor: 'pointer',
-      }}>
-      {children}
-    </button>
-  );
-}
-
-function mnAiRowActionButton(T, danger = false, disabled = false) {
-  return {
-    width: 24,
-    height: 24,
-    border: `1px solid ${T.lineSub}`,
-    borderRadius: 5,
-    background: T.bg,
-    color: disabled ? T.inkDim : (danger ? (T.danger || T.warn || T.inkDim) : T.inkDim),
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.45 : 1,
-    flexShrink: 0,
-  };
-}
-
-function MnAiContextMenuItem({ onClick, disabled, danger, children, T }) {
-  const color = disabled
-    ? T.inkDim
-    : danger
-      ? (T.danger || T.warn || T.ink)
-      : T.ink;
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        display: 'block',
-        width: '100%',
-        textAlign: 'left',
-        padding: '7px 10px',
-        background: 'transparent',
-        border: 'none',
-        cursor: disabled ? 'default' : 'pointer',
-        color,
-        fontFamily: 'var(--mn-ui)',
-        fontSize: 12.5,
-        borderRadius: 4,
-        opacity: disabled ? 0.5 : 1,
-      }}
-      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = T.bgHover; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-      {children}
-    </button>
-  );
-}
-
-function StatusPill({ status, T }) {
-  if (!status) return (
-    <Pill T={T} color={T.inkDim}>checking…</Pill>
-  );
-  if (!status.reachable) return (
-    <Pill T={T} color="#a60">setup needed</Pill>
-  );
-  if (!status.chatModelOk) return (
-    <Pill T={T} color="#a60">setup needed</Pill>
-  );
-  if (!status.embedModelOk) return (
-    <Pill T={T} color="#a60">keyword mode</Pill>
-  );
-  return <Pill T={T} color="#070">ready</Pill>;
-}
-function Pill({ T, color, children }) {
-  return (
-    <span style={{
-      fontSize: 10, fontFamily: 'var(--mn-mono)', textTransform: 'uppercase',
-      letterSpacing: '0.08em', padding: '2px 7px', borderRadius: 99,
-      border: `1px solid ${T.lineSub}`, color,
-      background: T.bgSub,
-    }}>{children}</span>
-  );
-}
-function mnAskPrimaryButton(T) {
-  return {
-    padding: '7px 14px',
-    borderRadius: 6,
-    border: `1px solid ${T.line}`,
-    fontFamily: 'var(--mn-ui)',
-    fontSize: 12.5,
-    fontWeight: 650,
-  };
-}
-function mnAskSecondaryButton(T) {
-  return {
-    padding: '7px 12px',
-    borderRadius: 6,
-    border: `1px solid ${T.line}`,
-    background: T.bg,
-    color: T.inkMed,
-    fontFamily: 'var(--mn-ui)',
-    fontSize: 12.5,
-    fontWeight: 550,
-    cursor: 'pointer',
-  };
-}
-function mnAskReportButton(T) {
-  return {
-    border: `1px solid ${T.lineSub}`,
-    background: T.bg,
-    color: T.inkDim,
-    borderRadius: 6,
-    padding: '4px 8px',
-    fontFamily: 'var(--mn-ui)',
-    fontSize: 11.5,
-    cursor: 'pointer',
-  };
-}
-function iconBtn(T) {
-  return {
-    width: 24, height: 24, borderRadius: 5,
-    border: `1px solid ${T.lineSub}`, background: T.bg, color: T.inkMed,
-    cursor: 'pointer', padding: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  };
-}
+const {
+  StatusPill,
+  mnAskPrimaryButton,
+  mnAskSecondaryButton,
+  mnAskReportButton,
+  iconBtn,
+} = window.MN_AI_UI || {};
 
 window.MnAskAI = MnAskAI;
-window.MnAiChatHistory = MnAiChatHistory;

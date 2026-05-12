@@ -39,11 +39,14 @@ const SPELL_DICTIONARY_PATHS = [
   '/usr/share/hunspell/en_GB.dic',
 ];
 const SPELL_SUGGESTION_CACHE_LIMIT = 1000;
+const MIN_USABLE_DICTIONARY_WORDS = 1000;
+const INITIAL_UPDATE_CHECK_DELAY_MS = 5000;
 let spellWords = null;
 let spellWordsPromise = null;
 let spellWordBuckets = null;
 let spellDictionaryAvailable = false;
 const spellSuggestionCache = new Map();
+let appHtmlRealPath = null;
 
 const COMMON_SPELL_WORDS = [
   'about', 'after', 'again', 'also', 'because', 'block', 'blocks', 'calendar',
@@ -92,8 +95,11 @@ const AI_QUERY_LIMIT = 20000;
 const AI_EDIT_TEXT_LIMIT = 120000;
 const AI_MESSAGE_TEXT_LIMIT = 20000;
 const AI_MAX_TOKENS_LIMIT = 8192;
+const AI_TOOL_LIMIT = 100;
+const AI_TOOL_SCHEMA_LIMIT = 30000;
 const BACKUP_IMPORT_FILE_LIMIT = 50 * 1024 * 1024;
 const IPC_ID_RE = /^[A-Za-z0-9_-]+$/;
+const AI_TOOL_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 function normalizeSpellWord(word) {
   return String(word || '').toLowerCase().replace(/^[^a-z']+|[^a-z']+$/g, '');
@@ -101,6 +107,10 @@ function normalizeSpellWord(word) {
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isUnsafePatchKey(key) {
+  return key === '__proto__' || key === 'prototype' || key === 'constructor';
 }
 
 function capString(value, field, maxLength = PREF_STRING_LIMIT) {
@@ -157,6 +167,7 @@ function sanitizeTweaksForPrefs(tweaks) {
   if (!isPlainObject(tweaks)) throw new Error('Invalid tweaks patch');
   const clean = {};
   for (const [key, value] of Object.entries(tweaks)) {
+    if (isUnsafePatchKey(key)) throw new Error('Unsupported tweak field: ' + key);
     if (!PREF_TWEAK_KEYS.has(key)) throw new Error('Unsupported tweak field: ' + key);
     const defaultValue = PREF_TWEAK_DEFAULTS[key];
     if (key === 'workflowStates') {
@@ -168,8 +179,6 @@ function sanitizeTweaksForPrefs(tweaks) {
       clean[key] = value;
     } else if (typeof defaultValue === 'string') {
       clean[key] = capString(value, key);
-    } else if (defaultValue == null) {
-      clean[key] = value == null ? null : value;
     }
   }
   return clean;
@@ -179,7 +188,7 @@ function sanitizeAiConfigForPrefs(aiConfig) {
   if (!isPlainObject(aiConfig)) throw new Error('Invalid AI config patch');
   const clean = {};
   for (const [key, value] of Object.entries(aiConfig)) {
-    if (key === '__proto__' || key === 'prototype' || key === 'constructor') throw new Error('Invalid AI config field: ' + key);
+    if (isUnsafePatchKey(key)) throw new Error('Invalid AI config field: ' + key);
     if (typeof value === 'string') clean[key] = capString(value, key, PREF_SECRET_LIMIT);
     else if (typeof value === 'number' || typeof value === 'boolean' || value == null) clean[key] = value;
     else throw new Error('Invalid AI config field: ' + key);
@@ -191,6 +200,7 @@ function sanitizePrefsPatchFromIpc(patch) {
   if (!isPlainObject(patch)) throw new Error('Invalid preferences patch');
   const clean = {};
   for (const [key, value] of Object.entries(patch)) {
+    if (isUnsafePatchKey(key)) throw new Error('Unsupported preferences field: ' + key);
     if (!PREF_TOP_LEVEL_KEYS.has(key)) throw new Error('Unsupported preferences field: ' + key);
     if (key === 'activeVaultId') clean.activeVaultId = capString(value, 'activeVaultId', 120);
     if (key === 'tweaks') clean.tweaks = sanitizeTweaksForPrefs(value);
@@ -221,9 +231,9 @@ async function loadSpellWordsFromDisk() {
           if (words.size > before) loadedDictionaryWords++;
         }
       }
-    } catch (e) {}
+    } catch {}
   }
-  if (loadedDictionaryWords < 1000) {
+  if (loadedDictionaryWords < MIN_USABLE_DICTIONARY_WORDS) {
     spellWords = new Set();
     spellWordBuckets = new Map();
     spellDictionaryAvailable = false;
@@ -259,7 +269,12 @@ function spellDistance(a, b) {
 }
 
 function spellSuggestions(word, dictionary) {
-  if (spellSuggestionCache.has(word)) return spellSuggestionCache.get(word);
+  if (spellSuggestionCache.has(word)) {
+    const cached = spellSuggestionCache.get(word);
+    spellSuggestionCache.delete(word);
+    spellSuggestionCache.set(word, cached);
+    return cached;
+  }
   const first = word[0];
   const maxDistance = word.length <= 5 ? 1 : 2;
   const scored = [];
@@ -319,15 +334,16 @@ function createAppIcon() {
 function openQuickCaptureFromShortcut() {
   showMainWindow();
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  const win = mainWindow;
   const send = () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('mn:openQuickCapture');
+    if (!win.isDestroyed()) {
+      win.webContents.send('mn:openQuickCapture');
     }
   };
-  if (mainWindow.webContents.isLoading()) {
-    const clear = () => mainWindow?.webContents?.removeListener?.('did-finish-load', send);
-    mainWindow.once('closed', clear);
-    mainWindow.webContents.once('did-finish-load', send);
+  if (win.webContents.isLoading()) {
+    const clear = () => win.webContents?.removeListener?.('did-finish-load', send);
+    win.once('closed', clear);
+    win.webContents.once('did-finish-load', send);
   } else {
     send();
   }
@@ -404,6 +420,10 @@ const QUICK_CAPTURE_SHORTCUT = process.platform === 'darwin'
   : 'Ctrl+Shift+N';
 
 function registerQuickCaptureShortcut() {
+  if (process.env.VISPNOTE_DISABLE_GLOBAL_SHORTCUTS === '1') {
+    quickCaptureShortcutState = { accelerator: QUICK_CAPTURE_SHORTCUT, registered: false, error: 'Global shortcuts are disabled for this process.' };
+    return;
+  }
   // globalShortcut may fail (already-registered, no display server). The app
   // still works without it — capture stays available via the in-app button.
   try {
@@ -518,10 +538,10 @@ function isAllowedAppNavigation(rawUrl) {
   try {
     const target = new URL(rawUrl);
     if (target.protocol !== 'file:') return false;
-    const appPath = fs.realpathSync(path.join(__dirname, 'vispnote.html'));
+    if (!appHtmlRealPath) appHtmlRealPath = fs.realpathSync(path.join(__dirname, 'vispnote.html'));
     const targetPath = fs.realpathSync(fileURLToPath(target));
-    return targetPath === appPath;
-  } catch (e) {
+    return targetPath === appHtmlRealPath;
+  } catch {
     return false;
   }
 }
@@ -560,7 +580,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1100,
+    minWidth: 900,
     minHeight: 700,
     backgroundColor: '#f6f7f9',
     icon: createAppIcon(),
@@ -721,7 +741,7 @@ async function setPrefsFromIpc(patch) {
     const config = ai.previewConfig(cleanPatch.aiConfig);
     await store.setPrefs({ ...cleanPatch, aiConfig: config });
     ai.applyConfig(config);
-    return config;
+    return ai.publicConfig(config);
   }
   return await store.setPrefs(cleanPatch);
 }
@@ -792,7 +812,14 @@ function sanitizeAiAskOptions(options = {}) {
   return {
     jobId: sanitizeAiJobId(options.jobId),
     recursiveResearch: options.recursiveResearch === true,
+    timeoutMs: sanitizeAiTimeoutMs(options.timeoutMs),
   };
+}
+
+function sanitizeAiTimeoutMs(value) {
+  if (value == null || value === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(5000, Math.min(180000, Math.round(n))) : undefined;
 }
 
 function sanitizeAiEditPayload(payload = {}) {
@@ -832,6 +859,8 @@ function sanitizeAiChatPayload(payload = {}) {
   if (!isPlainObject(payload)) throw new Error('Invalid AI chat payload');
   const clean = {
     jobId: sanitizeAiJobId(payload.jobId),
+    timeoutMs: sanitizeAiTimeoutMs(payload.timeoutMs),
+    maxTokens: sanitizeAiMaxTokens(payload.maxTokens),
   };
   if (Array.isArray(payload.messages)) {
     clean.messages = payload.messages
@@ -842,6 +871,38 @@ function sanitizeAiChatPayload(payload = {}) {
   } else {
     clean.text = capText(payload.text || '', 'text', AI_MESSAGE_TEXT_LIMIT);
   }
+  return clean;
+}
+
+function sanitizeJsonValue(value, field, maxBytes = AI_TOOL_SCHEMA_LIMIT) {
+  const text = JSON.stringify(value ?? null);
+  if (Buffer.byteLength(text, 'utf8') > maxBytes) throw new Error(`${field} is too large`);
+  return JSON.parse(text);
+}
+
+function sanitizeAiToolPlanPayload(payload = {}) {
+  const clean = sanitizeAiChatPayload(payload);
+  const tools = Array.isArray(payload.tools) ? payload.tools : [];
+  clean.tools = tools.slice(0, AI_TOOL_LIMIT).map((tool, index) => {
+    if (!isPlainObject(tool)) throw new Error(`Invalid tool at index ${index}`);
+    const name = capString(tool.name || tool.id || '', `tools[${index}].name`, 64);
+    if (!AI_TOOL_NAME_RE.test(name)) throw new Error(`Invalid tool name: ${name}`);
+    const item = {
+      name,
+      title: capString(tool.title || tool.label || name, `tools[${index}].title`, 120),
+      description: capText(tool.description || tool.title || name, `tools[${index}].description`, 1600),
+      risk: capString(tool.risk || 'safe', `tools[${index}].risk`, 40),
+      readOnly: tool.readOnly === true,
+      destructive: tool.destructive === true,
+      external: tool.external === true,
+      confirm: tool.confirm === true,
+      idempotent: tool.idempotent === true,
+      inputSchema: sanitizeJsonValue(tool.inputSchema || tool.input_schema || { type: 'object', additionalProperties: false }, `tools[${index}].inputSchema`),
+      outputSchema: sanitizeJsonValue(tool.outputSchema || tool.output_schema || { type: 'object', additionalProperties: true }, `tools[${index}].outputSchema`),
+    };
+    return item;
+  });
+  clean.nativeOnly = payload.nativeOnly === true;
   return clean;
 }
 
@@ -910,7 +971,13 @@ ipcMain.handle('mn:purgeDeletedCanvas', wrap(store.purgeDeletedCanvas));
 ipcMain.handle('mn:saveVaultMeta',  wrap(store.saveVaultMeta));
 
 // Prefs
-ipcMain.handle('mn:getPrefs',       wrap(store.getPrefs));
+ipcMain.handle('mn:getPrefs',       wrap(async () => {
+  const prefs = await store.getPrefs();
+  return {
+    ...prefs,
+    aiConfig: prefs.aiConfig ? ai.publicConfig(ai.previewConfig(prefs.aiConfig, { rejectUnknown: false })) : null,
+  };
+}));
 ipcMain.handle('mn:setPrefs',       wrap(setPrefsFromIpc));
 ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
 
@@ -929,9 +996,13 @@ ipcMain.handle('mn:rebuildIndex',   wrap(async (vaultId) => {
     return { indexed: vault.notes?.length || 0 };
   });
 }));
-ipcMain.handle('mn:vaultHealth',    wrap((vaultId) => store.vaultHealth(vaultId)));
+ipcMain.handle('mn:vaultHealth',    wrap(async (vaultId) => {
+  const health = await store.vaultHealth(vaultId);
+  await indexReadyPromise;
+  if (!searchIndexAvailable) return { ...health, indexStatus: { ok: false, failureReason: searchIndexError || 'Search index unavailable' } };
+  return { ...health, indexStatus: ai.indexStatus(vaultId) };
+}));
 ipcMain.handle('mn:exportBackup',   wrap(async (options = {}) => {
-  const payload = await store.exportBackup(options || {});
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Export VispNote backup',
@@ -945,9 +1016,10 @@ ipcMain.handle('mn:exportBackup',   wrap(async (options = {}) => {
   } catch (e) {
     if (e.code !== 'ENOENT') throw e;
   }
+  const payload = await store.exportBackup(options || {});
   const backupText = JSON.stringify(payload, null, 2);
   await store.atomicWriteFile(result.filePath, backupText, 'utf8');
-  return { canceled: false, filePath: result.filePath, vaultCount: payload.vaults.length };
+  return { canceled: false, filePath: result.filePath, vaultCount: payload.vaults.length, warnings: payload.warnings || [] };
 }));
 ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -976,6 +1048,10 @@ ipcMain.handle('mn:ai.connect',     wrap(async () => {
   return result;
 }));
 ipcMain.handle('mn:ai.ask',         wrap(askFromIpc));
+ipcMain.handle('mn:ai.summarizeVault', wrap(async (vaultId, query, options) => {
+  const clean = await sanitizeAiAskArgs(vaultId, query);
+  return ai.summarizeVault(clean.vaultId, clean.query, store, sanitizeAiAskOptions(options || {}));
+}));
 ipcMain.handle('mn:ai.askStream',   wrapWithEvent(askStreamFromIpc));
 ipcMain.handle('mn:ai.edit',        wrap(async (payload) => ai.editText(await prepareAiEditPayload(payload))));
 ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(evt, payload = {}) {
@@ -989,6 +1065,7 @@ ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(e
   });
 }));
 ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(sanitizeAiChatPayload(payload))));
+ipcMain.handle('mn:ai.toolPlan',    wrap((payload) => ai.toolPlan(sanitizeAiToolPlanPayload(payload))));
 ipcMain.handle('mn:ai.chatStream', wrapWithEvent(async function chatStream(evt, payload = {}) {
   const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
   const cleanPayload = sanitizeAiChatPayload(payload);
@@ -1001,19 +1078,22 @@ ipcMain.handle('mn:ai.chatStream', wrapWithEvent(async function chatStream(evt, 
 }));
 ipcMain.handle('mn:ai.cancel',      wrap((jobId) => ai.cancelJob(jobId)));
 ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, store)));
+ipcMain.handle('mn:ai.indexStatus', wrap(async (vaultId) => { await indexReadyPromise; assertSearchIndexAvailable(); return ai.indexStatus(vaultId); }));
+ipcMain.handle('mn:ai.backfillStatus', wrap((vaultId) => ai.backfillStatus(vaultId)));
+ipcMain.handle('mn:ai.backfillCancel', wrap((vaultId) => ai.cancelBackfill(vaultId)));
 ipcMain.handle('mn:ai.related',     wrap(async (vaultId, noteId, options) => { await indexReadyPromise; assertSearchIndexAvailable(); return ai.relatedNotes(vaultId, noteId, store, options || {}); }));
-ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.getConfig()));
+ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.publicConfig()));
 ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {
   const config = ai.previewConfig(patch);
   await store.setPrefs({ aiConfig: config });
   ai.applyConfig(config);
-  return config;
+  return ai.publicConfig(config);
 }));
 
 // Window
 ipcMain.handle('mn:setTitle', wrapWithEvent((evt, title) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
-  if (win && typeof title === 'string') win.setTitle(title);
+  if (win && typeof title === 'string') win.setTitle(title.slice(0, 200));
 }));
 ipcMain.handle('mn:openExternal', wrap((url) => shell.openExternal(sanitizeExternalUrl(url))));
 ipcMain.handle('mn:shortcutStatus', wrap(() => quickCaptureShortcutState));
@@ -1030,14 +1110,14 @@ ipcMain.handle('mn:updates.install', wrap(() => {
 async function rescanAllVaults() {
   if (!searchIndexAvailable) return;
   const cfg = await store.loadConfig();
-  for (const v of cfg.vaults) {
+  await Promise.all((cfg.vaults || []).map(async (v) => {
     try {
       const data = await store.loadVault(v.id);
       runOptionalSearchIndexTask('boot vault rescan', () => idx.rescanVault(v.id, data.notes));
     } catch (e) {
       console.error('rescan failed for vault', v.id, e);
     }
-  }
+  }));
 }
 
 // ── App lifecycle ────────────────────────────────────────────────────────────
@@ -1085,7 +1165,7 @@ if (singleInstanceLock) app.whenReady().then(async () => {
     console.error('boot index rescan failed', e);
   });
   registerQuickCaptureShortcut();
-  setTimeout(() => { checkForUpdates(false).catch(e => console.error('update check failed', e)); }, 5000);
+  setTimeout(() => { checkForUpdates(false).catch(e => console.error('update check failed', e)); }, INITIAL_UPDATE_CHECK_DELAY_MS);
 
   app.on('activate', () => {
     showMainWindow();

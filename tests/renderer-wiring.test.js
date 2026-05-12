@@ -4,18 +4,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ops = require('../src/editorOps.js');
-const tableOps = require('../src/tableOps.js');
-const appHelpers = require('../src/appHelpers.js');
-const appNovelist = require('../src/appNovelist.js');
-const appMutations = require('../src/appMutations.js');
-const appCanvasActions = require('../src/appCanvasActions.js');
-const panelHelpers = require('../src/panelHelpers.js');
+const ops = require('../src/editor/editorOps.js');
+const tableOps = require('../src/editor/tableOps.js');
+const appHelpers = require('../src/app/appHelpers.js');
+const appNovelist = require('../src/app/appNovelist.js');
+const appMutations = require('../src/app/appMutations.js');
+const appCanvasActions = require('../src/app/appCanvasActions.js');
+const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 const projectPaths = require('./helpers/paths.js');
 
 test('AI menu buttons open option menus instead of running Improve directly', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
   assert.match(outliner, /if \(scope === 'section-menu'\)[\s\S]*setAiMenu\(\{ scope: 'section'/);
   assert.match(outliner, /onOpenAiMenu && onOpenAiMenu\(e\)/);
@@ -34,9 +34,10 @@ test('AI menu buttons open option menus instead of running Improve directly', ()
 });
 
 test('Advertised keyboard shortcuts are wired to handlers', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
 
   assert.match(app, /const isBackslashKey = key === '\\\\' \|\| key === '\|'/);
   assert.match(app, /e\.code === 'Backslash'/);
@@ -56,10 +57,10 @@ test('Advertised keyboard shortcuts are wired to handlers', () => {
 });
 
 test('Note tag picker can create new tags from the editor', () => {
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const mutations = fs.readFileSync(path.join(__dirname, '../src/appMutations.js'), 'utf8');
-  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
 
   assert.match(editor, /onCreateTag/);
   assert.match(editor, /placeholder="new tag"/);
@@ -84,8 +85,8 @@ test('Note tag picker can create new tags from the editor', () => {
 });
 
 test('Note metadata edits participate in undo and redo', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
 
   assert.match(app, /noteMetadataHistoryRef/);
   assert.match(app, /recordNoteMetadataHistory\(n, options\.historyKey\)/);
@@ -102,8 +103,8 @@ test('Note metadata edits participate in undo and redo', () => {
 });
 
 test('Vaults can be created and deleted from settings with backend cleanup', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -117,7 +118,7 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(store, /async function vaultDirectoryExists\(slug\)/);
   assert.match(store, /cfg\.vaults = validVaults/);
   assert.match(store, /Create another vault before deleting this one/);
-  assert.match(store, /fsp\.rm\(vaultDir\(v\.slug\), \{ recursive: true, force: true \}\)/);
+  assert.match(store, /moveVaultToTrash\(v\.slug\)/);
   assert.match(store, /deleteVault, setActiveVault/);
   assert.match(main, /ipcMain\.handle\('mn:deleteVault'/);
   assert.match(main, /idx\.removeVault\(vaultId\)/);
@@ -138,11 +139,11 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
 });
 
 test('Reminder center and spellcheck wiring are visible in app shell', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/appShell.jsx'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
 
   assert.match(appShell, /function MnReminderCenter/);
   assert.match(appShell, /className="mn-reminder-center"/);
@@ -158,25 +159,27 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   assert.match(editor, /spellCheck=\{spellCheck\}/);
   assert.match(outliner, /spellCheck=\{block\.kind === 'code' \? false : spellCheck\}/);
   assert.match(outliner, /spellCheck=\{false\}/);
-  assert.match(panels, /<button onClick=\{onDismiss\}[\s\S]*>✕<\/button>/);
-  assert.match(panels, /<button onClick=\{onSnooze \|\| onDismiss\}[\s\S]*>Snooze<\/button>/);
+  assert.match(utilityPanels, /<button onClick=\{onDismiss\}[\s\S]*>✕<\/button>/);
+  assert.match(utilityPanels, /<button onClick=\{onSnooze \|\| onDismiss\}[\s\S]*>Snooze<\/button>/);
 });
 
 test('Ask AI can continue in background and reopen completed responses', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/appShell.jsx'), 'utf8');
-  const ai = fs.readFileSync(path.join(__dirname, '../src/ai.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
+  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
+  const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
+  const aiUi = fs.readFileSync(path.join(__dirname, '../src/ai/aiUi.jsx'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const aiLib = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
 
   assert.match(app, /const \[askAiSessions, setAskAiSessions\]/);
   assert.match(app, /const \[activeAskAiSessionId, setActiveAskAiSessionId\]/);
-  assert.match(app, /function mnPickActiveAskAiSession/);
+  assert.match(appRuntime, /function mnPickActiveAskAiSession/);
   assert.match(app, /mnPickActiveAskAiSession\(askAiSessions, activeAskAiSessionId\)/);
-  assert.match(app, /allowArchivedPreferred !== false/);
+  assert.match(appRuntime, /allowArchivedPreferred !== false/);
   assert.match(app, /allowArchivedPreferred: false/);
   assert.match(app, /view === 'ai'/);
   assert.match(app, /<MnAiChatHistory/);
@@ -196,32 +199,57 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(app, /onBackgroundComplete=\{notifyAskAiComplete\}/);
   assert.match(app, /onCreateNote=\{\(\{ title, body, tags: noteTags \}\) => createNote\(\{ title, body, tags: noteTags \|\| \[\] \}, \{ open: false \}\)\}/);
   assert.match(app, /onTagCurrentNote=\{tagCurrentNoteFromAi\}/);
+  assert.match(app, /id: 'search-notes'/);
+  assert.match(app, /id: 'append-to-note'/);
+  assert.match(app, /id: 'add-todo-to-note'/);
+  assert.match(app, /id: 'add-reminder-to-note'/);
+  assert.match(app, /id: 'link-note'/);
+  assert.match(app, /window\.mn\?\.searchDetailedStatus/);
 
   assert.match(ai, /const aiSession = session \|\| localSession/);
   assert.match(ai, /window\.MN_AI_ACTIONS\?\.classifyPrompt/);
+  assert.match(ai, /function mnBuildAskThreadMessages\(priorMessages = \[\], currentQuery = '', options = \{\}\)/);
+  assert.match(ai, /function mnBuildAskThreadPrompt\(priorMessages = \[\], currentQuery = ''\)/);
+  assert.match(ai, /function mnRecentAskThreadNote\(priorMessages = \[\]\)/);
+  assert.match(ai, /function mnBuildContextualActionQuery\(priorMessages = \[\], currentQuery = ''\)/);
+  assert.match(ai, /const scrollVersion = messages\.map/);
+  assert.match(ai, /onScroll=\{rememberScrollPosition\}/);
+  assert.match(ai, /data-mn-chat-bottom="true"/);
   assert.match(ai, /const runActionPlan = async/);
+  assert.match(ai, /traceLabels/);
+  assert.match(ai, /aiRuntime\.traceLabel/);
+  assert.match(ai, /tool\.run/);
+  assert.match(ai, /tool\.done/);
+  assert.match(ai, /const isPureInspectionRequest = \(text\) =>/);
+  assert.match(ai, /if \(onlyInspectionSteps && isPureInspectionRequest\(q\)\) return plan/);
+  assert.match(ai, /planAppActionsWithModel\(actionQuery, route\.plan, jobId, run, priorMessages\)/);
+  assert.match(ai, /const actionQuery = mnBuildContextualActionQuery\(priorMessages, q\)/);
+  assert.match(ai, /query: actionQuery, aiActions: window\.MN_AI_ACTIONS, appRegistry: window\.MN_APP_ACTIONS/);
+  assert.match(ai, /const toolMessages = mnBuildAskThreadMessages\(priorMessages, q, \{ limit: 8 \}\)/);
+  assert.match(ai, /const qForAsk = mnBuildAskThreadPrompt\(priorMessages, q\)/);
+  assert.match(ai, /const chatMessages = mnBuildAskThreadMessages\(priorMessages, q, \{ limit: 8 \}\)/);
   assert.match(ai, /window\.mn\.ai\.ask\(vaultId, prompt/);
   assert.match(ai, /bodyFrom === 'previous-answer'/);
   assert.match(ai, /tag-created-note/);
   assert.match(ai, /if \(stoppedJobRef\.current === jobId\) return/);
-  assert.match(ai, /function MnAiChatHistory/);
-  assert.match(ai, /AI chats/);
-  assert.match(ai, /Show archived chats/);
-  assert.match(ai, /Archived <span/);
-  assert.match(ai, /Archive chat/);
-  assert.match(ai, /Restore chat/);
-  assert.match(ai, /function mnAiRowActionButton/);
+  assert.match(aiUi, /function MnAiChatHistory/);
+  assert.match(aiUi, /AI chats/);
+  assert.match(aiUi, /Show archived chats/);
+  assert.match(aiUi, /Archived <span/);
+  assert.match(aiUi, /Archive chat/);
+  assert.match(aiUi, /Restore chat/);
+  assert.match(aiUi, /function mnAiRowActionButton/);
   assert.match(ai, /embedded = false/);
   assert.match(ai, /const MN_ASK_SUGGESTIONS = \[/);
   assert.match(ai, /function mnAskStatusText/);
   assert.match(ai, /mnAskPrimaryButton/);
   assert.match(ai, /mnAskSecondaryButton/);
   assert.match(ai, /Clear/);
-  assert.match(ai, /onContextMenu=\{\(e\) => openContextMenu\(e, session\)\}/);
-  assert.match(ai, /function MnAiContextMenuItem/);
-  assert.match(ai, /Delete chat/);
-  assert.match(ai, /Use the row buttons or right-click for chat actions/);
-  assert.match(ai, /onRename\(renameId, renameValue\.trim\(\) \|\| 'New chat'\)/);
+  assert.match(aiUi, /onContextMenu=\{\(e\) => openContextMenu\(e, session\)\}/);
+  assert.match(aiUi, /function MnAiContextMenuItem/);
+  assert.match(aiUi, /Delete chat/);
+  assert.match(aiUi, /Use the row buttons or right-click for chat actions/);
+  assert.match(aiUi, /onRename\(renameId, renameValue\.trim\(\) \|\| 'New chat'\)/);
   assert.match(ai, /MN_AI_REPORT/);
   assert.match(ai, /Report AI output/);
   assert.match(ai, /mnAiProviderReportInfo/);
@@ -292,15 +320,17 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const canvasActions = fs.readFileSync(path.join(__dirname, '../src/appCanvasActions.js'), 'utf8');
-  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
+  const canvasActions = fs.readFileSync(path.join(__dirname, '../src/app/appCanvasActions.js'), 'utf8');
+  const canvasModel = fs.readFileSync(path.join(__dirname, '../src/canvas/canvasModel.js'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas/canvas.jsx'), 'utf8');
 
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  assert.match(rendererEntry, /import '\.\/canvas\.jsx';/);
+  assert.match(rendererEntry, /import '\.\/canvas\/canvas\.jsx';/);
   assert.match(store, /function canvasDir\(slug\)/);
   assert.match(store, /async function listCanvases\(vaultId\)/);
   assert.match(store, /async function saveCanvas\(vaultId, canvas\)/);
@@ -314,7 +344,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(app, /const \[canvases, setCanvases\]/);
   assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
   assert.match(app, /window\.mn\.listCanvases\(vaultId\)/);
-  assert.match(app, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
+  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
   assert.match(app, /MN_APP_CANVAS_ACTIONS\.openCanvas\(canvasId, canvasActionContext\(\)\)/);
   assert.match(app, /MN_APP_CANVAS_ACTIONS\.createCanvas\(title, options, canvasActionContext\(\)\)/);
   assert.match(canvasActions, /async function openCanvas\(canvasId, ctx = \{\}\)/);
@@ -329,7 +359,8 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(outliner, /\{\{canvas/);
   assert.match(outliner, /<MnCanvasPicker/);
   assert.match(outliner, /<MnCanvasEmbed/);
-  assert.match(canvas, /const MN_CANVAS_TOOLS = \[/);
+  assert.match(canvasModel, /const MN_CANVAS_TOOLS = \[/);
+  assert.match(canvasModel, /window\.MN_CANVAS_MODEL/);
   assert.match(canvas, /function MnCanvasPanel/);
   assert.match(canvas, /function MnCanvasCardMenu/);
   assert.match(canvas, /onContextMenu=\{\(e\) => openCanvasCardMenu\(e, canvas\)\}/);
@@ -342,18 +373,19 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const helpers = fs.readFileSync(path.join(__dirname, '../src/appHelpers.js'), 'utf8');
-  const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/appNovelist.js'), 'utf8');
-  const panelHelpersSource = fs.readFileSync(path.join(__dirname, '../src/panelHelpers.js'), 'utf8');
-  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const graph = fs.readFileSync(path.join(__dirname, '../src/graph.jsx'), 'utf8');
-  const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
-  const ai = fs.readFileSync(path.join(__dirname, '../src/ai.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
+  const helpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
+  const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/app/appNovelist.js'), 'utf8');
+  const panelHelpersSource = fs.readFileSync(path.join(__dirname, '../src/panels/panelHelpers.js'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const graph = fs.readFileSync(path.join(__dirname, '../src/panels/graph.jsx'), 'utf8');
+  const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
+  const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
 
   assert.match(store, /novelistMode: !!meta\.novelistMode/);
   assert.match(store, /workflowStates: Array\.isArray\(meta\.workflowStates\) \? normalizeWorkflowStates\(meta\.workflowStates\) : null/);
@@ -396,7 +428,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(appNovelistSource, /function mnSetBodyProperty/);
   assert.match(appNovelistSource, /function mnRemoveBodyProperty/);
   assert.match(appNovelistSource, /function mnNoteOrderValue/);
-  assert.match(app, /function collectWorkflowNotes/);
+  assert.match(appRuntime, /function collectWorkflowNotes/);
   assert.match(helpers, /split\('\|'\)\[0\]/);
   assert.match(helpers, /function bodyPropertyTitle/);
   assert.match(helpers, /addStage\('chapter', chapter\)/);
@@ -542,13 +574,14 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
 });
 
 test('Review fixes wire settings, rollup, reminders, and safe note paths', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const mutations = fs.readFileSync(path.join(__dirname, '../src/appMutations.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
-  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
-  const markdown = fs.readFileSync(path.join(__dirname, '../src/markdown.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const todosPanel = fs.readFileSync(path.join(__dirname, '../src/panels/todosPanel.jsx'), 'utf8');
+  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
 
   assert.match(app, /tweaks\.sortBy/);
@@ -570,10 +603,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
 
   assert.match(markdown, /window\.MN_REMIND/);
   assert.match(markdown, /function mnDefaultReminderText/);
-  assert.match(panels, /blockId: block\.id/);
-  assert.match(panels, /isReminderOnly/);
-  assert.match(panels, /onSnooze \|\| onDismiss/);
-  assert.match(panels, /rollupFormat === 'short'/);
+  assert.match(todosPanel, /blockId: block\.id/);
+  assert.match(todosPanel, /isReminderOnly/);
+  assert.match(utilityPanels, /onSnooze \|\| onDismiss/);
+  assert.match(utilityPanels, /rollupFormat === 'short'/);
   assert.match(sidebar, /label="Daily rollup"/);
   assert.match(sidebar, /const rollupCount = notes\.length/);
 
@@ -649,8 +682,9 @@ test('Release metadata targets renamed VispNote repository', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '../package-lock.json'), 'utf8'));
   const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
 
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
   assert.equal(lock.version, pkg.version);
@@ -676,9 +710,9 @@ test('Release metadata targets renamed VispNote repository', () => {
   assert.equal(pkg.scripts.prebuild, 'npm run build:renderer');
   assert.equal(pkg.dependencies['@babel/standalone'], undefined);
   const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
-  assert.match(rendererBuild, /esbuild\.transformSync/);
-  assert.match(rendererBuild, /\(function \(\) \{/);
-  assert.match(rendererBuild, /React\.createElement\(window\.MnApp\)/);
+  assert.match(rendererBuild, /esbuild\.buildSync/);
+  assert.match(rendererBuild, /bundle: true/);
+  assert.match(rendererEntry, /React\.createElement\(window\.MnApp\)/);
   assert.match(fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8'), /beforePack: scripts\/before-pack\.js/);
   assert.match(fs.readFileSync(path.join(__dirname, '../scripts/before-pack.js'), 'utf8'), /Refusing to package/);
   assert.match(fs.readFileSync(path.join(__dirname, '../scripts/verify-packaged-renderer.js'), 'utf8'), /Wrong-platform better-sqlite3 native module/);
@@ -710,7 +744,7 @@ test('Release builds omit AppX and MSIX Store package targets', () => {
 });
 
 test('Vault switcher uses VispNote icon instead of letter tiles', () => {
-  const sidebar = fs.readFileSync(path.join(__dirname, '../src/sidebar.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
 
   assert.match(sidebar, /const VAULT_ICON_SRC = 'assets\/vispnote-icon\.png'/);
   assert.match(sidebar, /function MnVaultIcon/);
@@ -731,7 +765,7 @@ test('Vault switcher uses VispNote icon instead of letter tiles', () => {
 test('Fallback spell checker underlines misspellings and offers replacements', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
   assert.match(main, /function spellcheckWords/);
   assert.match(main, /SPELL_DICTIONARY_PATHS/);
@@ -740,7 +774,7 @@ test('Fallback spell checker underlines misspellings and offers replacements', (
   assert.match(main, /await fs\.promises\.readFile\(file, 'utf8'\)/);
   assert.match(main, /loadSpellWords\(\)\.catch/);
   assert.match(main, /spellSuggestionCache\.size >= SPELL_SUGGESTION_CACHE_LIMIT/);
-  assert.match(main, /loadedDictionaryWords < 1000/);
+  assert.match(main, /loadedDictionaryWords < MIN_USABLE_DICTIONARY_WORDS/);
   assert.match(main, /if \(!spellDictionaryAvailable\) return \{\}/);
   assert.match(main, /spellSuggestions\(word, dictionary\)/);
   assert.match(preload, /spellcheck: \(words\) => ipcRenderer\.invoke\('mn:spellcheck', words\)/);
@@ -752,21 +786,22 @@ test('Fallback spell checker underlines misspellings and offers replacements', (
 });
 
 test('Workflow notes can be archived from workflow boards only', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/appShell.jsx'), 'utf8');
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
+  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
-  const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
+  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
+  const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
-  const ai = fs.readFileSync(path.join(__dirname, '../src/ai.jsx'), 'utf8');
+  const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
-  const helpers = fs.readFileSync(path.join(__dirname, '../src/appHelpers.js'), 'utf8');
+  const helpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
 
   assert.match(helpers, /workflowArchived: !!note\.workflowArchived/);
   assert.match(helpers, /if \(note\.workflowArchived\) \{/);
@@ -774,7 +809,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(app, /const updateWorkflowArchived = useCallbackA/);
   assert.match(app, /archivedNotes=\{workflowViewData\.archivedNotes\}/);
   assert.match(app, /onSetWorkflowArchived=\{updateWorkflowArchived\}/);
-  assert.match(app, /"workflowStates": null/);
+  assert.match(appRuntime, /"workflowStates": null/);
   assert.match(app, /mnNormalizeWorkflowStatesForApp/);
   assert.match(app, /const normalWorkflowStates = useMemoA/);
   assert.match(app, /const novelistWorkflowStates = useMemoA/);
@@ -796,7 +831,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(panels, /renderWorkflowStateManager/);
   assert.match(panels, /Array\.isArray\(states\) && states\.length === 0 \? \[\]/);
   assert.doesNotMatch(panels, /disabled=\{\(workflowStates \|\| \[\]\)\.length <= 1\}/);
-  assert.match(app, /if \(Array\.isArray\(states\) && states\.length === 0\) return \[\]/);
+  assert.match(appRuntime, /if \(Array\.isArray\(states\) && states\.length === 0\) return \[\]/);
   assert.match(blockFeatures, /if \(Array\.isArray\(states\) && states\.length === 0\) return \[\]/);
   assert.match(panels, /new column/);
   assert.match(panels, /addWorkflowState/);
@@ -917,17 +952,18 @@ test('Workflow notes can be archived from workflow boards only', () => {
 });
 
 test('Stabilization wiring avoids stale UI and native dialogs', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/appShell.jsx'), 'utf8');
-  const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/appNovelist.js'), 'utf8');
-  const panelHelpersSource = fs.readFileSync(path.join(__dirname, '../src/panelHelpers.js'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
+  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
+  const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/app/appNovelist.js'), 'utf8');
+  const panelHelpersSource = fs.readFileSync(path.join(__dirname, '../src/panels/panelHelpers.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
-  const notelist = fs.readFileSync(path.join(__dirname, '../src/notelist.jsx'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels.jsx'), 'utf8');
+  const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -935,14 +971,14 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(appShell, /function MnAppNoticeDialog/);
   assert.match(html, /src="build\/renderer\/app\.js"/);
   const entryIndex = source => rendererEntry.indexOf(`import './${source}';`);
-  assert.ok(entryIndex('appHelpers.js') < entryIndex('app.jsx'));
-  assert.ok(entryIndex('appHelpers.js') < entryIndex('appMutations.js'));
-  assert.ok(entryIndex('appMutations.js') < entryIndex('app.jsx'));
-  assert.ok(entryIndex('appMutations.js') < entryIndex('appCanvasActions.js'));
-  assert.ok(entryIndex('appCanvasActions.js') < entryIndex('app.jsx'));
-  assert.match(app, /const MN_APP_HELPERS = window\.MN_APP_HELPERS/);
-  assert.match(app, /const MN_APP_MUTATIONS = window\.MN_APP_MUTATIONS/);
-  assert.match(app, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
+  assert.ok(entryIndex('app/appHelpers.js') < entryIndex('app/app.jsx'));
+  assert.ok(entryIndex('app/appHelpers.js') < entryIndex('app/appMutations.js'));
+  assert.ok(entryIndex('app/appMutations.js') < entryIndex('app/app.jsx'));
+  assert.ok(entryIndex('app/appMutations.js') < entryIndex('app/appCanvasActions.js'));
+  assert.ok(entryIndex('app/appCanvasActions.js') < entryIndex('app/app.jsx'));
+  assert.match(appRuntime, /const MN_APP_HELPERS = window\.MN_APP_HELPERS/);
+  assert.match(appRuntime, /const MN_APP_MUTATIONS = window\.MN_APP_MUTATIONS/);
+  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
   assert.match(app, /const searchSeq = useRefA\(0\)/);
   assert.match(app, /if \(seq === searchSeq\.current && res\.ok\) setSearchHits/);
   assert.match(app, /Load first, then switch atomically/);

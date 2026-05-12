@@ -4,13 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ops = require('../src/editorOps.js');
-const tableOps = require('../src/tableOps.js');
-const appHelpers = require('../src/appHelpers.js');
-const appNovelist = require('../src/appNovelist.js');
-const appMutations = require('../src/appMutations.js');
-const appCanvasActions = require('../src/appCanvasActions.js');
-const panelHelpers = require('../src/panelHelpers.js');
+const ops = require('../src/editor/editorOps.js');
+const tableOps = require('../src/editor/tableOps.js');
+const appHelpers = require('../src/app/appHelpers.js');
+const appNovelist = require('../src/app/appNovelist.js');
+const appMutations = require('../src/app/appMutations.js');
+const appCanvasActions = require('../src/app/appCanvasActions.js');
+const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
 test('First-run seed creates one notes vault and one novelist vault', async () => {
@@ -226,12 +226,48 @@ test('Canvas deletes are soft-deleted into the vault trash folder', async () => 
   });
 });
 
+test('Store preserves unreadable metadata and soft-deletes vault folders', async () => {
+  await withIsolatedStore(async (store) => {
+    const vaults = await store.listVaults();
+    const first = vaults[0];
+    const second = vaults[1];
+    const metaPath = path.join(store.ROOT, first.slug, '.meta.json');
+    fs.writeFileSync(metaPath, '{bad json', 'utf8');
+
+    const loaded = await store.loadVault(first.id);
+    assert.equal(Array.isArray(loaded.notes), true);
+    assert.equal(
+      fs.readdirSync(path.join(store.ROOT, first.slug)).some(name => name.startsWith('.meta.json.broken.')),
+      true
+    );
+
+    const originalVaultPath = path.join(store.ROOT, second.slug);
+    const deleted = await store.deleteVault(second.id);
+    assert.equal(fs.existsSync(originalVaultPath), false);
+    assert.equal(fs.existsSync(deleted.deletedPath), true);
+    assert.match(path.relative(store.ROOT, deleted.deletedPath), /^\.trash[\\/]vaults[\\/]/);
+
+    const oldDate = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const staleImport = path.join(store.ROOT, '.import-stale');
+    const staleTmp = path.join(store.ROOT, '.config.json.123.tmp');
+    fs.mkdirSync(staleImport, { recursive: true });
+    fs.writeFileSync(staleTmp, 'partial', 'utf8');
+    fs.utimesSync(staleImport, oldDate, oldDate);
+    fs.utimesSync(staleTmp, oldDate, oldDate);
+    store.__test.clearConfigCache();
+    await store.loadConfig();
+    assert.equal(fs.existsSync(staleImport), false);
+    assert.equal(fs.existsSync(staleTmp), false);
+  });
+});
+
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const markdown = fs.readFileSync(path.join(__dirname, '../src/markdown.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outlinerRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
@@ -310,9 +346,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.doesNotMatch(markdown, /dangerouslySetInnerHTML/);
   assert.doesNotMatch(markdown, /\.innerHTML\s*=/);
   assert.doesNotMatch(outliner, /ref\.current\.innerHTML\s*=/);
-  assert.match(outliner, /sandbox=""/);
-  assert.match(outliner, /function mnMermaidSvgHeight/);
-  assert.match(outliner, /pointerEvents: 'none'/);
+  assert.match(outlinerRenderers, /sandbox=""/);
+  assert.match(outlinerRenderers, /function mnMermaidSvgHeight/);
+  assert.match(outlinerRenderers, /pointerEvents: 'none'/);
   assert.doesNotMatch(aiSource, /env:\s*\{\s*\.\.\.process\.env/);
 
   assert.match(storeSource, /function sanitizeVaultMetaPatch/);
@@ -489,13 +525,14 @@ test('AI recursive note research uses only bounded read-only note tools', async 
 test('AI recursive note research is gated for simple specific queries unless forced', () => {
   const ai = require('../lib/ai');
   assert.equal(ai.__test.shouldUseRecursiveNoteResearch('open Alpha note', ['a', 'b', 'c'], {}), false);
-  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('what did I decide about Alpha?', ['a', 'b', 'c'], {}), true);
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('what did I decide about Alpha?', ['a', 'b', 'c'], {}), false);
   assert.equal(ai.__test.shouldUseRecursiveNoteResearch('open Alpha note', ['a', 'b', 'c'], { recursiveResearch: true }), true);
+  assert.equal(ai.__test.shouldUseRecursiveNoteResearch('summarise all my notes', ['a'], { recursiveResearch: true }), false);
   assert.equal(ai.__test.shouldUseRecursiveNoteResearch('what did I decide about Alpha?', ['a'], { recursiveResearch: false }), false);
 });
 
 test('AI high-risk capability policy remains disabled by default', () => {
-  const aiActions = require('../src/aiActions.js');
+  const aiActions = require('../src/ai/aiActions.js');
   const action = aiActions.classifyPrompt('run python code over my notes').action;
   assert.equal(action.type, 'high-risk-disabled');
   assert.match(action.reason, /not enabled/);
@@ -534,9 +571,9 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app.jsx'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings.jsx'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
 
   assert.match(store, /atomicWriteFile/);
   assert.match(store, /NOTE_CONFLICT/);

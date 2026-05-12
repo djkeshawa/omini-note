@@ -4,13 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ops = require('../src/editorOps.js');
-const tableOps = require('../src/tableOps.js');
-const appHelpers = require('../src/appHelpers.js');
-const appNovelist = require('../src/appNovelist.js');
-const appMutations = require('../src/appMutations.js');
-const appCanvasActions = require('../src/appCanvasActions.js');
-const panelHelpers = require('../src/panelHelpers.js');
+const ops = require('../src/editor/editorOps.js');
+const tableOps = require('../src/editor/tableOps.js');
+const appHelpers = require('../src/app/appHelpers.js');
+const appNovelist = require('../src/app/appNovelist.js');
+const appMutations = require('../src/app/appMutations.js');
+const appCanvasActions = require('../src/app/appCanvasActions.js');
+const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
 test('Markdown round-trip preserves heading children used by novelist links', () => {

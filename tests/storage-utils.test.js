@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const storage = require('../src/storageUtils.js');
+const storage = require('../src/shared/storageUtils.js');
 
 function memoryRoot() {
   const map = new Map();

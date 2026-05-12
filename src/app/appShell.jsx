@@ -798,7 +798,7 @@ function MnAiNotice({ notice, onOpen, onDismiss, T }) {
   );
 }
 
-function MnCommandPalette({ open, commands, onClose, T }) {
+function MnCommandPalette({ open, commands, onClose, onNaturalAction, T }) {
   const [query, setQuery] = useStateA('');
   const [active, setActive] = useStateA(0);
   const inputRef = useRefA(null);
@@ -814,10 +814,28 @@ function MnCommandPalette({ open, commands, onClose, T }) {
       clearTimeout(handle);
     };
   }, [open]);
-  const items = useMemoA(() => MN_APP_SHELL_HELPERS.filterCommands
-    ? MN_APP_SHELL_HELPERS.filterCommands(commands, query, 12)
-    : (commands || []).filter(cmd => cmd.enabled !== false).slice(0, 12),
-  [commands, query]);
+  const naturalPlan = useMemoA(() => {
+    const q = query.trim();
+    if (!q || !window.MN_APP_ACTIONS?.findForText) return null;
+    try { return window.MN_APP_ACTIONS.findForText(q); } catch (e) { return null; }
+  }, [query]);
+  const items = useMemoA(() => {
+    const filtered = MN_APP_SHELL_HELPERS.filterCommands
+      ? MN_APP_SHELL_HELPERS.filterCommands(commands, query, 12)
+      : (commands || []).filter(cmd => cmd.enabled !== false).slice(0, 12);
+    if (!naturalPlan?.steps?.length) return filtered;
+    const firstStep = naturalPlan.steps[0];
+    const firstActionId = firstStep.actionId;
+    const alreadyShown = filtered.some(cmd => cmd.id === firstActionId);
+    const naturalItem = {
+      id: `natural-${firstActionId}`,
+      title: naturalPlan.title || firstStep.label || 'Run app action',
+      section: naturalPlan.steps.length > 1 ? `${naturalPlan.steps.length} interpreted actions` : 'Interpreted request',
+      __naturalPlan: naturalPlan,
+      run: () => onNaturalAction?.(naturalPlan),
+    };
+    return alreadyShown ? filtered : [naturalItem, ...filtered].slice(0, 12);
+  }, [commands, query, naturalPlan, onNaturalAction]);
   useEffectA(() => setActive(0), [query]);
   if (!open) return null;
   const run = (cmd) => {
@@ -941,6 +959,22 @@ function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
                 {stat('Canvases', health.canvasCount)}
                 {stat('Words', health.wordCount)}
               </div>
+              {health.indexStatus && typeof health.indexStatus === 'object' && (
+                <div style={{ marginTop: 12, border: `1px solid ${T.lineSub}`, borderRadius: 8, overflow: 'hidden', background: T.bgSub }}>
+                  <div style={{ padding: '9px 11px', borderBottom: `1px solid ${T.lineSub}`, fontSize: 12, fontWeight: 700 }}>Index Health</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, padding: 10 }}>
+                    {stat('FTS notes', health.indexStatus.ftsIndexedNoteCount ?? '—')}
+                    {stat('Embed notes', health.indexStatus.embeddingNoteCount ?? '—')}
+                    {stat('Chunks', health.indexStatus.embeddingChunkCount ?? '—')}
+                    {stat('Missing', health.indexStatus.missingEmbeddingCount ?? '—')}
+                  </div>
+                  <div style={{ padding: '0 11px 11px', fontSize: 12, color: T.inkDim, fontFamily: 'var(--mn-body)' }}>
+                    {health.indexStatus.failureReason
+                      ? `Fallback reason: ${health.indexStatus.failureReason}`
+                      : `Model: ${health.indexStatus.model || 'unknown'} · Backfill: ${health.indexStatus.backfill?.running ? `${health.indexStatus.backfill.done || 0}/${health.indexStatus.backfill.total || 0}` : (health.indexStatus.backfill?.lastBackfill ? `last ran ${new Date(health.indexStatus.backfill.lastBackfill).toLocaleString()}` : 'idle')}`}
+                  </div>
+                </div>
+              )}
               <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <MnHealthList title="Broken Links" items={health.brokenLinks || []} empty="No broken wiki links" render={item => `${item.noteTitle} -> ${item.target}`} T={T} />
                 <MnHealthList title="Orphan Notes" items={health.orphanNotes || []} empty="No orphan notes" render={item => item.title} T={T} />

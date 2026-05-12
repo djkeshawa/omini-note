@@ -1,0 +1,255 @@
+// Aggregated todo and reminder panel.
+
+const { useMemo: useMemoP } = React;
+const { SectionHead } = window.MN_PANEL_COMPONENTS || {};
+
+function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant }) {
+  const tagHue = useMemoP(() => {
+    const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
+  }, [tags]);
+
+  // Gather all todos and reminders from block data so duplicate text toggles
+  // the intended task.
+  const items = useMemoP(() => {
+    const acc = [];
+    const remind = window.MN_REMIND;
+    notes.forEach(n => {
+      if (n.blocks?.length && window.mnWalk) {
+        window.mnWalk(n.blocks, block => {
+          const parsed = remind?.parse?.(block.content || '');
+          if (block.kind === 'todo') {
+            acc.push({
+              noteId: n.id, noteTitle: n.title, noteTags: n.tags,
+              blockId: block.id,
+              text: block.content || '',
+              checked: !!block.checked,
+              remindAt: parsed,
+              noteDate: n.date,
+            });
+          } else if (parsed) {
+            acc.push({
+              noteId: n.id, noteTitle: n.title, noteTags: n.tags,
+              blockId: block.id,
+              text: remind?.strip?.(block.content || '') || block.content || '',
+              checked: false,
+              isReminderOnly: true,
+              remindAt: parsed,
+              noteDate: n.date,
+            });
+          }
+        });
+        return;
+      }
+      const lines = String(n.body || '').split('\n');
+      lines.forEach((line, lineNum) => {
+        const m = line.match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
+        if (m) {
+          const checked = /[xX]/.test(m[2]);
+          const parsed = remind?.parse?.(m[3]);
+          acc.push({
+            noteId: n.id, noteTitle: n.title, noteTags: n.tags,
+            text: m[3], checked, line: lineNum,
+            remindAt: parsed,
+            noteDate: n.date,
+          });
+        }
+      });
+      // Also capture bare @remind directives not inside checkboxes
+      lines.forEach((line, lineNum) => {
+        if (/^\s*-\s+\[/.test(line)) return;
+        const parsed = remind?.parse?.(line);
+        if (parsed) {
+          acc.push({
+            noteId: n.id, noteTitle: n.title, noteTags: n.tags,
+            text: remind?.strip?.(line) || line, checked: false, line: lineNum,
+            isReminderOnly: true,
+            remindAt: parsed, noteDate: n.date,
+          });
+        }
+      });
+    });
+    return acc;
+  }, [notes]);
+
+  const open = items.filter(i => !i.checked);
+  const done = items.filter(i => i.checked);
+  const withRem = open.filter(i => i.remindAt);
+  const itemKey = (it, fallback) => [
+    it.noteId,
+    it.blockId ?? it.line ?? fallback,
+    it.remindAt?.raw || it.remindAt?.date || '',
+    it.text || '',
+  ].join('|');
+
+  const Card = ({ it, idx }) => {
+    const isOverdue = it.remindAt && it.remindAt.at < new Date();
+    const label = window.MN_REMIND?.strip?.(it.text) || String(it.text || '').trim();
+    return (
+      <div
+        onClick={() => onOpen(it.noteId)}
+        style={{
+          padding: variant === 'compact' ? '8px 12px' : '12px 14px',
+          background: T.bg, border: `1px solid ${T.lineSub}`,
+          borderLeft: it.remindAt
+            ? `3px solid ${isOverdue ? T.danger : T.warn}`
+            : `3px solid ${T.lineSub}`,
+          borderRadius: 6, cursor: 'pointer',
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+          transition: 'background 80ms',
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+        onMouseLeave={e => e.currentTarget.style.background = T.bg}>
+        {it.isReminderOnly ? (
+          <span style={{
+            width: 15, height: 15, marginTop: 2, flexShrink: 0,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            color: isOverdue ? T.danger : T.warn,
+          }}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+              <circle cx="8" cy="9" r="5.5"/><path d="M8 6V9L10 10" strokeLinecap="round"/>
+            </svg>
+          </span>
+        ) : (
+          <button onClick={(e) => { e.stopPropagation(); onToggleCheck(it); }} style={{
+            width: 15, height: 15, marginTop: 2, flexShrink: 0,
+            border: `1.5px solid ${it.checked ? T.accent : T.line}`,
+            background: it.checked ? T.accent : 'transparent',
+            borderRadius: 4, cursor: 'pointer', padding: 0,
+          }} />
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: 'var(--mn-body)', fontSize: 14.5,
+            color: it.checked ? T.inkDim : T.ink,
+            textDecoration: it.checked ? 'line-through' : 'none',
+            lineHeight: 1.5,
+          }}>
+            {label || <span style={{ color: T.inkDim, fontStyle: 'italic' }}>Reminder</span>}
+          </div>
+          <div style={{
+            marginTop: 6, display: 'flex', gap: 8, alignItems: 'center',
+            fontFamily: 'var(--mn-mono)', fontSize: 10.5,
+            color: T.inkDim, flexWrap: 'wrap',
+          }}>
+            <span style={{ color: T.inkMed }}>{it.noteTitle}</span>
+            {it.noteTags.slice(0, 2).map(t => (
+              <span key={t} style={{
+                color: mnGetTagColor(tagHue[t] ?? 240, theme),
+              }}>#{t}</span>
+            ))}
+            {it.remindAt && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                color: isOverdue ? T.danger : T.warn, fontWeight: 500,
+              }}>
+                <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+                  <circle cx="8" cy="9" r="5.5"/>
+                  <path d="M8 6V9L10 10" strokeLinecap="round"/>
+                </svg>
+                {it.remindAt.date}{it.remindAt.time ? ' ' + it.remindAt.time : ''}
+                {isOverdue && ' · overdue'}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (variant === 'kanban') {
+    const buckets = [
+      { k: 'due', label: 'Due / Reminders', items: withRem },
+      { k: 'open', label: 'Open', items: open.filter(i => !i.remindAt) },
+      { k: 'done', label: 'Done', items: done },
+    ];
+    return (
+      <div style={{
+        flex: 1, height: '100%', background: T.bg,
+        padding: '40px 28px 28px', overflow: 'auto',
+      }}>
+        <div style={{
+          fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 600,
+          color: T.ink, marginBottom: 3, letterSpacing: 0,
+        }}>Todos</div>
+        <div style={{
+          fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
+          letterSpacing: '0.06em', marginBottom: 20,
+        }}>{open.length} open · {done.length} done · {withRem.length} with reminders</div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+          {buckets.map(b => (
+            <div key={b.k} style={{
+              background: T.bgSub, borderRadius: 8, padding: 10,
+              border: `1px solid ${T.lineSub}`, minHeight: 400,
+            }}>
+              <div style={{
+                fontFamily: 'var(--mn-mono)', fontSize: 10,
+                letterSpacing: '0.12em', textTransform: 'uppercase',
+                color: T.inkDim, margin: '2px 4px 10px',
+                display: 'flex', justifyContent: 'space-between',
+              }}>
+                <span>{b.label}</span>
+                <span>{b.items.length}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {b.items.map((it, i) => <Card key={itemKey(it, i)} it={it} idx={i} />)}
+                {b.items.length === 0 && (
+                  <div style={{
+                    padding: 14, textAlign: 'center',
+                    fontFamily: 'var(--mn-body)', fontSize: 12.5,
+                    color: T.inkDim, fontStyle: 'italic',
+                  }}>nothing here</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Default: grouped list
+  return (
+    <div style={{
+      flex: 1, height: '100%', background: T.bg,
+      padding: '40px 28px 28px', overflow: 'auto',
+    }}>
+      <div style={{ maxWidth: 760, margin: '0 auto' }}>
+        <div style={{
+          fontFamily: 'var(--mn-ui)', fontSize: 26, fontWeight: 600,
+          color: T.ink, marginBottom: 3, letterSpacing: 0,
+        }}>Todos</div>
+        <div style={{
+          fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
+          letterSpacing: '0.06em', marginBottom: 24,
+        }}>{open.length} open · {done.length} done · {withRem.length} with reminders</div>
+
+        {withRem.length > 0 && (
+          <>
+            <SectionHead T={T} label="Reminders" count={withRem.length} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 28 }}>
+              {withRem.map((it, i) => <Card key={itemKey(it, i)} it={it} idx={i} />)}
+            </div>
+          </>
+        )}
+
+        <SectionHead T={T} label="Open" count={open.filter(i => !i.remindAt).length} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 28 }}>
+          {open.filter(i => !i.remindAt).map((it, i) => <Card key={itemKey(it, `o${i}`)} it={it} idx={'o' + i} />)}
+        </div>
+
+        {done.length > 0 && (
+          <>
+            <SectionHead T={T} label="Done" count={done.length} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {done.map((it, i) => <Card key={itemKey(it, `d${i}`)} it={it} idx={'d' + i} />)}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+window.MnTodosPanel = MnTodosPanel;

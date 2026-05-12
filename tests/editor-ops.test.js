@@ -4,13 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ops = require('../src/editorOps.js');
-const tableOps = require('../src/tableOps.js');
-const appHelpers = require('../src/appHelpers.js');
-const appNovelist = require('../src/appNovelist.js');
-const appMutations = require('../src/appMutations.js');
-const appCanvasActions = require('../src/appCanvasActions.js');
-const panelHelpers = require('../src/panelHelpers.js');
+const ops = require('../src/editor/editorOps.js');
+const tableOps = require('../src/editor/tableOps.js');
+const appHelpers = require('../src/app/appHelpers.js');
+const appNovelist = require('../src/app/appNovelist.js');
+const appMutations = require('../src/app/appMutations.js');
+const appCanvasActions = require('../src/app/appCanvasActions.js');
+const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 const projectPaths = require('./helpers/paths.js');
 
@@ -135,7 +135,7 @@ test('Functional block updates compose in one event', () => {
 });
 
 test('Outliner history preserves unchanged block identity for memoized rows', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../src/outlinerHistory.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerHistory.js'), 'utf8');
   const context = { window: {} };
   vm.createContext(context);
   vm.runInContext(source, context);
@@ -187,7 +187,7 @@ test('Markdown table rows round-trip through table helpers', () => {
 });
 
 test('Block area selection can delete as one undoable operation and redo it', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
   assert.match(outliner, /selectedBlockIds/);
   assert.match(outliner, /selectedAsArea/);
@@ -204,11 +204,11 @@ test('Block area selection can delete as one undoable operation and redo it', ()
 });
 
 test('Typing in a section groups into one undo entry per edit session', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
 
   assert.match(outliner, /contentEditHistoryRef/);
-  assert.match(rendererEntry, /import '\.\/outlinerHistory\.js';/);
+  assert.match(rendererEntry, /import '\.\/editor\/outlinerHistory\.js';/);
   assert.match(outliner, /mnCreateEditorHistory/);
   assert.match(outliner, /mnShareBlockTree/);
   assert.match(outliner, /const MnMemoBlockRow = React\.memo\(MnBlockRow, mnBlockRowMemoEqual\)/);
@@ -220,7 +220,7 @@ test('Typing in a section groups into one undo entry per edit session', () => {
 });
 
 test('Clicking rendered text enters edit mode at the clicked caret offset', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
   assert.match(outliner, /displayTextRef/);
   assert.match(outliner, /pendingCaretRef/);
@@ -230,7 +230,7 @@ test('Clicking rendered text enters edit mode at the clicked caret offset', () =
 });
 
 test('Visible block context menu options are wired to real operations', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
   assert.match(outliner, /position === 'up'/);
   assert.match(outliner, /position === 'down'/);
@@ -240,11 +240,11 @@ test('Visible block context menu options are wired to real operations', () => {
 test('Table blocks are parsed, rendered, copied, and pasted as formatted markdown', () => {
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
-  const outline = fs.readFileSync(path.join(__dirname, '../src/outline.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  assert.match(rendererEntry, /import '\.\/tableOps\.js';/);
+  assert.match(rendererEntry, /import '\.\/editor\/tableOps\.js';/);
   assert.match(outline, /readMarkdownTable\(lines, i\)/);
   assert.match(outline, /kind: 'table'/);
   assert.match(outline, /b\.kind === 'table'/);
@@ -261,8 +261,9 @@ test('Table blocks are parsed, rendered, copied, and pasted as formatted markdow
 
 test('Code blocks preserve language metadata and expose syntax UI', () => {
   const outlineApi = loadOutlineForTest();
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const highlighter = fs.readFileSync(path.join(__dirname, '../src/codeHighlighter.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const renderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
+  const highlighter = fs.readFileSync(path.join(__dirname, '../src/editor/codeHighlighter.jsx'), 'utf8');
 
   const blocks = outlineApi.mnMdToBlocks('```js\nconst answer = 42;\n```');
   assert.equal(blocks.length, 1);
@@ -274,15 +275,15 @@ test('Code blocks preserve language metadata and expose syntax UI', () => {
   assert.match(highlighter, /const MN_CODE_LANGUAGES = \[/);
   assert.match(highlighter, /value: 'javascript'/);
   assert.match(highlighter, /window\.MN_CODE_HIGHLIGHTER/);
-  assert.match(outliner, /function mnRenderCode/);
+  assert.match(renderers, /function mnRenderCode/);
   assert.match(outliner, /<select[\s\S]+Code language/);
   assert.match(outliner, /mnRenderCode\(content, block\.language, T\)/);
-  assert.match(outliner, /mnMermaidSvgHeight\(svg\)/);
-  assert.match(outliner, /height: doc \? Math\.max\(160, height\) : 0/);
+  assert.match(renderers, /mnMermaidSvgHeight\(svg\)/);
+  assert.match(renderers, /height: doc \? Math\.max\(160, height\) : 0/);
 });
 
 test('Selection toolbar closes on outside click and keeps overflow actions in More', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
   assert.match(outliner, /mn-selection-toolbar/);
   assert.match(outliner, /setSelection\(null\)/);
@@ -292,8 +293,8 @@ test('Selection toolbar closes on outside click and keeps overflow actions in Mo
 });
 
 test('Block clipboard preserves multi-block formatting for copy cut paste', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/outliner.jsx'), 'utf8');
-  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/blockFeatures.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
 
   assert.match(outliner, /MN_BLOCK_CLIPBOARD_TYPE/);
   assert.match(outliner, /mnNormalizeClipboardMarkdown/);

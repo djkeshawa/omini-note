@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('mn', {
     status:    () => ipcRenderer.invoke('mn:ai.status'),
     connect:   () => ipcRenderer.invoke('mn:ai.connect'),
     ask:       (vaultId, query, options) => ipcRenderer.invoke('mn:ai.ask', vaultId, query, options),
+    summarizeVault: (vaultId, query, options) => ipcRenderer.invoke('mn:ai.summarizeVault', vaultId, query, options),
     askStream: (vaultId, query, options = {}, onChunk) => {
       const tokenHandler = typeof onChunk === 'function'
         ? onChunk
@@ -89,6 +90,7 @@ contextBridge.exposeInMainWorld('mn', {
         .finally(() => ipcRenderer.removeListener(channel, listener));
     },
     chat:      (payload) => ipcRenderer.invoke('mn:ai.chat', payload),
+    toolPlan:  (payload) => ipcRenderer.invoke('mn:ai.toolPlan', payload),
     chatStream:(payload = {}, onChunk) => {
       const tokenHandler = typeof onChunk === 'function'
         ? onChunk
@@ -106,6 +108,9 @@ contextBridge.exposeInMainWorld('mn', {
     },
     cancel:    (jobId) => ipcRenderer.invoke('mn:ai.cancel', jobId),
     backfill:  (vaultId) => ipcRenderer.invoke('mn:ai.backfill', vaultId),
+    indexStatus: (vaultId) => ipcRenderer.invoke('mn:ai.indexStatus', vaultId),
+    backfillStatus: (vaultId) => ipcRenderer.invoke('mn:ai.backfillStatus', vaultId),
+    backfillCancel: (vaultId) => ipcRenderer.invoke('mn:ai.backfillCancel', vaultId),
     related:   (vaultId, noteId, options) => ipcRenderer.invoke('mn:ai.related', vaultId, noteId, options),
     getConfig: () => ipcRenderer.invoke('mn:ai.getConfig'),
     setConfig: (patch) => ipcRenderer.invoke('mn:ai.setConfig', patch),
