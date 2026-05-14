@@ -212,6 +212,12 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /function mnBuildAskThreadPrompt\(priorMessages = \[\], currentQuery = ''\)/);
   assert.match(ai, /function mnRecentAskThreadNote\(priorMessages = \[\]\)/);
   assert.match(ai, /function mnBuildContextualActionQuery\(priorMessages = \[\], currentQuery = ''\)/);
+  assert.match(ai, /const MN_AI_VIRTUAL_TOOLS = \[/);
+  assert.match(ai, /name: 'answer-notes'/);
+  assert.match(ai, /name: 'edit-current-page'/);
+  assert.match(ai, /function mnAiCurrentContextMessage\(currentNote\)/);
+  assert.match(ai, /const runLlmOrchestrator = async/);
+  assert.match(ai, /await runLlmOrchestrator\(\{ q, actionQuery, priorMessages, jobId, run \}\)/);
   assert.match(ai, /const scrollVersion = messages\.map/);
   assert.match(ai, /onScroll=\{rememberScrollPosition\}/);
   assert.match(ai, /data-mn-chat-bottom="true"/);
@@ -233,6 +239,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /tag-created-note/);
   assert.match(ai, /if \(stoppedJobRef\.current === jobId\) return/);
   assert.match(aiUi, /function MnAiChatHistory/);
+  assert.match(aiUi, /provider !== 'ollama'/);
   assert.match(aiUi, /AI chats/);
   assert.match(aiUi, /Show archived chats/);
   assert.match(aiUi, /Archived <span/);
@@ -242,6 +249,23 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /embedded = false/);
   assert.match(ai, /const MN_ASK_SUGGESTIONS = \[/);
   assert.match(ai, /function mnAskStatusText/);
+  assert.match(ai, /function mnAiProviderLabel/);
+  assert.match(ai, /function mnAskFooterHint/);
+  assert.match(ai, /provider !== 'ollama'/);
+  assert.match(ai, /openrouter: 'OpenRouter'/);
+  assert.match(ai, /\$\{providerLabel\} ready/);
+  assert.match(ai, /Enter to ask · Shift\+Enter for newline/);
+  assert.match(ai, /const \[openSources, setOpenSources\]/);
+  assert.match(ai, /const onComposerKeyDown = \(e\) =>/);
+  assert.match(ai, /rows=\{1\}/);
+  assert.match(ai, /aria-expanded=\{sourcesOpen\}/);
+  assert.match(ai, /Sources \(\{m\.sources\.length\}\)/);
+  assert.match(ai, /function mnParseAiResponseBlocks\(text\)/);
+  assert.match(ai, /function mnAiLooksLikeSectionLabel\(text\)/);
+  assert.match(ai, /promoted: true/);
+  assert.match(ai, /function MnAiFormattedResponse\(\{ text, T \}\)/);
+  assert.match(ai, /gridTemplateColumns: block\.type === 'ol'/);
+  assert.match(ai, /<MnAiFormattedResponse text=\{m\.text\} T=\{T\} \/>/);
   assert.match(ai, /mnAskPrimaryButton/);
   assert.match(ai, /mnAskSecondaryButton/);
   assert.match(ai, /Clear/);
@@ -273,6 +297,9 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(aiLib, /const STATUS_CACHE_MS/);
   assert.match(aiLib, /const OLLAMA_KEEP_ALIVE = '10m'/);
   assert.match(aiLib, /const PROVIDERS = \{/);
+  assert.match(aiLib, /Decide whether to answer directly, inspect note context, ask a clarifying question, or call tools/);
+  assert.match(aiLib, /Format intentionally: use markdown headings for section titles, bullets only for real list items/);
+  assert.match(aiLib, /Emoji are allowed when they naturally improve tone or scanability/);
   assert.match(aiLib, /openrouterApiKey/);
   assert.match(aiLib, /openaiApiKey/);
   assert.match(aiLib, /anthropicApiKey/);
@@ -676,6 +703,22 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   }
   assert.match(linuxAfterInstall, /gtk-update-icon-cache -q -t -f \/usr\/share\/icons\/hicolor/);
   assert.match(linuxAfterInstall, /xdg-icon-resource forceupdate --theme hicolor/);
+});
+
+test('URL plugins follow the external URL security policy and surface failures', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const plugins = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
+
+  assert.match(app, /appActionRegistry\.run\(action\.id, \{\}, \{ confirmed: action\.risk === 'external' \}\)/);
+  assert.match(app, /risk: plugin\.type === 'open-url' \? 'external' : 'safe'/);
+  assert.match(plugins, /Launch a trusted HTTPS page or mail link/);
+  assert.match(app, /const runPlugin = useCallbackA\(async \(plugin\) =>/);
+  assert.ok(app.includes("if (!/^(https:\\/\\/|mailto:)/i.test(url)) {"));
+  assert.match(app, /must start with https:\/\/ or mailto:/);
+  assert.match(app, /const res = await window\.mn\.openExternal\(url\)/);
+  assert.match(app, /if \(res && res\.ok === false\) throw new Error/);
+  assert.match(app, /showAppNotice\('Could not open link'/);
+  assert.doesNotMatch(app, /must start with http:\/\/ or https:\/\//);
 });
 
 test('Release metadata targets renamed VispNote repository', () => {

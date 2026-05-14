@@ -27,7 +27,7 @@ const MN_PLUGIN_TYPES = [
   {
     id: 'open-url',
     label: 'Open URL',
-    purpose: 'Launch a trusted web app, dashboard, or reference.',
+    purpose: 'Launch a trusted HTTPS page or mail link.',
     defaultConfig: {
       title: '',
       body: '',

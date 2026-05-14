@@ -261,6 +261,23 @@ test('Store preserves unreadable metadata and soft-deletes vault folders', async
   });
 });
 
+test('Vault loading falls back from unsafe note front matter ids', async () => {
+  await withIsolatedStore(async (store) => {
+    const vault = (await store.listVaults()).find(item => item.name === 'Personal');
+    const notePath = path.join(store.ROOT, vault.slug, 'n_safe.md');
+    fs.writeFileSync(
+      notePath,
+      '---\nid: ../bad\ntitle: Unsafe front matter\n---\n\nBody survives with safe file id.\n',
+      'utf8'
+    );
+
+    const loaded = await store.loadVault(vault.id);
+    const note = loaded.notes.find(item => item.title === 'Unsafe front matter');
+    assert.equal(note.id, 'n_safe');
+    assert.equal(note.body.trim(), 'Body survives with safe file id.');
+  });
+});
+
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
@@ -567,12 +584,50 @@ test('Store hardening validates trash ids, merge keys, and backup size', async (
   });
 });
 
+test('Backup import preserves duplicate note and canvas ids without overwriting', async () => {
+  await withIsolatedStore(async (store) => {
+    const backup = {
+      format: 'vispnote.backup.v1',
+      app: 'VispNote',
+      exportedAt: new Date().toISOString(),
+      vaults: [{
+        name: 'Imported duplicates',
+        meta: { tags: [], lastSelectedId: 'n_same' },
+        notes: [
+          { id: 'n_same', title: 'First duplicate', date: '2026-05-12T00:00:00.000Z', tags: [], body: 'one' },
+          { id: 'n_same', title: 'Second duplicate', date: '2026-05-12T00:00:00.000Z', tags: [], body: 'two' },
+          { title: 'Missing id', date: '2026-05-12T00:00:00.000Z', tags: [], body: 'three' },
+        ],
+        canvases: [
+          { id: 'c_same', title: 'First canvas', elements: [] },
+          { id: 'c_same', title: 'Second canvas', elements: [] },
+          { title: 'Missing canvas id', elements: [] },
+        ],
+      }],
+    };
+
+    const result = await store.importBackup(JSON.stringify(backup));
+    const importedVault = result.importedVaults[0];
+    const loaded = await store.loadVault(importedVault.id);
+    const canvases = await store.listCanvases(importedVault.id);
+
+    assert.equal(loaded.notes.length, 3);
+    assert.equal(new Set(loaded.notes.map(note => note.id)).size, 3);
+    assert.deepEqual(loaded.notes.map(note => note.title).sort(), ['First duplicate', 'Missing id', 'Second duplicate']);
+    assert.equal(canvases.length, 3);
+    assert.equal(new Set(canvases.map(canvas => canvas.id)).size, 3);
+    assert.deepEqual(canvases.map(canvas => canvas.title).sort(), ['First canvas', 'Missing canvas id', 'Second canvas']);
+  });
+});
+
 test('Data safety wiring exposes trash, versions, and save conflict recovery', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
+  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
 
   assert.match(store, /atomicWriteFile/);
@@ -592,6 +647,15 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   assert.match(app, /titleUpdateTimerRef/);
   assert.match(app, /MnSaveConflictDialog/);
   assert.match(app, /MnVersionHistoryDialog/);
+  assert.match(app, /MnRecentlyDeletedPanel/);
+  assert.match(app, /const refreshDeletedItems = useCallbackA/);
+  assert.match(app, /view === 'trash'/);
+  assert.match(app, /setTrashItems\(items => items\.filter/);
+  assert.match(sidebar, /label="Recently deleted"/);
+  assert.match(sidebar, /trashActive/);
+  assert.match(utilityPanels, /function MnRecentlyDeletedPanel/);
+  assert.match(utilityPanels, /Pending cleanup/);
+  assert.match(utilityPanels, /Confirm delete/);
   assert.match(store, /MAX_BACKUP_IMPORT_BYTES/);
   assert.match(store, /MAX_NOTE_BODY_BYTES/);
   assert.match(store, /MAX_CANVAS_JSON_BYTES/);

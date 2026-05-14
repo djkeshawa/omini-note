@@ -353,6 +353,15 @@ function StatusPill({ status, T }) {
   if (!status) return (
     <Pill T={T} color={T.inkDim}>checking…</Pill>
   );
+  const provider = String(status?.config?.provider || 'ollama').toLowerCase();
+  if (provider !== 'ollama') {
+    if (status.chatModelOk) return (
+      <Pill T={T} color="#070">ready</Pill>
+    );
+    return (
+      <Pill T={T} color="#a60">setup needed</Pill>
+    );
+  }
   if (!status.reachable) return (
     <Pill T={T} color="#a60">setup needed</Pill>
   );

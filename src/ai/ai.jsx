@@ -50,6 +50,39 @@ const MN_AI_REPORT_TARGETS = {
   },
 };
 
+const MN_AI_VIRTUAL_TOOLS = [
+  {
+    name: 'answer-notes',
+    title: 'Answer from notes',
+    description: 'Answer a question by searching and reading the active vault notes. Use when the user asks about their notes, pages, tasks, tags, decisions, dates, links, or vault content.',
+    risk: 'safe',
+    readOnly: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', maxLength: 2000 },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'edit-current-page',
+    title: 'Edit current page',
+    description: 'Rewrite, format, summarize, improve, fix grammar, or link the currently open page. Use only when the user explicitly asks to change the current page.',
+    risk: 'safe',
+    readOnly: false,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        instruction: { type: 'string', maxLength: 4000 },
+      },
+      required: ['instruction'],
+      additionalProperties: false,
+    },
+  },
+];
+
 async function mnAiProviderReportInfo() {
   let config = null;
   try {
@@ -212,12 +245,357 @@ function mnBuildContextualActionQuery(priorMessages = [], currentQuery = '') {
   return query;
 }
 
+function mnAiCurrentNoteMarkdown(note) {
+  if (!note) return '';
+  if (typeof note.body === 'string') return note.body;
+  try {
+    return window.MN_OUTLINE?.mnBlocksToMd?.(note.blocks || []) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function mnAiCurrentContextMessage(currentNote) {
+  if (!currentNote) return '';
+  const body = mnAiCurrentNoteMarkdown(currentNote);
+  return [
+    'Current VispNote context:',
+    `- Current page title: ${currentNote.title || 'Untitled'}`,
+    `- Current page id: ${currentNote.id || ''}`,
+    currentNote.tags?.length ? `- Current page tags: ${currentNote.tags.map(tag => `#${tag}`).join(' ')}` : '',
+    body ? `- Current page body excerpt:\n${body.slice(0, 6000)}` : '',
+    '',
+    'Use this context for references like "this page", "current note", "it", or "that".',
+  ].filter(Boolean).join('\n');
+}
+
+function mnAiToolCallsFromPlanResult(result = {}) {
+  const value = result?.value || result || {};
+  if (value.ok === false) return { answer: String(value.error || '').trim(), toolCalls: [] };
+  const toolCalls = Array.isArray(value.toolCalls) ? value.toolCalls
+    : Array.isArray(value.calls) ? value.calls
+      : [];
+  return {
+    answer: String(value.answer || '').trim(),
+    toolCalls: toolCalls.map(call => ({
+      name: String(call?.name || call?.tool || call?.function?.name || '').trim(),
+      args: call?.args && typeof call.args === 'object'
+        ? call.args
+        : call?.input && typeof call.input === 'object'
+          ? call.input
+          : {},
+      reason: String(call?.reason || '').trim(),
+    })).filter(call => call.name),
+  };
+}
+
+function mnAiPlainInlineText(text) {
+  return String(text || '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .trim();
+}
+
+function mnAiLooksLikeSectionLabel(text) {
+  const clean = mnAiPlainInlineText(text);
+  if (!clean.endsWith(':')) return false;
+  const label = clean.slice(0, -1).trim();
+  if (!label || label.length > 80) return false;
+  if (/[.!?]/.test(label)) return false;
+  const words = label.split(/\s+/).filter(Boolean);
+  if (words.length > 8) return false;
+  return words.some(word => /^[A-Z0-9]/.test(word));
+}
+
 function mnAskStatusText(status) {
-  if (!status) return 'Checking local AI';
+  const provider = String(status?.config?.provider || 'ollama').toLowerCase();
+  const providerLabel = mnAiProviderLabel(provider);
+  if (!status) return provider === 'ollama' ? 'Checking local AI' : `Checking ${providerLabel}`;
+  if (provider !== 'ollama') return status.chatModelOk ? `${providerLabel} ready` : 'Setup needed';
   if (!status.reachable) return 'Setup needed';
   if (!status.chatModelOk) return 'Setup needed';
   if (!status.embedModelOk) return 'Keyword search mode';
   return 'Semantic search ready';
+}
+
+function mnAiProviderLabel(provider) {
+  return ({
+    ollama: 'Ollama',
+    openrouter: 'OpenRouter',
+    openai: 'OpenAI',
+    anthropic: 'Anthropic',
+    gemini: 'Gemini',
+    custom: 'Custom provider',
+  })[String(provider || 'ollama').toLowerCase()] || 'AI provider';
+}
+
+function mnAskFooterHint(status, embedded) {
+  const closeHint = embedded ? '' : ' · Esc to close';
+  const askHint = `Enter to ask · Shift+Enter for newline${closeHint}`;
+  if (!status) return `Checking AI setup · ${askHint}`;
+  const provider = String(status?.config?.provider || 'ollama').toLowerCase();
+  const providerLabel = mnAiProviderLabel(provider);
+  if (provider !== 'ollama') {
+    if (status.chatModelOk) return `${providerLabel} ready · ${askHint}`;
+    return `${providerLabel} setup needed - check Settings > AI`;
+  }
+  if (status.reachable === false) return 'Local AI setup needed - Ask can still search notes and show setup steps';
+  if (!status.chatModelOk) return 'Local chat model setup needed - Ask can still search notes and show setup steps';
+  if (!status.embedModelOk) {
+    return status?.embedModelReason || `Using keyword search. For semantic search: \`ollama pull ${status?.config?.embedModel}\``;
+  }
+  return `Semantic search ready · ${askHint}`;
+}
+
+function MnAiSetupNotice({ status, T }) {
+  if (!status?.setupRequired) return null;
+  const steps = Array.isArray(status.setupSteps) ? status.setupSteps.filter(Boolean).slice(0, 5) : [];
+  const reason = String(status.reason || 'AI setup is incomplete.').trim();
+  return (
+    <div style={{
+      padding: 13,
+      borderRadius: 8,
+      border: `1px solid color-mix(in oklab, ${T.warn || T.accent || T.ink} 36%, ${T.lineSub})`,
+      background: `color-mix(in oklab, ${T.warn || T.accent || T.ink} 8%, ${T.bgSub})`,
+      color: T.ink,
+      marginBottom: 14,
+    }}>
+      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 700, color: T.ink }}>
+        AI setup needed
+      </div>
+      <div style={{ marginTop: 5, fontFamily: 'var(--mn-body)', fontSize: 13, lineHeight: 1.45, color: T.inkMed }}>
+        {reason}
+      </div>
+      {steps.length > 0 && (
+        <ol style={{
+          margin: '9px 0 0',
+          paddingLeft: 18,
+          display: 'grid',
+          gap: 4,
+          fontFamily: 'var(--mn-body)',
+          fontSize: 12.5,
+          lineHeight: 1.45,
+          color: T.inkMed,
+        }}>
+          {steps.map((step, index) => <li key={`${step}-${index}`}>{step}</li>)}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function mnAiInlineText(text, T) {
+  const source = String(text || '');
+  const parts = [];
+  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
+  let last = 0;
+  let match;
+  let key = 0;
+  while ((match = re.exec(source))) {
+    if (match.index > last) parts.push(<span key={key++}>{source.slice(last, match.index)}</span>);
+    const token = match[0];
+    if (token.startsWith('`')) {
+      parts.push(
+        <code key={key++} style={{
+          fontFamily: 'var(--mn-mono)',
+          fontSize: '0.9em',
+          background: T.bgSub,
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 4,
+          padding: '1px 5px',
+          color: T.ink,
+        }}>{token.slice(1, -1)}</code>
+      );
+    } else if (token.startsWith('**')) {
+      parts.push(<strong key={key++} style={{ color: T.ink, fontWeight: 700 }}>{token.slice(2, -2)}</strong>);
+    } else {
+      parts.push(<em key={key++}>{token.slice(1, -1)}</em>);
+    }
+    last = match.index + token.length;
+  }
+  if (last < source.length) parts.push(<span key={key++}>{source.slice(last)}</span>);
+  return parts;
+}
+
+function mnParseAiResponseBlocks(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  const blocks = [];
+  let paragraph = [];
+  let code = null;
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    blocks.push({ type: 'p', text: paragraph.join(' ').trim() });
+    paragraph = [];
+  };
+  for (const rawLine of lines) {
+    const fence = rawLine.match(/^```(\w+)?\s*$/);
+    if (fence) {
+      if (code) {
+        blocks.push({ type: 'code', lang: code.lang, text: code.lines.join('\n') });
+        code = null;
+      } else {
+        flushParagraph();
+        code = { lang: fence[1] || '', lines: [] };
+      }
+      continue;
+    }
+    if (code) {
+      code.lines.push(rawLine);
+      continue;
+    }
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      continue;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      blocks.push({ type: 'heading', level: heading[1].length, text: heading[2].trim() });
+      continue;
+    }
+    const ordered = line.match(/^(\d+)\.\s+(.+)$/);
+    if (ordered) {
+      flushParagraph();
+      const prev = blocks[blocks.length - 1];
+      const item = { index: ordered[1], text: ordered[2].trim() };
+      if (prev?.type === 'ol') prev.items.push(item);
+      else blocks.push({ type: 'ol', items: [item] });
+      continue;
+    }
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      flushParagraph();
+      if (mnAiLooksLikeSectionLabel(bullet[1])) {
+        blocks.push({ type: 'heading', level: 3, text: bullet[1].trim(), promoted: true });
+        continue;
+      }
+      const prev = blocks[blocks.length - 1];
+      const item = bullet[1].trim();
+      if (prev?.type === 'ul') prev.items.push(item);
+      else blocks.push({ type: 'ul', items: [item] });
+      continue;
+    }
+    const quote = line.match(/^>\s+(.+)$/);
+    if (quote) {
+      flushParagraph();
+      const prev = blocks[blocks.length - 1];
+      if (prev?.type === 'quote') prev.lines.push(quote[1].trim());
+      else blocks.push({ type: 'quote', lines: [quote[1].trim()] });
+      continue;
+    }
+    paragraph.push(line);
+  }
+  flushParagraph();
+  if (code) blocks.push({ type: 'code', lang: code.lang, text: code.lines.join('\n') });
+  return blocks;
+}
+
+function MnAiFormattedResponse({ text, T }) {
+  const blocks = React.useMemo(() => mnParseAiResponseBlocks(text), [text]);
+  if (!blocks.length) return null;
+  return (
+    <div style={{
+      display: 'grid',
+      gap: 9,
+      fontFamily: 'var(--mn-body)',
+      fontSize: 14.5,
+      lineHeight: 1.62,
+      color: T.ink,
+    }}>
+      {blocks.map((block, index) => {
+        if (block.type === 'heading') {
+          return (
+            <div key={index} style={{
+              marginTop: index === 0 ? 0 : 6,
+              paddingBottom: 3,
+              borderBottom: block.level <= 2 ? `1px solid ${T.lineSub}` : 'none',
+              fontFamily: 'var(--mn-ui)',
+              fontSize: block.level === 1 ? 15.5 : 14.5,
+              fontWeight: 750,
+              lineHeight: 1.35,
+              color: T.ink,
+            }}>{mnAiInlineText(block.text, T)}</div>
+          );
+        }
+        if (block.type === 'ul' || block.type === 'ol') {
+          return (
+            <div key={index} style={{ display: 'grid', gap: 5 }}>
+              {block.items.map((item, itemIndex) => {
+                const textValue = typeof item === 'string' ? item : item.text;
+                const marker = block.type === 'ol' ? `${item.index || itemIndex + 1}.` : '';
+                return (
+                  <div key={itemIndex} style={{
+                    display: 'grid',
+                    gridTemplateColumns: block.type === 'ol' ? '24px minmax(0, 1fr)' : '14px minmax(0, 1fr)',
+                    gap: 7,
+                    alignItems: 'start',
+                  }}>
+                    <span style={{
+                      marginTop: block.type === 'ol' ? 0 : 9,
+                      width: block.type === 'ol' ? 24 : 5,
+                      height: block.type === 'ol' ? 'auto' : 5,
+                      borderRadius: 5,
+                      background: block.type === 'ol' ? 'transparent' : T.accent,
+                      color: T.inkDim,
+                      fontFamily: 'var(--mn-mono)',
+                      fontSize: 11,
+                      lineHeight: 1.6,
+                    }}>{marker}</span>
+                    <span>{mnAiInlineText(textValue, T)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }
+        if (block.type === 'quote') {
+          return (
+            <blockquote key={index} style={{
+              margin: 0,
+              padding: '7px 11px',
+              borderLeft: `2px solid ${T.accent}`,
+              background: T.bgSub,
+              color: T.inkMed,
+              borderRadius: 6,
+            }}>{mnAiInlineText(block.lines.join(' '), T)}</blockquote>
+          );
+        }
+        if (block.type === 'code') {
+          return (
+            <div key={index} style={{
+              borderRadius: 7,
+              border: `1px solid ${T.lineSub}`,
+              background: T.bgSub,
+              overflow: 'hidden',
+            }}>
+              {block.lang && (
+                <div style={{
+                  padding: '5px 10px',
+                  borderBottom: `1px solid ${T.lineSub}`,
+                  color: T.inkDim,
+                  fontFamily: 'var(--mn-mono)',
+                  fontSize: 10.5,
+                }}>{block.lang}</div>
+              )}
+              <pre style={{
+                margin: 0,
+                padding: '10px 11px',
+                color: T.ink,
+                overflow: 'auto',
+                fontFamily: 'var(--mn-mono)',
+                fontSize: 12,
+                lineHeight: 1.55,
+                whiteSpace: 'pre',
+              }}><code>{block.text}</code></pre>
+            </div>
+          );
+        }
+        return <p key={index} style={{ margin: 0 }}>{mnAiInlineText(block.text, T)}</p>;
+      })}
+    </div>
+  );
 }
 
 function MnAskAI({
@@ -226,6 +604,7 @@ function MnAskAI({
 }) {
   const [query, setQuery] = useStateAI('');
   const [status, setStatus] = useStateAI(null);
+  const [openSources, setOpenSources] = useStateAI({});
   const [localSession, setLocalSession] = useStateAI({
     messages: [],
     pending: false,
@@ -484,6 +863,157 @@ function MnAskAI({
       };
     }
     return askNotes({ prompt, jobId });
+  };
+
+  const buildOrchestratorMessages = (q, priorMessages = []) => {
+    const conversation = mnBuildAskThreadMessages(priorMessages, q, { limit: 8 });
+    const context = mnAiCurrentContextMessage(currentNote);
+    if (!context) return conversation;
+    return [
+      { role: 'user', content: context },
+      ...conversation,
+    ];
+  };
+
+  const orchestratorTools = () => {
+    const registryTools = window.MN_APP_ACTIONS?.describeForAi?.() || [];
+    const tools = [...MN_AI_VIRTUAL_TOOLS, ...registryTools].slice(0, 100);
+    return currentNote
+      ? tools
+      : tools.filter(tool => tool.name !== 'edit-current-page');
+  };
+
+  const executeOrchestratorTool = async ({ call, q, jobId, run }) => {
+    const name = String(call?.name || '').trim();
+    const args = call?.args && typeof call.args === 'object' ? call.args : {};
+    if (name === 'answer-notes') {
+      setActiveAction('Researching notes...');
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Answer from notes', args });
+      const prompt = String(args.query || q || '').trim();
+      const result = /\b(summari[sz]e|summary|overview|recap)\b/i.test(prompt) && /\b(all|my|entire|whole|vault|everything)\b/i.test(prompt)
+        ? await askVaultSummary({ prompt, jobId })
+        : await askNotes({ prompt, jobId });
+      aiRuntime.recordTrace?.(run, 'tool.done', { actionId: name, actionLabel: 'Answer from notes', affected: result.sources?.length || 0 });
+      return { final: { answer: result.answer, sources: result.sources || [] } };
+    }
+    if (name === 'edit-current-page') {
+      if (!currentNote || !onApplyCurrentPageBody) throw new Error('No current page is open to edit');
+      const instruction = String(args.instruction || q || '').trim();
+      if (!instruction) throw new Error('Edit instruction is empty');
+      setActiveAction('Editing page...');
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Edit current page', args: { instruction } });
+      const body = mnAiCurrentNoteMarkdown(currentNote);
+      const edited = await askEdit({ scope: 'current page', instruction, text: body, jobId });
+      onApplyCurrentPageBody(edited);
+      aiRuntime.recordTrace?.(run, 'tool.done', { actionId: name, actionLabel: 'Edit current page', affected: 1 });
+      return {
+        final: {
+          answer: `Updated "${currentNote.title || 'current page'}".`,
+          sources: [{ id: currentNote.id, title: currentNote.title || 'Current page', snippet: edited.slice(0, 200) }],
+          action: true,
+        },
+      };
+    }
+
+    const registry = window.MN_APP_ACTIONS;
+    if (!registry?.run || !registry?.validate) throw new Error('App actions are not available');
+    const meta = registry.list?.({ includeHidden: true })?.find?.(item => item.id === name);
+    const cleanArgs = registry.validate(name, args);
+    const step = { actionId: name, args: cleanArgs, label: meta?.label || name, risk: meta?.risk || 'safe' };
+    setActiveAction(step.label);
+    aiRuntime.recordTrace?.(run, 'tool.preview', { actionId: name, actionLabel: step.label, risk: step.risk });
+    const result = await registry.run(name, cleanArgs, {});
+    run?.toolCalls?.push?.({ actionId: name, args: cleanArgs, ok: result?.ok !== false, requiresConfirmation: !!result?.requiresConfirmation });
+    if (result.requiresConfirmation) {
+      return {
+        final: {
+          answer: result.preview?.message || result.message || 'Review this action before it runs.',
+          action: true,
+          review: aiRuntime.makeReview
+            ? aiRuntime.makeReview({ query: q, plan: { steps: [step] }, result })
+            : { query: q, steps: [step], preview: result.preview || null },
+          sources: [],
+        },
+      };
+    }
+    if (result.ok === false) throw new Error(result.message || 'App action failed');
+    aiRuntime.recordTrace?.(run, 'tool.done', { actionId: name, actionLabel: step.label, affected: result.affected?.length || 0 });
+    if (meta?.readOnly && ['search-notes', 'read-note'].includes(name)) {
+      return {
+        toolResult: {
+          tool: name,
+          args: cleanArgs,
+          ok: true,
+          message: result.message || '',
+          structuredContent: {
+            results: result.results || undefined,
+            note: result.note || undefined,
+            affected: result.affected || [],
+          },
+        },
+      };
+    }
+    return {
+      final: {
+        answer: result.message || result.title || `${step.label} completed.`,
+        sources: (result.affected || []).filter(item => item?.id).map(item => ({
+          id: item.id,
+          title: item.title || item.id,
+          snippet: item.type || 'App action',
+        })),
+        action: true,
+      },
+    };
+  };
+
+  const runLlmOrchestrator = async ({ q, actionQuery, priorMessages, jobId, run }) => {
+    if (!window.mn?.ai?.toolPlan) return null;
+    const tools = orchestratorTools();
+    if (!tools.length) return null;
+    const toolMessages = buildOrchestratorMessages(actionQuery, priorMessages);
+    for (let round = 0; round < 4; round++) {
+      setActiveAction(round === 0 ? 'Understanding request...' : 'Using tool results...');
+      aiRuntime.recordTrace?.(run, 'planner.request', { tools: tools.length, round: round + 1, llmFirst: true });
+      const response = await window.mn.ai.toolPlan({
+        jobId,
+        timeoutMs: MN_AI_PLANNER_TIMEOUT_MS,
+        maxTokens: 900,
+        tools,
+        messages: toolMessages,
+      });
+      if (!response.ok || (response.value && response.value.ok === false)) return null;
+      const planned = mnAiToolCallsFromPlanResult(response.value || response);
+      aiRuntime.recordTrace?.(run, 'planner.result', { toolCalls: planned.toolCalls.length, answer: !!planned.answer, round: round + 1 });
+      if (!planned.toolCalls.length) {
+        return {
+          answer: planned.answer || 'I need a little more detail before I can help with that.',
+          sources: [],
+          clarify: !planned.answer,
+        };
+      }
+      const toolResults = [];
+      for (const call of planned.toolCalls.slice(0, 4)) {
+        const result = await executeOrchestratorTool({ call, q, jobId, run });
+        if (result.final) return result.final;
+        if (result.toolResult) toolResults.push(result.toolResult);
+      }
+      if (!toolResults.length) {
+        return {
+          answer: planned.answer || 'Done.',
+          sources: [],
+          action: true,
+        };
+      }
+      toolMessages.push({
+        role: 'assistant',
+        content: `Tool results:\n${JSON.stringify(toolResults, null, 2).slice(0, 12000)}`,
+      });
+      toolMessages.push({
+        role: 'user',
+        content: 'Use these tool results to answer the user directly. If more action is necessary, call the next best tool. Do not repeat tool results as raw JSON.',
+      });
+    }
+    return { answer: 'I inspected the available context, but I need a more specific instruction before I can continue.', sources: [], clarify: true };
   };
 
   const runActionPlan = async (q, plan, jobId) => {
@@ -765,7 +1295,7 @@ function MnAskAI({
       messages: [...(prev?.messages || []), userMsg],
       pending: true,
       error: null,
-      activeAction: route.activeLabel || (route.type === 'notes' ? 'Researching notes...' : route.type === 'chat' ? 'Thinking...' : 'Starting task...'),
+      activeAction: window.mn?.ai?.toolPlan ? 'Understanding request...' : (route.activeLabel || (route.type === 'notes' ? 'Researching notes...' : route.type === 'chat' ? 'Thinking...' : 'Starting task...')),
       background: false,
       jobId,
       activeRun: run,
@@ -816,6 +1346,25 @@ function MnAskAI({
       });
     };
     try {
+      const orchestrated = await runLlmOrchestrator({ q, actionQuery, priorMessages, jobId, run });
+      if (orchestrated) {
+        if (stoppedJobRef.current === jobId) return;
+        aiRuntime.recordTrace?.(run, orchestrated.review ? 'run.review_required' : orchestrated.clarify ? 'run.clarify' : 'run.completed', {
+          action: !!orchestrated.action,
+          sources: orchestrated.sources?.length || 0,
+        });
+        putAssistant({
+          text: orchestrated.answer,
+          sources: orchestrated.sources || [],
+          action: !!orchestrated.action,
+          review: orchestrated.review || null,
+          clarify: !!orchestrated.clarify,
+          streaming: false,
+          trace: run?.trace || [],
+        });
+        return;
+      }
+
       if (route.type === 'clarify') {
         const actionResult = aiRuntime.makeClarify ? aiRuntime.makeClarify(route.message) : { answer: route.message || 'I need more detail before I can do that.' };
         updateSession(prev => ({
@@ -967,16 +1516,35 @@ function MnAskAI({
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const onKey = (e) => {
-    if (!embedded && e.key === 'Escape') { e.preventDefault(); closeOrBackground(); }
-    else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
+  const resizeComposer = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 42), 142)}px`;
   };
 
-  const reachable = status?.reachable;
-  const chatOk = status?.chatModelOk;
-  const embedOk = status?.embedModelOk;
+  useEffectAI(() => {
+    resizeComposer();
+  }, [query]);
+
+  const onKey = (e) => {
+    if (!embedded && e.key === 'Escape') { e.preventDefault(); closeOrBackground(); }
+  };
+
+  const onComposerKeyDown = (e) => {
+    if (e.nativeEvent?.isComposing) return;
+    if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    submit();
+  };
+
+  const toggleSources = (messageId) => {
+    setOpenSources(prev => ({ ...prev, [messageId]: !prev?.[messageId] }));
+  };
+
   const canAsk = status ? true : false;
   const statusText = mnAskStatusText(status);
+  const footerHint = mnAskFooterHint(status, embedded);
 
   const content = (
       <div onClick={e => e.stopPropagation()} onKeyDown={onKey} style={{
@@ -1047,20 +1615,25 @@ function MnAskAI({
           </div>
         </div>
 
-        <div style={{ order: 3, padding: '14px 18px 16px', borderTop: `1px solid ${T.lineSub}`, background: `color-mix(in oklab, ${T.bg} 88%, ${T.bgSub})`, flexShrink: 0 }}>
+        <div style={{ order: 3, padding: '10px 18px 12px', borderTop: `1px solid ${T.lineSub}`, background: `color-mix(in oklab, ${T.bg} 88%, ${T.bgSub})`, flexShrink: 0 }}>
           <textarea
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
+            onKeyDown={onComposerKeyDown}
             placeholder="Ask anything about your notes…"
-            rows={3}
+            rows={1}
             style={{
               width: '100%', resize: 'none',
               border: `1px solid ${T.lineSub}`,
-              borderRadius: 8, padding: '11px 12px',
+              borderRadius: 8, padding: '10px 12px',
               fontFamily: 'var(--mn-body)', fontSize: 14.5,
               background: T.bgSub, color: T.ink, outline: 'none',
-              lineHeight: 1.45,
+              lineHeight: 1.4,
+              minHeight: 42,
+              height: 42,
+              maxHeight: 142,
+              overflowY: 'auto',
               boxShadow: `inset 0 1px 0 color-mix(in oklab, ${T.bg} 85%, white)`,
             }}
           />
@@ -1089,14 +1662,7 @@ function MnAskAI({
             display: 'flex', alignItems: 'center', gap: 10, marginTop: 10,
           }}>
             <div style={{ flex: 1, fontSize: 11, color: T.inkDim, fontFamily: 'var(--mn-mono)' }}>
-              {reachable === false
-                ? 'Local AI setup needed — Ask can still search notes and show setup steps'
-                : (!chatOk && status)
-                  ? 'Local chat model setup needed — Ask can still search notes and show setup steps'
-                : (!embedOk && status)
-                    ? (status?.embedModelReason || `Using keyword search. For semantic search: \`ollama pull ${status?.config?.embedModel}\``)
-                : embedded ? '⌘+Enter to ask' : '⌘+Enter to ask · Esc to close'
-              }
+              {footerHint}
             </div>
             <button onClick={submit} disabled={pending || !query.trim() || !canAsk}
               style={{
@@ -1153,9 +1719,12 @@ function MnAskAI({
               fontFamily: 'var(--mn-mono)', fontSize: 12.5, whiteSpace: 'pre-wrap',
             }}>{error}</div>
           )}
+          {messages.length === 0 && <MnAiSetupNotice status={status} T={T} />}
           {messages.map((m, idx) => {
             const previousUser = [...messages.slice(0, idx)].reverse().find(item => item.role === 'user')?.text || '';
             const canReport = m.role === 'assistant' && !m.error && !m.stopped && String(m.text || '').trim();
+            const hasSources = m.sources?.length > 0;
+            const sourcesOpen = hasSources && !!openSources[m.id];
             const traceLabels = m.role === 'assistant' && m.streaming
               ? (aiSession.activeRun?.trace || [])
                 .map(item => item?.label || aiRuntime.traceLabel?.(item) || item?.event)
@@ -1177,7 +1746,7 @@ function MnAskAI({
                 color: m.role === 'user' ? T.bg : (m.error ? (T.warn || '#c33') : T.ink),
                 border: 'none',
                 fontFamily: 'var(--mn-body)', fontSize: 14.5, lineHeight: 1.6,
-                whiteSpace: 'pre-wrap',
+                whiteSpace: m.role === 'user' || m.error || m.stopped ? 'pre-wrap' : 'normal',
                 boxShadow: 'none',
               }}>
                 {m.role !== 'user' && (
@@ -1192,7 +1761,9 @@ function MnAskAI({
                     {m.error ? 'Error' : m.stopped ? 'Stopped' : m.action ? 'Action' : m.streaming ? 'Answering' : 'Answer'}
                   </div>
                 )}
-                {m.text || (m.streaming ? activeAction || 'Thinking...' : '')}
+                {m.role !== 'user' && !m.error && !m.stopped && m.text
+                  ? <MnAiFormattedResponse text={m.text} T={T} />
+                  : (m.text || (m.streaming ? activeAction || 'Thinking...' : ''))}
                 {traceLabels.length > 0 && (
                   <div style={{
                     marginTop: 10,
@@ -1289,37 +1860,59 @@ function MnAskAI({
                     </div>
                   </div>
                 )}
-                {m.sources?.length > 0 && (
-                <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.lineSub}` }}>
-                  <div style={{
-                    fontFamily: 'var(--mn-mono)', fontSize: 10,
-                    letterSpacing: '0.12em', textTransform: 'uppercase',
-                    color: T.inkDim, marginBottom: 8,
-                  }}>Sources</div>
-                  {m.sources.map((s, sourceIndex) => (
-                    <div key={s.id}
-                      onClick={() => { onOpenNote?.(s.id); onClose && onClose(); }}
-                      style={{
-                        padding: '9px 10px', marginBottom: 6, borderRadius: 7,
-                        background: T.bg, border: `1px solid ${T.lineSub}`,
-                        cursor: 'pointer',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
-                      onMouseLeave={e => e.currentTarget.style.background = T.bg}>
-                      <div style={{ fontSize: 12.5, fontWeight: 500, color: T.ink }}>{sourceIndex + 1}. {s.title}</div>
-                      <div style={{
-                        fontSize: 12, color: T.inkDim, marginTop: 2,
-                        fontFamily: 'var(--mn-body)', lineHeight: 1.5,
-                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                      }}>{s.snippet}</div>
-                      {s.modifiedAt && (
-                        <div style={{ marginTop: 5, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
-                          {new Date(s.modifiedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                {hasSources && (
+                <div style={{ marginTop: 12, paddingTop: 9, borderTop: `1px solid ${T.lineSub}` }}>
+                  <button
+                    type="button"
+                    onClick={() => toggleSources(m.id)}
+                    aria-expanded={sourcesOpen}
+                    title={sourcesOpen ? 'Hide sources' : 'Show sources'}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 7,
+                      border: `1px solid ${T.lineSub}`,
+                      borderRadius: 999,
+                      background: sourcesOpen ? T.bgSub : T.bg,
+                      color: T.inkDim,
+                      cursor: 'pointer',
+                      padding: '5px 9px',
+                      fontFamily: 'var(--mn-ui)',
+                      fontSize: 12,
+                    }}>
+                    <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10 }}>
+                      {sourcesOpen ? 'v' : '>'}
+                    </span>
+                    <span>Sources ({m.sources.length})</span>
+                  </button>
+                  {sourcesOpen && (
+                    <div style={{ marginTop: 9 }}>
+                      {m.sources.map((s, sourceIndex) => (
+                        <div key={s.id}
+                          onClick={() => { onOpenNote?.(s.id); onClose && onClose(); }}
+                          style={{
+                            padding: '9px 10px', marginBottom: 6, borderRadius: 7,
+                            background: T.bg, border: `1px solid ${T.lineSub}`,
+                            cursor: 'pointer',
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+                          onMouseLeave={e => e.currentTarget.style.background = T.bg}>
+                          <div style={{ fontSize: 12.5, fontWeight: 500, color: T.ink }}>{sourceIndex + 1}. {s.title}</div>
+                          <div style={{
+                            fontSize: 12, color: T.inkDim, marginTop: 2,
+                            fontFamily: 'var(--mn-body)', lineHeight: 1.5,
+                            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}>{s.snippet}</div>
+                          {s.modifiedAt && (
+                            <div style={{ marginTop: 5, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
+                              {new Date(s.modifiedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
               {canReport && (

@@ -218,7 +218,7 @@ function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
             fontSize: 12.5,
             lineHeight: 1.45,
             color: T.inkMed,
-          }}>You can restore this note from Settings → Data & Sync.</div>
+          }}>You can restore this note from Recently deleted.</div>
         </div>
         <div style={{
           display: 'flex',
