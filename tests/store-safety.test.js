@@ -626,6 +626,8 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
+  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
 
   assert.match(store, /atomicWriteFile/);
@@ -645,6 +647,15 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   assert.match(app, /titleUpdateTimerRef/);
   assert.match(app, /MnSaveConflictDialog/);
   assert.match(app, /MnVersionHistoryDialog/);
+  assert.match(app, /MnRecentlyDeletedPanel/);
+  assert.match(app, /const refreshDeletedItems = useCallbackA/);
+  assert.match(app, /view === 'trash'/);
+  assert.match(app, /setTrashItems\(items => items\.filter/);
+  assert.match(sidebar, /label="Recently deleted"/);
+  assert.match(sidebar, /trashActive/);
+  assert.match(utilityPanels, /function MnRecentlyDeletedPanel/);
+  assert.match(utilityPanels, /Pending cleanup/);
+  assert.match(utilityPanels, /Confirm delete/);
   assert.match(store, /MAX_BACKUP_IMPORT_BYTES/);
   assert.match(store, /MAX_NOTE_BODY_BYTES/);
   assert.match(store, /MAX_CANVAS_JSON_BYTES/);

@@ -25,6 +25,7 @@ function MnSidebar({
   onSelectWorkflow, onOpenWorkflowPanel, workflowActive,
   onOpenNovelist, novelistActive, novelistEnabled, novelistCount = 0,
   onOpenCanvas, canvasActive, canvasCount = 0,
+  onOpenTrash, trashActive, trashCount = 0,
   aiActive = false,
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
@@ -213,6 +214,7 @@ function MnSidebar({
   const iconNovelist = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 2.5H10.5L12 4V13.5H4V2.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M10.5 2.5V4H12M6 7H10M6 9.5H10M6 12H8.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconGraph = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="1.8" stroke="currentColor" strokeWidth="1.3"/><circle cx="12" cy="4" r="1.8" stroke="currentColor" strokeWidth="1.3"/><circle cx="8" cy="12" r="1.8" stroke="currentColor" strokeWidth="1.3"/><path d="M5.5 5L10.5 5M5.3 5.8L6.8 10.4M10.7 5.8L9.2 10.4" stroke="currentColor" strokeWidth="1.3"/></svg>);
   const iconCanvas = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3" width="11" height="10" rx="1.3" stroke="currentColor" strokeWidth="1.3"/><path d="M5 6H8.5M5 8.5H11M5 11H7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M10.6 5.4L12 4M11.1 7.1L13 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
+  const iconTrash = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4.5H13M6 4.5V3C6 2.5 6.5 2 7 2H9C9.5 2 10 2.5 10 3V4.5M5 4.5V13C5 13.5 5.5 14 6 14H10C10.5 14 11 13.5 11 13V4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconAI = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2L9.5 6.5L14 8L9.5 9.5L8 14L6.5 9.5L2 8L6.5 6.5L8 2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>);
 
   return (
@@ -537,7 +539,7 @@ function MnSidebar({
       {openSections.allnotes && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
-               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive && !aiActive}
+               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !aiActive}
                onClick={() => onSelectTag(null)} />
           <Row icon={iconToday} label="Daily rollup" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
@@ -556,6 +558,11 @@ function MnSidebar({
           <Row icon={iconCanvas} label="Canvas" count={canvasCount}
                active={canvasActive}
                onClick={onOpenCanvas} accent={T.accent} />
+          {onOpenTrash && (
+            <Row icon={iconTrash} label="Recently deleted" count={trashCount}
+                 active={trashActive}
+                 onClick={onOpenTrash} accent={T.warn || T.danger} />
+          )}
           {onOpenAskAI && (
             <Row icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
           )}

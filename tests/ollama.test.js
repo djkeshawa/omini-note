@@ -77,6 +77,42 @@ test('Ask AI returns setup guidance with note snippets when Ollama is unavailabl
   }
 });
 
+test('AI status explains fresh local setup when Ollama is unavailable', async () => {
+  const ai = require('../lib/ai');
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('offline'); };
+  ai.setConfig({ provider: 'ollama', chatModel: 'gemma3', embedModel: 'nomic-embed-text', enabled: true }, { rejectUnknown: false });
+  try {
+    const result = await ai.status({ force: true });
+    assert.equal(result.reachable, false);
+    assert.equal(result.setupRequired, true);
+    assert.match(result.reason, /Ollama not reachable/);
+    assert.ok(result.setupSteps.some(step => /Install Ollama/.test(step)));
+    assert.ok(result.setupSteps.some(step => /ollama serve/.test(step)));
+    assert.ok(result.setupSteps.some(step => /ollama pull gemma3/.test(step)));
+    assert.match(result.setupMessage, /To use AI features/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('AI status explains cloud provider setup when API key is missing', async () => {
+  const ai = require('../lib/ai');
+  ai.setConfig({
+    provider: 'openai',
+    openaiApiKey: '',
+    chatModel: 'gpt-4o-mini',
+    enabled: true,
+  }, { rejectUnknown: false });
+  const result = await ai.status({ force: true });
+  assert.equal(result.reachable, false);
+  assert.equal(result.setupRequired, true);
+  assert.match(result.reason, /OpenAI API key is missing/);
+  assert.ok(result.setupSteps.some(step => /API key for OpenAI/.test(step)));
+  assert.ok(result.setupSteps.some(step => /Settings > AI/.test(step)));
+  assert.match(result.setupMessage, /To use AI features/);
+});
+
 test('Broad all-notes summaries use bounded context without recursive planner calls', async () => {
   const ai = require('../lib/ai');
   const notes = Array.from({ length: 30 }, (_, index) => ({

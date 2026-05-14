@@ -92,6 +92,7 @@ const {
   MnWorkflowPanel,
   MnNovelistPanel,
   MnTodayPanel,
+  MnRecentlyDeletedPanel,
   MnCanvasPanel,
   MnQuickCapture,
   MnReminderToast,
@@ -143,6 +144,10 @@ function MnApp() {
   const [appNotice, setAppNotice] = useStateA(null);
   const [conflictNotice, setConflictNotice] = useStateA(null);
   const [versionTargetId, setVersionTargetId] = useStateA(null);
+  const [trashItems, setTrashItems] = useStateA([]);
+  const [trashLoading, setTrashLoading] = useStateA(false);
+  const [trashError, setTrashError] = useStateA('');
+  const trashLoadSeq = useRefA(0);
   const [toast, setToast] = useStateA(null);
   const toastRef = useRefA(null);
   const [reminderCenterOpen, setReminderCenterOpen] = useStateA(false);
@@ -792,6 +797,8 @@ function MnApp() {
     setVaults(vs => vs.map(v => v.id === id
       ? { ...v, notes: targetNotes, tags: targetTags, lastSelectedId: targetSel || targetNotes[0]?.id || null, canvases: targetCanvases, novelistMode: targetNovelistMode, workflowStates: targetWorkflowStates, novelistAiConfig: targetNovelistAiConfig }
       : v));
+    setTrashItems([]);
+    setTrashError('');
     setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
     if (HAS_DISK) window.mn.setPrefs({ activeVaultId: id });
   }, [activeVaultId, vaults, notes, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, refreshVaultRegistry, navigateView, showAppNotice]);
@@ -853,6 +860,8 @@ function MnApp() {
       setNotes(setup.notes); setTags(setup.tags); setSelectedId(setup.notes[0]?.id || firstNoteId);
       tagsDirty.current = false;
       setCanvases(newCanvases); setActiveCanvas(null);
+      setTrashItems([]);
+      setTrashError('');
       setActiveVaultId(id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
       return;
     }
@@ -878,6 +887,8 @@ function MnApp() {
       setNotes(loadedNotes); setTags(loadedTags);
       tagsDirty.current = false;
       setCanvases([]); setActiveCanvas(null);
+      setTrashItems([]);
+      setTrashError('');
       setSelectedId(loaded.lastSelectedId || loadedNotes[0]?.id || null);
       setActiveVaultId(v.id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
       setQuery('');
@@ -1622,6 +1633,9 @@ function MnApp() {
       try {
         const res = await window.mn.deleteNote(activeVaultId, id, noteForDisk(n, mnBlocksToMd));
         if (res && res.ok === false) throw new Error(res.error);
+        if (res?.value?.trashId) {
+          setTrashItems(items => [res.value, ...items.filter(item => item.trashId !== res.value.trashId)]);
+        }
       }
       catch (e) {
         console.error('deleteNote failed', e);
@@ -1655,6 +1669,23 @@ function MnApp() {
       .sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0));
   }, [activeVaultId]);
 
+  const refreshDeletedItems = useCallbackA(async () => {
+    const seq = ++trashLoadSeq.current;
+    setTrashLoading(true);
+    setTrashError('');
+    try {
+      const next = await listDeletedNotes();
+      if (seq === trashLoadSeq.current) setTrashItems(next);
+      return next;
+    } catch (e) {
+      const message = e.message || String(e);
+      if (seq === trashLoadSeq.current) setTrashError(message);
+      return [];
+    } finally {
+      if (seq === trashLoadSeq.current) setTrashLoading(false);
+    }
+  }, [listDeletedNotes]);
+
   const restoreDeletedNote = useCallbackA(async (itemOrTrashId) => {
     const trashId = typeof itemOrTrashId === 'string' ? itemOrTrashId : itemOrTrashId?.trashId;
     const sourceType = typeof itemOrTrashId === 'object' ? itemOrTrashId?.sourceType : 'note';
@@ -1670,6 +1701,7 @@ function MnApp() {
           : v));
         setActiveCanvas(res.value);
         navigateView('canvas');
+        setTrashItems(items => items.filter(item => item.trashId !== trashId));
         return { ok: true, canvas: res.value };
       }
       const res = await window.mn.restoreDeletedNote(activeVaultId, trashId);
@@ -1684,6 +1716,7 @@ function MnApp() {
       setSelectedTag(null);
       setSelectedWorkflow(null);
       navigateView('notes');
+      setTrashItems(items => items.filter(item => item.trashId !== trashId));
       return { ok: true, note: restored };
     } catch (e) {
       console.error('restoreDeletedNote failed', e);
@@ -1700,7 +1733,8 @@ function MnApp() {
       const res = sourceType === 'canvas' && window.mn.purgeDeletedCanvas
         ? await window.mn.purgeDeletedCanvas(activeVaultId, trashId)
         : await window.mn.purgeDeletedNote(activeVaultId, trashId);
-      if (!res.ok) throw new Error(res.error || 'Could not permanently delete note');
+      if (!res.ok) throw new Error(res.error || `Could not permanently delete ${sourceType === 'canvas' ? 'canvas' : 'note'}`);
+      setTrashItems(items => items.filter(item => item.trashId !== trashId));
       return { ok: true };
     } catch (e) {
       console.error('purgeDeletedNote failed', e);
@@ -1708,6 +1742,15 @@ function MnApp() {
       return { ok: false, error: e.message || String(e) };
     }
   }, [activeVaultId, showAppNotice]);
+
+  useEffectA(() => {
+    if (!activeVaultId) {
+      setTrashItems([]);
+      setTrashError('');
+      return;
+    }
+    if (view === 'trash') refreshDeletedItems();
+  }, [activeVaultId, view, refreshDeletedItems]);
 
   const restoreNoteVersion = useCallbackA(async (noteId, versionId) => {
     if (!HAS_DISK || !activeVaultId || !noteId || !versionId) return { ok: false, error: 'No active vault.' };
@@ -2820,6 +2863,7 @@ function MnApp() {
               onOpenToday={() => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenCanvas={openCanvasDashboard}
+              onOpenTrash={() => { navigateView('trash'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenAskAI={HAS_DISK ? openAskAi : null}
               todayActive={view === 'today'}
               todosActive={view === 'todos'}
@@ -2830,6 +2874,8 @@ function MnApp() {
               novelistCount={novelistNotes.length}
               canvasActive={view === 'canvas'}
               canvasCount={canvases.length}
+              trashActive={view === 'trash'}
+              trashCount={trashItems.length}
               aiActive={view === 'ai'}
               onNewTag={promptNewTag}
               onDeleteTag={removeTag}
@@ -3104,6 +3150,17 @@ function MnApp() {
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               rollupFormat={tweaks.rollupFormat || 'long'}
               T={T} theme={theme}
+            />
+          )}
+          {view === 'trash' && (
+            <MnRecentlyDeletedPanel
+              items={trashItems}
+              loading={trashLoading}
+              error={trashError}
+              onRefresh={refreshDeletedItems}
+              onRestore={restoreDeletedNote}
+              onPurge={purgeDeletedNote}
+              T={T}
             />
           )}
           {view === 'canvas' && (

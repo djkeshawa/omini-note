@@ -51,3 +51,6 @@ test-results/
 
 # Local review artifacts
 CODE_REVIEW.md
+docs/web-app-architecture.md
+results.tsv
+programe.md

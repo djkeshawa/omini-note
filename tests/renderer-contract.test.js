@@ -90,6 +90,7 @@ test('renderer globals are explicitly allowlisted until ESM migration removes th
     'MnPanelGripPeek',
     'MnPropertyRow',
     'MnQuickCapture',
+    'MnRecentlyDeletedPanel',
     'MnReminderToast',
     'MnSettingsModal',
     'MnSidebar',

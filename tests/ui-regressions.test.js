@@ -90,6 +90,7 @@ test('Note delete confirmation uses themed in-app dialog', () => {
   assert.match(appShell, /className="mn-delete-note-dialog"/);
   assert.match(appShell, /role="dialog"/);
   assert.match(appShell, /aria-modal="true"/);
+  assert.match(appShell, /You can restore this note from Recently deleted/);
   assert.match(app, /setDeleteTargetId\(id\)/);
   assert.match(app, /onDelete=\{\(\) => requestDeleteNote\(selectedNote\.id\)\}/);
   assert.match(app, /onConfirm=\{\(\) => deleteNote\(deleteTargetNote\.id\)\}/);
