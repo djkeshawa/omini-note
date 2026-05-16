@@ -496,6 +496,7 @@ test('AI PII reduction masks hosted provider requests and restores local placeho
 test('AI note traversal expands seed notes through links backlinks and tags', () => {
   const ai = require('../lib/ai');
   const notes = [
+    { id: 'current', title: 'Current', tags: ['focus'], body: 'Current note body' },
     { id: 'seed', title: 'Seed', tags: ['reading'], body: 'See [[Linked]].' },
     { id: 'linked', title: 'Linked', tags: [], body: 'Linked body' },
     { id: 'backlink', title: 'Backlink', tags: [], body: 'Mentions [[Seed]].' },
@@ -507,6 +508,10 @@ test('AI note traversal expands seed notes through links backlinks and tags', ()
   assert.ok(expanded.find(item => item.note.id === 'linked').reasons.some(reason => reason.includes('linked from')));
   assert.ok(expanded.find(item => item.note.id === 'backlink').reasons.some(reason => reason.includes('backlinks')));
   assert.ok(expanded.find(item => item.note.id === 'shared').reasons.some(reason => reason.includes('shares #reading')));
+
+  const currentNoteExpanded = ai.__test.expandTraversalCandidates([], notes, 'summarize this note', { currentNoteId: 'current' });
+  assert.equal(currentNoteExpanded[0].note.id, 'current');
+  assert.ok(currentNoteExpanded[0].reasons.some(reason => reason.includes('current note')));
 });
 
 test('AI recursive note research uses only bounded read-only note tools', async () => {
@@ -618,6 +623,31 @@ test('Backup import preserves duplicate note and canvas ids without overwriting'
     assert.equal(new Set(canvases.map(canvas => canvas.id)).size, 3);
     assert.deepEqual(canvases.map(canvas => canvas.title).sort(), ['First canvas', 'Missing canvas id', 'Second canvas']);
   });
+});
+
+test('Native file dialog IPC paths report cancel and skipped work explicitly', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+
+  assert.match(preload, /exportBackup:\(options\) => ipcRenderer\.invoke\('mn:exportBackup', options\)/);
+  assert.match(preload, /importBackup:\(options\) => ipcRenderer\.invoke\('mn:importBackup', options\)/);
+  assert.match(preload, /importNovelFiles:\(options\) => ipcRenderer\.invoke\('mn:importNovelFiles', options\)/);
+
+  assert.match(main, /ipcMain\.handle\('mn:exportBackup'/);
+  assert.match(main, /ipcMain\.handle\('mn:importBackup'/);
+  assert.match(main, /ipcMain\.handle\('mn:importNovelFiles', wrap\(importNovelFilesFromIpc\)\)/);
+  assert.match(main, /if \(result\.canceled \|\| !result\.filePath\) return \{ canceled: true \}/);
+  assert.match(main, /if \(result\.canceled \|\| !result\.filePaths\?\.\[0\]\) return \{ canceled: true \}/);
+  assert.match(main, /if \(result\.canceled \|\| !result\.filePaths\?\.length\) return \{ canceled: true, files: \[\], skipped: \[\] \}/);
+  assert.match(main, /Only the first 8 files were imported\./);
+  assert.match(main, /File is larger than 750 KB\./);
+  assert.match(main, /File does not look like readable UTF-8 text\./);
+  assert.match(main, /return \{ canceled: false, files, skipped \}/);
+
+  assert.match(app, /if \(res\.value\?\.canceled\) return/);
+  assert.match(app, /showAppNotice\('No files imported', reason, 'warn'\)/);
+  assert.match(app, /setNovelImportDialog\(\{ seq: importSeq, phase: 'analyzing', files, skipped/);
 });
 
 test('Data safety wiring exposes trash, versions, and save conflict recovery', () => {

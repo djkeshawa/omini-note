@@ -50,6 +50,7 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.doesNotMatch(canvas, /window\.confirm\('Delete this canvas\?'\)/);
   assert.match(canvas, /setPointerCapture/);
   assert.match(canvas, /releasePointerCapture/);
+  assert.match(canvas, /data-mn-canvas-stage="true"/);
   assert.match(canvas, /rootRef\.current\?\.focus\(\)/);
   assert.match(canvas, /saveTitle\(\); onBack && onBack\(\)/);
   assert.doesNotMatch(canvas, /if \(action\.mode === 'create'\) setTool\('select'\)/);
@@ -80,6 +81,24 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
 
   const canvasActions = fs.readFileSync(path.join(__dirname, '../src/app/appCanvasActions.js'), 'utf8');
   assert.match(canvasActions, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
+});
+
+test('Renderer regression covers user-centered app workflows', () => {
+  const regression = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
+
+  assert.match(regression, /runScenario\(win, 'Notes', 'create, edit, and persist a note'/);
+  assert.match(regression, /runScenario\(win, 'Capture', 'quick capture saves a task note and closes cleanly'/);
+  assert.match(regression, /runScenario\(win, 'Search', 'note search finds expected content and Escape clears it'/);
+  assert.match(regression, /runScenario\(win, 'Navigation', 'command palette and sidebar open task and graph panels'/);
+  assert.match(regression, /runScenario\(win, 'Canvas', 'create, draw, move, undo, and redo a canvas object'/);
+  assert.match(regression, /mouseDrag\(win, start, end/);
+  assert.match(regression, /waitForCanvasContent\(win, title, 'canvas undo restores rectangle position'/);
+  assert.match(regression, /runScenario\(win, 'Trash', 'delete explains recoverability and restore returns the note'/);
+  assert.match(regression, /runScenario\(win, 'Settings', 'settings opens with clear context and closes'/);
+  assert.match(regression, /runScenario\(win, 'Layout', 'minimum and desktop windows keep core controls usable'/);
+  assert.match(regression, /assertViewportUsable\(win, 'minimum supported window'\)/);
+  assert.match(regression, /State: \$\{JSON\.stringify\(current\)\}/);
+  assert.match(regression, /Editor rows: \$\{JSON\.stringify\(rows\)\}/);
 });
 
 test('Note delete confirmation uses themed in-app dialog', () => {

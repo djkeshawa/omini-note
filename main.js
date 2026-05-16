@@ -99,6 +99,9 @@ const AI_MAX_TOKENS_LIMIT = 8192;
 const AI_TOOL_LIMIT = 100;
 const AI_TOOL_SCHEMA_LIMIT = 30000;
 const BACKUP_IMPORT_FILE_LIMIT = 50 * 1024 * 1024;
+const NOVEL_IMPORT_FILE_LIMIT = 8;
+const NOVEL_IMPORT_FILE_BYTES_LIMIT = 750 * 1024;
+const NOVEL_IMPORT_TOTAL_TEXT_BYTES_LIMIT = 2 * 1024 * 1024;
 const IPC_ID_RE = /^[A-Za-z0-9_-]+$/;
 const AI_TOOL_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -817,8 +820,32 @@ async function askStreamFromIpc(evt, vaultId, query, options = {}) {
   });
 }
 
+function isMissingVaultError(error) {
+  return /\bVault (?:folder missing|not found):/i.test(String(error?.message || error || ''));
+}
+
+async function relatedNotesFromIpc(vaultId, noteId, options) {
+  try {
+    await indexReadyPromise;
+    assertSearchIndexAvailable();
+    return await ai.relatedNotes(vaultId, noteId, store, options || {});
+  } catch (error) {
+    if (isMissingVaultError(error)) {
+      return { ok: false, reason: 'Vault not available' };
+    }
+    throw error;
+  }
+}
+
 function sanitizeAiJobId(value) {
   return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) || undefined;
+}
+
+function sanitizeOptionalIpcId(value, field) {
+  if (value == null || value === '') return undefined;
+  const clean = capString(value, field, 120);
+  if (!IPC_ID_RE.test(clean)) throw new Error(`Invalid ${field}`);
+  return clean;
 }
 
 function sanitizeAiMaxTokens(value) {
@@ -830,6 +857,7 @@ function sanitizeAiMaxTokens(value) {
 function sanitizeAiAskOptions(options = {}) {
   return {
     jobId: sanitizeAiJobId(options.jobId),
+    currentNoteId: sanitizeOptionalIpcId(options.currentNoteId, 'currentNoteId'),
     recursiveResearch: options.recursiveResearch === true,
     timeoutMs: sanitizeAiTimeoutMs(options.timeoutMs),
   };
@@ -923,6 +951,69 @@ function sanitizeAiToolPlanPayload(payload = {}) {
   });
   clean.nativeOnly = payload.nativeOnly === true;
   return clean;
+}
+
+function isBinaryLikeText(buffer, text) {
+  if (!buffer || !buffer.length) return false;
+  if (buffer.includes(0)) return true;
+  const replacementCount = (String(text || '').match(/\uFFFD/g) || []).length;
+  if (replacementCount > Math.max(3, text.length * 0.01)) return true;
+  const sample = buffer.subarray(0, Math.min(buffer.length, 4096));
+  let control = 0;
+  for (const byte of sample) {
+    if (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13) control++;
+  }
+  return control > Math.max(8, sample.length * 0.04);
+}
+
+async function readNovelImportFile(filePath, remainingBytes) {
+  const name = path.basename(filePath || 'file');
+  const stat = await fs.promises.lstat(filePath);
+  if (stat.isSymbolicLink()) return { skipped: { name, reason: 'Symlinks are not allowed.' } };
+  if (!stat.isFile()) return { skipped: { name, reason: 'Only files can be imported.' } };
+  if (stat.size <= 0) return { skipped: { name, reason: 'File is empty.' } };
+  if (stat.size > NOVEL_IMPORT_FILE_BYTES_LIMIT) return { skipped: { name, reason: 'File is larger than 750 KB.' } };
+  if (remainingBytes <= 0 || stat.size > remainingBytes) return { skipped: { name, reason: 'Selected files exceed the 2 MB import limit.' } };
+  const buffer = await fs.promises.readFile(filePath);
+  let text = buffer.toString('utf8').replace(/\r\n/g, '\n').replace(/\0/g, '');
+  if (isBinaryLikeText(buffer, text)) return { skipped: { name, reason: 'File does not look like readable UTF-8 text.' } };
+  text = text.trim();
+  if (!text) return { skipped: { name, reason: 'File has no readable text.' } };
+  const textBytes = Buffer.byteLength(text, 'utf8');
+  if (textBytes > remainingBytes) return { skipped: { name, reason: 'Selected files exceed the 2 MB import limit.' } };
+  return { file: { name, size: stat.size, text } };
+}
+
+async function importNovelFilesFromIpc() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import novel files',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Text-like files', extensions: ['txt', 'md', 'markdown', 'text', 'csv', 'json', 'log'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (result.canceled || !result.filePaths?.length) return { canceled: true, files: [], skipped: [] };
+  const filePaths = result.filePaths.slice(0, NOVEL_IMPORT_FILE_LIMIT);
+  const skipped = result.filePaths.length > NOVEL_IMPORT_FILE_LIMIT
+    ? result.filePaths.slice(NOVEL_IMPORT_FILE_LIMIT).map(filePath => ({ name: path.basename(filePath), reason: 'Only the first 8 files were imported.' }))
+    : [];
+  const files = [];
+  let remainingBytes = NOVEL_IMPORT_TOTAL_TEXT_BYTES_LIMIT;
+  for (const filePath of filePaths) {
+    try {
+      const item = await readNovelImportFile(filePath, remainingBytes);
+      if (item.file) {
+        files.push(item.file);
+        remainingBytes -= Buffer.byteLength(item.file.text, 'utf8');
+      } else if (item.skipped) {
+        skipped.push(item.skipped);
+      }
+    } catch (e) {
+      skipped.push({ name: path.basename(filePath || 'file'), reason: e.message || String(e) });
+    }
+  }
+  return { canceled: false, files, skipped };
 }
 
 // Vault management
@@ -1058,6 +1149,7 @@ ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
   }
   return { ...imported, canceled: false, filePath: result.filePaths[0] };
 }));
+ipcMain.handle('mn:importNovelFiles', wrap(importNovelFilesFromIpc));
 
 // Zotero Desktop local API
 ipcMain.handle('mn:zotero.status',  wrap(() => zotero.status()));
@@ -1105,7 +1197,7 @@ ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, 
 ipcMain.handle('mn:ai.indexStatus', wrap(async (vaultId) => { await indexReadyPromise; assertSearchIndexAvailable(); return ai.indexStatus(vaultId); }));
 ipcMain.handle('mn:ai.backfillStatus', wrap((vaultId) => ai.backfillStatus(vaultId)));
 ipcMain.handle('mn:ai.backfillCancel', wrap((vaultId) => ai.cancelBackfill(vaultId)));
-ipcMain.handle('mn:ai.related',     wrap(async (vaultId, noteId, options) => { await indexReadyPromise; assertSearchIndexAvailable(); return ai.relatedNotes(vaultId, noteId, store, options || {}); }));
+ipcMain.handle('mn:ai.related',     wrap(relatedNotesFromIpc));
 ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.publicConfig()));
 ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {
   const config = ai.previewConfig(patch);
@@ -1151,7 +1243,7 @@ if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 if (process.platform === 'linux') app.setDesktopName('vispnote.desktop');
 
 const singleInstanceBypassForAutomation = process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE === '1'
-  && process.argv.some(arg => /scripts[\\/]+(?:smoke|regression)-electron\.js$/.test(arg));
+  && process.argv.some(arg => /scripts[\\/]+(?:smoke|regression|ai-regression)-electron\.js$/.test(arg));
 const singleInstanceLock = singleInstanceBypassForAutomation
   ? true
   : app.requestSingleInstanceLock();

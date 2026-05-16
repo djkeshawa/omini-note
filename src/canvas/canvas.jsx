@@ -1100,6 +1100,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
       }}>
         <svg
           ref={svgRef}
+          data-mn-canvas-stage="true"
           onPointerDown={onStageDown}
           onPointerMove={onPointerMove}
           onPointerUp={finishPointerAction}

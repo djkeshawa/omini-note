@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const appActions = require('../src/app/appActions.js');
+const aiActions = require('../src/ai/aiActions.js');
 const aiRuntime = require('../src/ai/aiRuntime.js');
 
 test('App Action Registry validates schemas and blocks unknown actions', async () => {
@@ -228,6 +229,13 @@ test('AI execution runtime routes safely and validates planner tool calls', () =
   assert.equal(aiRuntime.routeRequest({ query: 'can you summarize all my notes', appRegistry: registry }).type, 'notes');
   assert.equal(aiRuntime.routeRequest({ query: 'open settings', appRegistry: registry }).type, 'app_action');
   assert.equal(aiRuntime.routeRequest({ query: 'find notes about reading', appRegistry: registry }).type, 'app_action');
+  const formatCurrentRoute = aiRuntime.routeRequest({ query: 'format this page', aiActions, appRegistry: registry });
+  assert.equal(formatCurrentRoute.type, 'legacy_action');
+  assert.equal(formatCurrentRoute.action.type, 'edit-current');
+  assert.equal(formatCurrentRoute.action.action, 'format');
+  const supportRoute = aiRuntime.routeRequest({ query: 'update all supporting notes', aiActions, appRegistry: registry });
+  assert.equal(supportRoute.type, 'legacy_action');
+  assert.equal(supportRoute.action.type, 'edit-supporting-notes');
   const unavailablePaperRoute = aiRuntime.routeRequest({ query: 'get summary in the Recursive Language Model paper', appRegistry: registry });
   assert.equal(unavailablePaperRoute.type, 'clarify');
   assert.match(unavailablePaperRoute.message, /Zotero reader plugin is not enabled/);

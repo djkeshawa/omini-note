@@ -6,7 +6,7 @@ function MnSettingsModal({
   tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault,
   onCreateVault, onDeleteVault, onSetVaultNovelistMode,
   onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
-  onExportBackup, onImportBackup, onOpenVaultHealth, onRebuildIndex,
+  onExportBackup, onImportBackup, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
 }) {
   const [section, setSection] = useStateS('appearance');
   const [updateState, setUpdateState] = useStateS(null);
@@ -210,6 +210,7 @@ function MnSettingsModal({
                 onPurgeDeletedNote={onPurgeDeletedNote}
                 onExportBackup={onExportBackup}
                 onImportBackup={onImportBackup}
+                onImportNovelFiles={onImportNovelFiles}
                 onOpenVaultHealth={onOpenVaultHealth}
                 onRebuildIndex={onRebuildIndex}
               />
@@ -864,7 +865,7 @@ function SectionData({
   tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault,
   onCreateVault, onDeleteVault, onSetVaultNovelistMode,
   onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
-  onExportBackup, onImportBackup, onOpenVaultHealth, onRebuildIndex,
+  onExportBackup, onImportBackup, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
 }) {
   const [newVaultName, setNewVaultName] = useStateS('');
   const [newVaultType, setNewVaultType] = useStateS('notes');
@@ -996,6 +997,13 @@ function SectionData({
             <BtnOutline T={T} disabled={!onExportBackup} onClick={onExportBackup}>Export backup</BtnOutline>
             <BtnOutline T={T} disabled={!onImportBackup} onClick={onImportBackup}>Import backup</BtnOutline>
           </div>
+        </Row>
+        <Row T={T} label="Import novel files" sub={currentVault?.novelistMode ? "Analyze text files and preview generated novel notes before applying them." : "Switch this vault to Novelist mode before importing novel files."}>
+          <BtnOutline
+            T={T}
+            disabled={busy || !currentVault?.novelistMode || !onImportNovelFiles}
+            onClick={onImportNovelFiles}
+          >Import novel files</BtnOutline>
         </Row>
         <Row T={T} label="Vault health" sub="Check broken links, orphan notes, and search index status.">
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>

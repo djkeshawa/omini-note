@@ -41,6 +41,10 @@ const MN_AUTOSAVE_MAX_WAIT_MS = 5000;
 const MN_NOTE_TEMPLATES = MN_APP_HELPERS.NOTE_TEMPLATES || [];
 const MN_PLUGIN_API = window.MN_PLUGINS || {};
 const {
+  normalizeNovelImportCandidates,
+  buildNovelImportPlan,
+} = MN_APP_HELPERS;
+const {
   MN_NOVELIST_TAGS = [],
   MN_NOVELIST_WORKFLOW_STATES = [],
   mnNovelistNoteId,
@@ -212,6 +216,8 @@ window.MN_APP_RUNTIME = {
   MN_AUTOSAVE_MAX_WAIT_MS,
   MN_NOTE_TEMPLATES,
   MN_PLUGIN_API,
+  normalizeNovelImportCandidates,
+  buildNovelImportPlan,
   MN_NOVELIST_TAGS,
   MN_NOVELIST_WORKFLOW_STATES,
   mnNovelistNoteId,

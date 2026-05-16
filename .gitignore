@@ -48,6 +48,7 @@ yarn-error.log*
 coverage/
 playwright-report/
 test-results/
+qa-docs/
 
 # Local review artifacts
 CODE_REVIEW.md

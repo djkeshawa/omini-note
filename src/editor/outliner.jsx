@@ -2,7 +2,7 @@
 //
 // Block kinds: paragraph (default), heading, bullet, todo, quote, code, table, divider.
 // - Enter behavior depends on kind (see handleEnter).
-// - Tab/Shift+Tab: indent/outdent (only for bullet/todo).
+// - Tab/Shift+Tab: indent/outdent.
 // - Disclosure triangle: separate from bullet, only shown when block has children.
 // - Selection toolbar: appears on text selection, applies annotations.
 // - Slash menu: type "/" at start of an empty block (or after space) to convert.
@@ -795,13 +795,15 @@ function MnBlockRow({
   const handleEnter = () => {
     const ta = inputRef.current;
     const pos = ta?.selectionStart ?? block.content.length;
-    // Empty block on Enter outdents nested blocks or exits to paragraph.
-    // Empty bullet → paragraph; empty paragraph keeps creating new paragraph.
-    if (block.content.trim() === '' && (block.kind === 'bullet' || block.kind === 'todo')) {
-      // If indented, outdent first; else convert to paragraph
+    const isEmptyBlock = block.content.trim() === '';
+    // Empty nested blocks leave the current parent before creating more empty
+    // children. At root, formatted empty blocks exit to paragraph.
+    if (isEmptyBlock) {
       if (depth > 0) { onOutdent(block.id); return; }
-      onChangeKind(block.id, { kind: 'paragraph', level: 0, checked: null });
-      return;
+      if (block.kind !== 'paragraph') {
+        onChangeKind(block.id, { kind: 'paragraph', level: 0, checked: null });
+        return;
+      }
     }
 
     // What kind should the next block be?
@@ -1151,6 +1153,8 @@ function MnBlockRow({
     <div
       className="mn-block-row"
       data-block-id={block.id}
+      data-block-kind={block.kind || 'paragraph'}
+      data-block-depth={depth}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('text/mn-block')) return;
         e.preventDefault();
@@ -1471,6 +1475,7 @@ function MnBlockRow({
         {editing ? (
           <>
             <textarea
+              data-mn-block-content="editor"
               ref={inputRef}
               value={block.content}
               onChange={handleInput}
@@ -1563,6 +1568,7 @@ function MnBlockRow({
           </>
         ) : (
           <div
+            data-mn-block-content="display"
             onClick={startEdit}
             onCopy={handleCopy}
             spellCheck={false}

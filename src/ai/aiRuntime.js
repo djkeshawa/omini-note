@@ -163,6 +163,9 @@
     if (classified?.type === 'action' && classified?.action?.type === 'action-plan') {
       return { mode: 'app_action', type: 'legacy_action', action: classified.action, activeLabel: 'Starting task...' };
     }
+    if (classified?.type === 'action' && classified?.action?.type === 'edit-supporting-notes') {
+      return { mode: 'app_action', type: 'legacy_action', action: classified.action, activeLabel: 'Updating supporting notes...' };
+    }
 
     if (isLikelyDocumentQuestion(text)) {
       if (hasRegistryAction(appRegistry, 'zotero-search')) {

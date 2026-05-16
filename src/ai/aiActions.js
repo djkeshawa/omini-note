@@ -76,6 +76,20 @@
       /\btag\s+for\b/.test(s);
   }
 
+  function wantsSupportingNotesTarget(q) {
+    const s = String(q || '').toLowerCase();
+    return /\b(?:all\s+)?(?:supp?orting|support)\s+notes?\b/.test(s) ||
+      /\bnotes?\b.*\b(?:supp?orting|support)\b/.test(s);
+  }
+
+  function supportingNotesEditAction(q) {
+    const s = String(q || '').toLowerCase();
+    if (!wantsSupportingNotesTarget(s)) return null;
+    if (/\b(format|formatting|clean up|clean|organize|organise)\b/.test(s)) return 'format';
+    if (/\b(improve|rewrite|polish|fix|correct|update|refresh|enhance)\b/.test(s)) return 'improve';
+    return null;
+  }
+
   function buildActionPlan(q) {
     const text = String(q || '');
     const s = text.toLowerCase();
@@ -115,6 +129,10 @@
     }
     const actionPlan = buildActionPlan(text);
     if (actionPlan) return actionPlan;
+    const supportingEdit = supportingNotesEditAction(text);
+    if (supportingEdit) {
+      return { type: 'edit-supporting-notes', action: supportingEdit };
+    }
     const tagName = extractTagName(text);
     const asksTagLookup = /\b(which|what|show|find|list|search|filter)\b/.test(s);
     const addTagCommand = /\b(?:add|apply|set)\b.*\btag\b/.test(s);

@@ -219,6 +219,23 @@ test('Typing in a section groups into one undo entry per edit session', () => {
   assert.match(outliner, /onEndContentEdit && onEndContentEdit\(block\.id\)/);
 });
 
+test('Empty nested blocks can leave nesting with Enter', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const regression = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
+
+  assert.match(outliner, /const isEmptyBlock = block\.content\.trim\(\) === ''/);
+  assert.match(outliner, /if \(isEmptyBlock\) \{[\s\S]*if \(depth > 0\) \{ onOutdent\(block\.id\); return; \}/);
+  assert.doesNotMatch(outliner, /block\.content\.trim\(\) === '' && \(block\.kind === 'bullet' \|\| block\.kind === 'todo'\)/);
+  assert.match(outliner, /data-block-kind=\{block\.kind \|\| 'paragraph'\}/);
+  assert.match(outliner, /data-block-depth=\{depth\}/);
+  assert.match(outliner, /data-mn-block-content="editor"/);
+  assert.match(outliner, /data-mn-block-content="display"/);
+  assert.match(regression, /runScenario\(win, 'Editor', 'empty paragraph Enter-Tab-Enter returns to parent level'/);
+  assert.match(regression, /runScenario\(win, 'Editor', 'empty bullet Enter-Tab-Enter returns to parent level'/);
+  assert.match(regression, /Shift\+Tab returns an empty nested paragraph to parent level/);
+  assert.match(regression, /Editor rows:/);
+});
+
 test('Clicking rendered text enters edit mode at the clicked caret offset', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 

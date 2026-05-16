@@ -123,6 +123,676 @@ async function pressAccelerator(win, keyCode, modifiers = []) {
   await wait(100);
 }
 
+async function setControlByPlaceholder(win, placeholder, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const target = ${JSON.stringify(placeholder)};
+      const value = ${JSON.stringify(value)};
+      const visible = (el) => {
+        if (!el) return false;
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      };
+      const controls = [...document.querySelectorAll('input, textarea')].filter(visible);
+      const el = controls.find(item => (item.getAttribute('placeholder') || '') === target)
+        || controls.find(item => (item.getAttribute('placeholder') || '').includes(target));
+      if (!el) return { ok: false, placeholders: controls.map(item => item.getAttribute('placeholder') || '').slice(0, 40) };
+      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.focus();
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error(`Control not found for placeholder ${JSON.stringify(placeholder)}: ${JSON.stringify(result.placeholders)}`);
+}
+
+async function setTitleInput(win, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const value = ${JSON.stringify(value)};
+      const el = document.querySelector('.mn-note-title-input');
+      if (!el) return { ok: false };
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.focus();
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error('Note title input not found');
+}
+
+async function setActiveEditorText(win, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const value = ${JSON.stringify(value)};
+      const el = document.activeElement?.getAttribute?.('data-mn-block-content') === 'editor'
+        ? document.activeElement
+        : document.querySelector('[data-mn-block-content="editor"]');
+      if (!el) return { ok: false };
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.focus();
+      el.setSelectionRange(value.length, value.length);
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error('Active editor textarea not found');
+}
+
+async function clickVisibleText(win, text) {
+  const result = await evaluate(win, `
+    (() => {
+      const targetText = ${JSON.stringify(text)};
+      const visible = (el) => {
+        if (!el) return false;
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      };
+      const candidates = [...document.querySelectorAll('button, [role="button"], span, div')]
+        .filter(visible)
+        .filter(el => (el.textContent || '').trim() === targetText)
+        .sort((a, b) => (a.textContent || '').length - (b.textContent || '').length);
+      const el = candidates[0];
+      if (!el) return { ok: false, sample: [...document.querySelectorAll('button, span, div')].filter(visible).map(item => (item.textContent || '').trim()).filter(Boolean).slice(0, 60) };
+      const clickable = el.closest('button, [role="button"]') || el;
+      clickable.click();
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error(`Visible text not found: ${text}. Sample: ${JSON.stringify(result.sample)}`);
+}
+
+async function runCommandPaletteCommand(win, query, resultText) {
+  await pressAccelerator(win, 'K', ['control']);
+  await waitFor(win, `command palette open for ${query}`, async () => {
+    const current = await state(win);
+    return { ok: current.commandPaletteOpen, current };
+  });
+  await setControlByPlaceholder(win, 'Run a command or open a note...', query);
+  await waitFor(win, `command palette result ${resultText}`, async () => {
+    const current = await state(win);
+    return {
+      ok: current.commandPaletteOpen && (
+        current.text.includes(resultText)
+        || current.buttons.some(btn => String(btn.text || '').includes(resultText))
+      ),
+      current,
+    };
+  });
+  await clickVisibleText(win, resultText);
+  await waitFor(win, `command palette closed after ${resultText}`, async () => {
+    const current = await state(win);
+    return { ok: !current.commandPaletteOpen, current };
+  });
+}
+
+async function activeVaultId(win) {
+  return await evaluate(win, `
+    (async () => {
+      const unwrap = (result, label) => {
+        if (!result?.ok) throw new Error(label + ': ' + (result?.error || 'failed'));
+        return result.value;
+      };
+      const vaults = unwrap(await window.mn.listVaults(), 'listVaults');
+      const prefs = unwrap(await window.mn.getPrefs(), 'getPrefs');
+      const active = vaults.find(v => v.id === prefs.activeVaultId) || vaults[0];
+      if (!active) throw new Error('No active vault');
+      return active.id;
+    })()
+  `);
+}
+
+async function loadActiveVault(win) {
+  const vaultId = await activeVaultId(win);
+  return await evaluate(win, `
+    (async () => {
+      const res = await window.mn.loadVault(${JSON.stringify(vaultId)});
+      if (!res?.ok) throw new Error(res?.error || 'loadVault failed');
+      return res.value;
+    })()
+  `);
+}
+
+async function waitForPersistedNote(win, title, predicate = () => true) {
+  return await waitFor(win, `persisted note ${title}`, async () => {
+    const vault = await loadActiveVault(win);
+    const note = (vault.notes || []).find(item => item.title === title);
+    return { ok: !!note && predicate(note), note };
+  });
+}
+
+async function waitForDeletedNote(win, title) {
+  const vaultId = await activeVaultId(win);
+  return await waitFor(win, `deleted note ${title}`, async () => {
+    const res = await evaluate(win, `
+      (async () => {
+        const result = await window.mn.listDeletedNotes(${JSON.stringify(vaultId)});
+        if (!result?.ok) throw new Error(result?.error || 'listDeletedNotes failed');
+        return result.value || [];
+      })()
+    `);
+    const item = res.find(row => row.title === title);
+    return { ok: !!item, item, deleted: res.map(row => row.title).slice(0, 20) };
+  });
+}
+
+async function waitForCanvas(win, title) {
+  const vaultId = await activeVaultId(win);
+  return await waitFor(win, `canvas ${title}`, async () => {
+    const res = await evaluate(win, `
+      (async () => {
+        const result = await window.mn.listCanvases(${JSON.stringify(vaultId)});
+        if (!result?.ok) throw new Error(result?.error || 'listCanvases failed');
+        return result.value || [];
+      })()
+    `);
+    const canvas = res.find(row => row.title === title);
+    return { ok: !!canvas, canvas };
+  });
+}
+
+async function loadCanvasByTitle(win, title) {
+  const vaultId = await activeVaultId(win);
+  return await evaluate(win, `
+    (async () => {
+      const listResult = await window.mn.listCanvases(${JSON.stringify(vaultId)});
+      if (!listResult?.ok) throw new Error(listResult?.error || 'listCanvases failed');
+      const canvas = (listResult.value || []).find(row => row.title === ${JSON.stringify(title)});
+      if (!canvas) return null;
+      const getResult = await window.mn.getCanvas(${JSON.stringify(vaultId)}, canvas.id);
+      if (!getResult?.ok) throw new Error(getResult?.error || 'getCanvas failed');
+      return getResult.value || null;
+    })()
+  `);
+}
+
+async function waitForCanvasContent(win, title, label, predicate) {
+  return await waitFor(win, `${label} in canvas ${title}`, async () => {
+    const canvas = await loadCanvasByTitle(win, title);
+    if (!canvas) return { ok: false, canvas: null };
+    const result = predicate(canvas);
+    if (result && typeof result === 'object') return { canvas, ...result, ok: !!result.ok };
+    return { ok: !!result, canvas };
+  });
+}
+
+async function canvasStageRect(win) {
+  const rect = await evaluate(win, `
+    (() => {
+      const el = document.querySelector('[data-mn-canvas-stage="true"]');
+      if (!el) return { ok: false, reason: 'missing canvas stage' };
+      const style = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      const visible = style.visibility !== 'hidden' && style.display !== 'none' && box.width > 0 && box.height > 0;
+      return {
+        ok: visible,
+        reason: visible ? '' : 'canvas stage hidden',
+        x: box.x,
+        y: box.y,
+        width: box.width,
+        height: box.height,
+      };
+    })()
+  `);
+  if (!rect.ok) throw new Error(`Canvas stage unavailable: ${JSON.stringify(rect)}`);
+  return rect;
+}
+
+async function mouseDrag(win, from, to, steps = 8) {
+  const point = (raw) => ({ x: Math.round(raw.x), y: Math.round(raw.y) });
+  const start = point(from);
+  const end = point(to);
+  win.webContents.sendInputEvent({ type: 'mouseMove', ...start });
+  await wait(30);
+  win.webContents.sendInputEvent({ type: 'mouseDown', ...start, button: 'left', clickCount: 1 });
+  await wait(30);
+  for (let i = 1; i <= steps; i++) {
+    const x = start.x + ((end.x - start.x) * i / steps);
+    const y = start.y + ((end.y - start.y) * i / steps);
+    win.webContents.sendInputEvent({ type: 'mouseMove', ...point({ x, y }), button: 'left' });
+    await wait(25);
+  }
+  win.webContents.sendInputEvent({ type: 'mouseUp', ...end, button: 'left', clickCount: 1 });
+  await wait(150);
+}
+
+async function assertViewportUsable(win, label) {
+  const metrics = await evaluate(win, `
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      };
+      const doc = document.documentElement;
+      const body = document.body;
+      const buttons = [...document.querySelectorAll('button')]
+        .filter(visible)
+        .map(el => ({
+          text: (el.textContent || '').trim(),
+          title: el.getAttribute('title') || '',
+          aria: el.getAttribute('aria-label') || '',
+        }));
+      const horizontalOverflow = doc.scrollWidth > doc.clientWidth + 2 || body.scrollWidth > body.clientWidth + 2;
+      const overflowers = [...document.querySelectorAll('body *')]
+        .filter(visible)
+        .map(el => {
+          const rect = el.getBoundingClientRect();
+          return {
+            tag: el.tagName,
+            className: typeof el.className === 'string' ? el.className : '',
+            id: el.id || '',
+            left: Math.round(rect.left),
+            right: Math.round(rect.right),
+            width: Math.round(rect.width),
+            text: (el.textContent || '').trim().slice(0, 80),
+          };
+        })
+        .filter(item => item.left < -2 || item.right > doc.clientWidth + 2)
+        .slice(0, 10);
+      return {
+        label: ${JSON.stringify(label)},
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        clientWidth: doc.clientWidth,
+        scrollWidth: doc.scrollWidth,
+        bodyClientWidth: body.clientWidth,
+        bodyScrollWidth: body.scrollWidth,
+        horizontalOverflow,
+        overflowers,
+        hasNewNote: buttons.some(btn => btn.text === 'New note'),
+        hasQuickCapture: buttons.some(btn => String(btn.title || '').includes('Quick capture')),
+        hasSettings: buttons.some(btn => String(btn.title || '').includes('Settings')),
+        hasSearch: [...document.querySelectorAll('input')].filter(visible).some(el => (el.getAttribute('placeholder') || '').includes('Search notes')),
+      };
+    })()
+  `);
+  if (metrics.horizontalOverflow || !metrics.hasNewNote || !metrics.hasQuickCapture || !metrics.hasSettings || !metrics.hasSearch) {
+    throw new Error(`Viewport ${label} is not usable: ${JSON.stringify(metrics)}`);
+  }
+  return metrics;
+}
+
+async function editorRows(win) {
+  return await evaluate(win, `
+    (() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      };
+      return [...document.querySelectorAll('.mn-block-row[data-block-id]')]
+        .filter(visible)
+        .map((row, index) => {
+          const editor = row.querySelector('[data-mn-block-content="editor"]');
+          const display = row.querySelector('[data-mn-block-content="display"]');
+          const style = getComputedStyle(row);
+          return {
+            index,
+            id: row.dataset.blockId || '',
+            kind: row.dataset.blockKind || '',
+            depth: Number(row.dataset.blockDepth || 0),
+            paddingLeft: parseFloat(style.paddingLeft || '0') || 0,
+            editing: !!editor,
+            active: row.contains(document.activeElement),
+            value: editor ? editor.value : '',
+            text: ((editor ? editor.value : display?.textContent) || '').trim().slice(0, 120),
+          };
+        });
+    })()
+  `);
+}
+
+async function runScenario(win, area, name, fn) {
+  try {
+    await fn();
+    console.log(`[scenario:pass] ${area} - ${name}`);
+  } catch (error) {
+    let current = null;
+    let rows = null;
+    try { current = await state(win); } catch {}
+    try { rows = await editorRows(win); } catch {}
+    throw new Error(`[${area}] ${name} failed: ${error?.message || String(error)}\nState: ${JSON.stringify(current)}\nEditor rows: ${JSON.stringify(rows)}`);
+  }
+}
+
+async function seedEditorNote(win, { id, title, body }) {
+  await evaluate(win, `
+    (async () => {
+      const unwrap = (result, label) => {
+        if (!result?.ok) throw new Error(label + ': ' + (result?.error || 'failed'));
+        return result.value;
+      };
+      const vaults = unwrap(await window.mn.listVaults(), 'listVaults');
+      const prefs = unwrap(await window.mn.getPrefs(), 'getPrefs');
+      const active = vaults.find(v => v.id === prefs.activeVaultId) || vaults[0];
+      if (!active) throw new Error('No vault available for editor regression');
+      const now = new Date().toISOString();
+      unwrap(await window.mn.saveNote(active.id, {
+        id: ${JSON.stringify(id)},
+        title: ${JSON.stringify(title)},
+        body: ${JSON.stringify(body)},
+        tags: ['qe-regression'],
+        date: now,
+        modifiedAt: now,
+      }, {}), 'saveNote');
+      unwrap(await window.mn.saveVaultMeta(active.id, {
+        lastSelectedId: ${JSON.stringify(id)},
+      }), 'saveVaultMeta');
+    })()
+  `);
+  win.webContents.reload();
+  await waitFor(win, `editor note loaded: ${title}`, async () => {
+    const current = await state(win);
+    const rows = await editorRows(win);
+    return {
+      ok: current.selectedTitle === title
+        && rows.length >= 1
+        && rows[0].text.includes('Parent'),
+      current,
+      rows,
+    };
+  });
+}
+
+async function focusEditorRow(win, index) {
+  const result = await evaluate(win, `
+    (() => {
+      const rows = [...document.querySelectorAll('.mn-block-row[data-block-id]')];
+      const row = rows[${Number(index) || 0}];
+      if (!row) return { ok: false, rows: rows.length };
+      const target = row.querySelector('[data-mn-block-content="display"]')
+        || row.querySelector('[data-mn-block-content="editor"]')
+        || row;
+      target.click();
+      return { ok: true, rows: rows.length };
+    })()
+  `);
+  if (!result.ok) throw new Error(`Could not focus editor row ${index}: ${JSON.stringify(result)}`);
+  await waitFor(win, `editor row ${index} editing`, async () => {
+    const rows = await editorRows(win);
+    return { ok: rows[index]?.editing && rows[index]?.active, rows };
+  });
+  await evaluate(win, `
+    (() => {
+      const active = document.activeElement;
+      if (!active || active.getAttribute('data-mn-block-content') !== 'editor') return false;
+      const end = active.value.length;
+      active.setSelectionRange(end, end);
+      return true;
+    })()
+  `);
+}
+
+async function waitForEditorLayout(win, label, predicate) {
+  return await waitFor(win, `editor layout: ${label}`, async () => {
+    const rows = await editorRows(win);
+    return { ok: predicate(rows), rows };
+  });
+}
+
+async function runEmptyNestedEnterScenario(win, { id, title, body, expectedKind }) {
+  await seedEditorNote(win, { id, title, body });
+  await focusEditorRow(win, 0);
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, `${title} creates sibling`, rows => (
+    rows.length === 2
+      && rows[0].depth === 0
+      && rows[1].depth === 0
+      && rows[1].kind === expectedKind
+      && rows[1].editing
+  ));
+  await pressAccelerator(win, 'Tab');
+  await waitForEditorLayout(win, `${title} indents empty sibling`, rows => (
+    rows.length === 2
+      && rows[0].depth === 0
+      && rows[1].depth === 1
+      && rows[1].kind === expectedKind
+      && rows[1].editing
+  ));
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, `${title} Enter outdents empty child`, rows => (
+    rows.length === 2
+      && rows[0].depth === 0
+      && rows[1].depth === 0
+      && rows[1].kind === expectedKind
+      && rows[1].editing
+  ));
+}
+
+async function runShiftTabOutdentScenario(win) {
+  await seedEditorNote(win, {
+    id: 'qe_editor_shift_tab_outdent',
+    title: 'QE Editor Shift Tab Outdent',
+    body: 'Parent',
+  });
+  await focusEditorRow(win, 0);
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'Shift+Tab creates sibling', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing);
+  await pressAccelerator(win, 'Tab');
+  await waitForEditorLayout(win, 'Shift+Tab indents empty paragraph', rows => rows.length === 2 && rows[1].depth === 1 && rows[1].editing);
+  await pressAccelerator(win, 'Tab', ['shift']);
+  await waitForEditorLayout(win, 'Shift+Tab returns empty paragraph to parent level', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing);
+}
+
+async function runNoteCreateEditPersistenceScenario(win) {
+  const title = 'QE User Scenario Note';
+  const body = 'A user can create, edit, and persist this note.';
+  await clickButton(win, { text: 'New note' });
+  await waitFor(win, 'blank note selected for user scenario', async () => {
+    const current = await state(win);
+    return { ok: /^Untitled/.test(current.selectedTitle), current };
+  });
+  await setTitleInput(win, title);
+  await waitFor(win, 'renamed user scenario note selected', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle === title, current };
+  });
+  await focusEditorRow(win, 0);
+  await setActiveEditorText(win, body);
+  await waitForEditorLayout(win, 'edited user scenario body visible', rows => rows[0]?.text.includes('create, edit, and persist'));
+  await waitForPersistedNote(win, title, note => String(note.body || '').includes(body));
+}
+
+async function runQuickCaptureSaveScenario(win) {
+  const title = 'QE Quick Capture Task';
+  const body = '- [ ] QE quick capture todo';
+  await clickButton(win, { titleIncludes: 'Quick capture' });
+  await waitFor(win, 'quick capture open for save scenario', async () => {
+    const current = await state(win);
+    return { ok: current.quickCaptureOpen, current };
+  });
+  await setControlByPlaceholder(win, 'Title', title);
+  await setControlByPlaceholder(win, 'Write a note', body);
+  await clickButton(win, { text: 'Save note' });
+  await waitFor(win, 'quick capture saved and closed', async () => {
+    const current = await state(win);
+    return { ok: !current.quickCaptureOpen && current.selectedTitle === title, current };
+  });
+  await waitForPersistedNote(win, title, note => String(note.body || '').includes('QE quick capture todo'));
+}
+
+async function runSearchAndClearScenario(win) {
+  const title = 'QE User Scenario Note';
+  await clickVisibleText(win, 'All notes');
+  await waitFor(win, 'all notes view before search', async () => {
+    const current = await state(win);
+    return { ok: current.text.includes('All notes'), current };
+  });
+  await setControlByPlaceholder(win, 'Search notes', 'QE User Scenario');
+  await waitFor(win, 'search filters to user scenario note', async () => {
+    const current = await state(win);
+    return { ok: current.text.includes('Search') && current.text.includes(title), current };
+  });
+  await pressAccelerator(win, 'Escape');
+  await waitFor(win, 'search clears with Escape', async () => {
+    const value = await evaluate(win, `document.querySelector('input[placeholder="Search notes…"]')?.value || ''`);
+    return { ok: value === '', value };
+  });
+}
+
+async function runNavigationPanelsScenario(win) {
+  await runCommandPaletteCommand(win, 'Open Todos', 'Open Todos');
+  await waitFor(win, 'todos panel shows captured task', async () => {
+    const current = await state(win);
+    return { ok: current.text.includes('Todos') && current.text.includes('QE quick capture todo'), current };
+  });
+  await clickVisibleText(win, 'Graph');
+  await waitFor(win, 'graph panel opens with visible heading', async () => {
+    const current = await state(win);
+    return { ok: current.text.includes('Graph'), current };
+  });
+}
+
+async function runCanvasCreateScenario(win) {
+  const title = 'QE Scenario Canvas';
+  await clickVisibleText(win, 'Canvas');
+  await waitFor(win, 'canvas dashboard visible', async () => {
+    const current = await state(win);
+    return { ok: current.text.includes('Canvas') && current.text.includes('canvas'), current };
+  });
+  await setControlByPlaceholder(win, 'Canvas name', title);
+  await clickButton(win, { text: 'Create' });
+  await waitForCanvas(win, title);
+  await waitFor(win, 'created canvas visible to user', async () => {
+    const current = await state(win);
+    const titleInputVisible = await evaluate(win, `
+      (() => [...document.querySelectorAll('input')]
+        .some(el => {
+          const style = getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return el.value === ${JSON.stringify(title)}
+            && style.visibility !== 'hidden'
+            && style.display !== 'none'
+            && rect.width > 0
+            && rect.height > 0;
+        }))()
+    `);
+    return { ok: titleInputVisible && current.buttons.some(btn => btn.title === 'Select'), current };
+  });
+
+  await clickButton(win, { titleIncludes: 'Rectangle' });
+  const stage = await canvasStageRect(win);
+  const start = {
+    x: stage.x + Math.min(220, Math.max(120, stage.width * 0.22)),
+    y: stage.y + Math.min(180, Math.max(100, stage.height * 0.24)),
+  };
+  const end = { x: start.x + 128, y: start.y + 84 };
+  await mouseDrag(win, start, end, 10);
+  const created = await waitForCanvasContent(win, title, 'drawn rectangle persisted', canvas => {
+    const element = (canvas.elements || []).find(item => item.type === 'rect' && item.w >= 80 && item.h >= 50);
+    return { ok: !!element, element, elements: canvas.elements };
+  });
+
+  await clickButton(win, { titleIncludes: 'Select' });
+  const element = created.element;
+  const center = {
+    x: stage.x + element.x + element.w / 2,
+    y: stage.y + element.y + element.h / 2,
+  };
+  const movedTo = { x: center.x + 58, y: center.y + 34 };
+  await mouseDrag(win, center, movedTo, 8);
+  const moved = await waitForCanvasContent(win, title, 'moved rectangle persisted', canvas => {
+    const current = (canvas.elements || []).find(item => item.id === element.id);
+    return {
+      ok: !!current && current.x >= element.x + 35 && current.y >= element.y + 20,
+      element: current,
+    };
+  });
+
+  await pressAccelerator(win, 'Z', ['control']);
+  await waitForCanvasContent(win, title, 'canvas undo restores rectangle position', canvas => {
+    const current = (canvas.elements || []).find(item => item.id === element.id);
+    return {
+      ok: !!current && Math.abs(current.x - element.x) <= 3 && Math.abs(current.y - element.y) <= 3,
+      element: current,
+    };
+  });
+  await pressAccelerator(win, 'Y', ['control']);
+  await waitForCanvasContent(win, title, 'canvas redo reapplies rectangle move', canvas => {
+    const current = (canvas.elements || []).find(item => item.id === element.id);
+    return {
+      ok: !!current && Math.abs(current.x - moved.element.x) <= 3 && Math.abs(current.y - moved.element.y) <= 3,
+      element: current,
+    };
+  });
+}
+
+async function runViewportAccessibilityScenario(win) {
+  const original = win.getBounds();
+  try {
+    win.setSize(900, 700);
+    await wait(250);
+    await assertViewportUsable(win, 'minimum supported window');
+    await clickButton(win, { titleIncludes: 'Settings' });
+    await waitFor(win, 'settings open at minimum supported window', async () => {
+      const current = await state(win);
+      return { ok: current.settingsOpen && current.buttons.some(btn => btn.aria === 'Close settings'), current };
+    });
+    await pressAccelerator(win, 'Escape');
+    await waitFor(win, 'settings closes with Escape at minimum supported window', async () => {
+      const current = await state(win);
+      return { ok: !current.settingsOpen, current };
+    });
+
+    win.setSize(1280, 860);
+    await wait(250);
+    await assertViewportUsable(win, 'desktop window');
+  } finally {
+    win.setBounds(original);
+    await wait(200);
+  }
+}
+
+async function runDeleteRestoreScenario(win) {
+  const title = 'QE User Scenario Note';
+  await clickVisibleText(win, 'All notes');
+  await setControlByPlaceholder(win, 'Search notes', title);
+  await waitFor(win, 'delete target visible in note search', async () => {
+    const current = await state(win);
+    return { ok: current.text.includes(title), current };
+  });
+  await clickVisibleText(win, title);
+  await waitFor(win, 'delete target selected', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle === title, current };
+  });
+  await clickButton(win, { titleIncludes: 'Delete' });
+  await waitFor(win, 'delete note dialog explains recoverability', async () => {
+    const current = await state(win);
+    return { ok: current.dialogs.some(text => text.includes('Delete note')) && current.text.includes('Recently deleted'), current };
+  });
+  await clickButton(win, { text: 'Move to trash' });
+  await waitForDeletedNote(win, title);
+  await clickVisibleText(win, 'Recently deleted');
+  await waitFor(win, 'recently deleted view shows deleted note', async () => {
+    const current = await state(win);
+    return { ok: current.text.includes('Recently deleted') && current.text.includes(title), current };
+  });
+  await clickVisibleText(win, 'Restore');
+  await waitFor(win, 'restored note reopens in notes view', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle === title, current };
+  });
+  await waitForPersistedNote(win, title, note => String(note.body || '').includes('create, edit, and persist'));
+}
+
 async function runRegression() {
   const win = await waitForMainWindow();
   win.webContents.on('console-message', (_event, details) => {
@@ -150,43 +820,73 @@ async function runRegression() {
     };
   });
 
-  await clickButton(win, { text: 'New note' });
-  await waitFor(win, 'new note selection', async () => {
-    const current = await state(win);
-    return { ok: /^Untitled/.test(current.selectedTitle), current };
+  await runScenario(win, 'Notes', 'create, edit, and persist a note', async () => {
+    await runNoteCreateEditPersistenceScenario(win);
+  });
+  await runScenario(win, 'Capture', 'quick capture saves a task note and closes cleanly', async () => {
+    await runQuickCaptureSaveScenario(win);
+  });
+  await runScenario(win, 'Search', 'note search finds expected content and Escape clears it', async () => {
+    await runSearchAndClearScenario(win);
+  });
+  await runScenario(win, 'Navigation', 'command palette and sidebar open task and graph panels', async () => {
+    await runNavigationPanelsScenario(win);
+  });
+  await runScenario(win, 'Canvas', 'create, draw, move, undo, and redo a canvas object', async () => {
+    await runCanvasCreateScenario(win);
+  });
+  await runScenario(win, 'Trash', 'delete explains recoverability and restore returns the note', async () => {
+    await runDeleteRestoreScenario(win);
+  });
+  await runScenario(win, 'Settings', 'settings opens with clear context and closes', async () => {
+    await clickButton(win, { titleIncludes: 'Settings' });
+    await waitFor(win, 'settings open', async () => {
+      const current = await state(win);
+      return {
+        ok: current.settingsOpen && current.buttons.some(btn => String(btn.text || '').includes('Appearance')),
+        current,
+      };
+    });
+    await clickButton(win, { aria: 'Close settings' });
+    await waitFor(win, 'settings close', async () => {
+      const current = await state(win);
+      return { ok: !current.settingsOpen, current };
+    });
+  });
+  await runScenario(win, 'Layout', 'minimum and desktop windows keep core controls usable', async () => {
+    await runViewportAccessibilityScenario(win);
+  });
+  await runScenario(win, 'Command Palette', 'opens and closes without changing context', async () => {
+    await pressAccelerator(win, 'K', ['control']);
+    await waitFor(win, 'command palette open', async () => {
+      const current = await state(win);
+      return { ok: current.commandPaletteOpen, current };
+    });
+    await pressAccelerator(win, 'Escape');
+    await waitFor(win, 'command palette close', async () => {
+      const current = await state(win);
+      return { ok: !current.commandPaletteOpen, current };
+    });
   });
 
-  await clickButton(win, { titleIncludes: 'Quick capture' });
-  await waitFor(win, 'quick capture open', async () => {
-    const current = await state(win);
-    return { ok: current.quickCaptureOpen, current };
+  await runScenario(win, 'Editor', 'empty paragraph Enter-Tab-Enter returns to parent level', async () => {
+    await runEmptyNestedEnterScenario(win, {
+      id: 'qe_editor_paragraph_enter_outdent',
+      title: 'QE Editor Paragraph Outdent',
+      body: 'Parent',
+      expectedKind: 'paragraph',
+    });
   });
-  await pressAccelerator(win, 'Escape');
-  await waitFor(win, 'quick capture close', async () => {
-    const current = await state(win);
-    return { ok: !current.quickCaptureOpen, current };
+  await runScenario(win, 'Editor', 'empty bullet Enter-Tab-Enter returns to parent level', async () => {
+    await runEmptyNestedEnterScenario(win, {
+      id: 'qe_editor_bullet_enter_outdent',
+      title: 'QE Editor Bullet Outdent',
+      body: '- Parent',
+      expectedKind: 'bullet',
+    });
   });
-
-  await clickButton(win, { titleIncludes: 'Settings' });
-  await waitFor(win, 'settings open', async () => {
-    const current = await state(win);
-    return { ok: current.settingsOpen, current };
-  });
-  await clickButton(win, { aria: 'Close settings' });
-  await waitFor(win, 'settings close', async () => {
-    const current = await state(win);
-    return { ok: !current.settingsOpen, current };
-  });
-
-  await pressAccelerator(win, 'K', ['control']);
-  await waitFor(win, 'command palette open', async () => {
-    const current = await state(win);
-    return { ok: current.commandPaletteOpen, current };
-  });
-  await pressAccelerator(win, 'Escape');
-  await waitFor(win, 'command palette close', async () => {
-    const current = await state(win);
-    return { ok: !current.commandPaletteOpen, current };
+  await runScenario(win, 'Editor', 'Shift+Tab returns an empty nested paragraph to parent level', async () => {
+    await runShiftTabOutdentScenario(win);
   });
 
   const finalState = await state(win);
@@ -194,7 +894,21 @@ async function runRegression() {
   console.log('Renderer regression workflows passed');
 }
 
-function cleanupAndExit(code) {
+async function closeWindowsBeforeCleanup() {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try { win.close(); } catch {}
+  }
+  await wait(150);
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try { win.destroy(); } catch {}
+  }
+  await wait(150);
+}
+
+async function cleanupAndExit(code) {
+  await closeWindowsBeforeCleanup();
   if (!process.env.VISPNOTE_KEEP_REGRESSION_HOME) {
     try {
       fs.rmSync(regressionHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -208,9 +922,9 @@ function cleanupAndExit(code) {
 app.whenReady().then(async () => {
   try {
     await runRegression();
-    cleanupAndExit(0);
+    await cleanupAndExit(0);
   } catch (error) {
     console.error(error);
-    cleanupAndExit(1);
+    await cleanupAndExit(1);
   }
 });

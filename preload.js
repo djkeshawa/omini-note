@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('mn', {
   vaultHealth: (vaultId) => ipcRenderer.invoke('mn:vaultHealth', vaultId),
   exportBackup:(options) => ipcRenderer.invoke('mn:exportBackup', options),
   importBackup:(options) => ipcRenderer.invoke('mn:importBackup', options),
+  importNovelFiles:(options) => ipcRenderer.invoke('mn:importNovelFiles', options),
 
   // AI (Ollama)
   ai: {

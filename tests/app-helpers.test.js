@@ -36,6 +36,50 @@ test('App helpers expand templates, rank commands, and decorate search results',
   assert.deepEqual(decorated[1].__matchedFields, ['body']);
 });
 
+test('Novel import helper creates structure support notes and preserves existing drafts', () => {
+  const now = '2026-05-16T00:00:00.000Z';
+  const existing = [
+    {
+      id: 'scene-existing',
+      title: 'Arrival',
+      tags: ['novel-scene'],
+      body: 'status:: DRAFT\n\nDraft already here.',
+      modifiedAt: now,
+    },
+    {
+      id: 'character-existing',
+      title: 'Mara',
+      tags: ['novel-character'],
+      body: 'Existing motive.',
+      modifiedAt: now,
+    },
+  ];
+  const plan = appHelpers.buildNovelImportPlan([
+    { title: 'Act 1', kind: 'act', body: 'Opening movement.', order: '100' },
+    { title: 'Chapter 1', kind: 'chapter', actTitle: 'Act 1', body: 'First chapter.', order: '110' },
+    { title: 'Arrival', kind: 'scene', actTitle: 'Act 1', chapterTitle: 'Chapter 1', body: 'Do not overwrite this story.', plotPoints: ['Mara reaches the port'] },
+    { title: 'Mara', kind: 'character', body: 'Secretly wants to leave the city.', sourceFile: 'cast.md' },
+    { title: 'Harbor', kind: 'location', body: 'Fog, bells, and closed warehouses.', sourceFile: 'places.txt' },
+  ], existing, { vaultId: 'novel', now });
+
+  assert.equal(plan.created.length, 3);
+  assert.equal(plan.updated.length, 2);
+  const act = plan.notes.find(note => note.title === 'Act 1');
+  const chapter = plan.notes.find(note => note.title === 'Chapter 1');
+  const scene = plan.notes.find(note => note.title === 'Arrival');
+  const character = plan.notes.find(note => note.title === 'Mara');
+  const location = plan.notes.find(note => note.title === 'Harbor');
+
+  assert.match(act.body, /\[\[Chapter 1\]\]/);
+  assert.match(chapter.body, /act:: \[\[Act 1\]\]/);
+  assert.match(chapter.body, /\[\[Arrival\]\]/);
+  assert.match(scene.body, /chapter:: \[\[Chapter 1\]\]/);
+  assert.match(scene.body, /Draft already here/);
+  assert.doesNotMatch(scene.body, /Do not overwrite this story/);
+  assert.match(character.body, /Secretly wants to leave/);
+  assert.deepEqual(location.tags, ['novel-location']);
+});
+
 test('Ask AI action classifier routes app functions and high-risk prompts safely', () => {
   assert.deepEqual(aiActions.classifyPrompt('create a page called Launch checklist'), {
     type: 'action',
@@ -111,6 +155,14 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
   assert.deepEqual(aiActions.classifyPrompt('summarize this page'), {
     type: 'action',
     action: { type: 'edit-current', action: 'summarize' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('format all supporting notes'), {
+    type: 'action',
+    action: { type: 'edit-supporting-notes', action: 'format' },
+  });
+  assert.deepEqual(aiActions.classifyPrompt('improve all suporting notes'), {
+    type: 'action',
+    action: { type: 'edit-supporting-notes', action: 'improve' },
   });
   assert.deepEqual(aiActions.classifyPrompt('can you summarise all my notes'), {
     type: 'notes',

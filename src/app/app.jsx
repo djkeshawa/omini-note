@@ -15,6 +15,8 @@ const {
   MN_AUTOSAVE_MAX_WAIT_MS,
   MN_NOTE_TEMPLATES,
   MN_PLUGIN_API,
+  normalizeNovelImportCandidates,
+  buildNovelImportPlan,
   MN_NOVELIST_TAGS,
   MN_NOVELIST_WORKFLOW_STATES,
   mnNovelistNoteId,
@@ -99,6 +101,180 @@ const {
   MnSettingsModal,
 } = window;
 
+const MN_NOVEL_IMPORT_TOOL = {
+  name: 'propose-novel-import',
+  title: 'Propose novel import notes',
+  description: 'Return structured novelist notes extracted from imported text files.',
+  readOnly: true,
+  inputSchema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      notes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            title: { type: 'string' },
+            kind: { type: 'string', enum: ['act', 'chapter', 'scene', 'character', 'location', 'plot', 'research', 'revision'] },
+            body: { type: 'string' },
+            actTitle: { type: 'string' },
+            chapterTitle: { type: 'string' },
+            order: { type: 'string' },
+            pov: { type: 'string' },
+            purpose: { type: 'string' },
+            sourceFile: { type: 'string' },
+            confidence: { type: 'string' },
+            plotPoints: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['title', 'kind', 'body'],
+        },
+      },
+    },
+    required: ['notes'],
+  },
+};
+
+function mnNovelImportChunks(files = [], maxChars = 11000) {
+  const chunks = [];
+  (files || []).forEach(file => {
+    const text = String(file?.text || '');
+    for (let start = 0; start < text.length; start += maxChars) {
+      chunks.push({
+        fileName: file.name || 'imported-file',
+        index: Math.floor(start / maxChars) + 1,
+        text: text.slice(start, start + maxChars),
+      });
+    }
+  });
+  return chunks.filter(chunk => chunk.text.trim());
+}
+
+function mnNovelImportExistingSummary(notes = []) {
+  return (notes || [])
+    .filter(note => (note.tags || []).some(tag => String(tag || '').startsWith('novel-')))
+    .slice(0, 50)
+    .map(note => `- ${String(note.title || 'Untitled').slice(0, 80)} [${(note.tags || []).join(', ')}]`)
+    .join('\n');
+}
+
+function mnNovelImportExtractionPrompt(chunk, existingSummary) {
+  return [
+    'Analyze this imported novel file chunk and call the propose-novel-import tool.',
+    'Classify content as story structure, story draft, or supporting notes.',
+    'Use kind=act/chapter/scene for actual story structure or prose.',
+    'Use kind=character/location/plot/research/revision for supporting details.',
+    'If the chunk has both story and support material, return both.',
+    'Do not invent facts. Keep bodies concise but useful.',
+    'Use existing titles when they clearly match.',
+    '',
+    'Existing novelist notes:',
+    existingSummary || '- None',
+    '',
+    `Source file: ${chunk.fileName} (chunk ${chunk.index})`,
+    'Text:',
+    chunk.text,
+  ].join('\n');
+}
+
+function mnNovelImportConsolidationPrompt(candidates, existingSummary) {
+  return [
+    'Consolidate these extracted novelist import candidates and call propose-novel-import.',
+    'Merge duplicates, preserve useful details, and keep act/chapter/scene relationships.',
+    'Return only candidates that should become or update app notes.',
+    '',
+    'Existing novelist notes:',
+    existingSummary || '- None',
+    '',
+    'Candidates JSON:',
+    JSON.stringify({ notes: candidates }),
+  ].join('\n');
+}
+
+function mnNovelImportToolArgs(response) {
+  if (!response || response.ok === false) throw new Error(response?.error || 'AI import analysis failed.');
+  const value = response.value || response;
+  if (value.ok === false) throw new Error(value.error || 'AI import analysis failed.');
+  const call = (value.toolCalls || []).find(item => item.name === 'propose-novel-import') || (value.toolCalls || [])[0];
+  if (call?.args && typeof call.args === 'object') return call.args;
+  const answer = String(value.answer || '').trim();
+  if (answer.startsWith('{')) {
+    try { return JSON.parse(answer); } catch (e) {}
+  }
+  return { notes: [] };
+}
+
+function MnNovelImportPreviewDialog({ dialog, T, onApply, onClose }) {
+  if (!dialog) return null;
+  const plan = dialog.plan || {};
+  const loading = dialog.phase === 'analyzing';
+  const errored = dialog.phase === 'error';
+  const created = plan.created || [];
+  const updated = plan.updated || [];
+  const skipped = [...(dialog.skipped || []), ...(plan.skipped || [])];
+  const renderItems = (label, items) => (
+    <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, padding: 10, background: T.bgSub }}>
+      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>{label}</div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {items.length
+          ? items.slice(0, 18).map(item => (
+            <div key={`${label}:${item.id || item.title}:${item.reason || ''}`} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
+              <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>{item.kind || 'file'}</span>
+              <span style={{ color: T.ink }}>{item.title || item.name}</span>
+              {item.reason && <span style={{ color: T.inkDim }}>{item.reason}</span>}
+            </div>
+          ))
+          : <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkDim }}>None</div>}
+        {items.length > 18 && <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>+{items.length - 18} more</div>}
+      </div>
+    </section>
+  );
+
+  return (
+    <div onClick={onClose} style={{ position: 'absolute', inset: 0, zIndex: 72, background: T.overlay || `color-mix(in oklab, ${T.ink} 34%, transparent)`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(760px, calc(100vw - 48px))', maxHeight: 'min(680px, calc(100vh - 48px))', overflow: 'auto', borderRadius: 10, border: `1px solid ${T.line}`, background: T.bg, boxShadow: `0 24px 60px color-mix(in oklab, ${T.ink} 28%, transparent)`, padding: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 17, fontWeight: 760, color: T.ink }}>Novel import preview</div>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkDim, marginTop: 3 }}>
+              {loading ? (dialog.progress || 'Analyzing imported files...') : errored ? 'No notes were changed.' : `${created.length} create, ${updated.length} merge`}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${T.lineSub}`, background: T.bgSub, color: T.inkDim, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Close" aria-label="Close">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M4 4L12 12M12 4L4 12" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+        {loading && (
+          <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, padding: 14, background: T.bgSub, fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkMed }}>
+            {dialog.progress || 'Reading source material and asking AI to classify story and supporting details.'}
+          </div>
+        )}
+        {errored && (
+          <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, padding: 14, background: T.bgSub, fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkMed }}>
+            {dialog.error || 'AI could not analyze the imported files.'}
+          </div>
+        )}
+        {!loading && !errored && (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {renderItems('Create', created)}
+            {renderItems('Merge into existing notes', updated)}
+            {renderItems('Skipped', skipped)}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          <button onClick={onClose} style={{ border: `1px solid ${T.lineSub}`, background: T.bgSub, color: T.inkMed, borderRadius: 7, padding: '7px 11px', fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer' }}>{loading ? 'Hide' : 'Cancel'}</button>
+          {!loading && !errored && (
+            <button onClick={onApply} disabled={!plan.changedIds?.length} style={{ border: `1px solid ${T.ink}`, background: T.ink, color: T.bg, borderRadius: 7, padding: '7px 11px', fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: plan.changedIds?.length ? 'pointer' : 'not-allowed', opacity: plan.changedIds?.length ? 1 : 0.55 }}>Apply</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MnApp() {
   const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
@@ -115,6 +291,8 @@ function MnApp() {
   const [settingsOpen, setSettingsOpen] = useStateA(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useStateA(false);
   const [vaultHealthOpen, setVaultHealthOpen] = useStateA(false);
+  const [novelImportDialog, setNovelImportDialog] = useStateA(null);
+  const novelImportSeq = useRefA(0);
 
   // ── State (populated after disk load) ───────────────────────────────────
   // vaults stores per-vault metadata + cached notes/tags (cache fills lazily)
@@ -1276,7 +1454,7 @@ function MnApp() {
 
   const selectedNote = notes.find(n => n.id === selectedId);
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
-  const blockingOverlayOpen = captureOpen || settingsOpen || commandPaletteOpen || vaultHealthOpen || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
+  const blockingOverlayOpen = captureOpen || settingsOpen || commandPaletteOpen || vaultHealthOpen || !!novelImportDialog || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
 
   const reminderCenterItems = useMemoA(() => {
     const now = Date.now();
@@ -1458,6 +1636,38 @@ function MnApp() {
     }));
     markDirty(id);
   }, [markDirty, mnMdToBlocks, mnBlocksToMd]);
+
+  const updateNoteBodies = useCallbackA((updates = []) => {
+    const existingIds = new Set(notesWithBody.map(note => note.id));
+    const byId = new Map();
+    (updates || []).forEach(update => {
+      const id = String(update?.id || '');
+      if (!id || !existingIds.has(id) || typeof update?.body !== 'string') return;
+      byId.set(id, update.body);
+    });
+    if (!byId.size) return 0;
+    setNotes(ns => ns.map(note => {
+      if (!byId.has(note.id)) return note;
+      return MN_APP_MUTATIONS.applyNoteBodyUpdate(note, byId.get(note.id), {
+        normalizeNoteBody: mnNormalizeNoteBody,
+        blocksToMd: mnBlocksToMd,
+        mdToBlocks: mnMdToBlocks,
+      });
+    }));
+    byId.forEach((_, id) => markDirty(id));
+    return byId.size;
+  }, [notesWithBody, markDirty, mnMdToBlocks, mnBlocksToMd]);
+
+  const openNoteById = useCallbackA((id) => {
+    const noteId = String(id || '');
+    if (!notesWithBody.some(note => note.id === noteId)) return false;
+    setSelectedId(noteId);
+    setSelectedTag(null);
+    setSelectedWorkflow(null);
+    setQuery('');
+    navigateView('notes');
+    return true;
+  }, [notesWithBody, navigateView]);
 
   const linkNovelistChapter = useCallbackA((arcId, chapterId, chapterTitle) => {
     const act = notesWithBody.find(n => n.id === arcId);
@@ -1916,6 +2126,120 @@ function MnApp() {
       showAppNotice('Could not import backup', e.message || String(e));
     }
   }, [refreshVaultRegistry, showAppNotice]);
+
+  const analyzeNovelImportFiles = useCallbackA(async (files, skipped = [], importSeq = 0) => {
+    if (!window.mn?.ai?.toolPlan) throw new Error('AI tool planning is unavailable in this build.');
+    const chunks = mnNovelImportChunks(files);
+    if (!chunks.length) throw new Error('No readable text was selected for import.');
+    const existingSummary = mnNovelImportExistingSummary(notesWithBody);
+    const extracted = [];
+    const jobId = `novel-import-${Date.now().toString(36)}`;
+    for (let index = 0; index < chunks.length; index++) {
+      const chunk = chunks[index];
+      setNovelImportDialog(current => current
+        && current.seq === importSeq ? { ...current, phase: 'analyzing', progress: `Analyzing ${chunk.fileName} (${index + 1}/${chunks.length})...` }
+        : current);
+      const response = await window.mn.ai.toolPlan({
+        jobId,
+        timeoutMs: 180000,
+        maxTokens: 2600,
+        tools: [MN_NOVEL_IMPORT_TOOL],
+        messages: [{ role: 'user', content: mnNovelImportExtractionPrompt(chunk, existingSummary) }],
+      });
+      const args = mnNovelImportToolArgs(response);
+      const candidates = normalizeNovelImportCandidates(args).map(candidate => ({
+        ...candidate,
+        sourceFile: candidate.sourceFile || chunk.fileName,
+      }));
+      extracted.push(...candidates);
+    }
+    if (!extracted.length) throw new Error('AI did not find story structure or supporting novel details in the selected files.');
+
+    let finalCandidates = extracted;
+    const consolidationPrompt = mnNovelImportConsolidationPrompt(extracted, existingSummary);
+    if (extracted.length > 1 && consolidationPrompt.length <= 19000) {
+      setNovelImportDialog(current => current
+        && current.seq === importSeq ? { ...current, phase: 'analyzing', progress: 'Consolidating extracted notes...' }
+        : current);
+      try {
+        const response = await window.mn.ai.toolPlan({
+          jobId,
+          timeoutMs: 180000,
+          maxTokens: 3200,
+          tools: [MN_NOVEL_IMPORT_TOOL],
+          messages: [{ role: 'user', content: consolidationPrompt }],
+        });
+        const consolidated = normalizeNovelImportCandidates(mnNovelImportToolArgs(response));
+        if (consolidated.length) finalCandidates = consolidated;
+      } catch (e) {
+        console.warn('novel import consolidation failed', e);
+      }
+    }
+
+    const plan = buildNovelImportPlan(finalCandidates, notesWithBody, { vaultId: activeVaultId });
+    return {
+      ...plan,
+      notes: plan.notes.map(note => ({ ...note, blocks: mnMdToBlocks(note.body || '') })),
+      files,
+      skipped,
+    };
+  }, [activeVaultId, mnMdToBlocks, notesWithBody]);
+
+  const importNovelFiles = useCallbackA(async () => {
+    if (!activeVault?.novelistMode) return showAppNotice('Novelist vault required', 'Switch this vault to Novelist mode before importing novel files.', 'warn');
+    if (!window.mn?.importNovelFiles) return showAppNotice('Novel import unavailable', 'This build does not expose novel file import.');
+    if (!window.mn?.ai?.toolPlan) return showAppNotice('AI unavailable', 'Novel import needs AI tool planning to classify structure and support notes.');
+    let importSeq = 0;
+    try {
+      const res = await window.mn.importNovelFiles({});
+      if (!res.ok) throw new Error(res.error || 'Could not import novel files.');
+      if (res.value?.canceled) return;
+      const files = res.value?.files || [];
+      const skipped = res.value?.skipped || [];
+      if (!files.length) {
+        const reason = skipped[0]?.reason || 'No readable UTF-8 text files were selected.';
+        showAppNotice('No files imported', reason, 'warn');
+        return;
+      }
+      importSeq = ++novelImportSeq.current;
+      setNovelImportDialog({ seq: importSeq, phase: 'analyzing', files, skipped, progress: 'Reading source material...' });
+      const plan = await analyzeNovelImportFiles(files, skipped, importSeq);
+      if (importSeq !== novelImportSeq.current) return;
+      setNovelImportDialog({ seq: importSeq, phase: 'ready', files, skipped, plan });
+    } catch (e) {
+      if (importSeq && importSeq !== novelImportSeq.current) return;
+      console.error('novel import failed', e);
+      setNovelImportDialog(current => current
+        ? { ...current, phase: 'error', error: e.message || String(e) }
+        : { phase: 'error', error: e.message || String(e), skipped: [] });
+    }
+  }, [activeVault?.novelistMode, analyzeNovelImportFiles, showAppNotice]);
+
+  const applyNovelImportPreview = useCallbackA(() => {
+    const plan = novelImportDialog?.plan;
+    if (!plan?.changedIds?.length) return;
+    const nextTags = mnEnsureNovelistTags(tags);
+    const tagNames = tags.map(tag => tag.name).join('\n');
+    const nextTagNames = nextTags.map(tag => tag.name).join('\n');
+    setNotes(plan.notes);
+    setTags(nextTags);
+    setVaults(vs => vs.map(v => v.id === activeVaultId
+      ? { ...v, notes: plan.notes, tags: nextTags, novelistMode: true }
+      : v));
+    plan.changedIds.forEach(id => markDirty(id));
+    if (tagNames !== nextTagNames) markTagsDirty();
+    setNovelImportDialog(null);
+    showAppNotice(
+      'Novel import applied',
+      `${plan.created?.length || 0} note${plan.created?.length === 1 ? '' : 's'} created, ${plan.updated?.length || 0} merged.`,
+      'info'
+    );
+  }, [activeVaultId, markDirty, markTagsDirty, novelImportDialog, showAppNotice, tags]);
+
+  const closeNovelImportDialog = useCallbackA(() => {
+    novelImportSeq.current++;
+    setNovelImportDialog(null);
+  }, []);
 
   const rebuildIndex = useCallbackA(async () => {
     if (!activeVaultId || !window.mn?.rebuildIndex) return;
@@ -3106,14 +3430,14 @@ function MnApp() {
               allNotes={notesWithBody}
               initialQuery={askAiSeed}
               onClose={goBackView}
-              onOpenNote={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onOpenNote={openNoteById}
               onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] }, { open: false })}
               onTagCurrentNote={tagCurrentNoteFromAi}
               onApplyCurrentPageBody={(body) => {
                 if (!selectedNote) return;
-                const cleanBody = mnNormalizeNoteBody(body, selectedNote.title || 'Untitled');
-                updateNote(selectedNote.id, { body: cleanBody, blocks: mnMdToBlocks(cleanBody) });
+                updateNoteBodies([{ id: selectedNote.id, body }]);
               }}
+              onApplyNoteBodies={updateNoteBodies}
               session={activeAskAiSession}
               setSession={setActiveAskAiSession}
               onBackgroundComplete={notifyAskAiComplete}
@@ -3344,10 +3668,17 @@ function MnApp() {
             onPurgeDeletedNote={purgeDeletedNote}
             onExportBackup={exportBackup}
             onImportBackup={importBackup}
+            onImportNovelFiles={importNovelFiles}
             onOpenVaultHealth={() => setVaultHealthOpen(true)}
             onRebuildIndex={rebuildIndex}
             onClose={() => setSettingsOpen(false)} />
         )}
+        <MnNovelImportPreviewDialog
+          dialog={novelImportDialog}
+          T={T}
+          onApply={applyNovelImportPreview}
+          onClose={closeNovelImportDialog}
+        />
         {deleteTargetNote && (
           <MnDeleteNoteDialog
             note={deleteTargetNote}

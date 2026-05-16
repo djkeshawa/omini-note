@@ -12,6 +12,27 @@ const MN_ASK_EDIT_ACTIONS = {
   link: 'Add useful wiki-links using the existing note titles provided below. Preserve the page structure and do not add unrelated links.',
 };
 
+const MN_NOVEL_STRUCTURE_TAGS = new Set(['novel-act', 'novel-chapter', 'novel-scene']);
+
+function mnIsSupportingNovelNote(note) {
+  return (note?.tags || []).some(tag => {
+    const clean = String(tag || '').toLowerCase();
+    return clean.startsWith('novel-') && !MN_NOVEL_STRUCTURE_TAGS.has(clean);
+  });
+}
+
+function mnSupportingNovelNotes(notes = []) {
+  return (notes || []).filter(mnIsSupportingNovelNote);
+}
+
+function mnSupportingNotesEditInstruction(action, userInstruction = '') {
+  const request = String(userInstruction || '').trim();
+  const base = action === 'format'
+    ? 'Format this supporting novel note as clean Markdown. Preserve every fact, name, relationship, worldbuilding detail, task, wiki-link, tag, and source detail. Use concise headings and bullet lists where useful. Do not convert it into story prose.'
+    : 'Improve the clarity, organization, and wording of this supporting novel note. Preserve every fact, name, relationship, worldbuilding detail, task, wiki-link, tag, and source detail. Do not invent new story facts or convert it into story prose.';
+  return request ? `${base}\n\nUser request: ${request}` : base;
+}
+
 const MN_ASK_SUGGESTIONS = [
   'What changed most recently in this vault?',
   'Summarize open tasks from my notes',
@@ -70,6 +91,21 @@ const MN_AI_VIRTUAL_TOOLS = [
     name: 'edit-current-page',
     title: 'Edit current page',
     description: 'Rewrite, format, summarize, improve, fix grammar, or link the currently open page. Use only when the user explicitly asks to change the current page.',
+    risk: 'safe',
+    readOnly: false,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        instruction: { type: 'string', maxLength: 4000 },
+      },
+      required: ['instruction'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'edit-supporting-notes',
+    title: 'Edit supporting novel notes',
+    description: 'Format, improve, clean up, or update every supporting novel note in the active vault. Use when the user asks for all supporting notes, support notes, character notes, location notes, plot notes, research notes, or revision notes. Do not use for act, chapter, or scene story pages.',
     risk: 'safe',
     readOnly: false,
     inputSchema: {
@@ -599,7 +635,7 @@ function MnAiFormattedResponse({ text, T }) {
 }
 
 function MnAskAI({
-  vaultId, currentNote, allNotes, onClose, onOpenNote, onCreateNote, onApplyCurrentPageBody, onTagCurrentNote,
+  vaultId, currentNote, allNotes, onClose, onOpenNote, onCreateNote, onApplyCurrentPageBody, onApplyNoteBodies, onTagCurrentNote,
   session, setSession, onBackgroundComplete, initialQuery, T, embedded = false,
 }) {
   const [query, setQuery] = useStateAI('');
@@ -629,6 +665,7 @@ function MnAskAI({
   };
   const messages = aiSession.messages || [];
   const aiRuntime = window.MN_AI_RUNTIME || {};
+  const noteIdSet = new Set((allNotes || []).map(note => String(note?.id || '')).filter(Boolean));
 
   useEffectAI(() => {
     if ((aiSession.messages || []).some(m => !m?.id)) {
@@ -1007,6 +1044,71 @@ function MnAskAI({
     return askNotes({ prompt, jobId });
   };
 
+  const runSupportingNotesEdit = async ({ q, action = 'improve', instruction = '', jobId }) => {
+    const targets = mnSupportingNovelNotes(allNotes);
+    if (!targets.length) {
+      return {
+        answer: 'I could not find any supporting novel notes to update. Supporting notes need a novel support tag such as #novel-character, #novel-location, #novel-plot, #novel-research, or #novel-revision.',
+        sources: [],
+        clarify: true,
+      };
+    }
+    if (!onApplyNoteBodies) {
+      return {
+        answer: 'I cannot update all supporting notes because this build only exposes the current page editor to Ask AI.',
+        sources: [],
+        clarify: true,
+      };
+    }
+    if (!window.mn?.ai?.edit) {
+      return {
+        answer: 'I cannot update all supporting notes because AI editing is not available.',
+        sources: [],
+        clarify: true,
+      };
+    }
+
+    const editAction = action === 'format' ? 'format' : 'improve';
+    const editInstruction = mnSupportingNotesEditInstruction(editAction, instruction || q);
+    const updates = [];
+    let skippedEmpty = 0;
+    for (let index = 0; index < targets.length; index++) {
+      const note = targets[index];
+      const body = mnAiCurrentNoteMarkdown(note);
+      if (!String(body || '').trim()) {
+        skippedEmpty += 1;
+        continue;
+      }
+      setActiveAction(`Updating supporting notes ${index + 1}/${targets.length}...`);
+      const edited = await askEdit({
+        scope: `supporting novel note: ${note.title || 'Untitled'}`,
+        instruction: editInstruction,
+        text: body,
+        jobId,
+      });
+      const cleanEdited = String(edited || '').trim();
+      if (cleanEdited) updates.push({ id: note.id, title: note.title || 'Untitled', body: cleanEdited });
+    }
+
+    if (!updates.length) {
+      const emptyText = skippedEmpty ? ` I skipped ${skippedEmpty} empty supporting note${skippedEmpty === 1 ? '' : 's'}.` : '';
+      return {
+        answer: `I found supporting notes, but there was no editable note body to update.${emptyText}`.trim(),
+        sources: [],
+        clarify: true,
+      };
+    }
+
+    const applied = onApplyNoteBodies(updates);
+    const appliedCount = Number.isFinite(Number(applied)) ? Number(applied) : updates.length;
+    const skippedText = skippedEmpty ? ` Skipped ${skippedEmpty} empty supporting note${skippedEmpty === 1 ? '' : 's'}.` : '';
+    return {
+      answer: `Updated ${appliedCount} supporting note${appliedCount === 1 ? '' : 's'}.${skippedText}`,
+      sources: updates.map(update => ({ id: update.id, title: update.title, snippet: update.body.slice(0, 200) })),
+      action: true,
+    };
+  };
+
   const buildOrchestratorMessages = (q, priorMessages = []) => {
     const conversation = mnBuildAskThreadMessages(priorMessages, q, { limit: 8 });
     const context = mnAiCurrentContextMessage(currentNote);
@@ -1055,6 +1157,19 @@ function MnAskAI({
           action: true,
         },
       };
+    }
+    if (name === 'edit-supporting-notes') {
+      const instruction = String(args.instruction || q || '').trim();
+      if (!instruction) throw new Error('Edit instruction is empty');
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Edit supporting notes', args: { instruction } });
+      const result = await runSupportingNotesEdit({
+        q,
+        action: /\b(format|formatting|clean up|clean|organize|organise)\b/i.test(instruction) ? 'format' : 'improve',
+        instruction,
+        jobId,
+      });
+      aiRuntime.recordTrace?.(run, result.clarify ? 'run.clarify' : 'tool.done', { actionId: name, actionLabel: 'Edit supporting notes', affected: result.sources?.length || 0 });
+      return { final: result };
     }
 
     const registry = window.MN_APP_ACTIONS;
@@ -1393,6 +1508,15 @@ function MnAskAI({
       };
     }
 
+    if (action.type === 'edit-supporting-notes') {
+      return runSupportingNotesEdit({
+        q,
+        action: action.action || 'improve',
+        instruction: q,
+        jobId,
+      });
+    }
+
     if (action.type === 'edit-current') {
       if (!currentNote || !onApplyCurrentPageBody) throw new Error('No current page is open to edit');
       setActiveAction(action.action === 'link' ? 'Linking page...' : 'Editing page...');
@@ -1488,7 +1612,8 @@ function MnAskAI({
       });
     };
     try {
-      const orchestrated = await runLlmOrchestrator({ q, actionQuery, priorMessages, jobId, run });
+      const skipLlmFirst = (route.type === 'legacy_action' || route.type === 'action') && !!route.action;
+      const orchestrated = skipLlmFirst ? null : await runLlmOrchestrator({ q, actionQuery, priorMessages, jobId, run });
       if (orchestrated) {
         if (stoppedJobRef.current === jobId) return;
         aiRuntime.recordTrace?.(run, orchestrated.review ? 'run.review_required' : orchestrated.clarify ? 'run.clarify' : 'run.completed', {
@@ -2036,30 +2161,38 @@ function MnAskAI({
                   </button>
                   {sourcesOpen && (
                     <div style={{ marginTop: 9 }}>
-                      {m.sources.map((s, sourceIndex) => (
-                        <div key={s.id}
-                          onClick={() => { onOpenNote?.(s.id); onClose && onClose(); }}
-                          style={{
-                            padding: '9px 10px', marginBottom: 6, borderRadius: 7,
-                            background: T.bg, border: `1px solid ${T.lineSub}`,
-                            cursor: 'pointer',
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
-                          onMouseLeave={e => e.currentTarget.style.background = T.bg}>
-                          <div style={{ fontSize: 12.5, fontWeight: 500, color: T.ink }}>{sourceIndex + 1}. {s.title}</div>
-                          <div style={{
-                            fontSize: 12, color: T.inkDim, marginTop: 2,
-                            fontFamily: 'var(--mn-body)', lineHeight: 1.5,
-                            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                          }}>{s.snippet}</div>
-                          {s.modifiedAt && (
-                            <div style={{ marginTop: 5, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
-                              {new Date(s.modifiedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                      {m.sources.map((s, sourceIndex) => {
+                        const sourceId = String(s?.id || '');
+                        const canOpenSource = !!sourceId && noteIdSet.has(sourceId);
+                        return (
+                          <div key={sourceId || sourceIndex}
+                            onClick={() => {
+                              if (!canOpenSource) return;
+                              const opened = onOpenNote?.(sourceId);
+                              if (opened !== false && !embedded) onClose && onClose();
+                            }}
+                            style={{
+                              padding: '9px 10px', marginBottom: 6, borderRadius: 7,
+                              background: T.bg, border: `1px solid ${T.lineSub}`,
+                              cursor: canOpenSource ? 'pointer' : 'default',
+                            }}
+                            onMouseEnter={e => { if (canOpenSource) e.currentTarget.style.background = T.bgHover; }}
+                            onMouseLeave={e => e.currentTarget.style.background = T.bg}>
+                            <div style={{ fontSize: 12.5, fontWeight: 500, color: T.ink }}>{sourceIndex + 1}. {s.title}</div>
+                            <div style={{
+                              fontSize: 12, color: T.inkDim, marginTop: 2,
+                              fontFamily: 'var(--mn-body)', lineHeight: 1.5,
+                              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}>{s.snippet}</div>
+                            {s.modifiedAt && (
+                              <div style={{ marginTop: 5, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
+                                {new Date(s.modifiedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
