@@ -132,7 +132,7 @@ test('Global config is private and cached between writes', async () => {
     await store.setPrefs({ tweaks: { density: 'compact' } });
     const configPath = store.__test.CONFIG_FILE;
     const mode = fs.statSync(configPath).mode & 0o777;
-    assert.equal(mode, 0o600);
+    if (process.platform !== 'win32') assert.equal(mode, 0o600);
 
     const first = await store.loadConfig();
     const second = await store.loadConfig();
@@ -141,7 +141,7 @@ test('Global config is private and cached between writes', async () => {
     await store.setPrefs({ tweaks: { density: 'comfortable' } });
     const third = await store.loadConfig();
     assert.equal(third.tweaks.density, 'comfortable');
-    assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
   });
 });
 
