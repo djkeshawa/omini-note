@@ -3,6 +3,11 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.MN_TABLE_OPS = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
+  const MAX_TABLE_ROWS = 1000;
+  const MAX_TABLE_COLUMNS = 80;
+  const MAX_TABLE_CELL_CHARS = 4000;
+  const MAX_TABLE_SOURCE_CHARS = 1024 * 1024;
+
   function cleanCell(value) {
     return String(value == null ? '' : value)
       .replace(/\u00a0/g, ' ')
@@ -16,10 +21,24 @@
   }
 
   function normalizeRows(rows) {
-    const cleanRows = (rows || [])
-      .map(row => (row || []).map(cleanCell))
-      .filter(row => row.some(cell => cell.length > 0));
-    const width = Math.max(0, ...cleanRows.map(row => row.length));
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    if (sourceRows.length > MAX_TABLE_ROWS) return [];
+    const cleanRows = [];
+    let width = 0;
+    for (const sourceRow of sourceRows) {
+      const row = Array.isArray(sourceRow) ? sourceRow : [];
+      if (row.length > MAX_TABLE_COLUMNS) return [];
+      const clean = [];
+      for (const value of row) {
+        const cell = cleanCell(value);
+        if (cell.length > MAX_TABLE_CELL_CHARS) return [];
+        clean.push(cell);
+      }
+      if (!clean.some(cell => cell.length > 0)) continue;
+      cleanRows.push(clean);
+      if (cleanRows.length > MAX_TABLE_ROWS) return [];
+      if (clean.length > width) width = clean.length;
+    }
     if (!width) return [];
     return cleanRows.map(row => {
       const next = row.slice(0, width);
@@ -104,6 +123,7 @@
 
   function parseDelimitedText(text) {
     const raw = String(text || '').trim();
+    if (raw.length > MAX_TABLE_SOURCE_CHARS) return [];
     if (!raw || !raw.includes('\t')) return [];
     const rows = raw.split(/\r?\n/).map(line => line.split('\t'));
     const normalized = normalizeRows(rows);
@@ -112,6 +132,7 @@
 
   function htmlTableToRows(html) {
     const source = String(html || '');
+    if (source.length > MAX_TABLE_SOURCE_CHARS) return [];
     if (!/<table[\s>]/i.test(source)) return [];
     if (typeof DOMParser !== 'undefined') {
       const doc = new DOMParser().parseFromString(source, 'text/html');
@@ -176,5 +197,11 @@
     clipboardToMarkdownTable,
     clipboardEventToMarkdownTable,
     markdownTableToHtml,
+    limits: {
+      MAX_TABLE_ROWS,
+      MAX_TABLE_COLUMNS,
+      MAX_TABLE_CELL_CHARS,
+      MAX_TABLE_SOURCE_CHARS,
+    },
   };
 });

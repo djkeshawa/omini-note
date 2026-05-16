@@ -166,6 +166,66 @@
     return out.map(item => ({ ...item, key: reminderKey(item) }));
   }
 
+  function taskItemKey(item) {
+    return [
+      item.type || (item.isReminderOnly ? 'reminder' : 'todo'),
+      item.noteId,
+      item.blockId ?? item.line ?? '',
+      item.remindAt?.date || '',
+      item.remindAt?.time || '',
+      item.text || '',
+    ].join('|');
+  }
+
+  function collectTaskItems(notes = [], parser, walk) {
+    const out = [];
+    const parse = text => parser?.parse?.(text) || null;
+    const strip = text => parser?.strip ? parser.strip(text) : String(text || '').replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g, '').trim();
+    const push = (note, text, meta = {}) => {
+      const raw = String(text || '');
+      const remindAt = parse(raw);
+      const isTodo = meta.kind === 'todo';
+      if (!isTodo && !remindAt) return;
+      const item = {
+        type: isTodo ? 'todo' : 'reminder',
+        noteId: note.id,
+        noteTitle: note.title || 'Untitled',
+        noteTags: Array.isArray(note.tags) ? note.tags : [],
+        text: raw,
+        label: strip(raw),
+        checked: !!meta.checked,
+        isReminderOnly: !isTodo,
+        remindAt,
+        noteDate: note.date,
+        blockId: meta.blockId,
+        line: meta.line,
+      };
+      out.push({ ...item, key: taskItemKey(item) });
+    };
+
+    (notes || []).forEach(note => {
+      if (note.blocks?.length && typeof walk === 'function') {
+        walk(note.blocks, block => {
+          if (block.kind === 'todo') {
+            push(note, block.content || '', { kind: 'todo', checked: !!block.checked, blockId: block.id });
+          } else {
+            push(note, block.content || '', { kind: 'reminder', blockId: block.id });
+          }
+        });
+        return;
+      }
+      String(note.body || '').split('\n').forEach((line, lineIndex) => {
+        const match = line.match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
+        if (match) {
+          push(note, match[3], { kind: 'todo', checked: /[xX]/.test(match[2]), line: lineIndex });
+          return;
+        }
+        push(note, line, { kind: 'reminder', line: lineIndex });
+      });
+    });
+    return out;
+  }
+
   function reminderDisplayDate(item) {
     const at = item?.remindAt?.at;
     if (!at) return '';
@@ -943,6 +1003,8 @@
     workflowNotePreview,
     collectWorkflowNotes,
     reminderKey,
+    taskItemKey,
+    collectTaskItems,
     collectReminderItems,
     reminderDisplayDate,
     reminderStatusLabel,

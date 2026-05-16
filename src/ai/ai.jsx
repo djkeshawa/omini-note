@@ -43,6 +43,7 @@ const MN_ASK_SUGGESTIONS = [
 const MN_AI_PLANNER_TIMEOUT_MS = 8000;
 const MN_AI_CHAT_TIMEOUT_MS = 45000;
 const MN_AI_NOTES_TIMEOUT_MS = 90000;
+const MN_AI_VIRTUAL_WRITE_TOOLS = new Set(['edit-current-page', 'edit-supporting-notes']);
 
 const MN_AI_REPORT_TARGETS = {
   openai: {
@@ -91,7 +92,7 @@ const MN_AI_VIRTUAL_TOOLS = [
     name: 'edit-current-page',
     title: 'Edit current page',
     description: 'Rewrite, format, summarize, improve, fix grammar, or link the currently open page. Use only when the user explicitly asks to change the current page.',
-    risk: 'safe',
+    risk: 'confirm',
     readOnly: false,
     inputSchema: {
       type: 'object',
@@ -106,7 +107,7 @@ const MN_AI_VIRTUAL_TOOLS = [
     name: 'edit-supporting-notes',
     title: 'Edit supporting novel notes',
     description: 'Format, improve, clean up, or update every supporting novel note in the active vault. Use when the user asks for all supporting notes, support notes, character notes, location notes, plot notes, research notes, or revision notes. Do not use for act, chapter, or scene story pages.',
-    risk: 'safe',
+    risk: 'confirm',
     readOnly: false,
     inputSchema: {
       type: 'object',
@@ -291,18 +292,52 @@ function mnAiCurrentNoteMarkdown(note) {
   }
 }
 
+function mnAiShouldShareCurrentContext(query = '') {
+  const text = String(query || '').toLowerCase();
+  return /\b(this|current|open|selected|active)\s+(page|note|document)\b/.test(text)
+    || /\b(format|rewrite|improve|summari[sz]e|fix|link|edit|update)\s+(it|this|that)\b/.test(text)
+    || /\b(it|this|that)\s+(page|note|document)\b/.test(text);
+}
+
 function mnAiCurrentContextMessage(currentNote) {
   if (!currentNote) return '';
-  const body = mnAiCurrentNoteMarkdown(currentNote);
   return [
     'Current VispNote context:',
     `- Current page title: ${currentNote.title || 'Untitled'}`,
     `- Current page id: ${currentNote.id || ''}`,
     currentNote.tags?.length ? `- Current page tags: ${currentNote.tags.map(tag => `#${tag}`).join(' ')}` : '',
-    body ? `- Current page body excerpt:\n${body.slice(0, 6000)}` : '',
     '',
-    'Use this context for references like "this page", "current note", "it", or "that".',
+    'Use this metadata only for references like "this page", "current note", "it", or "that". Read or edit the page through an explicit tool when body content is needed.',
   ].filter(Boolean).join('\n');
+}
+
+function mnAiVirtualToolMeta(name) {
+  return (MN_AI_VIRTUAL_TOOLS || []).find(tool => tool.name === name) || null;
+}
+
+function mnAiCleanVirtualToolArgs(name, args = {}) {
+  const meta = mnAiVirtualToolMeta(name);
+  if (!meta) throw new Error(`Unknown AI tool: ${name}`);
+  const out = {};
+  const props = meta.inputSchema?.properties || {};
+  const required = Array.isArray(meta.inputSchema?.required) ? meta.inputSchema.required : [];
+  required.forEach(key => {
+    if (args[key] === undefined || args[key] === null || args[key] === '') throw new Error(`Missing action argument: ${key}`);
+  });
+  Object.entries(args || {}).forEach(([key, value]) => {
+    if (!props[key]) {
+      if (meta.inputSchema?.additionalProperties === false) throw new Error(`Unsupported action argument: ${key}`);
+      out[key] = value;
+      return;
+    }
+    if (props[key].type === 'string') {
+      const text = String(value == null ? '' : value).trim();
+      out[key] = props[key].maxLength ? text.slice(0, props[key].maxLength) : text;
+      return;
+    }
+    out[key] = value;
+  });
+  return out;
 }
 
 function mnAiToolCallsFromPlanResult(result = {}) {
@@ -751,7 +786,7 @@ function MnAskAI({
       return null;
     }
     if (/^(what|who|when|where|why|how|which|summari[sz]e|explain|tell me)\b/i.test(text) &&
-        !/\b(create|make|new|open|show|go to|delete|rename|duplicate|tag|untag|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|canvas|todos?|zotero)\b/i.test(text)) {
+        !/\b(create|make|new|open|show|go to|delete|rename|duplicate|tag|untag|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|calendar|agenda|schedule|canvas|todos?|zotero)\b/i.test(text)) {
       return null;
     }
     if (!window.MN_APP_ACTIONS?.findForText) return null;
@@ -764,7 +799,7 @@ function MnAskAI({
     if (plan.confidence === 'high' && plan.source === 'direct-router') return false;
     if (isClearlyNoteQuestion(q)) return false;
     const text = String(q || '').toLowerCase();
-    if (/\b(open|show|go to|settings|graph|todos?|tasks?|canvas|tag|untag|rename|duplicate|delete|archive|restore|import|export|rebuild|backfill|refresh)\b/.test(text)) {
+    if (/\b(open|show|go to|settings|graph|calendar|agenda|schedule|todos?|tasks?|canvas|tag|untag|rename|duplicate|delete|archive|restore|import|export|rebuild|backfill|refresh)\b/.test(text)) {
       return plan.confidence !== 'high';
     }
     return false;
@@ -1109,9 +1144,90 @@ function MnAskAI({
     };
   };
 
+  const makeVirtualWriteReview = (name, args = {}, q = '') => {
+    const inputArgs = { ...(args || {}) };
+    if (!String(inputArgs.instruction || '').trim() && q) inputArgs.instruction = q;
+    const cleanArgs = mnAiCleanVirtualToolArgs(name, inputArgs);
+    const instruction = String(cleanArgs.instruction || q || '').trim();
+    if (!instruction) throw new Error('Edit instruction is empty');
+    if (name === 'edit-current-page') {
+      if (!currentNote) throw new Error('No current page is open to edit');
+      const step = { actionId: name, label: 'Edit current page', risk: 'confirm', args: { instruction }, virtual: true };
+      const preview = {
+        title: 'Review AI page edit',
+        message: `Review before AI edits "${currentNote.title || 'current page'}".`,
+        steps: ['Send the current page body to the AI editor', 'Apply the returned page body'],
+        affected: [{ type: 'note', id: currentNote.id, title: currentNote.title || 'Current page' }],
+      };
+      const result = { risk: 'confirm', preview, message: preview.message };
+      return {
+        answer: preview.message,
+        action: true,
+        review: aiRuntime.makeReview
+          ? aiRuntime.makeReview({ query: q, plan: { steps: [step] }, result })
+          : { query: q, title: preview.title, message: preview.message, risk: 'confirm', steps: [step], preview },
+        sources: [],
+      };
+    }
+    if (name === 'edit-supporting-notes') {
+      const targets = mnSupportingNovelNotes(allNotes || []);
+      const step = { actionId: name, label: 'Edit supporting notes', risk: 'confirm', args: { instruction }, virtual: true };
+      const preview = {
+        title: 'Review AI supporting-note edit',
+        message: `Review before AI updates ${targets.length} supporting note${targets.length === 1 ? '' : 's'}.`,
+        steps: ['Send each supporting note body to the AI editor', 'Apply the returned note bodies'],
+        affected: targets.slice(0, 12).map(note => ({ type: 'note', id: note.id, title: note.title || 'Untitled' })),
+      };
+      const result = { risk: 'confirm', preview, message: preview.message };
+      return {
+        answer: preview.message,
+        action: true,
+        review: aiRuntime.makeReview
+          ? aiRuntime.makeReview({ query: q, plan: { steps: [step] }, result })
+          : { query: q, title: preview.title, message: preview.message, risk: 'confirm', steps: [step], preview },
+        sources: [],
+      };
+    }
+    throw new Error(`Unsupported AI write tool: ${name}`);
+  };
+
+  const runConfirmedVirtualWriteTool = async ({ name, args = {}, q = '', jobId, run } = {}) => {
+    const inputArgs = { ...(args || {}) };
+    if (!String(inputArgs.instruction || '').trim() && q) inputArgs.instruction = q;
+    const cleanArgs = mnAiCleanVirtualToolArgs(name, inputArgs);
+    const instruction = String(cleanArgs.instruction || q || '').trim();
+    if (!instruction) throw new Error('Edit instruction is empty');
+    if (name === 'edit-current-page') {
+      if (!currentNote || !onApplyCurrentPageBody) throw new Error('No current page is open to edit');
+      setActiveAction('Editing page...');
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Edit current page', args: { instruction } });
+      const body = mnAiCurrentNoteMarkdown(currentNote);
+      const edited = await askEdit({ scope: 'current page', instruction, text: body, jobId });
+      onApplyCurrentPageBody(edited);
+      aiRuntime.recordTrace?.(run, 'tool.done', { actionId: name, actionLabel: 'Edit current page', affected: 1 });
+      return {
+        answer: `Updated "${currentNote.title || 'current page'}".`,
+        sources: [{ id: currentNote.id, title: currentNote.title || 'Current page', snippet: edited.slice(0, 200) }],
+        action: true,
+      };
+    }
+    if (name === 'edit-supporting-notes') {
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Edit supporting notes', args: { instruction } });
+      const result = await runSupportingNotesEdit({
+        q,
+        action: /\b(format|formatting|clean up|clean|organize|organise)\b/i.test(instruction) ? 'format' : 'improve',
+        instruction,
+        jobId,
+      });
+      aiRuntime.recordTrace?.(run, result.clarify ? 'run.clarify' : 'tool.done', { actionId: name, actionLabel: 'Edit supporting notes', affected: result.sources?.length || 0 });
+      return result;
+    }
+    throw new Error(`Unsupported AI write tool: ${name}`);
+  };
+
   const buildOrchestratorMessages = (q, priorMessages = []) => {
     const conversation = mnBuildAskThreadMessages(priorMessages, q, { limit: 8 });
-    const context = mnAiCurrentContextMessage(currentNote);
+    const context = mnAiShouldShareCurrentContext(q) ? mnAiCurrentContextMessage(currentNote) : '';
     if (!context) return conversation;
     return [
       { role: 'user', content: context },
@@ -1141,35 +1257,12 @@ function MnAskAI({
       return { final: { answer: result.answer, sources: result.sources || [] } };
     }
     if (name === 'edit-current-page') {
-      if (!currentNote || !onApplyCurrentPageBody) throw new Error('No current page is open to edit');
-      const instruction = String(args.instruction || q || '').trim();
-      if (!instruction) throw new Error('Edit instruction is empty');
-      setActiveAction('Editing page...');
-      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Edit current page', args: { instruction } });
-      const body = mnAiCurrentNoteMarkdown(currentNote);
-      const edited = await askEdit({ scope: 'current page', instruction, text: body, jobId });
-      onApplyCurrentPageBody(edited);
-      aiRuntime.recordTrace?.(run, 'tool.done', { actionId: name, actionLabel: 'Edit current page', affected: 1 });
-      return {
-        final: {
-          answer: `Updated "${currentNote.title || 'current page'}".`,
-          sources: [{ id: currentNote.id, title: currentNote.title || 'Current page', snippet: edited.slice(0, 200) }],
-          action: true,
-        },
-      };
+      aiRuntime.recordTrace?.(run, 'tool.preview', { actionId: name, actionLabel: 'Edit current page', risk: 'confirm' });
+      return { final: makeVirtualWriteReview(name, args, q) };
     }
     if (name === 'edit-supporting-notes') {
-      const instruction = String(args.instruction || q || '').trim();
-      if (!instruction) throw new Error('Edit instruction is empty');
-      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Edit supporting notes', args: { instruction } });
-      const result = await runSupportingNotesEdit({
-        q,
-        action: /\b(format|formatting|clean up|clean|organize|organise)\b/i.test(instruction) ? 'format' : 'improve',
-        instruction,
-        jobId,
-      });
-      aiRuntime.recordTrace?.(run, result.clarify ? 'run.clarify' : 'tool.done', { actionId: name, actionLabel: 'Edit supporting notes', affected: result.sources?.length || 0 });
-      return { final: result };
+      aiRuntime.recordTrace?.(run, 'tool.preview', { actionId: name, actionLabel: 'Edit supporting notes', risk: 'confirm' });
+      return { final: makeVirtualWriteReview(name, args, q) };
     }
 
     const registry = window.MN_APP_ACTIONS;
@@ -1402,15 +1495,27 @@ function MnAskAI({
 
   const confirmReview = async (messageId, review) => {
     const registry = window.MN_APP_ACTIONS;
-    if (!registry?.run || !review?.steps?.length) return;
+    if (!review?.steps?.length) return;
     updateSession(prev => ({
       ...(prev || {}),
       messages: (prev?.messages || []).map(m => m.id === messageId ? { ...m, reviewBusy: true } : m),
     }));
     try {
+      const jobId = mnAskAiJobId();
+      const run = aiRuntime.makeRun ? aiRuntime.makeRun({ runId: jobId, query: review.query || '', mode: 'review' }) : null;
       const completed = [];
       const sources = [];
       for (const step of review.steps) {
+        if (MN_AI_VIRTUAL_WRITE_TOOLS.has(step.actionId)) {
+          const result = await runConfirmedVirtualWriteTool({ name: step.actionId, args: step.args || {}, q: review.query || '', jobId, run });
+          if (result.clarify) throw new Error(result.answer || 'AI action could not run');
+          completed.push(result.answer || step.label || step.actionId);
+          (result.sources || []).forEach(item => {
+            if (item?.id && !sources.some(source => source.id === item.id)) sources.push({ id: item.id, title: item.title || item.id, snippet: item.snippet || 'AI edit' });
+          });
+          continue;
+        }
+        if (!registry?.run) throw new Error('App actions are not available');
         const result = await registry.run(step.actionId, step.args || {}, { confirmed: true });
         if (result.ok === false) throw new Error(result.message || 'App action failed');
         completed.push(result.message || result.title || step.actionId);
@@ -1445,7 +1550,7 @@ function MnAskAI({
 
   const editReviewArgs = async (messageId, review) => {
     const registry = window.MN_APP_ACTIONS;
-    if (!registry?.validate || !review?.steps?.length) return;
+    if (!review?.steps?.length) return;
     const currentSteps = review.steps.map(step => ({ actionId: step.actionId, args: step.args || {} }));
     const raw = window.prompt?.('Edit action arguments as JSON.', JSON.stringify(currentSteps, null, 2));
     if (!raw) return;
@@ -1454,7 +1559,12 @@ function MnAskAI({
       const nextSteps = (Array.isArray(parsed) ? parsed : [parsed]).map((item, index) => {
         const original = review.steps[index] || review.steps[0];
         const actionId = String(item.actionId || item.tool || original.actionId || '').trim();
-        const args = registry.validate(actionId, item.args && typeof item.args === 'object' ? item.args : {});
+        const args = MN_AI_VIRTUAL_WRITE_TOOLS.has(actionId)
+          ? mnAiCleanVirtualToolArgs(actionId, item.args && typeof item.args === 'object' ? item.args : {})
+          : (() => {
+              if (!registry?.validate) throw new Error('App actions are not available');
+              return registry.validate(actionId, item.args && typeof item.args === 'object' ? item.args : {});
+            })();
         return { ...original, actionId, args };
       });
       updateSession(prev => ({
@@ -1509,18 +1619,11 @@ function MnAskAI({
     }
 
     if (action.type === 'edit-supporting-notes') {
-      return runSupportingNotesEdit({
-        q,
-        action: action.action || 'improve',
-        instruction: q,
-        jobId,
-      });
+      return makeVirtualWriteReview('edit-supporting-notes', { instruction: q }, q);
     }
 
     if (action.type === 'edit-current') {
       if (!currentNote || !onApplyCurrentPageBody) throw new Error('No current page is open to edit');
-      setActiveAction(action.action === 'link' ? 'Linking page...' : 'Editing page...');
-      const body = currentNote.body || window.MN_OUTLINE.mnBlocksToMd(currentNote.blocks || []);
       const noteTitles = (allNotes || [])
         .filter(n => n.id !== currentNote.id)
         .map(n => `- ${n.title}`)
@@ -1528,9 +1631,7 @@ function MnAskAI({
       const instruction = action.action === 'link' || action.action === 'format-link'
         ? `${action.action === 'format-link' ? MN_ASK_EDIT_ACTIONS.format + '\n\n' : ''}${MN_ASK_EDIT_ACTIONS.link}\n\nExisting note titles:\n${noteTitles}`
         : MN_ASK_EDIT_ACTIONS[action.action];
-      const edited = await askEdit({ scope: 'current page', instruction, text: body, jobId });
-      onApplyCurrentPageBody(edited);
-      return { answer: `${action.action === 'link' || action.action === 'format-link' ? 'Linked' : 'Updated'} "${currentNote.title}".`, sources: [{ id: currentNote.id, title: currentNote.title, snippet: edited.slice(0, 200) }] };
+      return makeVirtualWriteReview('edit-current-page', { instruction }, q);
     }
 
     return null;
@@ -1680,10 +1781,10 @@ function MnAskAI({
       } else if (route.type === 'legacy_action' || route.type === 'action') {
         const actionResult = await runAction(actionQuery, route.action, jobId);
         if (stoppedJobRef.current === jobId) return;
-        aiRuntime.recordTrace?.(run, 'run.completed', { legacyAction: route.action?.type || '' });
+        aiRuntime.recordTrace?.(run, actionResult.review ? 'run.review_required' : 'run.completed', { legacyAction: route.action?.type || '' });
         updateSession(prev => ({
           ...(prev || {}),
-          messages: [...(prev?.messages || []), { role: 'assistant', text: actionResult.answer, sources: actionResult.sources || [], action: true, trace: run?.trace || [] }],
+          messages: [...(prev?.messages || []), { role: 'assistant', text: actionResult.answer, sources: actionResult.sources || [], action: true, review: actionResult.review || null, trace: run?.trace || [] }],
         }));
       } else if (route.type === 'notes') {
         setActiveAction('Researching notes...');

@@ -242,6 +242,20 @@ test('App helpers collect reminders and workflow notes without renderer state', 
   assert.equal(reminders[1].blockId, 'b2');
   assert.equal(appHelpers.reminderStatusLabel('snoozed'), 'Snoozed');
 
+  const tasks = appHelpers.collectTaskItems([
+    { id: 'n1', title: 'Body note', tags: ['todo'], body: '- [ ] Call @remind 2026-05-06 10:30\n- [ ] Inbox task\nRemember @remind 2026-05-08' },
+    { id: 'n2', title: 'Block note', tags: [], blocks: [
+      { id: 'b1', kind: 'todo', checked: true, content: 'Done task @remind 2026-05-06 12:00' },
+      { id: 'b2', kind: 'paragraph', content: 'Ship @remind 2026-05-07' },
+    ] },
+  ], parser, walk);
+  assert.equal(tasks.length, 5);
+  assert.equal(tasks.filter(item => item.type === 'todo').length, 3);
+  assert.equal(tasks.filter(item => item.isReminderOnly).length, 2);
+  assert.equal(tasks.find(item => item.text === 'Inbox task').remindAt, null);
+  assert.equal(tasks.find(item => item.blockId === 'b2').label, 'Ship');
+  assert.match(tasks[0].key, /^todo\|n1\|0\|2026-05-06\|10:30\|/);
+
   const workflow = appHelpers.collectWorkflowNotes([
     { id: 'n1', title: 'Draft', tags: ['project'], body: 'status:: DRAFT\n# Draft\n- Body', modifiedAt: '2026-05-06T00:00:00.000Z' },
     { id: 'n2', title: 'Archived', tags: [], body: 'status:: DONE\nClosed', workflowArchived: true },

@@ -22,6 +22,7 @@ import './editor/editor.jsx';
 import './panels/panelHelpers.js';
 import './panels/panelShared.jsx';
 import './panels/todosPanel.jsx';
+import './panels/calendarPanel.jsx';
 import './panels/panels.jsx';
 import './panels/utilityPanels.jsx';
 import './canvas/canvasModel.js';

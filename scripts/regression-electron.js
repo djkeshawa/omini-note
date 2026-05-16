@@ -648,15 +648,53 @@ async function runSearchAndClearScenario(win) {
 }
 
 async function runNavigationPanelsScenario(win) {
-  await runCommandPaletteCommand(win, 'Open Todos', 'Open Todos');
-  await waitFor(win, 'todos panel shows captured task', async () => {
-    const current = await state(win);
-    return { ok: current.text.includes('Todos') && current.text.includes('QE quick capture todo'), current };
+  await clickVisibleText(win, 'Agenda');
+  await waitFor(win, 'sidebar agenda opens calendar planner with captured task', async () => {
+    const visible = await evaluate(win, `document.body.textContent.includes('Agenda') && document.body.textContent.includes('QE quick capture todo')`);
+    return { ok: visible, visible };
   });
   await clickVisibleText(win, 'Graph');
   await waitFor(win, 'graph panel opens with visible heading', async () => {
     const current = await state(win);
     return { ok: current.text.includes('Graph'), current };
+  });
+}
+
+async function runCalendarPlannerScenario(win) {
+  const title = 'QE Quick Capture Task';
+  await clickVisibleText(win, 'All notes');
+  await waitFor(win, 'note editor visible before calendar toolbar click', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle && current.editorBodyVisible, current };
+  });
+  await clickButton(win, { titleIncludes: 'Agenda' });
+  await waitFor(win, 'agenda panel opens from editor toolbar', async () => {
+    const visible = await evaluate(win, `document.body.textContent.includes('Agenda') && document.body.textContent.includes('Inbox todos')`);
+    return { ok: visible, visible };
+  });
+  await waitFor(win, 'calendar reminder bell is fixed to app chrome', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const el = document.querySelector('.mn-reminder-center');
+        return { position: el ? getComputedStyle(el).position : '' };
+      })()
+    `);
+    return { ok: result.position === 'fixed', result };
+  });
+
+  await clickButton(win, { titleIncludes: 'Add item on' });
+  await setControlByPlaceholder(win, 'Task or reminder text', 'QE calendar reminder');
+  await clickButton(win, { text: 'Add' });
+  await waitForPersistedNote(win, title, note => /QE calendar reminder @remind \d{4}-\d{2}-\d{2}/.test(String(note.body || '')));
+
+  await clickButton(win, { text: '+ New' });
+  await clickButton(win, { text: 'Todo' });
+  await setControlByPlaceholder(win, 'Task or reminder text', 'QE agenda dated todo');
+  await clickButton(win, { text: 'Add' });
+  await waitForPersistedNote(win, title, note => /QE agenda dated todo @remind \d{4}-\d{2}-\d{2}/.test(String(note.body || '')));
+  await waitFor(win, 'agenda dated todo visible on selected day', async () => {
+    const visible = await evaluate(win, `document.body.textContent.includes('QE agenda dated todo')`);
+    return { ok: visible, visible };
   });
 }
 
@@ -829,8 +867,11 @@ async function runRegression() {
   await runScenario(win, 'Search', 'note search finds expected content and Escape clears it', async () => {
     await runSearchAndClearScenario(win);
   });
-  await runScenario(win, 'Navigation', 'command palette and sidebar open task and graph panels', async () => {
+  await runScenario(win, 'Navigation', 'sidebar opens agenda planner and graph panels', async () => {
     await runNavigationPanelsScenario(win);
+  });
+  await runScenario(win, 'Agenda', 'agenda creates dated reminders and todos', async () => {
+    await runCalendarPlannerScenario(win);
   });
   await runScenario(win, 'Canvas', 'create, draw, move, undo, and redo a canvas object', async () => {
     await runCanvasCreateScenario(win);

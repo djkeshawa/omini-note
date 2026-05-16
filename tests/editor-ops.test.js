@@ -175,6 +175,16 @@ test('Clipboard tables convert to normalized markdown tables', () => {
   );
 });
 
+test('Table helpers reject oversized tables without throwing', () => {
+  const rows = Array.from({ length: tableOps.limits.MAX_TABLE_ROWS + 1 }, () => ['a', 'b']);
+  assert.doesNotThrow(() => tableOps.normalizeRows(rows));
+  assert.deepEqual(tableOps.normalizeRows(rows), []);
+  assert.equal(
+    tableOps.clipboardToMarkdownTable({ text: Array.from({ length: tableOps.limits.MAX_TABLE_ROWS + 1 }, () => 'a\tb').join('\n') }),
+    ''
+  );
+});
+
 test('Markdown table rows round-trip through table helpers', () => {
   const markdown = '| Name | Notes |\n| --- | --- |\n| Ada | Pipes \\| stay |\n| Grace | Compiler |';
 

@@ -400,6 +400,14 @@ async function openFirstSource(win, sourceTitle) {
   await clickVisibleText(win, sourceTitle);
 }
 
+async function confirmAiReview(win, label, expectedText) {
+  await waitFor(win, `${label} review shown`, async () => {
+    const current = await state(win);
+    return { ok: current.text.includes(expectedText), current };
+  });
+  await clickButton(win, { text: 'Confirm', enabled: true });
+}
+
 async function runAiRegression() {
   const win = await waitForMainWindow();
   win.webContents.on('console-message', (_event, details) => {
@@ -426,6 +434,7 @@ async function runAiRegression() {
   await openAskAi(win);
   await assertDirectEditRoute(win);
   await submitAsk(win, 'format this page');
+  await confirmAiReview(win, 'format action', 'Review before AI edits "QE Format Target".');
   await waitFor(win, 'format action completed', async () => {
     const current = await state(win);
     return {
@@ -463,6 +472,7 @@ async function runAiRegression() {
   await openAskAi(win);
   await clearAskAiIfNeeded(win);
   await submitAsk(win, 'improve all supporting notes');
+  await confirmAiReview(win, 'supporting notes action', 'Review before AI updates 2 supporting notes.');
   await waitFor(win, 'supporting notes action completed', async () => {
     const current = await state(win);
     return { ok: current.text.includes('Updated 2 supporting notes'), current };

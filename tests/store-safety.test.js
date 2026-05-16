@@ -278,6 +278,27 @@ test('Vault loading falls back from unsafe note front matter ids', async () => {
   });
 });
 
+test('Vault loading and export ignore symlinked note and canvas files', async () => {
+  if (process.platform === 'win32') return;
+  await withIsolatedStore(async (store) => {
+    const vault = (await store.listVaults()).find(item => item.name === 'Personal');
+    const secretPath = path.join(store.ROOT, 'outside-secret.txt');
+    fs.writeFileSync(secretPath, 'outside secret', 'utf8');
+    fs.symlinkSync(secretPath, path.join(store.ROOT, vault.slug, 'n_linked.md'));
+    fs.mkdirSync(path.join(store.ROOT, vault.slug, '.canvases'), { recursive: true });
+    fs.symlinkSync(secretPath, path.join(store.ROOT, vault.slug, '.canvases', 'c_linked.json'));
+
+    const loaded = await store.loadVault(vault.id);
+    assert.equal(loaded.notes.some(note => note.id === 'n_linked' || note.body.includes('outside secret')), false);
+    assert.equal(loaded.warnings.some(warning => warning.file === 'n_linked.md' && /symlink/.test(warning.message)), true);
+    assert.equal((await store.listCanvases(vault.id)).some(canvas => canvas.id === 'c_linked'), false);
+    await assert.rejects(() => store.getCanvas(vault.id, 'c_linked'), /symlink/);
+
+    const backup = await store.exportBackup({ vaultId: vault.id });
+    assert.equal(JSON.stringify(backup).includes('outside secret'), false);
+  });
+});
+
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
@@ -289,6 +310,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const releaseWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
   const store = require('../lib/store');
   const ai = require('../lib/ai');
 
@@ -376,6 +398,12 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(storeSource, /Unsupported vault metadata field/);
   assert.match(storeSource, /if \(states === null \|\| states === undefined\) return null/);
   assert.match(storeSource, /Unsupported patch field/);
+  assert.match(storeSource, /readRegularUtf8File/);
+  assert.match(storeSource, /cannot be a symlink/);
+  assert.match(storeSource, /MAX_BACKUP_NOTES_PER_VAULT/);
+  assert.match(releaseWorkflow, /INPUT_RELEASE_TAG: \$\{\{ inputs\.release_tag \}\}/);
+  assert.ok(releaseWorkflow.includes('^v[0-9]+\\.[0-9]+\\.[0-9]+'));
+  assert.doesNotMatch(releaseWorkflow, /tag="\$\{\{ inputs\.release_tag \}\}"/);
 
   const cleanMeta = store.__test.sanitizeVaultMetaPatch({
     tags: [{ name: ' Novel Cast ', hue: 999 }, 'novel-research'],
@@ -575,6 +603,18 @@ test('Store hardening validates trash ids, merge keys, and backup size', async (
     await assert.rejects(
       () => store.importBackup(' '.repeat(51 * 1024 * 1024)),
       /too large/
+    );
+    const tooManyNotes = Array.from({ length: store.__test.MAX_BACKUP_NOTES_PER_VAULT + 1 }, (_, index) => ({
+      id: `n_many_${index}`,
+      title: `Many ${index}`,
+      body: '',
+    }));
+    await assert.rejects(
+      () => store.importBackup(JSON.stringify({
+        format: 'vispnote.backup.v1',
+        vaults: [{ name: 'Too many notes', notes: tooManyNotes, canvases: [] }],
+      })),
+      /too many notes/
     );
     await assert.rejects(
       () => store.saveNote(vault.id, {

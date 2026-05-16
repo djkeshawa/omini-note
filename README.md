@@ -1,6 +1,6 @@
 # VispNote
 
-VispNote is a local-first desktop note app for structured thinking. It combines markdown files, a block-based editor, graph navigation, task views, and optional local AI assistance in an Electron app.
+VispNote is a local-first desktop note app for structured thinking. It combines markdown files, a block-based editor, graph navigation, agenda planning, and optional local AI assistance in an Electron app.
 
 The project is designed around a simple rule: your notes should stay usable as plain files, even if you stop using the app.
 
@@ -10,7 +10,7 @@ The project is designed around a simple rule: your notes should stay usable as p
 - **Block editor**: write nested paragraphs, headings, bullets, todos, quotes, code blocks, and dividers.
 - **Fast editing**: keyboard shortcuts, block zoom, block movement, duplication, undo, redo, and area selection.
 - **Knowledge navigation**: backlinks, wiki links, tag filtering, and graph view.
-- **Task workflows**: todos, today view, workflow states, and reminder-style syntax.
+- **Agenda workflows**: dated todos, today view, workflow states, and reminder-style syntax.
 - **Local search**: SQLite-backed search and backlink indexes.
 - **Optional local AI**: Ask AI and writing tools can run through Ollama without hosted API keys.
 - **Themed desktop UI**: settings, launch screen, editor toolbar, note list, and dialogs follow the same visual system.
@@ -79,7 +79,7 @@ VISPNOTE_HOME=/tmp/vispnote-regression npm run regression:renderer
 │   ├── app/                 # App shell, mutations, canvas actions, App API registry
 │   ├── ai/                  # Ask AI UI and AI action planning helpers
 │   ├── editor/              # Note editor, outliner, markdown model, editor operations
-│   ├── panels/              # Sidebar, note list, graph, todos, today, workflow panels
+│   ├── panels/              # Sidebar, note list, graph, agenda, today, workflow panels
 │   ├── canvas/              # Canvas dashboard view
 │   ├── settings/            # Settings modal
 │   └── shared/              # Theme, markdown rendering, plugins, storage utilities

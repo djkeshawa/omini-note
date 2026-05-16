@@ -485,6 +485,7 @@
       [/\bask\s+ai\b|\bopen\s+(?:ai|assistant)\b/, 'ask-ai', {}],
       [/\bsettings?|preferences?\b/, 'settings', {}],
       [/\bgraph\b/, 'graph', {}],
+      [/\bcalendar\b|\bagenda\b|\bschedule\b/, 'calendar', {}],
       [/\btoday\b/, 'today', {}],
       [/^(?:to-?dos?|tasks?)$|\b(?:open|show|go to|view|list)\s+(?:my\s+)?(?:to-?dos?|tasks?)\b/, 'todos', {}],
       [/\bcanvas(?:\s+dashboard)?\b/, 'canvas', {}],

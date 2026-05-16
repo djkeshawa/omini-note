@@ -139,7 +139,7 @@
     if (isClearlyNoteQuestion(text) && !/\b(create|make|new|delete|rename|duplicate|tag|untag|label|mark|move|set|change|update|archive|restore|import|export|rebuild|backfill|refresh|open settings|go to settings|add|append|todo|task|remind|reminder|link|wikilink|search|find|read|zotero)\b/.test(text)) {
       return false;
     }
-    return /\b(open|show|go to|create|make|new|delete|rename|duplicate|tag|untag|label|mark|move|set|change|update|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|canvas|todos?|tasks?|plugin|backup|vault health|add|append|remind|reminder|link|wikilink|search|find|read|zotero|papers?|articles?|documents?|publications?|references?|pdfs?)\b/.test(text);
+    return /\b(open|show|go to|create|make|new|delete|rename|duplicate|tag|untag|label|mark|move|set|change|update|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|calendar|agenda|schedule|canvas|todos?|tasks?|plugin|backup|vault health|add|append|remind|reminder|link|wikilink|search|find|read|zotero|papers?|articles?|documents?|publications?|references?|pdfs?)\b/.test(text);
   }
 
   function isVagueCommand(q) {

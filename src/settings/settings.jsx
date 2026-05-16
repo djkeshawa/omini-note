@@ -270,7 +270,7 @@ function SectionAppearance({ tweaks, setTweak, T }) {
         <Row T={T} label="Show note list pane" sub="Hide to give the editor full width.">
           <Toggle T={T} checked={tweaks.showNoteList !== false} onChange={v => setTweak('showNoteList', v)} />
         </Row>
-        <Row T={T} label="Show sidebar" sub="Tags, Today, Todos, and Graph shortcuts." last>
+        <Row T={T} label="Show sidebar" sub="Tags, Today, Agenda, and Graph shortcuts." last>
           <Toggle T={T} checked={tweaks.showSidebar !== false} onChange={v => setTweak('showSidebar', v)} />
         </Row>
       </SettingsCard>
@@ -332,10 +332,6 @@ function SectionNotes({ tweaks, setTweak, T, stats }) {
             onChange={v => setTweak('rollupFormat', v)}
             options={[{ value: 'long', label: 'Long' }, { value: 'short', label: 'Short' }]} />
         </Row>
-        <Row T={T} label="Todo layout" sub="How the aggregated Todos view is arranged.">
-          <Segmented T={T} value={tweaks.todoVariant} onChange={v => setTweak('todoVariant', v)}
-            options={[{ value: 'list', label: 'List' }, { value: 'kanban', label: 'Kanban' }]} />
-        </Row>
         <Row T={T} label="Graph style" sub="How connection overlay is drawn." last>
           <Segmented T={T} value={tweaks.graphStyle} onChange={v => setTweak('graphStyle', v)}
             options={[{ value: 'force', label: 'Force' }, { value: 'timeline', label: 'Timeline' }, { value: 'cluster', label: 'Cluster' }]} />
@@ -371,7 +367,9 @@ function SectionReminders({ tweaks, setTweak, T }) {
             options={[{ value: '5', label: '5m' }, { value: '15', label: '15m' }, { value: '60', label: '1h' }, { value: '1440', label: '1d' }]} />
         </Row>
         <Row T={T} label="Week starts on" sub="Affects calendar picker for reminders." last>
-          <StaticValue T={T}>No calendar picker yet</StaticValue>
+          <Segmented T={T} value={tweaks.weekStart || 'monday'}
+            onChange={v => setTweak('weekStart', v)}
+            options={[{ value: 'monday', label: 'Monday' }, { value: 'sunday', label: 'Sunday' }]} />
         </Row>
       </SettingsCard>
     </div>

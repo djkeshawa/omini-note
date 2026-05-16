@@ -216,7 +216,14 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /const MN_AI_VIRTUAL_TOOLS = \[/);
   assert.match(ai, /name: 'answer-notes'/);
   assert.match(ai, /name: 'edit-current-page'/);
+  assert.match(ai, /const MN_AI_VIRTUAL_WRITE_TOOLS = new Set/);
+  assert.match(ai, /risk: 'confirm'/);
   assert.match(ai, /function mnAiCurrentContextMessage\(currentNote\)/);
+  assert.match(ai, /function mnAiShouldShareCurrentContext\(query = ''\)/);
+  assert.doesNotMatch(ai, /Current page body excerpt/);
+  assert.match(ai, /makeVirtualWriteReview/);
+  assert.match(ai, /runConfirmedVirtualWriteTool/);
+  assert.match(ai, /if \(!String\(inputArgs\.instruction \|\| ''\)\.trim\(\) && q\) inputArgs\.instruction = q;/);
   assert.match(ai, /const runLlmOrchestrator = async/);
   assert.match(ai, /await runLlmOrchestrator\(\{ q, actionQuery, priorMessages, jobId, run \}\)/);
   assert.match(ai, /const scrollVersion = messages\.map/);
@@ -267,6 +274,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /const \[openSources, setOpenSources\]/);
   assert.match(ai, /name: 'edit-supporting-notes'/);
   assert.match(ai, /action\.type === 'edit-supporting-notes'/);
+  assert.match(app, /id: 'rename-note'[\s\S]*risk: 'confirm'/);
   assert.match(ai, /onApplyNoteBodies/);
   assert.match(ai, /const noteIdSet = new Set/);
   assert.match(ai, /if \(opened !== false && !embedded\) onClose && onClose\(\);/);
@@ -642,7 +650,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const todosPanel = fs.readFileSync(path.join(__dirname, '../src/panels/todosPanel.jsx'), 'utf8');
+  const calendarPanel = fs.readFileSync(path.join(__dirname, '../src/panels/calendarPanel.jsx'), 'utf8');
+  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
   const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
@@ -655,8 +666,14 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /defaultTags: tweaks\.defaultTags/);
   assert.match(mutations, /function cleanNoteTags/);
   assert.match(app, /toggleCheckFromAggregate = \(it\) =>/);
-  assert.match(app, /it\.blockId/);
+  assert.match(app, /item\.blockId/);
   assert.match(app, /mnCollectReminderItems\(notesWithBody\)/);
+  assert.match(app, /mnCollectTaskItems\(notesWithBody\)/);
+  assert.match(app, /view === 'calendar'/);
+  assert.match(app, /id: 'calendar'/);
+  assert.match(app, /id: 'calendar'[\s\S]*label: 'Open Agenda'[\s\S]*openView\('calendar'\)/);
+  assert.match(app, /id: 'todos'[\s\S]*hidden: true[\s\S]*aiHidden: true[\s\S]*openView\('calendar'\)/);
+  assert.match(app, /mnCalendarTaskContent\(text, date, type === 'reminder' \? time : ''\)/);
   assert.match(app, /mnWriteSnoozedReminder/);
 
   assert.match(outliner, /spellCheck=\{block\.kind === 'code' \? false : spellCheck\}/);
@@ -668,16 +685,31 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
 
   assert.match(markdown, /window\.MN_REMIND/);
   assert.match(markdown, /function mnDefaultReminderText/);
-  assert.match(todosPanel, /blockId: block\.id/);
+  assert.match(todosPanel, /collectTaskItems/);
   assert.match(todosPanel, /isReminderOnly/);
+  assert.match(calendarPanel, /function MnCalendarPanel/);
+  assert.match(calendarPanel, /Inbox todos/);
+  assert.match(calendarPanel, /createOpen/);
+  assert.match(calendarPanel, /Add item on/);
+  assert.match(calendarPanel, />\+ New<\/button>/);
+  assert.match(calendarPanel, /onUpdateItem/);
+  assert.match(calendarPanel, /onSnoozeItem/);
+  assert.doesNotMatch(appShell, /function MnAppTopToolbar/);
+  assert.match(editor, /onOpenCalendar/);
+  assert.match(editor, /title="Agenda"/);
   assert.match(utilityPanels, /onSnooze \|\| onDismiss/);
   assert.match(utilityPanels, /rollupFormat === 'short'/);
   assert.match(sidebar, /label="Daily rollup"/);
+  assert.match(sidebar, /label="Agenda"/);
+  assert.match(sidebar, /onOpenAgenda/);
   assert.match(sidebar, /const rollupCount = notes\.length/);
 
   assert.match(settings, /<StaticValue T=\{T\}>Markdown<\/StaticValue>/);
   assert.match(settings, /<StaticValue T=\{T\}>Local only<\/StaticValue>/);
   assert.match(settings, /<StaticValue T=\{T\}>Always on<\/StaticValue>/);
+  assert.doesNotMatch(settings, /Todo layout/);
+  assert.doesNotMatch(settings, /setTweak\('todoVariant'/);
+  assert.match(settings, /setTweak\('weekStart', v\)/);
   assert.match(store, /function validateNoteId/);
   assert.match(store, /\^\[A-Za-z0-9_-\]\+\$/);
   assert.match(store, /path\.relative\(dir, file\)/);
@@ -1062,7 +1094,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(notelist, /const workflowPattern = states/);
   assert.doesNotMatch(notelist, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(appShell, /function MnReminderCenter\(\{ open, items, dueCount, onToggle, onClose, onOpenNote, topOffset = 14, T \}\)/);
+  assert.match(appShell, /position: 'fixed'/);
   assert.match(appShell, /top: topOffset/);
+  assert.match(appShell, /maxWidth: 'calc\(100vw - 36px\)'/);
   assert.match(app, /const reminderCenterTop = view === 'ai' \? 17 : 14/);
   assert.match(app, /topOffset=\{reminderCenterTop\}/);
 });

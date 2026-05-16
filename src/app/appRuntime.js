@@ -152,6 +152,12 @@ function mnCollectReminderItems(notes) {
     : [];
 }
 
+function mnCollectTaskItems(notes) {
+  return MN_APP_HELPERS.collectTaskItems
+    ? MN_APP_HELPERS.collectTaskItems(notes, window.MN_REMIND, window.mnWalk)
+    : [];
+}
+
 function mnNewAskAiSession() {
   const now = new Date().toISOString();
   return {
@@ -263,6 +269,7 @@ window.MN_APP_RUNTIME = {
   mnReadSnoozedReminders,
   mnWriteSnoozedReminder,
   mnCollectReminderItems,
+  mnCollectTaskItems,
   mnNewAskAiSession,
   mnAskAiSessionTitle,
   mnPickActiveAskAiSession,

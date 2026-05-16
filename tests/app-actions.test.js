@@ -108,6 +108,7 @@ test('App Action natural plans compound named-note status and tag updates', () =
   };
   const registry = appActions.createRegistry([
     { id: 'todos', label: 'Open todos', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
+    { id: 'calendar', label: 'Open calendar', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
     { id: 'settings', label: 'Open settings', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
     { id: 'set-workflow-status', label: 'Set workflow status', inputSchema: { ...schema, required: ['status'] }, run: () => ({}) },
     { id: 'tag-note', label: 'Tag note', inputSchema: { ...schema, required: ['tag'] }, run: () => ({}) },
@@ -141,6 +142,8 @@ test('App Action natural plans compound named-note status and tag updates', () =
 
   assert.equal(registry.findForText('open todos').steps[0].actionId, 'todos');
   assert.equal(registry.findForText('todo').steps[0].actionId, 'todos');
+  assert.equal(registry.findForText('open calendar').steps[0].actionId, 'calendar');
+  assert.equal(registry.findForText('show my agenda').steps[0].actionId, 'calendar');
 });
 
 test('App Action natural plans cover fast AI note operations', () => {

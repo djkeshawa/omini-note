@@ -517,10 +517,10 @@ function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote
     <div
       className="mn-reminder-center"
       style={{
-        position: 'absolute',
+        position: 'fixed',
         top: topOffset,
         right: 18,
-        zIndex: 45,
+        zIndex: 90,
       }}>
       <button
         onClick={onToggle}
@@ -589,6 +589,7 @@ function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote
               top: 38,
               right: 0,
               width: 340,
+              maxWidth: 'calc(100vw - 36px)',
               maxHeight: 'min(520px, calc(100vh - 72px))',
               overflow: 'hidden',
               display: 'flex',

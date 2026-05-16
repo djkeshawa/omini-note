@@ -1,4 +1,4 @@
-// Sidebar pane: tags, daily rollup, todos count, settings.
+// Sidebar pane: tags, daily rollup, agenda count, settings.
 const { useMemo: useMemoS } = React;
 const VAULT_ICON_SRC = 'assets/vispnote-icon.png';
 
@@ -19,13 +19,14 @@ function MnVaultIcon({ T, size = 22, active = false }) {
 }
 
 function MnSidebar({
-  tags, notes, selectedTag, onSelectTag, onOpenTodos, onOpenGraph,
-  onOpenToday, todayActive, todosActive, graphActive,
+  tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
+  onOpenToday, todayActive, agendaActive, graphActive,
   selectedWorkflow, workflowStates, workflowCounts, workflowTotal,
   onSelectWorkflow, onOpenWorkflowPanel, workflowActive,
   onOpenNovelist, novelistActive, novelistEnabled, novelistCount = 0,
   onOpenCanvas, canvasActive, canvasCount = 0,
   onOpenTrash, trashActive, trashCount = 0,
+  calendarActive = false,
   aiActive = false,
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
@@ -72,9 +73,12 @@ function MnSidebar({
     return c;
   }, [tags, notes]);
 
-  const openTodos = notes.reduce((acc, n) => {
-    const m = [...n.body.matchAll(/^\s*-\s+\[ \]/gm)];
-    return acc + m.length;
+  const agendaCount = notes.reduce((acc, n) => {
+    const lines = String(n.body || '').split('\n');
+    return acc + lines.filter(line => {
+      if (/^\s*-\s+\[[xX]\]/.test(line)) return false;
+      return /^\s*-\s+\[ \]/.test(line) || /@remind\s+\d{4}-\d{2}-\d{2}/.test(line);
+    }).length;
   }, 0);
 
   const rollupCount = notes.length;
@@ -209,7 +213,7 @@ function MnSidebar({
 
   const iconInbox = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 9L3 3H13L14 9" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M2 9V13H14V9H10.5L9.5 11H6.5L5.5 9H2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>);
   const iconToday = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5 2V4M11 2V4M2 7H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="8" cy="10.5" r="1.3" fill="currentColor"/></svg>);
-  const iconTodos = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="4" height="4" rx="0.8" stroke="currentColor" strokeWidth="1.3"/><path d="M3 4.5L3.7 5.2L5 3.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><rect x="2" y="9.5" width="4" height="4" rx="0.8" stroke="currentColor" strokeWidth="1.3"/><path d="M8 4.5H14M8 11.5H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
+  const iconAgenda = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.2" y="3" width="11.6" height="10.5" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5 2V4.8M11 2V4.8M2.2 6.7H13.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M5 9.3H8.7M5 11.4H10.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconWorkflow = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4H8.5M3 8H11M3 12H7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="12" cy="4" r="1.5" stroke="currentColor" strokeWidth="1.3"/><circle cx="13" cy="12" r="1.5" stroke="currentColor" strokeWidth="1.3"/></svg>);
   const iconNovelist = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 2.5H10.5L12 4V13.5H4V2.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M10.5 2.5V4H12M6 7H10M6 9.5H10M6 12H8.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconGraph = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="1.8" stroke="currentColor" strokeWidth="1.3"/><circle cx="12" cy="4" r="1.8" stroke="currentColor" strokeWidth="1.3"/><circle cx="8" cy="12" r="1.8" stroke="currentColor" strokeWidth="1.3"/><path d="M5.5 5L10.5 5M5.3 5.8L6.8 10.4M10.7 5.8L9.2 10.4" stroke="currentColor" strokeWidth="1.3"/></svg>);
@@ -539,13 +543,13 @@ function MnSidebar({
       {openSections.allnotes && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
-               active={!selectedTag && !selectedWorkflow && !todayActive && !todosActive && !graphActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !aiActive}
+               active={!selectedTag && !selectedWorkflow && !todayActive && !agendaActive && !graphActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
                onClick={() => onSelectTag(null)} />
           <Row icon={iconToday} label="Daily rollup" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
-          <Row icon={iconTodos} label="Todos" count={openTodos}
-               active={todosActive}
-               onClick={onOpenTodos} accent={T.warn} />
+          <Row icon={iconAgenda} label="Agenda" count={agendaCount}
+               active={agendaActive || calendarActive}
+               onClick={onOpenAgenda} accent={T.warn} />
           <Row icon={iconWorkflow} label="Workflow" count={workflowTotal || 0}
                active={workflowActive}
                onClick={onOpenWorkflowPanel} accent={T.accent} />

@@ -8,73 +8,14 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
 
-  // Gather all todos and reminders from block data so duplicate text toggles
-  // the intended task.
   const items = useMemoP(() => {
-    const acc = [];
-    const remind = window.MN_REMIND;
-    notes.forEach(n => {
-      if (n.blocks?.length && window.mnWalk) {
-        window.mnWalk(n.blocks, block => {
-          const parsed = remind?.parse?.(block.content || '');
-          if (block.kind === 'todo') {
-            acc.push({
-              noteId: n.id, noteTitle: n.title, noteTags: n.tags,
-              blockId: block.id,
-              text: block.content || '',
-              checked: !!block.checked,
-              remindAt: parsed,
-              noteDate: n.date,
-            });
-          } else if (parsed) {
-            acc.push({
-              noteId: n.id, noteTitle: n.title, noteTags: n.tags,
-              blockId: block.id,
-              text: remind?.strip?.(block.content || '') || block.content || '',
-              checked: false,
-              isReminderOnly: true,
-              remindAt: parsed,
-              noteDate: n.date,
-            });
-          }
-        });
-        return;
-      }
-      const lines = String(n.body || '').split('\n');
-      lines.forEach((line, lineNum) => {
-        const m = line.match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
-        if (m) {
-          const checked = /[xX]/.test(m[2]);
-          const parsed = remind?.parse?.(m[3]);
-          acc.push({
-            noteId: n.id, noteTitle: n.title, noteTags: n.tags,
-            text: m[3], checked, line: lineNum,
-            remindAt: parsed,
-            noteDate: n.date,
-          });
-        }
-      });
-      // Also capture bare @remind directives not inside checkboxes
-      lines.forEach((line, lineNum) => {
-        if (/^\s*-\s+\[/.test(line)) return;
-        const parsed = remind?.parse?.(line);
-        if (parsed) {
-          acc.push({
-            noteId: n.id, noteTitle: n.title, noteTags: n.tags,
-            text: remind?.strip?.(line) || line, checked: false, line: lineNum,
-            isReminderOnly: true,
-            remindAt: parsed, noteDate: n.date,
-          });
-        }
-      });
-    });
-    return acc;
+    return window.MN_APP_HELPERS?.collectTaskItems?.(notes, window.MN_REMIND, window.mnWalk) || [];
   }, [notes]);
 
   const open = items.filter(i => !i.checked);
   const done = items.filter(i => i.checked);
   const withRem = open.filter(i => i.remindAt);
-  const itemKey = (it, fallback) => [
+  const itemKey = (it, fallback) => it.key || [
     it.noteId,
     it.blockId ?? it.line ?? fallback,
     it.remindAt?.raw || it.remindAt?.date || '',
@@ -83,7 +24,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
 
   const Card = ({ it, idx }) => {
     const isOverdue = it.remindAt && it.remindAt.at < new Date();
-    const label = window.MN_REMIND?.strip?.(it.text) || String(it.text || '').trim();
+    const label = it.label || window.MN_REMIND?.strip?.(it.text) || String(it.text || '').trim();
     return (
       <div
         onClick={() => onOpen(it.noteId)}

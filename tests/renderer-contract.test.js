@@ -75,6 +75,7 @@ test('renderer globals are explicitly allowlisted until ESM migration removes th
     'MnBlockRow',
     'MnCanvasEmbed',
     'MnCanvasPanel',
+    'MnCalendarPanel',
     'MnEditor',
     'MnGraph',
     'MnInline',

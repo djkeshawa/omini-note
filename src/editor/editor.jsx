@@ -63,7 +63,7 @@ function MnEditor({
   onOpen, onCreateLinkedNote, onOpenTag,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
   onEndNoteMetadataEdit, onUndoNoteEdit, onRedoNoteEdit,
-  onPinToggle, onDuplicate, onDelete, onOpenVersions, onOpenGraph, onBack,
+  onPinToggle, onDuplicate, onDelete, onOpenVersions, onOpenGraph, onOpenCalendar, onBack,
   onToggleSidebar, sidebarHidden,
   onToggleNoteList, noteListHidden,
   editorWidth = 'medium', fontSize = 'default',
@@ -355,6 +355,15 @@ function MnEditor({
             <path d="M5.5 5L10.5 5M5.3 5.8L6.8 10.4M10.7 5.8L9.2 10.4"/>
           </svg>
         </button>
+        {onOpenCalendar && (
+          <button onClick={onOpenCalendar} title="Agenda" aria-label="Agenda" style={iconBtn(T)}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+              <rect x="2.5" y="3.5" width="11" height="10" rx="1.4"/>
+              <path d="M5 2.5V5M11 2.5V5M2.5 7H13.5" strokeLinecap="round"/>
+              <circle cx="8" cy="10.3" r="1.3" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+        )}
         <button onClick={onDuplicate} title="Duplicate note" style={iconBtn(T)}>
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
             <rect x="5" y="5" width="8" height="8" rx="1.2"/>

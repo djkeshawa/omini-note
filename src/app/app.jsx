@@ -62,6 +62,7 @@ const {
   mnReadSnoozedReminders,
   mnWriteSnoozedReminder,
   mnCollectReminderItems,
+  mnCollectTaskItems,
   mnNewAskAiSession,
   mnAskAiSessionTitle,
   mnPickActiveAskAiSession,
@@ -91,6 +92,7 @@ const {
   MnAskAI,
   MnGraph,
   MnTodosPanel,
+  MnCalendarPanel,
   MnWorkflowPanel,
   MnNovelistPanel,
   MnTodayPanel,
@@ -135,6 +137,39 @@ const MN_NOVEL_IMPORT_TOOL = {
     required: ['notes'],
   },
 };
+
+function mnCalendarCleanTaskText(value = '') {
+  return String(value || '')
+    .replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '')
+    .replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g, '')
+    .trim();
+}
+
+function mnCalendarTaskContent(text, date = '', time = '') {
+  const clean = mnCalendarCleanTaskText(text);
+  const cleanDate = String(date || '').trim();
+  const cleanTime = String(time || '').trim();
+  return cleanDate ? `${clean} @remind ${[cleanDate, cleanTime].filter(Boolean).join(' ')}` : clean;
+}
+
+function mnCalendarReminderDateParts(date = new Date()) {
+  const d = new Date(date);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${min}` };
+}
+
+function mnCalendarUpdateMarkdownLine(line, nextText, checked) {
+  const match = String(line || '').match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
+  if (match) {
+    const box = checked == null ? match[2] : checked ? 'x' : ' ';
+    return `${match[1]}- [${box}] ${nextText}`;
+  }
+  return nextText;
+}
 
 function mnNovelImportChunks(files = [], maxChars = 11000) {
   const chunks = [];
@@ -1481,6 +1516,11 @@ function MnApp() {
     item.status === 'due' && !dismissedReminderKeys.current.has(item.key)
   ).length;
 
+  const calendarTaskItems = useMemoA(
+    () => mnCollectTaskItems ? mnCollectTaskItems(notesWithBody) : [],
+    [notesWithBody]
+  );
+
   const nextStoryOrder = useCallbackA((kind, parentId = null) => {
     const noteById = new Map(notesWithBody.map(note => [note.id, note]));
     const values = (items, step, base) => {
@@ -1669,6 +1709,66 @@ function MnApp() {
     return true;
   }, [notesWithBody, navigateView]);
 
+  const updateTaskItemSource = useCallbackA((item, patch = {}) => {
+    if (!item?.noteId) return false;
+    const note = notes.find(n => n.id === item.noteId);
+    if (!note) return false;
+    const nextText = mnCalendarTaskContent(
+      patch.text ?? item.label ?? item.text,
+      patch.date ?? item.remindAt?.date ?? '',
+      patch.time ?? item.remindAt?.time ?? ''
+    );
+    if (!nextText) return false;
+    const nextChecked = Object.prototype.hasOwnProperty.call(patch, 'checked') ? !!patch.checked : item.checked;
+    if (item.blockId) {
+      const nextBlocks = mnCloneBlocks(note.blocks || []);
+      const loc = mnLocate(nextBlocks, item.blockId);
+      if (loc?.block) {
+        loc.block.content = nextText;
+        if (loc.block.kind === 'todo') loc.block.checked = !!nextChecked;
+        updateNote(item.noteId, { blocks: nextBlocks });
+        return true;
+      }
+    }
+    if (item.line != null) {
+      updateNoteBody(item.noteId, body => {
+        const lines = String(body || '').split('\n');
+        const index = Number(item.line);
+        if (!Number.isInteger(index) || index < 0 || index >= lines.length) return body;
+        lines[index] = mnCalendarUpdateMarkdownLine(lines[index], nextText, nextChecked);
+        return lines.join('\n');
+      });
+      return true;
+    }
+    updateNoteBody(item.noteId, body => {
+      const source = String(item.text || '').trim();
+      if (!source) return body;
+      const text = String(body || '');
+      const index = text.indexOf(source);
+      if (index < 0) return body;
+      return `${text.slice(0, index)}${nextText}${text.slice(index + source.length)}`;
+    });
+    return true;
+  }, [notes, updateNote, updateNoteBody]);
+
+  const createCalendarTaskItem = useCallbackA(({ noteId, text, type, date, time } = {}) => {
+    const id = String(noteId || selectedId || '').trim();
+    if (!id || !notes.some(note => note.id === id)) return false;
+    const content = mnCalendarTaskContent(text, date, type === 'reminder' ? time : '');
+    if (!content) return false;
+    updateNoteBody(id, body => {
+      const source = String(body || '').replace(/\s+$/g, '');
+      return `${source}${source ? '\n' : ''}- [ ] ${content}\n`;
+    });
+    return true;
+  }, [notes, selectedId, updateNoteBody]);
+
+  const snoozeCalendarTaskItem = useCallbackA((item, minutes = 15) => {
+    const next = new Date(Date.now() + Math.max(1, Number(minutes) || 15) * 60 * 1000);
+    const parts = mnCalendarReminderDateParts(next);
+    return updateTaskItemSource(item, parts);
+  }, [updateTaskItemSource]);
+
   const linkNovelistChapter = useCallbackA((arcId, chapterId, chapterTitle) => {
     const act = notesWithBody.find(n => n.id === arcId);
     const chapter = notesWithBody.find(n => n.id === chapterId);
@@ -1729,27 +1829,7 @@ function MnApp() {
 
   const toggleCheckFromAggregate = (it) => {
     if (it.isReminderOnly) return;
-    const n = notes.find(x => x.id === it.noteId);
-    if (!n) return;
-    if (it.blockId) {
-      const nextBlocks = mnCloneBlocks(n.blocks || []);
-      const loc = mnLocate(nextBlocks, it.blockId);
-      if (loc?.block?.kind === 'todo') {
-        loc.block.checked = !loc.block.checked;
-        updateNote(it.noteId, { blocks: nextBlocks });
-      }
-      return;
-    }
-    const target = it.text.trim();
-    let changed = false;
-    const walkMutate = (bs) => bs.map(b => {
-      if (!changed && b.kind === 'todo' && b.content.trim() === target) {
-        changed = true;
-        return { ...b, checked: !b.checked, children: walkMutate(b.children) };
-      }
-      return { ...b, children: walkMutate(b.children) };
-    });
-    updateNote(it.noteId, { blocks: walkMutate(n.blocks || []) });
+    updateTaskItemSource(it, { checked: !it.checked });
   };
 
   const updateWorkflowNoteStatus = useCallbackA((noteId, _itemId, workflow) => {
@@ -2532,8 +2612,9 @@ function MnApp() {
         run: () => { setSettingsOpen(true); return { message: 'Opened settings.' }; },
       },
       { id: 'graph', label: 'Open graph', description: 'Show the note graph.', section: 'Navigate', shortcut: 'Ctrl+G', inputSchema: objectSchema(), run: () => openView('graph') },
+      { id: 'calendar', label: 'Open Agenda', description: 'Show scheduled todos and reminders.', section: 'Navigate', keywords: 'calendar schedule agenda reminder date', inputSchema: objectSchema(), run: () => openView('calendar') },
       { id: 'today', label: 'Open Today', description: 'Show today rollup.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
-      { id: 'todos', label: 'Open Todos', description: 'Show task and todo rollup.', section: 'Navigate', keywords: 'tasks checklist', inputSchema: objectSchema(), run: () => openView('todos') },
+      { id: 'todos', label: 'Open Agenda', description: 'Open the calendar planner for tasks and reminders.', section: 'Navigate', keywords: 'tasks checklist todos agenda calendar', hidden: true, aiHidden: true, inputSchema: objectSchema(), run: () => openView('calendar') },
       { id: 'canvas', label: 'Open canvas dashboard', description: 'Open the canvas dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => { openCanvasDashboard(); return { message: 'Opened canvas dashboard.' }; } },
       {
         id: 'vault-health',
@@ -2596,6 +2677,7 @@ function MnApp() {
         label: 'Rename note',
         description: 'Rename a note and update wiki links that point to its old title.',
         section: 'Notes',
+        risk: 'confirm',
         inputSchema: titleActionSchema,
         preview: (args) => {
           const note = currentOrArgNote(args);
@@ -3250,14 +3332,14 @@ function MnApp() {
               onSelectWorkflow={(wf) => { setSelectedWorkflow(wf); setSelectedTag(null); navigateView('notes'); }}
               onOpenWorkflowPanel={() => { navigateView('workflow'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenNovelist={() => { navigateView('novelist'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
-              onOpenTodos={() => { navigateView('todos'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenToday={() => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenCanvas={openCanvasDashboard}
               onOpenTrash={() => { navigateView('trash'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenAskAI={HAS_DISK ? openAskAi : null}
               todayActive={view === 'today'}
-              todosActive={view === 'todos'}
+              agendaActive={view === 'calendar'}
               graphActive={view === 'graph'}
               workflowActive={view === 'workflow'}
               novelistActive={view === 'novelist'}
@@ -3267,6 +3349,7 @@ function MnApp() {
               canvasCount={canvases.length}
               trashActive={view === 'trash'}
               trashCount={trashItems.length}
+              calendarActive={view === 'calendar'}
               aiActive={view === 'ai'}
               onNewTag={promptNewTag}
               onDeleteTag={removeTag}
@@ -3397,6 +3480,7 @@ function MnApp() {
               onDelete={() => requestDeleteNote(selectedNote.id)}
               onOpenVersions={HAS_DISK ? () => setVersionTargetId(selectedNote.id) : null}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onOpenCalendar={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onBack={goBackView}
               onToggleSidebar={() => setSidebarHidden(v => !v)}
               sidebarHidden={sidebarHidden}
@@ -3493,6 +3577,23 @@ function MnApp() {
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               onToggleCheck={toggleCheckFromAggregate}
               T={T} theme={theme} variant={tweaks.todoVariant}
+            />
+          )}
+          {view === 'calendar' && (
+            <MnCalendarPanel
+              notes={notesWithBody}
+              tags={tags}
+              items={calendarTaskItems}
+              selectedNoteId={selectedId || ''}
+              weekStart={tweaks.weekStart || 'monday'}
+              snoozeMinutes={tweaks.snoozeMinutes || '15'}
+              onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onCreateItem={createCalendarTaskItem}
+              onUpdateItem={updateTaskItemSource}
+              onToggleCheck={toggleCheckFromAggregate}
+              onSnoozeItem={snoozeCalendarTaskItem}
+              T={T}
+              theme={theme}
             />
           )}
           {view === 'workflow' && (
