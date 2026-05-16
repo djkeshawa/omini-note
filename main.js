@@ -1150,9 +1150,9 @@ app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 if (process.platform === 'linux') app.setDesktopName('vispnote.desktop');
 
-const singleInstanceBypassForSmoke = process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE === '1'
-  && process.argv.some(arg => /scripts[\\/]+smoke-electron\.js$/.test(arg));
-const singleInstanceLock = singleInstanceBypassForSmoke
+const singleInstanceBypassForAutomation = process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE === '1'
+  && process.argv.some(arg => /scripts[\\/]+(?:smoke|regression)-electron\.js$/.test(arg));
+const singleInstanceLock = singleInstanceBypassForAutomation
   ? true
   : app.requestSingleInstanceLock();
 if (!singleInstanceLock) {

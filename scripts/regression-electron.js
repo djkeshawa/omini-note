@@ -196,10 +196,13 @@ async function runRegression() {
 
 function cleanupAndExit(code) {
   if (!process.env.VISPNOTE_KEEP_REGRESSION_HOME) {
-    fs.rmSync(regressionHome, { recursive: true, force: true });
+    try {
+      fs.rmSync(regressionHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) {
+      console.warn(`Could not remove regression temp home ${regressionHome}: ${error?.message || String(error)}`);
+    }
   }
-  if (code === 0) app.quit();
-  else app.exit(code);
+  app.exit(code);
 }
 
 app.whenReady().then(async () => {

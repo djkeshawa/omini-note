@@ -61,14 +61,23 @@ async function waitForRenderer(win, timeoutMs = 30000) {
   throw new Error(`Smoke test timed out waiting for renderer boot: ${JSON.stringify(lastState)}`);
 }
 
+function removeSmokeHome() {
+  if (process.env.VISPNOTE_KEEP_SMOKE_HOME) return;
+  try {
+    fs.rmSync(smokeHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } catch (error) {
+    console.warn(`Could not remove smoke temp home ${smokeHome}: ${error?.message || String(error)}`);
+  }
+}
+
 app.whenReady().then(async () => {
   const win = await waitForMainWindow();
   await waitForRenderer(win);
   console.log('Renderer smoke booted');
-  if (!process.env.VISPNOTE_KEEP_SMOKE_HOME) fs.rmSync(smokeHome, { recursive: true, force: true });
-  app.quit();
+  removeSmokeHome();
+  app.exit(0);
 }).catch((error) => {
   console.error(error);
-  if (!process.env.VISPNOTE_KEEP_SMOKE_HOME) fs.rmSync(smokeHome, { recursive: true, force: true });
+  removeSmokeHome();
   app.exit(1);
 });
