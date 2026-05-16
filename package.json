@@ -34,7 +34,7 @@
   "scripts": {
     "build:renderer": "node scripts/build-renderer.js",
     "verify:package-renderer": "node scripts/verify-packaged-renderer.js",
-    "check:main": "npm run lint -- --quiet=false && node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js",
+    "check:main": "npm run lint -- --quiet=false && node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js && node --check lib/zotero.js",
     "test:editor": "node scripts/run-node-tests.js",
     "regression:renderer": "npm run build:renderer && electron --no-sandbox scripts/regression-electron.js",
     "smoke:electron": "npm run build:renderer && electron --no-sandbox scripts/smoke-electron.js",

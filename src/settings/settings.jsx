@@ -444,6 +444,11 @@ function SectionPlugins({ tweaks, setTweak, T }) {
             This plugin opens Quick Capture from the command palette so you can collect thoughts without switching context.
           </div>
         )}
+        {draft.type === 'zotero-reader' && (
+          <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12.5, color: T.inkMed, lineHeight: 1.5, marginBottom: 10 }}>
+            This plugin lets AI search and read Zotero Desktop documents through the local Zotero API.
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{selectedType.purpose || 'Choose a plugin purpose.'}</div>
           <BtnOutline T={T} disabled={!draft.name.trim()} onClick={addPlugin}>Add plugin</BtnOutline>
@@ -478,6 +483,11 @@ function SectionPlugins({ tweaks, setTweak, T }) {
                   )}
                   {plugin.type === 'open-url' && (
                     <input value={plugin.config.url || ''} onChange={e => updatePluginConfig(plugin.id, { url: e.target.value })} placeholder="https://example.com" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
+                  )}
+                  {plugin.type === 'zotero-reader' && (
+                    <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12.5, color: T.inkMed, lineHeight: 1.5 }}>
+                      Uses Zotero Desktop at 127.0.0.1:23119. Keep Zotero open while asking AI to search documents.
+                    </div>
                   )}
                 </div>
                 <BtnOutline T={T} danger onClick={() => removePlugin(plugin.id)}>Remove</BtnOutline>

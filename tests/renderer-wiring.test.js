@@ -721,6 +721,39 @@ test('URL plugins follow the external URL security policy and surface failures',
   assert.doesNotMatch(app, /must start with http:\/\/ or https:\/\//);
 });
 
+test('Zotero reader is wired as a read-only AI app action', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const plugins = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
+  const runtime = fs.readFileSync(path.join(__dirname, '../src/ai/aiRuntime.js'), 'utf8');
+  const appActions = fs.readFileSync(path.join(__dirname, '../src/app/appActions.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+
+  assert.match(plugins, /id: 'zotero-reader'/);
+  assert.match(settings, /draft\.type === 'zotero-reader'/);
+  assert.match(app, /const zoteroReaderEnabled = plugins\.some/);
+  assert.match(app, /id: 'zotero-search'/);
+  assert.match(app, /id: 'zotero-read'/);
+  assert.match(app, /readOnly: true/);
+  assert.match(app, /window\.mn\.zotero\.search/);
+  assert.match(app, /window\.mn\.zotero\.read/);
+  assert.match(ai, /runZoteroDocumentRequest/);
+  assert.match(ai, /const cleanedQueries = \[/);
+  assert.match(ai, /Zotero responded: Local API is not enabled/);
+  assert.match(ai, /summarizeZoteroRead/);
+  assert.match(app, /aiHidden: true/);
+  assert.match(appActions, /filter\(action => !action\.aiHidden\)/);
+  assert.match(runtime, /zotero/);
+  assert.match(runtime, /function isLikelyDocumentQuestion/);
+  assert.match(runtime, /function makeZoteroSearchPlan/);
+  assert.match(main, /const zotero = require\('\.\/lib\/zotero'\)/);
+  assert.match(main, /ipcMain\.handle\('mn:zotero\.search'/);
+  assert.match(preload, /zotero: \{/);
+  assert.match(preload, /read: \(payload\) => ipcRenderer\.invoke\('mn:zotero\.read', payload\)/);
+});
+
 test('Release metadata targets renamed VispNote repository', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '../package-lock.json'), 'utf8'));

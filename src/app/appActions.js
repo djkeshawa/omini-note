@@ -32,6 +32,7 @@
       requires: Array.isArray(action.requires) ? action.requires.map(item => String(item || '').trim()).filter(Boolean).slice(0, 8) : [],
       outputSchema: isPlainObject(action.outputSchema) ? action.outputSchema : { type: 'object', additionalProperties: true },
       resolveArgs: typeof action.resolveArgs === 'function' ? action.resolveArgs : null,
+      aiHidden: action.aiHidden === true,
       risk,
       inputSchema: isPlainObject(action.inputSchema) ? action.inputSchema : { type: 'object', additionalProperties: false },
     };
@@ -102,6 +103,7 @@
       risk: action.risk,
       enabled,
       hidden: !!action.hidden,
+      aiHidden: !!action.aiHidden,
     };
   }
 
@@ -580,6 +582,7 @@
     function describeForAi() {
       return list({ includeHidden: true })
         .filter(action => action.enabled)
+        .filter(action => !action.aiHidden)
         .filter(action => !/^note-|^vault-|^canvas-/.test(action.id))
         .map(action => ({
           name: action.id,

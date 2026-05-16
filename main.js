@@ -6,6 +6,7 @@ const { fileURLToPath } = require('url');
 const store = require('./lib/store');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
+const zotero = require('./lib/zotero');
 
 let mainWindow = null;
 let tray = null;
@@ -146,7 +147,7 @@ function sanitizePluginsForPrefs(value) {
     if (!isPlainObject(plugin)) throw new Error('Invalid plugin preference');
     const config = isPlainObject(plugin.config) ? plugin.config : {};
     const type = capString(plugin.type, `plugins[${index}].type`, 40);
-    if (!['note-template', 'quick-capture', 'open-url'].includes(type)) throw new Error('Invalid plugin type');
+    if (!['note-template', 'quick-capture', 'open-url', 'zotero-reader'].includes(type)) throw new Error('Invalid plugin type');
     return {
       id: capString(plugin.id, `plugins[${index}].id`, 80),
       name: capString(plugin.name, `plugins[${index}].name`, 80),
@@ -564,6 +565,24 @@ function sanitizeExternalUrl(rawUrl) {
     if (!address || /\s/.test(address) || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) throw new Error('Invalid mailto URL');
   }
   return parsed.href;
+}
+
+function sanitizeZoteroSearchPayload(payload = {}) {
+  if (!isPlainObject(payload)) throw new Error('Invalid Zotero search request');
+  return {
+    query: capString(payload.query, 'query', 300),
+    limit: Math.max(1, Math.min(20, Math.trunc(Number(payload.limit) || 8))),
+  };
+}
+
+function sanitizeZoteroReadPayload(payload = {}) {
+  if (!isPlainObject(payload)) throw new Error('Invalid Zotero read request');
+  const itemKey = capString(payload.itemKey || payload.key, 'itemKey', 80);
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(itemKey)) throw new Error('Invalid Zotero item key');
+  return {
+    itemKey,
+    includeFullText: payload.includeFullText !== false,
+  };
 }
 
 function hardenWindow(win) {
@@ -1039,6 +1058,11 @@ ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
   }
   return { ...imported, canceled: false, filePath: result.filePaths[0] };
 }));
+
+// Zotero Desktop local API
+ipcMain.handle('mn:zotero.status',  wrap(() => zotero.status()));
+ipcMain.handle('mn:zotero.search',  wrap((payload) => zotero.search(sanitizeZoteroSearchPayload(payload))));
+ipcMain.handle('mn:zotero.read',    wrap((payload) => zotero.read(sanitizeZoteroReadPayload(payload))));
 
 // AI (Ollama)
 ipcMain.handle('mn:ai.status',      wrap(() => ai.status()));

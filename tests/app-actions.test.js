@@ -193,6 +193,7 @@ test('App Action natural plans cover fast AI note operations', () => {
 test('App Action AI descriptions omit dynamic note, vault, and canvas commands', () => {
   const registry = appActions.createRegistry([
     { id: 'settings', label: 'Open settings', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
+    { id: 'ask-ai', label: 'Ask AI', aiHidden: true, inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
     { id: 'note-n1', label: 'Welcome', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
     { id: 'vault-v1', label: 'Switch vault', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
     { id: 'canvas-c1', label: 'Canvas', inputSchema: { type: 'object', additionalProperties: false }, run: () => ({}) },
@@ -227,6 +228,37 @@ test('AI execution runtime routes safely and validates planner tool calls', () =
   assert.equal(aiRuntime.routeRequest({ query: 'can you summarize all my notes', appRegistry: registry }).type, 'notes');
   assert.equal(aiRuntime.routeRequest({ query: 'open settings', appRegistry: registry }).type, 'app_action');
   assert.equal(aiRuntime.routeRequest({ query: 'find notes about reading', appRegistry: registry }).type, 'app_action');
+  const unavailablePaperRoute = aiRuntime.routeRequest({ query: 'get summary in the Recursive Language Model paper', appRegistry: registry });
+  assert.equal(unavailablePaperRoute.type, 'clarify');
+  assert.match(unavailablePaperRoute.message, /Zotero reader plugin is not enabled/);
+
+  const zoteroRegistry = appActions.createRegistry([
+    {
+      id: 'zotero-search',
+      label: 'Search Zotero',
+      inputSchema: {
+        type: 'object',
+        properties: { query: { type: 'string' }, limit: { type: 'integer', default: 8 } },
+        required: ['query'],
+        additionalProperties: false,
+      },
+      run: () => ({}),
+    },
+  ]);
+  const paperRoute = aiRuntime.routeRequest({ query: 'get summary in the Recursive Language Model paper', appRegistry: zoteroRegistry });
+  assert.equal(paperRoute.type, 'app_action');
+  assert.equal(paperRoute.plan.steps[0].actionId, 'zotero-search');
+  assert.equal(paperRoute.plan.steps[0].args.query, 'Recursive Language Model');
+  const followupPaperRoute = aiRuntime.routeRequest({ query: 'ok. now Recursive Language models paper', appRegistry: zoteroRegistry });
+  assert.equal(followupPaperRoute.type, 'app_action');
+  assert.equal(followupPaperRoute.plan.steps[0].actionId, 'zotero-search');
+  assert.equal(followupPaperRoute.plan.steps[0].args.query, 'Recursive Language models');
+  const zoteroMentionRoute = aiRuntime.routeRequest({ query: 'summarize Recursive Language Models from Zotero', appRegistry: zoteroRegistry });
+  assert.equal(zoteroMentionRoute.type, 'app_action');
+  assert.equal(zoteroMentionRoute.plan.steps[0].actionId, 'zotero-search');
+  assert.equal(zoteroMentionRoute.plan.steps[0].args.query, 'Recursive Language Models');
+  assert.equal(aiRuntime.documentSearchQuery('ok. now Recursive Language models'), 'Recursive Language models');
+  assert.equal(aiRuntime.documentSearchQuery('tell me about Recursive Language Models paper from Zotero'), 'Recursive Language Models');
 
   const traceItem = aiRuntime.recordTrace(aiRuntime.makeRun({ runId: 'r1' }), 'tool.run', { actionId: 'tag-note' });
   assert.match(traceItem.label, /Running tag-note/);

@@ -1965,6 +1965,15 @@ function MnApp() {
         return { ok: false, message };
       }
     }
+    if (plugin.type === 'zotero-reader') {
+      if (!window.mn?.zotero?.status) return { ok: false, message: 'Zotero integration is unavailable.' };
+      const res = await window.mn.zotero.status();
+      if (!res.ok) return { ok: false, message: res.error || 'Could not check Zotero.' };
+      const reachable = !!res.value?.reachable;
+      const message = reachable ? 'Zotero Desktop is reachable.' : (res.value?.error || 'Zotero Desktop is not reachable.');
+      showAppNotice(reachable ? 'Zotero ready' : 'Zotero unavailable', message, reachable ? 'info' : 'warn');
+      return { ok: reachable, message };
+    }
     return { ok: false, message: 'Unsupported plugin type.' };
   }, [createNote, showAppNotice, uniqueNoteTitle]);
 
@@ -1987,6 +1996,7 @@ function MnApp() {
       .replace(/\s+/g, ' ');
     const normalizeNoteLookupKey = (value) => normalizeNoteLookupText(value).replace(/[^a-z0-9]+/g, '');
     const noteTitleArg = (args = {}) => String(args.noteTitle || args.targetNoteTitle || '').trim();
+    const zoteroReaderEnabled = plugins.some(plugin => plugin.enabled !== false && plugin.type === 'zotero-reader');
     const scoreNoteTitleMatch = (note, queryTitle) => {
       const queryText = normalizeNoteLookupText(queryTitle);
       const queryKey = normalizeNoteLookupKey(queryTitle);
@@ -2184,6 +2194,7 @@ function MnApp() {
         shortcut: 'Ctrl+Shift+K',
         keywords: 'assistant chat',
         enabled: HAS_DISK,
+        aiHidden: true,
         inputSchema: objectSchema({ query: stringArg(1000) }),
         run: (args) => { openAskAi(args.query || ''); return { message: 'Opened Ask AI.' }; },
       },
@@ -2590,6 +2601,62 @@ function MnApp() {
           return result?.ok === false ? { ok: false, message: result.error || 'Could not restore trash item.' } : { message: 'Trash item restored.' };
         },
       },
+      ...(zoteroReaderEnabled ? [
+        {
+          id: 'zotero-search',
+          label: 'Search Zotero',
+          description: 'Search Zotero Desktop documents by title, author, abstract, note, and indexed full text.',
+          section: 'Zotero',
+          keywords: 'zotero paper papers documents references bibliography library research pdf search find',
+          risk: 'safe',
+          kind: 'read',
+          readOnly: true,
+          inputSchema: objectSchema({ query: stringArg(300), limit: integerArg(8) }, ['query']),
+          outputSchema: { type: 'object', additionalProperties: true },
+          run: async (args) => {
+            if (!window.mn?.zotero?.search) return { ok: false, message: 'Zotero integration is unavailable.' };
+            const res = await window.mn.zotero.search({ query: args.query, limit: args.limit || 8 });
+            if (!res.ok) return { ok: false, message: res.error || 'Could not search Zotero.' };
+            const results = res.value?.results || [];
+            return {
+              message: results.length ? `Found ${results.length} Zotero item${results.length === 1 ? '' : 's'}.` : 'No Zotero items matched that search.',
+              results,
+              affected: results.map(item => ({ type: 'zotero', id: item.key, title: item.title || item.key })),
+            };
+          },
+        },
+        {
+          id: 'zotero-read',
+          label: 'Read Zotero item',
+          description: 'Read Zotero item metadata, attachments, and available indexed attachment full text.',
+          section: 'Zotero',
+          keywords: 'zotero read paper document reference attachment full text pdf',
+          risk: 'safe',
+          kind: 'read',
+          readOnly: true,
+          inputSchema: objectSchema({ itemKey: stringArg(80), includeFullText: { type: 'boolean', default: true } }, ['itemKey']),
+          outputSchema: { type: 'object', additionalProperties: true },
+          run: async (args) => {
+            if (!window.mn?.zotero?.read) return { ok: false, message: 'Zotero integration is unavailable.' };
+            const res = await window.mn.zotero.read({ itemKey: args.itemKey, includeFullText: args.includeFullText !== false });
+            if (!res.ok) return { ok: false, message: res.error || 'Could not read Zotero item.' };
+            const value = res.value || {};
+            const item = value.item || {};
+            return {
+              message: value.fullText
+                ? `Read "${item.title || args.itemKey}" with indexed full text.`
+                : `Read "${item.title || args.itemKey}" metadata${value.fullTextError ? `; ${value.fullTextError}` : '.'}`,
+              item,
+              attachments: value.attachments || [],
+              fullText: value.fullText || '',
+              fullTextItemKey: value.fullTextItemKey || '',
+              fullTextTruncated: !!value.fullTextTruncated,
+              fullTextError: value.fullTextError || '',
+              affected: item.key ? [{ type: 'zotero', id: item.key, title: item.title || item.key }] : [],
+            };
+          },
+        },
+      ] : []),
       ...plugins.filter(plugin => plugin.enabled !== false).map(plugin => ({
         id: `plugin-${plugin.id}`,
         label: MN_PLUGIN_API.commandTitle ? MN_PLUGIN_API.commandTitle(plugin) : plugin.name,

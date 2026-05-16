@@ -35,6 +35,17 @@ const MN_PLUGIN_TYPES = [
       url: 'https://',
     },
   },
+  {
+    id: 'zotero-reader',
+    label: 'Zotero reader',
+    purpose: 'Search and read Zotero Desktop documents through the local Zotero API.',
+    defaultConfig: {
+      title: '',
+      body: '',
+      tags: '',
+      url: '',
+    },
+  },
 ];
 
 function mnPluginType(typeId) {

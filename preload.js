@@ -116,6 +116,13 @@ contextBridge.exposeInMainWorld('mn', {
     setConfig: (patch) => ipcRenderer.invoke('mn:ai.setConfig', patch),
   },
 
+  // Zotero Desktop local API
+  zotero: {
+    status: () => ipcRenderer.invoke('mn:zotero.status'),
+    search: (payload) => ipcRenderer.invoke('mn:zotero.search', payload),
+    read: (payload) => ipcRenderer.invoke('mn:zotero.read', payload),
+  },
+
   // Window
   setTitle: (title) => ipcRenderer.invoke('mn:setTitle', title),
   openExternal: (url) => ipcRenderer.invoke('mn:openExternal', url),

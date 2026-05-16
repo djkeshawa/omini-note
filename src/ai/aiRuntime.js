@@ -85,12 +85,61 @@
       /\b(who are you|what can you do|help|how do you work|what are your capabilities)\b/.test(normalized);
   }
 
-  function isLikelyAppOperation(q) {
+  function isLikelyDocumentQuestion(q) {
     const text = String(q || '').toLowerCase();
-    if (isClearlyNoteQuestion(text) && !/\b(create|make|new|delete|rename|duplicate|tag|untag|label|mark|move|set|change|update|archive|restore|import|export|rebuild|backfill|refresh|open settings|go to settings|add|append|todo|task|remind|reminder|link|wikilink|search|find)\b/.test(text)) {
+    if (!text) return false;
+    const hasDocumentNoun = /\bzotero\b/.test(text) || /\b(papers?|articles?|documents?|publications?|references?|citations?|pdfs?|stud(?:y|ies))\b/.test(text);
+    if (!hasDocumentNoun) return false;
+    if (/\b(summari[sz]e|summary|get|read|explain|find|search|show|what|why|how|tell me|review)\b/.test(text)) return true;
+    return documentSearchQuery(text).split(/\s+/).filter(Boolean).length >= 2;
+  }
+
+  function zoteroUnavailableMessage() {
+    return 'I cannot search Zotero because the Zotero reader plugin is not enabled. Enable it in Settings > Plugins and keep Zotero Desktop running.';
+  }
+
+  function hasRegistryAction(registry, actionId) {
+    try {
+      return !!registry?.list?.({ includeHidden: true })?.some?.(item => item?.id === actionId && item.enabled !== false);
+    } catch (e) {
       return false;
     }
-    return /\b(open|show|go to|create|make|new|delete|rename|duplicate|tag|untag|label|mark|move|set|change|update|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|canvas|todos?|tasks?|plugin|backup|vault health|add|append|remind|reminder|link|wikilink|search|find)\b/.test(text);
+  }
+
+  function documentSearchQuery(q) {
+    return String(q || '')
+      .replace(/^(?:(?:ok(?:ay)?|alright|sure|yes|yeah|yep|now|then|so|cool|great|thanks|thank you)[\s.,:;!-]+)+/ig, ' ')
+      .replace(/\b(can you|could you|please)\b/ig, ' ')
+      .replace(/\b(tell me|what is|what are|give me|use zotero|go to zotero|from zotero|in zotero|search zotero|look up|lookup)\b/ig, ' ')
+      .replace(/\b(get|give me|make|create|write)\b\s+(?:a\s+)?\b(summari[sz]e|summary)\b/ig, ' ')
+      .replace(/\b(summari[sz]e|summary|explain|read|review|find|search|show|paper|article|document|publication|reference|citation|pdf)\b/ig, ' ')
+      .replace(/^(?:now|then|about|for|on)\s+/ig, ' ')
+      .replace(/\b(in|from|of|about|on|the|a|an)\b/ig, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function makeZoteroSearchPlan(query) {
+    const cleanQuery = documentSearchQuery(query) || String(query || '').trim();
+    return {
+      type: 'app-action-plan',
+      intent: 'zotero-document-search',
+      confidence: 'high',
+      source: 'document-router',
+      title: 'Search Zotero',
+      steps: [{ actionId: 'zotero-search', args: { query: cleanQuery, limit: 8 }, label: 'Search Zotero' }],
+      requiresConfirmation: false,
+      message: '',
+    };
+  }
+
+  function isLikelyAppOperation(q) {
+    const text = String(q || '').toLowerCase();
+    if (isLikelyDocumentQuestion(text)) return true;
+    if (isClearlyNoteQuestion(text) && !/\b(create|make|new|delete|rename|duplicate|tag|untag|label|mark|move|set|change|update|archive|restore|import|export|rebuild|backfill|refresh|open settings|go to settings|add|append|todo|task|remind|reminder|link|wikilink|search|find|read|zotero)\b/.test(text)) {
+      return false;
+    }
+    return /\b(open|show|go to|create|make|new|delete|rename|duplicate|tag|untag|label|mark|move|set|change|update|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|canvas|todos?|tasks?|plugin|backup|vault health|add|append|remind|reminder|link|wikilink|search|find|read|zotero|papers?|articles?|documents?|publications?|references?|pdfs?)\b/.test(text);
   }
 
   function isVagueCommand(q) {
@@ -113,6 +162,13 @@
     if (classified?.type === 'chat' || isCasualChat(text)) return { mode: 'chat', type: 'chat', activeLabel: 'Thinking...' };
     if (classified?.type === 'action' && classified?.action?.type === 'action-plan') {
       return { mode: 'app_action', type: 'legacy_action', action: classified.action, activeLabel: 'Starting task...' };
+    }
+
+    if (isLikelyDocumentQuestion(text)) {
+      if (hasRegistryAction(appRegistry, 'zotero-search')) {
+        return { mode: 'app_action', type: 'app_action', plan: makeZoteroSearchPlan(text), activeLabel: 'Searching Zotero...' };
+      }
+      return { mode: 'clarify', type: 'clarify', activeLabel: 'Zotero unavailable', message: zoteroUnavailableMessage() };
     }
 
     let appPlan = null;
@@ -408,6 +464,9 @@
     recordTrace,
     routeRequest,
     isClearlyNoteQuestion,
+    isLikelyDocumentQuestion,
+    zoteroUnavailableMessage,
+    documentSearchQuery,
     isLikelyAppOperation,
     isVagueCommand,
     parsePlannerJson,

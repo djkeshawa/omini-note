@@ -710,11 +710,11 @@ function MnAskAI({
 
   const initialAppPlan = (q) => {
     const text = String(q || '').trim();
-    if (isClearlyNoteQuestion(text) && !/\b(create|make|new|delete|rename|duplicate|tag|untag|archive|restore|import|export|rebuild|backfill|refresh|open settings|go to settings)\b/i.test(text)) {
+    if (isClearlyNoteQuestion(text) && !/\b(create|make|new|delete|rename|duplicate|tag|untag|archive|restore|import|export|rebuild|backfill|refresh|open settings|go to settings|zotero)\b/i.test(text)) {
       return null;
     }
     if (/^(what|who|when|where|why|how|which|summari[sz]e|explain|tell me)\b/i.test(text) &&
-        !/\b(create|make|new|open|show|go to|delete|rename|duplicate|tag|untag|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|canvas|todos?)\b/i.test(text)) {
+        !/\b(create|make|new|open|show|go to|delete|rename|duplicate|tag|untag|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|canvas|todos?|zotero)\b/i.test(text)) {
       return null;
     }
     if (!window.MN_APP_ACTIONS?.findForText) return null;
@@ -739,7 +739,10 @@ function MnAskAI({
     const functions = registry.describeForAi()
       .slice(0, 100);
     if (!functions.length) return fallbackPlan;
-    const isInspectionStep = (step) => ['search-notes', 'read-note'].includes(step?.actionId);
+    const isInspectionStep = (step) => {
+      const meta = registry.list?.({ includeHidden: true })?.find?.(item => item.id === step?.actionId);
+      return !!meta?.readOnly || ['search-notes', 'read-note'].includes(step?.actionId);
+    };
     const isPureInspectionRequest = (text) => {
       const lower = String(text || '').toLowerCase();
       return /\b(search|find|read|show|list)\b/.test(lower) &&
@@ -769,6 +772,10 @@ function MnAskAI({
           structuredContent: {
             results: result?.results || undefined,
             note: result?.note || undefined,
+            item: result?.item || undefined,
+            attachments: result?.attachments || undefined,
+            fullText: result?.fullText || undefined,
+            fullTextError: result?.fullTextError || undefined,
             affected: result?.affected || [],
           },
         });
@@ -830,6 +837,141 @@ function MnAskAI({
         return fallbackPlan;
       }
     }
+  };
+
+  const zoteroTools = () => (window.MN_APP_ACTIONS?.describeForAi?.() || [])
+    .filter(tool => /^zotero-/.test(tool.name));
+
+  const zoteroStatusMessage = (statusValue) => {
+    const error = String(statusValue?.error || '').trim();
+    if (/local api is not enabled/i.test(error)) {
+      return 'I cannot search Zotero because Zotero responded: Local API is not enabled. Enable Zotero local API/connector access, then try again.';
+    }
+    if (error) return `I cannot search Zotero: ${error}`;
+    return 'I cannot search Zotero because Zotero Desktop is not reachable at 127.0.0.1:23119.';
+  };
+
+  const zoteroTitleKey = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+  const zoteroLikelyMatch = (item, queryText) => {
+    const queryKey = zoteroTitleKey(queryText);
+    const titleKey = zoteroTitleKey(item?.title);
+    if (!queryKey || !titleKey) return false;
+    return titleKey.includes(queryKey) || queryKey.includes(titleKey);
+  };
+
+  const zoteroSummaryContext = (readResult, originalQuery) => {
+    const item = readResult?.item || {};
+    return [
+      `User request: ${originalQuery}`,
+      `Title: ${item.title || ''}`,
+      `Type: ${item.itemType || ''}`,
+      `Authors: ${item.creators || ''}`,
+      `Date: ${item.date || ''}`,
+      `Publication: ${item.publicationTitle || ''}`,
+      `DOI: ${item.doi || ''}`,
+      `URL: ${item.url || ''}`,
+      `Abstract: ${item.abstractNote || ''}`,
+      `Attachment full text available: ${readResult?.fullText ? 'yes' : 'no'}`,
+      readResult?.fullTextError ? `Full text note: ${readResult.fullTextError}` : '',
+      readResult?.fullText ? `Full text excerpt:\n${readResult.fullText}` : '',
+    ].filter(Boolean).join('\n\n');
+  };
+
+  const summarizeZoteroRead = async ({ readResult, query, jobId }) => {
+    if (!window.mn?.ai?.chat) {
+      const item = readResult?.item || {};
+      return [
+        `I found "${item.title || 'the Zotero item'}" in Zotero, but AI chat is unavailable for summarizing it.`,
+        item.abstractNote ? `Abstract: ${item.abstractNote}` : '',
+        readResult?.fullTextError ? readResult.fullTextError : '',
+      ].filter(Boolean).join('\n\n');
+    }
+    const context = zoteroSummaryContext(readResult, query);
+    const r = await window.mn.ai.chat({
+      jobId,
+      timeoutMs: MN_AI_CHAT_TIMEOUT_MS,
+      maxTokens: 900,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            'Summarize this Zotero paper for the user. Use only the Zotero metadata and full text excerpt below.',
+            'If full text is unavailable, say that and summarize the metadata/abstract only.',
+            'Keep the answer concise, with key idea, method, results, and limitations when available.',
+            '',
+            context,
+          ].join('\n'),
+        },
+      ],
+    });
+    if (!r.ok) throw new Error(r.error || 'Could not summarize Zotero item.');
+    if (r.value && !r.value.ok) throw new Error(r.value.error || 'Could not summarize Zotero item.');
+    return String(r.value?.answer || '').trim() || 'I found the Zotero item, but the model did not return a summary.';
+  };
+
+  const runZoteroDocumentRequest = async ({ q, actionQuery, jobId, run }) => {
+    const registry = window.MN_APP_ACTIONS;
+    if (!registry?.run || !registry?.validate) {
+      return { answer: 'I cannot search Zotero because app actions are not available.', sources: [], clarify: true };
+    }
+    if (!zoteroTools().length) {
+      return { answer: aiRuntime.zoteroUnavailableMessage?.() || 'I cannot search Zotero because the Zotero reader plugin is not enabled.', sources: [], clarify: true };
+    }
+    if (!window.mn?.zotero?.status) {
+      return { answer: 'I cannot search Zotero because this build does not expose the Zotero connector.', sources: [], clarify: true };
+    }
+    setActiveAction('Checking Zotero...');
+    const statusResult = await window.mn.zotero.status();
+    if (!statusResult.ok) return { answer: `I cannot check Zotero: ${statusResult.error || 'unknown error'}`, sources: [], clarify: true };
+    if (!statusResult.value?.reachable) {
+      return { answer: zoteroStatusMessage(statusResult.value), sources: [], clarify: true };
+    }
+
+    const cleanedQueries = [
+      aiRuntime.documentSearchQuery?.(actionQuery),
+      aiRuntime.documentSearchQuery?.(q),
+    ].map(value => String(value || '').trim()).filter((value, index, arr) => value && arr.indexOf(value) === index);
+    const queryCandidates = cleanedQueries.length ? cleanedQueries : [String(q || '').trim()].filter(Boolean);
+    let queryText = queryCandidates[0] || String(q || '').trim();
+    let searchResult = null;
+    for (const candidate of queryCandidates) {
+      setActiveAction('Searching Zotero...');
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: 'zotero-search', actionLabel: 'Search Zotero', args: { query: candidate, limit: 8 } });
+      const searchArgs = registry.validate('zotero-search', { query: candidate, limit: 8 });
+      const result = await registry.run('zotero-search', searchArgs, {});
+      if (result.ok === false) return { answer: result.message || 'Could not search Zotero.', sources: [], clarify: true };
+      const hasResults = Array.isArray(result.results) && result.results.length > 0;
+      searchResult = result;
+      queryText = candidate;
+      if (hasResults) break;
+    }
+    const rawResults = Array.isArray(searchResult?.results) ? searchResult.results : [];
+    const candidates = rawResults.filter(item => item?.key && item.itemType !== 'note' && item.itemType !== 'attachment' && !item.parentItem);
+    const results = candidates.length ? candidates : rawResults.filter(item => item?.key);
+    if (!results.length) {
+      return { answer: `I searched Zotero for "${queryText}" but found no matching paper.`, sources: [], clarify: true };
+    }
+    const exact = results.find(item => zoteroLikelyMatch(item, queryText));
+    if (!exact && results.length > 1) {
+      const choices = results.slice(0, 5).map((item, index) => `${index + 1}. ${item.title || item.key}${item.creators ? ` - ${item.creators}` : ''}${item.date ? ` (${item.date})` : ''}`).join('\n');
+      return { answer: `I found multiple Zotero matches for "${queryText}". Which one should I summarize?\n\n${choices}`, sources: [], clarify: true };
+    }
+    const item = exact || results[0];
+    aiRuntime.recordTrace?.(run, 'tool.done', { actionId: 'zotero-search', actionLabel: 'Search Zotero', affected: results.length });
+    setActiveAction('Reading Zotero item...');
+    aiRuntime.recordTrace?.(run, 'tool.run', { actionId: 'zotero-read', actionLabel: 'Read Zotero item', args: { itemKey: item.key, includeFullText: true } });
+    const readArgs = registry.validate('zotero-read', { itemKey: item.key, includeFullText: true });
+    const readResult = await registry.run('zotero-read', readArgs, {});
+    if (readResult.ok === false) return { answer: readResult.message || 'Could not read Zotero item.', sources: [], clarify: true };
+    aiRuntime.recordTrace?.(run, 'tool.done', { actionId: 'zotero-read', actionLabel: 'Read Zotero item', affected: 1 });
+    setActiveAction('Summarizing Zotero paper...');
+    const answer = await summarizeZoteroRead({ readResult, query: q, jobId });
+    return {
+      answer,
+      sources: [{ id: readResult.item?.key || item.key, title: readResult.item?.title || item.title || item.key, snippet: 'Zotero' }],
+      action: true,
+    };
   };
 
   const askEdit = async ({ text, instruction, scope, jobId }) => {
@@ -1374,6 +1516,13 @@ function MnAskAI({
         aiRuntime.recordTrace?.(run, 'run.clarify', { message: actionResult.answer });
       } else if (route.type === 'app_action' || route.type === 'app-action') {
         putAssistant({ text: '', streaming: true, action: true });
+        if (route.plan?.intent === 'zotero-document-search' || aiRuntime.isLikelyDocumentQuestion?.(actionQuery)) {
+          const actionResult = await runZoteroDocumentRequest({ q, actionQuery, jobId, run });
+          if (stoppedJobRef.current === jobId) return;
+          aiRuntime.recordTrace?.(run, actionResult.clarify ? 'run.clarify' : 'run.completed', { action: true });
+          putAssistant({ text: actionResult.answer, sources: actionResult.sources || [], action: true, clarify: !!actionResult.clarify, streaming: false, trace: run?.trace || [] });
+          return;
+        }
         const plan = shouldUseModelPlanner(route.plan, actionQuery)
           ? await planAppActionsWithModel(actionQuery, route.plan, jobId, run, priorMessages)
           : route.plan;
