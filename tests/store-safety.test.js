@@ -333,6 +333,39 @@ test('Store ignores symlinked JSON metadata and config files', async () => {
   });
 });
 
+test('Vault health resolves wiki links with anchors by note title', async () => {
+  await withIsolatedStore(async (store) => {
+    const vault = (await store.listVaults()).find(item => item.name === 'Personal');
+    const now = new Date().toISOString();
+    await store.saveNote(vault.id, {
+      id: 'n_anchor_target',
+      title: 'Reference Note',
+      date: now,
+      tags: [],
+      body: '# Reference Note\n\n## Section\nBody',
+    });
+    await store.saveNote(vault.id, {
+      id: 'n_anchor_source',
+      title: 'Source Note',
+      date: now,
+      tags: [],
+      body: [
+        'See [[Reference Note#Section]] and [[Reference Note#Section|section alias]].',
+        'Local heading links like [[#Local Section]] should not require a note.',
+        'Missing anchored links like [[Missing Note#Section]] should still be reported.',
+        '',
+        '## Local Section',
+      ].join('\n'),
+    });
+
+    const health = await store.vaultHealth(vault.id);
+    assert.deepEqual(
+      health.brokenLinks.filter(item => item.noteId === 'n_anchor_source'),
+      [{ noteId: 'n_anchor_source', noteTitle: 'Source Note', target: 'Missing Note' }]
+    );
+  });
+});
+
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
