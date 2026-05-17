@@ -79,6 +79,21 @@ test('index search clamps oversized limits from callers', async () => {
   });
 });
 
+test('index search normalizes non-string and oversized queries', async () => {
+  await withIsolatedIndex(async (idx) => {
+    idx.init();
+    idx.rescanVault('vault_a', [
+      { id: 'n1', title: 'Common note', date: '2026-01-01', tags: ['bulk'], body: 'common searchable body' },
+    ]);
+
+    assert.doesNotThrow(() => idx.search('vault_a', { bad: 'query' }, 10));
+    assert.deepEqual(idx.search('vault_a', { bad: 'query' }, 10), []);
+    assert.equal(idx.search('vault_a', 'common '.repeat(5000), 5).length, 1);
+    assert.equal(idx.searchDetailed('vault_a', 'common '.repeat(5000), 5).length, 1);
+    assert.equal(idx.lexicalContextSearch('vault_a', 'common '.repeat(5000), 5).length, 1);
+  });
+});
+
 test('chunkNote hard-caps long sentences', async () => {
   await withIsolatedIndex(async (idx) => {
     const longSentence = 'x'.repeat(1400);

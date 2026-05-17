@@ -513,6 +513,10 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.throws(() => ai.__test.sanitizeConfigPatch({ surprise: true }), /Unsupported AI config field/);
   assert.equal(ai.__test.sanitizeConfigPatch({ piiReduction: false }).piiReduction, false);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://localhost:11434/v1/' }), /HTTPS/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://[::ffff:127.0.0.1]/v1' }), /private hosts/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://127.0.0.1.nip.io/v1' }), /private hosts/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://app.192-168-1-10.sslip.io/v1' }), /private hosts/);
+  assert.equal(ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://api.example.com/v1' }).customBaseUrl, 'https://api.example.com/v1');
   assert.equal(
     ai.__test.publicConfig({ openaiApiKey: 'secret-key', provider: 'openai' }).openaiApiKey,
     'configured'

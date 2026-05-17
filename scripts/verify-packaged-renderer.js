@@ -1,4 +1,9 @@
-const fs = require('fs');
+let fs;
+try {
+  fs = require('original-fs');
+} catch {
+  fs = require('fs');
+}
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
@@ -14,21 +19,44 @@ function walk(dir, out = []) {
   return out;
 }
 
-function assertDevBundle() {
-  const file = path.join(ROOT, EXPECTED);
+function relative(root, file) {
+  return path.relative(root, file) || '.';
+}
+
+function assertDevBundle(root = ROOT) {
+  const file = path.join(root, EXPECTED);
   if (!fs.existsSync(file)) throw new Error(`Missing renderer bundle: ${EXPECTED}`);
   if (fs.statSync(file).size <= 0) throw new Error(`Renderer bundle is empty: ${EXPECTED}`);
   return fs.statSync(file).mtimeMs;
 }
 
-function assertPackagedBundle(devBundleMtimeMs) {
-  const unpackedApps = walk(path.join(ROOT, 'dist'))
-    .filter(file => file.endsWith(path.join('resources', 'app', EXPECTED)));
-  if (unpackedApps.length) return;
+function staleFiles(files, mtimeMs) {
+  return files.filter(file => fs.statSync(file).mtimeMs < mtimeMs);
+}
 
-  const asarFiles = walk(path.join(ROOT, 'dist'))
-    .filter(file => file.endsWith('app.asar'))
-    .filter(file => fs.statSync(file).mtimeMs >= devBundleMtimeMs);
+function assertPackagedBundle(devBundleMtimeMs, root = ROOT) {
+  const dist = path.join(root, 'dist');
+  const unpackedApps = walk(dist)
+    .filter(file => file.endsWith(path.join('resources', 'app', EXPECTED)));
+  const asarFiles = walk(dist)
+    .filter(file => file.endsWith('app.asar'));
+  if (!unpackedApps.length && !asarFiles.length) {
+    throw new Error('Missing packaged renderer bundle in dist; run a package build before verification');
+  }
+
+  const staleUnpacked = staleFiles(unpackedApps, devBundleMtimeMs);
+  if (staleUnpacked.length) {
+    throw new Error(`Stale packaged renderer bundle: ${staleUnpacked.map(file => relative(root, file)).join(', ')}`);
+  }
+  const emptyUnpacked = unpackedApps.filter(file => fs.statSync(file).size <= 0);
+  if (emptyUnpacked.length) {
+    throw new Error(`Empty packaged renderer bundle: ${emptyUnpacked.map(file => relative(root, file)).join(', ')}`);
+  }
+
+  const staleAsars = staleFiles(asarFiles, devBundleMtimeMs);
+  if (staleAsars.length) {
+    throw new Error(`Stale packaged app.asar: ${staleAsars.map(file => relative(root, file)).join(', ')}`);
+  }
   if (!asarFiles.length) return;
 
   let asar;
@@ -43,17 +71,16 @@ function assertPackagedBundle(devBundleMtimeMs) {
     return !entries.includes(expectedEntry);
   });
   if (missing.length) {
-    throw new Error(`Renderer bundle missing from packaged asar: ${missing.map(file => path.relative(ROOT, file)).join(', ')}`);
+    throw new Error(`Renderer bundle missing from packaged asar: ${missing.map(file => relative(root, file)).join(', ')}`);
   }
 }
 
-function packagedResourceRoots(devBundleMtimeMs) {
-  const dist = path.join(ROOT, 'dist');
+function packagedResourceRoots(root = ROOT) {
+  const dist = path.join(root, 'dist');
   const roots = [];
   const add = (platform, resources) => {
     const asarFile = path.join(resources, 'app.asar');
     if (!fs.existsSync(asarFile)) return;
-    if (fs.statSync(asarFile).mtimeMs < devBundleMtimeMs) return;
     roots.push({ platform, resources });
   };
 
@@ -63,7 +90,6 @@ function packagedResourceRoots(devBundleMtimeMs) {
   for (const file of walk(dist)) {
     const normalized = file.replace(/\\/g, '/');
     if (!normalized.endsWith('.app/Contents/Resources/app.asar')) continue;
-    if (fs.statSync(file).mtimeMs < devBundleMtimeMs) continue;
     roots.push({ platform: 'darwin', resources: path.dirname(file) });
   }
 
@@ -130,14 +156,26 @@ function assertSqliteVecNative(root) {
   }
 }
 
-function assertPackagedNativeModules(devBundleMtimeMs) {
-  for (const root of packagedResourceRoots(devBundleMtimeMs)) {
+function assertPackagedNativeModules() {
+  for (const root of packagedResourceRoots()) {
     assertBetterSqliteNative(root);
     assertSqliteVecNative(root);
   }
 }
 
-const devBundleMtimeMs = assertDevBundle();
-assertPackagedBundle(devBundleMtimeMs);
-assertPackagedNativeModules(devBundleMtimeMs);
-console.log(`Verified packaged renderer path: ${EXPECTED}`);
+function main() {
+  const devBundleMtimeMs = assertDevBundle();
+  assertPackagedBundle(devBundleMtimeMs);
+  assertPackagedNativeModules();
+  console.log(`Verified packaged renderer path: ${EXPECTED}`);
+}
+
+if (require.main === module) main();
+
+module.exports = {
+  EXPECTED,
+  assertDevBundle,
+  assertPackagedBundle,
+  packagedResourceRoots,
+  main,
+};
