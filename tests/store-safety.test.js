@@ -299,6 +299,54 @@ test('Vault loading and export ignore symlinked note and canvas files', async ()
   });
 });
 
+test('Trash, note version, and canvas restore paths reject symlinked files', async () => {
+  if (process.platform === 'win32') return;
+  await withIsolatedStore(async (store) => {
+    const vault = (await store.listVaults()).find(item => item.name === 'Personal');
+    const secretNotePath = path.join(store.ROOT, 'outside-note.md');
+    fs.writeFileSync(
+      secretNotePath,
+      '---\nid: n_secret\ntitle: Outside Secret\n---\n\nleaked secret body',
+      'utf8'
+    );
+
+    const trashNotesDir = path.join(store.ROOT, vault.slug, '.trash', 'notes');
+    fs.mkdirSync(trashNotesDir, { recursive: true });
+    fs.symlinkSync(secretNotePath, path.join(trashNotesDir, 'trash_link.md'));
+
+    const deletedNotes = await store.listDeletedNotes(vault.id);
+    assert.equal(JSON.stringify(deletedNotes).includes('Outside Secret'), false);
+    await assert.rejects(() => store.restoreDeletedNote(vault.id, 'trash_link'), /symlink/);
+
+    const versionsDir = path.join(store.ROOT, vault.slug, '.versions', 'notes', 'n_versioned');
+    fs.mkdirSync(versionsDir, { recursive: true });
+    fs.symlinkSync(secretNotePath, path.join(versionsDir, 'ver_link.md'));
+
+    const versions = await store.listNoteVersions(vault.id, 'n_versioned');
+    assert.equal(JSON.stringify(versions).includes('Outside Secret'), false);
+    await assert.rejects(() => store.restoreNoteVersion(vault.id, 'n_versioned', 'ver_link'), /symlink/);
+
+    const secretCanvasPath = path.join(store.ROOT, 'outside-canvas.json');
+    fs.writeFileSync(
+      secretCanvasPath,
+      JSON.stringify({ id: 'c_secret', title: 'Outside Canvas', elements: [{ type: 'text', text: 'secret' }] }),
+      'utf8'
+    );
+    const canvasesDir = path.join(store.ROOT, vault.slug, '.canvases');
+    fs.mkdirSync(canvasesDir, { recursive: true });
+    fs.symlinkSync(secretCanvasPath, path.join(canvasesDir, 'c_linked.json'));
+    await assert.rejects(() => store.deleteCanvas(vault.id, 'c_linked'), /symlink/);
+
+    const trashCanvasesDir = path.join(store.ROOT, vault.slug, '.trash', 'canvases');
+    fs.mkdirSync(trashCanvasesDir, { recursive: true });
+    fs.symlinkSync(secretCanvasPath, path.join(trashCanvasesDir, 'canvas_link.json'));
+
+    const deletedCanvases = await store.listDeletedCanvases(vault.id);
+    assert.equal(JSON.stringify(deletedCanvases).includes('Outside Canvas'), false);
+    await assert.rejects(() => store.restoreDeletedCanvas(vault.id, 'canvas_link'), /symlink/);
+  });
+});
+
 test('Store ignores symlinked JSON metadata and config files', async () => {
   if (process.platform === 'win32') return;
   await withIsolatedStore(async (store) => {
