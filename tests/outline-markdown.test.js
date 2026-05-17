@@ -52,3 +52,15 @@ test('Markdown round-trip preserves adjacent prose paragraphs', () => {
   assert.equal(roundTrip[0].content, 'The room fell quiet.');
   assert.equal(roundTrip[1].content, 'Mara counted the seconds before anyone spoke.');
 });
+
+test('Markdown table import preserves literal backslashes in cells', () => {
+  const outlineApi = loadOutlineForTest();
+  const blocks = outlineApi.mnMdToBlocks('| Path | Note |\n| --- | --- |\n| C:\\temp\\notes | keep |');
+
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].kind, 'table');
+  assert.deepEqual(tableOps.markdownTableToRows(blocks[0].content), [
+    ['Path', 'Note'],
+    ['C:\\temp\\notes', 'keep'],
+  ]);
+});

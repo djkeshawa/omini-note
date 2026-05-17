@@ -65,13 +65,16 @@
     if (text.endsWith('|')) text = text.slice(0, -1);
     const cells = [];
     let current = '';
-    let escaped = false;
-    for (const ch of text) {
-      if (escaped) {
-        current += ch;
-        escaped = false;
-      } else if (ch === '\\') {
-        escaped = true;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '\\') {
+        const next = text[i + 1];
+        if (next === '|' || next === '\\') {
+          current += next;
+          i++;
+        } else {
+          current += ch;
+        }
       } else if (ch === '|') {
         cells.push(cleanCell(current));
         current = '';

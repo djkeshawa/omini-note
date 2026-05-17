@@ -186,12 +186,12 @@ test('Table helpers reject oversized tables without throwing', () => {
 });
 
 test('Markdown table rows round-trip through table helpers', () => {
-  const markdown = '| Name | Notes |\n| --- | --- |\n| Ada | Pipes \\| stay |\n| Grace | Compiler |';
+  const markdown = '| Name | Notes |\n| --- | --- |\n| Ada | Pipes \\| stay |\n| Grace | C:\\temp\\notes |';
 
   assert.deepEqual(tableOps.markdownTableToRows(markdown), [
     ['Name', 'Notes'],
     ['Ada', 'Pipes | stay'],
-    ['Grace', 'Compiler'],
+    ['Grace', 'C:\\temp\\notes'],
   ]);
   assert.match(tableOps.markdownTableToHtml(markdown), /<table><thead><tr><th>Name<\/th><th>Notes<\/th><\/tr><\/thead>/);
 });
