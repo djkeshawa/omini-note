@@ -356,6 +356,31 @@ test('Vault registry ignores unsafe configured vault slugs', async () => {
   });
 });
 
+test('Vault registry repairs unsafe configured vault ids and forged paths', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    const forgedPath = path.join(store.ROOT, '..', 'forged-vault-path');
+    fs.writeFileSync(store.__test.CONFIG_FILE, JSON.stringify({
+      vaults: [{ id: '../bad', name: 'Tampered', slug: vault.slug, path: forgedPath }],
+      activeVaultId: '../bad',
+      tweaks: null,
+      aiConfig: null,
+    }), 'utf8');
+    store.__test.clearConfigCache();
+
+    const repaired = await store.listVaults();
+    assert.equal(repaired.length, 1);
+    assert.match(repaired[0].id, /^v_personal/);
+    assert.equal(repaired[0].path, path.join(store.ROOT, vault.slug));
+    assert.equal(repaired[0].path.includes('forged-vault-path'), false);
+    assert.equal((await store.loadConfig()).activeVaultId, repaired[0].id);
+
+    const loaded = await store.loadVault(repaired[0].id);
+    assert.equal(Array.isArray(loaded.notes), true);
+    await assert.rejects(() => store.loadVault('../bad'), /Invalid vault id/);
+  });
+});
+
 test('Trash, note version, and canvas restore paths reject symlinked files', async () => {
   if (process.platform === 'win32') return;
   await withIsolatedStore(async (store) => {
