@@ -514,6 +514,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /ai\.setConfig\(prefs\.aiConfig, \{ rejectUnknown: false \}\)/);
   assert.match(main, /saved AI config ignored/);
   assert.match(main, /idx\.init\(\)/);
+  assert.match(main, /function noteSearchIndexFailure\(context, error\)/);
+  assert.match(main, /function runOptionalSearchIndexTask\(context, fn\)[\s\S]*?noteSearchIndexFailure\(context, e\)/);
+  assert.match(main, /noteSearchIndexFailure\('rebuild vault index', e\)/);
   assert.match(main, /result\?\.config\?\.provider === 'ollama'/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: ai\.getConfig\(\) \}\)/);
   assert.match(main, /ipcMain\.handle\('mn:ai\.setConfig',\s+wrap\(async \(patch\) => \{/);

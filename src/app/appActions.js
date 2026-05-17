@@ -69,7 +69,7 @@
     const required = Array.isArray(schema.required) ? schema.required : [];
     const out = {};
     for (const key of required) {
-      if (args[key] === undefined || args[key] === null || args[key] === '') throw new Error(`Missing action argument: ${key}`);
+      if (args[key] === undefined || args[key] === null) throw new Error(`Missing action argument: ${key}`);
     }
     for (const [key, value] of Object.entries(args)) {
       if (!props[key]) {
@@ -81,6 +81,9 @@
     }
     for (const [key, propSchema] of Object.entries(props)) {
       if (out[key] === undefined && propSchema.default !== undefined) out[key] = propSchema.default;
+    }
+    for (const key of required) {
+      if (out[key] === undefined || out[key] === null || out[key] === '') throw new Error(`Missing action argument: ${key}`);
     }
     return out;
   }

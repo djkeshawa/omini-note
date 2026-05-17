@@ -27,6 +27,7 @@ test('App Action Registry validates schemas and blocks unknown actions', async (
   assert.equal(registry.list()[0].risk, 'safe');
   assert.throws(() => registry.validate('missing', {}), /Unknown app action/);
   assert.throws(() => registry.validate('create-note', { title: 'Draft', extra: true }), /Unsupported action argument/);
+  assert.throws(() => registry.validate('create-note', { title: '   ' }), /Missing action argument: title/);
   const result = await registry.run('create-note', { title: 'Long title value' });
   assert.equal(result.ok, true);
   assert.equal(created, 'Long title v');

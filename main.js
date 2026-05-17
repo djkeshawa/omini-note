@@ -746,7 +746,7 @@ function runOptionalSearchIndexTask(context, fn) {
   try {
     return fn();
   } catch (e) {
-    console.error(`[search-index] ${context} failed`, e);
+    noteSearchIndexFailure(context, e);
     return null;
   }
 }
@@ -1102,7 +1102,12 @@ ipcMain.handle('mn:rebuildIndex',   wrap(async (vaultId) => {
   return await withIndexVaultLock(vaultId, async () => {
     if (!searchIndexAvailable && !initializeSearchIndex()) assertSearchIndexAvailable();
     const vault = await store.loadVault(vaultId);
-    idx.rescanVault(vaultId, vault.notes || []);
+    try {
+      idx.rescanVault(vaultId, vault.notes || []);
+    } catch (e) {
+      noteSearchIndexFailure('rebuild vault index', e);
+      throw e;
+    }
     return { indexed: vault.notes?.length || 0 };
   });
 }));
