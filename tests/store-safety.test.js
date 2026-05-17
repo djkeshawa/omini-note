@@ -45,9 +45,11 @@ test('New vault creation never reuses stale vault folders', async () => {
       '---\nid: n_old\ntitle: Previous Novel\ntags: [novel-scene]\n---\n\nOld scene\n',
       'utf8'
     );
+    const seeded = await store.listVaults();
+    assert.equal(seeded.find(item => item.name === 'Novel')?.slug, 'novel-2');
 
     const vault = await store.createVault('Novel', { type: 'novelist' });
-    assert.equal(vault.slug, 'novel-2');
+    assert.equal(vault.slug, 'novel-3');
 
     const loaded = await store.loadVault(vault.id);
     assert.equal(loaded.novelistMode, true);
@@ -296,6 +298,61 @@ test('Vault loading and export ignore symlinked note and canvas files', async ()
 
     const backup = await store.exportBackup({ vaultId: vault.id });
     assert.equal(JSON.stringify(backup).includes('outside secret'), false);
+  });
+});
+
+test('Vault registry ignores symlinked vault folders', async () => {
+  if (process.platform === 'win32') return;
+  await withIsolatedStore(async (store) => {
+    const vaults = await store.listVaults();
+    const linkedVault = vaults.find(item => item.name === 'Personal');
+    assert.ok(linkedVault);
+
+    const outsideVault = path.join(store.ROOT, 'outside-vault');
+    fs.mkdirSync(outsideVault, { recursive: true });
+    fs.writeFileSync(
+      path.join(outsideVault, 'n_secret.md'),
+      '---\nid: n_secret\ntitle: Outside Secret\n---\n\nleaked secret body',
+      'utf8'
+    );
+
+    fs.rmSync(path.join(store.ROOT, linkedVault.slug), { recursive: true, force: true });
+    fs.symlinkSync(outsideVault, path.join(store.ROOT, linkedVault.slug), 'dir');
+    store.__test.clearConfigCache();
+
+    const repaired = await store.listVaults();
+    assert.equal(repaired.some(vault => vault.id === linkedVault.id), false);
+    assert.equal(JSON.stringify(repaired).includes('Outside Secret'), false);
+    await assert.rejects(() => store.loadVault(linkedVault.id), /Vault not found/);
+    assert.notEqual((await store.loadConfig()).activeVaultId, linkedVault.id);
+  });
+});
+
+test('Vault registry ignores unsafe configured vault slugs', async () => {
+  await withIsolatedStore(async (store) => {
+    const outsideVault = path.join(store.ROOT, '..', `outside-vault-${process.pid}-${Date.now()}`);
+    try {
+      fs.mkdirSync(outsideVault, { recursive: true });
+      fs.writeFileSync(
+        path.join(outsideVault, 'n_secret.md'),
+        '---\nid: n_secret\ntitle: Outside Secret\n---\n\nleaked secret body',
+        'utf8'
+      );
+      fs.writeFileSync(store.__test.CONFIG_FILE, JSON.stringify({
+        vaults: [{ id: 'v_bad', name: 'Bad', slug: `../${path.basename(outsideVault)}`, path: outsideVault }],
+        activeVaultId: 'v_bad',
+        tweaks: null,
+        aiConfig: null,
+      }), 'utf8');
+
+      const repaired = await store.listVaults();
+      assert.equal(repaired.some(vault => vault.id === 'v_bad'), false);
+      assert.equal(JSON.stringify(repaired).includes('Outside Secret'), false);
+      assert.equal((await store.loadConfig()).activeVaultId, repaired[0].id);
+      await assert.rejects(() => store.loadVault('v_bad'), /Vault not found/);
+    } finally {
+      fs.rmSync(outsideVault, { recursive: true, force: true });
+    }
   });
 });
 
