@@ -291,6 +291,41 @@ test('Hosted provider chat stream emits incremental restored tokens', async () =
   }
 });
 
+test('Hosted provider chat stream cancels open response body after done marker', async () => {
+  const ai = require('../lib/ai');
+  const originalConfig = ai.getConfig();
+  const originalFetch = global.fetch;
+  let cancelled = false;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Done"}}]}\n\n'));
+      controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  global.fetch = async () => ({ ok: true, body: stream });
+  ai.setConfig({
+    provider: 'openai',
+    openaiApiKey: 'test-key',
+    chatModel: 'test-model',
+    enabled: true,
+    piiReduction: false,
+  }, { rejectUnknown: false });
+  try {
+    const result = await ai.__test.providerChatStream(
+      [{ role: 'user', content: 'finish' }],
+      { onToken() {} }
+    );
+    assert.equal(result.text, 'Done');
+    assert.equal(cancelled, true);
+  } finally {
+    global.fetch = originalFetch;
+    ai.setConfig(originalConfig, { rejectUnknown: false });
+  }
+});
+
 test('Hosted provider tool planner sends native tool schemas and parses calls', async () => {
   const ai = require('../lib/ai');
   const originalConfig = ai.getConfig();
