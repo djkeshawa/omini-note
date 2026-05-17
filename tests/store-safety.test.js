@@ -525,6 +525,8 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /ai\.applyConfig\(config\)/);
   assert.match(main, /ipcMain\.handle\('mn:setTitle', wrapWithEvent/);
   assert.match(main, /function sanitizeExternalUrl\(rawUrl\)/);
+  assert.match(main, /function sanitizePluginIdForPrefs\(value, index\)/);
+  assert.match(main, /id: sanitizePluginIdForPrefs\(plugin\.id, index\)/);
   assert.match(main, /parsed\.protocol !== 'https:' && parsed\.protocol !== 'mailto:'/);
   assert.match(main, /Backup import file cannot be a symlink/);
   assert.match(main, /Backup export target cannot be a symlink/);
@@ -621,6 +623,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.throws(() => ai.__test.sanitizeConfigPatch({ surprise: true }), /Unsupported AI config field/);
   assert.equal(ai.__test.sanitizeConfigPatch({ piiReduction: false }).piiReduction, false);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'http://localhost:11434/v1/' }), /HTTPS/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://localhost./v1' }), /private hosts/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://localhost%2E/v1' }), /private hosts/);
+  assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://127.0.0.1./v1' }), /private hosts/);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://[::ffff:127.0.0.1]/v1' }), /private hosts/);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://127.0.0.1.nip.io/v1' }), /private hosts/);
   assert.throws(() => ai.__test.sanitizeConfigPatch({ customBaseUrl: 'https://app.192-168-1-10.sslip.io/v1' }), /private hosts/);
@@ -657,6 +662,8 @@ test('AI PII reduction masks hosted provider requests and restores local placeho
   assert.equal(ai.__test.reducePiiText('plain eyJshort.payload.text'), 'plain eyJshort.payload.text');
   assert.equal(ai.__test.isPrivateHost('::1'), true);
   assert.equal(ai.__test.isPrivateHost('fd00::1'), true);
+  assert.equal(ai.__test.isPrivateHost('localhost.'), true);
+  assert.equal(ai.__test.isPrivateHost('localhost%2E'), true);
   assert.equal(ai.__test.isPrivateHost('api.example.com'), false);
   assert.doesNotMatch(redacted, /jane\.doe@example\.com/);
   assert.equal(

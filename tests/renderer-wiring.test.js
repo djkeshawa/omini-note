@@ -794,6 +794,32 @@ test('URL plugins follow the external URL security policy and surface failures',
   assert.doesNotMatch(app, /must start with http:\/\/ or https:\/\//);
 });
 
+test('Plugin ids normalize to AI-safe action names', () => {
+  const pluginsSource = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
+  const appActions = require('../src/app/appActions.js');
+  const sandbox = { window: {} };
+  vm.runInNewContext(pluginsSource, sandbox);
+
+  const plugin = sandbox.window.MN_PLUGINS.normalize({
+    id: '../bad plugin:id',
+    name: 'Open docs',
+    purpose: 'Open documentation',
+    type: 'open-url',
+    config: { url: 'https://example.com' },
+  });
+  assert.equal(plugin.id, 'bad-plugin-id');
+  assert.match(plugin.id, /^[A-Za-z0-9_-]+$/);
+
+  const registry = appActions.createRegistry([{
+    id: `plugin-${plugin.id}`,
+    label: plugin.name,
+    description: plugin.purpose,
+    inputSchema: { type: 'object', additionalProperties: false },
+    run: () => ({}),
+  }]);
+  assert.deepEqual(registry.describeForAi().map(action => action.name), ['plugin-bad-plugin-id']);
+});
+
 test('Zotero reader is wired as a read-only AI app action', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const plugins = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');

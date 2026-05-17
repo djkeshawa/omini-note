@@ -61,12 +61,20 @@ function mnSafePluginText(value, fallback = '', limit = 4000) {
   return text.length > limit ? text.slice(0, limit) : text;
 }
 
+function mnSafePluginId(value) {
+  const clean = mnSafePluginText(value, '', 80)
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return clean || mnPluginId();
+}
+
 function mnNormalizePlugin(raw = {}) {
   const type = mnPluginType(raw.type).id;
   const meta = mnPluginType(type);
   const config = { ...meta.defaultConfig, ...(raw.config || {}) };
   return {
-    id: mnSafePluginText(raw.id, mnPluginId(), 80) || mnPluginId(),
+    id: mnSafePluginId(raw.id),
     name: mnSafePluginText(raw.name, meta.label, 80) || meta.label,
     purpose: mnSafePluginText(raw.purpose, meta.purpose, 180) || meta.purpose,
     type,

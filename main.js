@@ -143,6 +143,14 @@ function sanitizeWorkflowStatesForPrefs(value) {
   });
 }
 
+function sanitizePluginIdForPrefs(value, index) {
+  const clean = capString(value, `plugins[${index}].id`, 80)
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return clean || `plugin-${index + 1}`;
+}
+
 function sanitizePluginsForPrefs(value) {
   if (value == null) return null;
   if (!Array.isArray(value) || value.length > 30) throw new Error('Invalid plugins preference');
@@ -152,7 +160,7 @@ function sanitizePluginsForPrefs(value) {
     const type = capString(plugin.type, `plugins[${index}].type`, 40);
     if (!['note-template', 'quick-capture', 'open-url', 'zotero-reader'].includes(type)) throw new Error('Invalid plugin type');
     return {
-      id: capString(plugin.id, `plugins[${index}].id`, 80),
+      id: sanitizePluginIdForPrefs(plugin.id, index),
       name: capString(plugin.name, `plugins[${index}].name`, 80),
       purpose: capString(plugin.purpose, `plugins[${index}].purpose`, 180),
       type,
