@@ -299,6 +299,40 @@ test('Vault loading and export ignore symlinked note and canvas files', async ()
   });
 });
 
+test('Store ignores symlinked JSON metadata and config files', async () => {
+  if (process.platform === 'win32') return;
+  await withIsolatedStore(async (store) => {
+    const vault = (await store.listVaults()).find(item => item.name === 'Personal');
+    const externalMeta = path.join(store.ROOT, 'outside-meta.json');
+    fs.writeFileSync(externalMeta, JSON.stringify({
+      tags: [{ name: 'external-secret', hue: 33 }],
+      lastSelectedId: null,
+    }), 'utf8');
+    const metaPath = path.join(store.ROOT, vault.slug, '.meta.json');
+    fs.unlinkSync(metaPath);
+    fs.symlinkSync(externalMeta, metaPath);
+
+    const loaded = await store.loadVault(vault.id);
+    assert.equal(loaded.tags.some(tag => tag.name === 'external-secret'), false);
+    const brokenMetaName = fs.readdirSync(path.join(store.ROOT, vault.slug))
+      .find(name => name.startsWith('.meta.json.broken.'));
+    assert.ok(brokenMetaName);
+    assert.equal(fs.lstatSync(path.join(store.ROOT, vault.slug, brokenMetaName)).isSymbolicLink(), true);
+
+    const externalConfig = path.join(store.ROOT, 'outside-config.json');
+    fs.writeFileSync(externalConfig, JSON.stringify({ vaults: [] }), 'utf8');
+    fs.chmodSync(externalConfig, 0o644);
+    fs.unlinkSync(store.__test.CONFIG_FILE);
+    fs.symlinkSync(externalConfig, store.__test.CONFIG_FILE);
+    store.__test.clearConfigCache();
+
+    const cfg = await store.loadConfig();
+    assert.equal(fs.lstatSync(store.__test.CONFIG_FILE).isSymbolicLink(), false);
+    assert.equal(fs.statSync(externalConfig).mode & 0o777, 0o644);
+    assert.ok(cfg.vaults.length >= 1);
+  });
+});
+
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
