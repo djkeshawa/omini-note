@@ -403,6 +403,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const [spaceDown, setSpaceDown] = useStateC(false);
   const [marquee, setMarquee] = useStateC(null);
   const [historyVersion, setHistoryVersion] = useStateC(0);
+  const [toolbarMenuOpen, setToolbarMenuOpen] = useStateC(false);
   const draftRef = useRefC(canvas);
   const actionRef = useRefC(null);
   const clipboardRef = useRefC([]);
@@ -410,6 +411,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const redoRef = useRefC([]);
   const svgRef = useRefC(null);
   const rootRef = useRefC(null);
+  const toolbarMenuRef = useRefC(null);
   const selectedIdsRef = useRefC([]);
   const handlersRef = useRefC({});
 
@@ -430,6 +432,22 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   }, [selectedIds]);
 
   useEffectC(() => {
+    if (!toolbarMenuOpen) return undefined;
+    const onPointerDown = (e) => {
+      if (!toolbarMenuRef.current?.contains?.(e.target)) setToolbarMenuOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setToolbarMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [toolbarMenuOpen]);
+
+  useEffectC(() => {
     draftRef.current = canvas;
     setDraft(canvas);
     setSelectedIds([]);
@@ -438,6 +456,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     setDeleteDialogOpen(false);
     setEditingTextId(null);
     setMarquee(null);
+    setToolbarMenuOpen(false);
     undoRef.current = [];
     redoRef.current = [];
     setHistoryVersion(v => v + 1);
@@ -950,6 +969,11 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
   const activeStrokeWidth = selectedElement?.strokeWidth || style.strokeWidth;
   const editingOrigin = editingElement ? canvasPointToScreen({ x: editingElement.x || 0, y: editingElement.y || 0 }) : null;
   const showSelectionUi = tool === 'select';
+  const runToolbarMenuCommand = async (command) => {
+    await command?.();
+    setToolbarMenuOpen(false);
+    rootRef.current?.focus?.();
+  };
 
   return (
     <div
@@ -1028,67 +1052,81 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
           <div style={{ flex: 1 }} />
           <MnCanvasActionButton icon="canvas-trash" label="Delete canvas" onClick={() => setDeleteDialogOpen(true)} T={T} tone="danger" />
         </div>
-        <div style={{
-          minHeight: 48,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '7px 18px 10px',
-          overflowX: 'auto',
-        }}>
-          <div style={mnCanvasToolbarGroup(T)}>
-            {MN_CANVAS_TOOLS.map(item => (
-              <MnCanvasToolButton
-                key={item.id}
-                tool={item}
-                active={tool === item.id}
-                onClick={() => setTool(item.id)}
-                T={T}
-              />
-            ))}
+        <div style={mnCanvasToolbarShelf()}>
+          <div style={mnCanvasToolbarRow()}>
+            <div style={mnCanvasToolbarGroup(T)}>
+              {MN_CANVAS_TOOLS.map(item => (
+                <MnCanvasToolButton
+                  key={item.id}
+                  tool={item}
+                  active={tool === item.id}
+                  onClick={() => setTool(item.id)}
+                  T={T}
+                />
+              ))}
+            </div>
+            <div style={mnCanvasToolbarGroup(T)}>
+              <MnCanvasColorControl label="Stroke" value={activeStroke} onChange={(v) => applyColor('stroke', v)} T={T} />
+              <MnCanvasColorControl label="Fill" value={activeFill === 'transparent' ? '#ffffff' : activeFill} onChange={(v) => applyColor('fill', v)} T={T} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
+                Width
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={activeStrokeWidth}
+                  onChange={(e) => applyStrokeWidth(e.target.value)}
+                  style={{ width: 74, accentColor: T.accent }}
+                />
+              </label>
+            </div>
+            <div style={mnCanvasToolbarGroup(T)}>
+              <MnCanvasActionButton icon="undo" label="Undo" onClick={undoCanvas} disabled={!canUndo} T={T} />
+              <MnCanvasActionButton icon="redo" label="Redo" onClick={redoCanvas} disabled={!canRedo} T={T} />
+              <MnCanvasDivider T={T} />
+              <MnCanvasActionButton icon="zoom-out" label="Zoom out" onClick={() => setZoom((viewport.scale || 1) - 0.15)} T={T} />
+              <span style={{ minWidth: 42, textAlign: 'center', fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+                {Math.round((viewport.scale || 1) * 100)}%
+              </span>
+              <MnCanvasActionButton icon="zoom-in" label="Zoom in" onClick={() => setZoom((viewport.scale || 1) + 0.15)} T={T} />
+              <MnCanvasActionButton icon="fit" label="Fit to screen" onClick={fitToScreen} disabled={!(draft.elements || []).length} T={T} />
+            </div>
           </div>
-          <div style={mnCanvasToolbarGroup(T)}>
-            <MnCanvasColorControl label="Stroke" value={activeStroke} onChange={(v) => applyColor('stroke', v)} T={T} />
-            <MnCanvasColorControl label="Fill" value={activeFill === 'transparent' ? '#ffffff' : activeFill} onChange={(v) => applyColor('fill', v)} T={T} />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
-              Width
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={activeStrokeWidth}
-                onChange={(e) => applyStrokeWidth(e.target.value)}
-                style={{ width: 74, accentColor: T.accent }}
-              />
-            </label>
-          </div>
-          <div style={mnCanvasToolbarGroup(T)}>
-            <MnCanvasActionButton icon="undo" label="Undo" onClick={undoCanvas} disabled={!canUndo} T={T} />
-            <MnCanvasActionButton icon="redo" label="Redo" onClick={redoCanvas} disabled={!canRedo} T={T} />
-            <MnCanvasDivider T={T} />
-            <MnCanvasActionButton icon="zoom-out" label="Zoom out" onClick={() => setZoom((viewport.scale || 1) - 0.15)} T={T} />
-            <span style={{ minWidth: 42, textAlign: 'center', fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
-              {Math.round((viewport.scale || 1) * 100)}%
-            </span>
-            <MnCanvasActionButton icon="zoom-in" label="Zoom in" onClick={() => setZoom((viewport.scale || 1) + 0.15)} T={T} />
-            <MnCanvasActionButton icon="fit" label="Fit to screen" onClick={fitToScreen} disabled={!(draft.elements || []).length} T={T} />
-          </div>
-          <div style={mnCanvasToolbarGroup(T)}>
-            <MnCanvasActionButton icon="align-left" label="Align left" onClick={() => alignSelected('left')} disabled={selectedIds.length < 2} T={T} />
-            <MnCanvasActionButton icon="align-center" label="Align center" onClick={() => alignSelected('center-x')} disabled={selectedIds.length < 2} T={T} />
-            <MnCanvasActionButton icon="align-right" label="Align right" onClick={() => alignSelected('right')} disabled={selectedIds.length < 2} T={T} />
-            <MnCanvasActionButton icon="align-top" label="Align top" onClick={() => alignSelected('top')} disabled={selectedIds.length < 2} T={T} />
-            <MnCanvasActionButton icon="align-middle" label="Align middle" onClick={() => alignSelected('center-y')} disabled={selectedIds.length < 2} T={T} />
-            <MnCanvasActionButton icon="align-bottom" label="Align bottom" onClick={() => alignSelected('bottom')} disabled={selectedIds.length < 2} T={T} />
-            <MnCanvasDivider T={T} />
-            <MnCanvasActionButton icon="distribute-x" label="Distribute horizontally" onClick={() => distributeSelected('x')} disabled={selectedIds.length < 3} T={T} />
-            <MnCanvasActionButton icon="distribute-y" label="Distribute vertically" onClick={() => distributeSelected('y')} disabled={selectedIds.length < 3} T={T} />
-          </div>
-          <div style={mnCanvasToolbarGroup(T)}>
-            <MnCanvasActionButton icon="cut" label="Cut" onClick={() => selectedIds.length && copyElements(currentSelectionIds(), true)} disabled={!selectedIds.length} T={T} />
-            <MnCanvasActionButton icon="copy" label="Copy" onClick={() => copyElements()} disabled={!selectedIds.length} T={T} />
-            <MnCanvasActionButton icon="paste" label="Paste" onClick={pasteElements} T={T} />
-            <MnCanvasActionButton icon="trash" label="Delete" onClick={() => removeElements(currentSelectionIds())} disabled={!selectedIds.length} T={T} tone="danger" />
+          <div ref={toolbarMenuRef} style={mnCanvasToolbarMoreSlot()}>
+            <MnCanvasActionButton
+              icon="more"
+              label="More canvas tools"
+              onClick={() => setToolbarMenuOpen(value => !value)}
+              expanded={toolbarMenuOpen}
+              hasPopup
+              T={T}
+            />
+            {toolbarMenuOpen && (
+              <div role="menu" aria-label="More canvas tools" style={mnCanvasMoreMenu(T)}>
+                <div style={mnCanvasMoreMenuSection(T)}>
+                  <div style={mnCanvasMoreMenuLabel(T)}>Arrange</div>
+                  <div style={mnCanvasMoreMenuGrid()}>
+                    <MnCanvasActionButton icon="align-left" label="Align left" onClick={() => runToolbarMenuCommand(() => alignSelected('left'))} disabled={selectedIds.length < 2} T={T} />
+                    <MnCanvasActionButton icon="align-center" label="Align center" onClick={() => runToolbarMenuCommand(() => alignSelected('center-x'))} disabled={selectedIds.length < 2} T={T} />
+                    <MnCanvasActionButton icon="align-right" label="Align right" onClick={() => runToolbarMenuCommand(() => alignSelected('right'))} disabled={selectedIds.length < 2} T={T} />
+                    <MnCanvasActionButton icon="align-top" label="Align top" onClick={() => runToolbarMenuCommand(() => alignSelected('top'))} disabled={selectedIds.length < 2} T={T} />
+                    <MnCanvasActionButton icon="align-middle" label="Align middle" onClick={() => runToolbarMenuCommand(() => alignSelected('center-y'))} disabled={selectedIds.length < 2} T={T} />
+                    <MnCanvasActionButton icon="align-bottom" label="Align bottom" onClick={() => runToolbarMenuCommand(() => alignSelected('bottom'))} disabled={selectedIds.length < 2} T={T} />
+                    <MnCanvasActionButton icon="distribute-x" label="Distribute horizontally" onClick={() => runToolbarMenuCommand(() => distributeSelected('x'))} disabled={selectedIds.length < 3} T={T} />
+                    <MnCanvasActionButton icon="distribute-y" label="Distribute vertically" onClick={() => runToolbarMenuCommand(() => distributeSelected('y'))} disabled={selectedIds.length < 3} T={T} />
+                  </div>
+                </div>
+                <div style={{ ...mnCanvasMoreMenuSection(T), paddingBottom: 0, borderBottom: 'none' }}>
+                  <div style={mnCanvasMoreMenuLabel(T)}>Clipboard</div>
+                  <div style={mnCanvasMoreMenuGrid()}>
+                    <MnCanvasActionButton icon="cut" label="Cut" onClick={() => runToolbarMenuCommand(() => selectedIds.length && copyElements(currentSelectionIds(), true))} disabled={!selectedIds.length} T={T} />
+                    <MnCanvasActionButton icon="copy" label="Copy" onClick={() => runToolbarMenuCommand(() => copyElements())} disabled={!selectedIds.length} T={T} />
+                    <MnCanvasActionButton icon="paste" label="Paste" onClick={() => runToolbarMenuCommand(() => pasteElements())} T={T} />
+                    <MnCanvasActionButton icon="trash" label="Delete" onClick={() => runToolbarMenuCommand(() => removeElements(currentSelectionIds()))} disabled={!selectedIds.length} T={T} tone="danger" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1292,15 +1330,20 @@ function MnCanvasToolButton({ tool, active, onClick, T }) {
   );
 }
 
-function MnCanvasActionButton({ icon, label, onClick, disabled = false, T, tone = 'default' }) {
+function MnCanvasActionButton({ icon, label, onClick, disabled = false, T, tone = 'default', expanded, hasPopup = false }) {
+  const isExpandedToggle = typeof expanded === 'boolean';
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={label}
       aria-label={label}
+      aria-expanded={isExpandedToggle ? expanded : undefined}
+      aria-haspopup={hasPopup ? 'menu' : undefined}
       style={{
         ...mnCanvasIconToolButton(T),
+        background: isExpandedToggle && expanded ? T.selBg : T.bg,
+        borderColor: isExpandedToggle && expanded ? T.accent : T.lineSub,
         color: disabled ? T.inkDim : tone === 'danger' ? T.danger : T.inkMed,
         opacity: disabled ? 0.45 : 1,
         cursor: disabled ? 'default' : 'pointer',
@@ -1329,6 +1372,7 @@ function MnCanvasActionIcon({ id }) {
   if (id === 'copy') return <svg {...common}><rect x="5" y="5" width="8" height="8" rx="1.4"/><path d="M3 10.5V3H10.5" strokeLinecap="round" strokeLinejoin="round"/></svg>;
   if (id === 'paste') return <svg {...common}><path d="M6 3H10L10.7 4.5H12.5V13H3.5V4.5H5.3L6 3Z" strokeLinejoin="round"/><path d="M6 7.2H10M6 10H9" strokeLinecap="round"/></svg>;
   if (id === 'trash' || id === 'canvas-trash') return <svg {...common}><path d="M3 4.5H13M6 4.5V3C6 2.5 6.5 2 7 2H9C9.5 2 10 2.5 10 3V4.5M5 4.5V13C5 13.5 5.5 14 6 14H10C10.5 14 11 13.5 11 13V4.5" strokeLinecap="round"/></svg>;
+  if (id === 'more') return <svg {...common}><circle cx="4.5" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="11.5" cy="8" r="1"/></svg>;
   return null;
 }
 
@@ -1874,6 +1918,80 @@ function mnCanvasToolbarGroup(T) {
     borderRadius: 8,
     background: `color-mix(in oklab, ${T.bg} 78%, ${T.bgSub})`,
     flexShrink: 0,
+  };
+}
+
+function mnCanvasToolbarShelf() {
+  return {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: '7px 18px 10px',
+    overflow: 'visible',
+  };
+}
+
+function mnCanvasToolbarRow() {
+  return {
+    minHeight: 40,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    flex: '0 1 auto',
+    minWidth: 0,
+  };
+}
+
+function mnCanvasToolbarMoreSlot() {
+  return {
+    position: 'relative',
+    display: 'inline-flex',
+    flex: '0 0 auto',
+  };
+}
+
+function mnCanvasMoreMenu(T) {
+  return {
+    position: 'absolute',
+    top: 38,
+    right: 0,
+    zIndex: 30,
+    width: 238,
+    display: 'grid',
+    gap: 8,
+    padding: 10,
+    border: `1px solid ${T.lineSub}`,
+    borderRadius: 8,
+    background: T.bg,
+    boxShadow: '0 16px 38px rgba(15, 23, 42, 0.16)',
+  };
+}
+
+function mnCanvasMoreMenuSection(T) {
+  return {
+    display: 'grid',
+    gap: 6,
+    paddingBottom: 8,
+    borderBottom: `1px solid ${T.lineSub}`,
+  };
+}
+
+function mnCanvasMoreMenuLabel(T) {
+  return {
+    fontFamily: 'var(--mn-mono)',
+    fontSize: 10,
+    color: T.inkDim,
+    textTransform: 'uppercase',
+    letterSpacing: 0,
+  };
+}
+
+function mnCanvasMoreMenuGrid() {
+  return {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 31px)',
+    gap: 6,
   };
 }
 

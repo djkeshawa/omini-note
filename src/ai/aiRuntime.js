@@ -90,7 +90,7 @@
     if (!text) return false;
     const hasDocumentNoun = /\bzotero\b/.test(text) || /\b(papers?|articles?|documents?|publications?|references?|citations?|pdfs?|stud(?:y|ies))\b/.test(text);
     if (!hasDocumentNoun) return false;
-    if (/\b(summari[sz]e|summary|get|read|explain|find|search|show|what|why|how|tell me|review)\b/.test(text)) return true;
+    if (/\b(summari[sz]e|summari[sz]ing|summary|get|read|explain|find|search|show|check|create|make|write|what|why|how|tell me|review)\b/.test(text)) return true;
     return documentSearchQuery(text).split(/\s+/).filter(Boolean).length >= 2;
   }
 
@@ -109,10 +109,13 @@
   function documentSearchQuery(q) {
     return String(q || '')
       .replace(/^(?:(?:ok(?:ay)?|alright|sure|yes|yeah|yep|now|then|so|cool|great|thanks|thank you)[\s.,:;!-]+)+/ig, ' ')
+      .replace(/\b(check|use|read|search|find|look up|lookup)\s+zotero\s+(?:and\s+)?/ig, ' ')
+      .replace(/\b(?:and\s+)?(?:create|make|write|add)\s+(?:a\s+)?(?:new\s+)?(?:note|page)\s+(?:summari[sz]ing|about|for|from|on)?\b/ig, ' ')
       .replace(/\b(can you|could you|please)\b/ig, ' ')
       .replace(/\b(tell me|what is|what are|give me|use zotero|go to zotero|from zotero|in zotero|search zotero|look up|lookup)\b/ig, ' ')
       .replace(/\b(get|give me|make|create|write)\b\s+(?:a\s+)?\b(summari[sz]e|summary)\b/ig, ' ')
-      .replace(/\b(summari[sz]e|summary|explain|read|review|find|search|show|paper|article|document|publication|reference|citation|pdf)\b/ig, ' ')
+      .replace(/\b(new|note|page)\b/ig, ' ')
+      .replace(/\b(summari[sz]e|summary|explain|read|review|find|search|show|zotero|papp?ers?|articles?|documents?|publications?|references?|citations?|pdfs?)\b/ig, ' ')
       .replace(/^(?:now|then|about|for|on)\s+/ig, ' ')
       .replace(/\b(in|from|of|about|on|the|a|an)\b/ig, ' ')
       .replace(/\s+/g, ' ')

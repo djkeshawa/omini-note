@@ -226,7 +226,11 @@ function mnBuildAskThreadPrompt(priorMessages = [], currentQuery = '') {
 
 function mnRecentAskThreadNote(priorMessages = []) {
   for (const message of [...(priorMessages || [])].reverse()) {
-    const source = (message.sources || []).find(item => item?.id && item?.title);
+    const source = (message.sources || []).find(item => {
+      if (!item?.id || !item?.title) return false;
+      if (item.type && item.type !== 'note') return false;
+      return String(item.snippet || '').trim().toLowerCase() !== 'zotero';
+    });
     if (source) {
       return {
         id: source.id,
@@ -297,6 +301,22 @@ function mnAiShouldShareCurrentContext(query = '') {
   return /\b(this|current|open|selected|active)\s+(page|note|document)\b/.test(text)
     || /\b(format|rewrite|improve|summari[sz]e|fix|link|edit|update)\s+(it|this|that)\b/.test(text)
     || /\b(it|this|that)\s+(page|note|document)\b/.test(text);
+}
+
+function mnWantsZoteroAssistedNoteEdit(query = '') {
+  const text = String(query || '').toLowerCase();
+  const wantsEdit = /\b(add|append|include|insert|expand|improve|update|enhance|rewrite|fill|detail|details)\b/.test(text);
+  const mentionsTarget = /\b(note|page|section|sections|details|current|this|my)\b/.test(text);
+  const mentionsDocument = /\b(zotero|papers?|articles?|documents?|references?|pdfs?)\b/.test(text);
+  return wantsEdit && mentionsTarget && mentionsDocument;
+}
+
+function mnWantsZoteroSummaryNote(query = '') {
+  const text = String(query || '').toLowerCase();
+  return /\b(create|make|write|add)\b/.test(text) &&
+    /\b(new\s+)?(note|page)\b/.test(text) &&
+    /\b(summari[sz]e|summari[sz]ing|summary)\b/.test(text) &&
+    /\b(zotero|papers?|articles?|documents?|references?|pdfs?)\b/.test(text);
 }
 
 function mnAiCurrentContextMessage(currentNote) {
@@ -950,6 +970,20 @@ function MnAskAI({
     ].filter(Boolean).join('\n\n');
   };
 
+  const zoteroEditInstruction = (readResult, originalQuery) => {
+    const context = zoteroSummaryContext(readResult, originalQuery).slice(0, 3200);
+    return [
+      'Improve the current VispNote page using the Zotero paper context below.',
+      'Add relevant details under existing sections where they fit. Preserve existing headings, markdown, wiki-links, tags, tasks, and user-written facts.',
+      'Use only facts supported by the Zotero metadata, abstract, or full text excerpt. If full text is unavailable, rely only on metadata and abstract.',
+      '',
+      `User request: ${originalQuery}`,
+      '',
+      'Zotero context:',
+      context,
+    ].join('\n');
+  };
+
   const summarizeZoteroRead = async ({ readResult, query, jobId }) => {
     if (!window.mn?.ai?.chat) {
       const item = readResult?.item || {};
@@ -1037,11 +1071,45 @@ function MnAskAI({
     const readResult = await registry.run('zotero-read', readArgs, {});
     if (readResult.ok === false) return { answer: readResult.message || 'Could not read Zotero item.', sources: [], clarify: true };
     aiRuntime.recordTrace?.(run, 'tool.done', { actionId: 'zotero-read', actionLabel: 'Read Zotero item', affected: 1 });
+    if (mnWantsZoteroAssistedNoteEdit(q)) {
+      if (!currentNote || !onApplyCurrentPageBody) {
+        return {
+          answer: 'I read the Zotero paper, but no current page is open for me to improve.',
+          sources: [{ type: 'zotero', id: readResult.item?.key || item.key, title: readResult.item?.title || item.title || item.key, snippet: 'Zotero' }],
+          clarify: true,
+        };
+      }
+      return makeVirtualWriteReview('edit-current-page', { instruction: zoteroEditInstruction(readResult, q) }, q);
+    }
     setActiveAction('Summarizing Zotero paper...');
     const answer = await summarizeZoteroRead({ readResult, query: q, jobId });
+    if (mnWantsZoteroSummaryNote(q)) {
+      if (!onCreateNote) {
+        return {
+          answer: 'I summarized the Zotero paper, but page creation is not available here.',
+          sources: [{ type: 'zotero', id: readResult.item?.key || item.key, title: readResult.item?.title || item.title || item.key, snippet: 'Zotero' }],
+          clarify: true,
+        };
+      }
+      const title = `${readResult.item?.title || item.title || 'Zotero paper'} summary`;
+      const body = [
+        `# ${title}`,
+        '',
+        answer,
+      ].join('\n');
+      const id = onCreateNote({ title, body, tags: ['reading'], open: false });
+      return {
+        answer: `Created page "${title}" from the Zotero paper.`,
+        sources: [
+          id ? { type: 'note', id, title, snippet: body.slice(0, 200) } : null,
+          { type: 'zotero', id: readResult.item?.key || item.key, title: readResult.item?.title || item.title || item.key, snippet: 'Zotero' },
+        ].filter(Boolean),
+        action: true,
+      };
+    }
     return {
       answer,
-      sources: [{ id: readResult.item?.key || item.key, title: readResult.item?.title || item.title || item.key, snippet: 'Zotero' }],
+      sources: [{ type: 'zotero', id: readResult.item?.key || item.key, title: readResult.item?.title || item.title || item.key, snippet: 'Zotero' }],
       action: true,
     };
   };
@@ -1307,6 +1375,7 @@ function MnAskAI({
       final: {
         answer: result.message || result.title || `${step.label} completed.`,
         sources: (result.affected || []).filter(item => item?.id).map(item => ({
+          type: item.type || '',
           id: item.id,
           title: item.title || item.id,
           snippet: item.type || 'App action',
@@ -1482,7 +1551,7 @@ function MnAskAI({
       completed.push(result.message || result.title || step.actionId);
       (result.affected || []).forEach(item => {
         if (item?.id && !sources.some(source => source.id === item.id)) {
-          sources.push({ id: item.id, title: item.title || item.id, snippet: item.type || 'App action' });
+          sources.push({ type: item.type || '', id: item.id, title: item.title || item.id, snippet: item.type || 'App action' });
         }
       });
     }
@@ -1520,7 +1589,7 @@ function MnAskAI({
         if (result.ok === false) throw new Error(result.message || 'App action failed');
         completed.push(result.message || result.title || step.actionId);
         (result.affected || []).forEach(item => {
-          if (item?.id && !sources.some(source => source.id === item.id)) sources.push({ id: item.id, title: item.title || item.id, snippet: item.type || 'App action' });
+          if (item?.id && !sources.some(source => source.id === item.id)) sources.push({ type: item.type || '', id: item.id, title: item.title || item.id, snippet: item.type || 'App action' });
         });
       }
       updateSession(prev => ({
@@ -1713,7 +1782,8 @@ function MnAskAI({
       });
     };
     try {
-      const skipLlmFirst = (route.type === 'legacy_action' || route.type === 'action') && !!route.action;
+      const skipLlmFirst = ((route.type === 'legacy_action' || route.type === 'action') && !!route.action) ||
+        route.plan?.intent === 'zotero-document-search';
       const orchestrated = skipLlmFirst ? null : await runLlmOrchestrator({ q, actionQuery, priorMessages, jobId, run });
       if (orchestrated) {
         if (stoppedJobRef.current === jobId) return;

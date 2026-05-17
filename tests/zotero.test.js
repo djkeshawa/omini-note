@@ -149,4 +149,6 @@ test('Zotero validates search text and item keys', async () => {
   assert.equal(zotero.__test.cleanLimit(999), 20);
   assert.equal(zotero.__test.localApiUrl('/users/0/items', { q: 'x' }), 'http://127.0.0.1:23119/api/users/0/items?q=x');
   assert.ok(zotero.__test.titleMatchScore({ title: 'Recursive Language Models' }, 'tell me about recursive language model paper') >= 250);
+  assert.ok(zotero.__test.titleMatchScore({ title: 'Recursive Language Models' }, 'RLM') >= 900);
+  assert.ok(zotero.__test.titleMatchScore({ title: 'Recursive Language Models' }, 'zotero RLM papper') >= 900);
 });

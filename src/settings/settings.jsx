@@ -445,7 +445,7 @@ function SectionPlugins({ tweaks, setTweak, T }) {
         )}
         {draft.type === 'zotero-reader' && (
           <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12.5, color: T.inkMed, lineHeight: 1.5, marginBottom: 10 }}>
-            This plugin lets AI search and read Zotero Desktop documents through the local Zotero API.
+            This plugin lets AI search and read Zotero Desktop documents through the local Zotero API. In Ask AI, include "Zotero" or "paper" in the request, for example: "summarize the Recursive Language Models paper from Zotero" or "use the Zotero paper to improve this note."
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
@@ -485,7 +485,7 @@ function SectionPlugins({ tweaks, setTweak, T }) {
                   )}
                   {plugin.type === 'zotero-reader' && (
                     <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12.5, color: T.inkMed, lineHeight: 1.5 }}>
-                      Uses Zotero Desktop at 127.0.0.1:23119. Keep Zotero open while asking AI to search documents.
+                      Uses Zotero Desktop at 127.0.0.1:23119. Keep Zotero open. In Ask AI, include "Zotero" or "paper", for example: "summarize the Recursive Language Models paper from Zotero" or "use the Zotero paper to improve this note."
                     </div>
                   )}
                 </div>

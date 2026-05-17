@@ -539,7 +539,8 @@ function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: `0 8px 20px color-mix(in oklab, ${T.ink} 8%, transparent)`,
+          outline: 'none',
+          boxShadow: open ? `0 8px 20px color-mix(in oklab, ${T.ink} 8%, transparent)` : 'none',
         }}>
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
           <path d="M4.2 7.2C4.2 4.8 5.6 3.2 8 3.2C10.4 3.2 11.8 4.8 11.8 7.2V9.8L13 11H3L4.2 9.8V7.2Z" strokeLinejoin="round"/>

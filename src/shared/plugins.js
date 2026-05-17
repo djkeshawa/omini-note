@@ -38,7 +38,7 @@ const MN_PLUGIN_TYPES = [
   {
     id: 'zotero-reader',
     label: 'Zotero reader',
-    purpose: 'Search and read Zotero Desktop documents through the local Zotero API.',
+    purpose: 'Let Ask AI search and read Zotero papers through the local Zotero API.',
     defaultConfig: {
       title: '',
       body: '',

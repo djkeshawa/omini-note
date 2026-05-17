@@ -150,6 +150,8 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   assert.match(app, /mnCollectReminderItems\(notesWithBody\)/);
   assert.match(app, /reminderDueCount/);
   assert.match(appShell, /Reminder notifications/);
+  assert.match(appShell, /boxShadow: open \? `0 8px 20px/);
+  assert.match(appShell, /: 'none'/);
   assert.match(app, /setReminderCenterOpen\(false\)/);
   assert.match(appShell, /const visibleItems = items/);
   assert.doesNotMatch(appShell, /items\.slice\(0, 12\)/);
@@ -270,7 +272,8 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /openrouter: 'OpenRouter'/);
   assert.match(ai, /\$\{providerLabel\} ready/);
   assert.match(ai, /Enter to ask · Shift\+Enter for newline/);
-  assert.match(ai, /const skipLlmFirst = \(route\.type === 'legacy_action' \|\| route\.type === 'action'\) && !!route\.action/);
+  assert.match(ai, /const skipLlmFirst = \(\(route\.type === 'legacy_action' \|\| route\.type === 'action'\) && !!route\.action\) \|\|/);
+  assert.match(ai, /route\.plan\?\.intent === 'zotero-document-search'/);
   assert.match(ai, /const \[openSources, setOpenSources\]/);
   assert.match(ai, /name: 'edit-supporting-notes'/);
   assert.match(ai, /action\.type === 'edit-supporting-notes'/);
@@ -802,7 +805,10 @@ test('Zotero reader is wired as a read-only AI app action', () => {
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 
   assert.match(plugins, /id: 'zotero-reader'/);
+  assert.match(plugins, /Let Ask AI search and read Zotero papers/);
   assert.match(settings, /draft\.type === 'zotero-reader'/);
+  assert.match(settings, /include "Zotero" or "paper"/);
+  assert.match(settings, /use the Zotero paper to improve this note/);
   assert.match(app, /const zoteroReaderEnabled = plugins\.some/);
   assert.match(app, /id: 'zotero-search'/);
   assert.match(app, /id: 'zotero-read'/);
@@ -813,6 +819,8 @@ test('Zotero reader is wired as a read-only AI app action', () => {
   assert.match(ai, /const cleanedQueries = \[/);
   assert.match(ai, /Zotero responded: Local API is not enabled/);
   assert.match(ai, /summarizeZoteroRead/);
+  assert.match(ai, /function mnWantsZoteroSummaryNote/);
+  assert.match(ai, /Created page "\$\{title\}" from the Zotero paper/);
   assert.match(app, /aiHidden: true/);
   assert.match(appActions, /filter\(action => !action\.aiHidden\)/);
   assert.match(runtime, /zotero/);
