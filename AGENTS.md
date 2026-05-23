@@ -30,6 +30,12 @@ Run `npm run lint` before committing when touching source files.
 
 Do not let source files grow into large catch-all modules. When changing a broad area, extract cohesive logic into focused files or subfolders, following boundaries such as `src/editor/`, `src/ai/`, `src/app/`, and `lib/`. Keep UI components, state helpers, IPC adapters, and pure logic separate where practical. Add tests for moved behavior.
 
+## Agent Memory Workflow
+
+Use the LLM Memory MCP as durable project memory during coding work. Before editing or investigating a non-trivial change, recall relevant memories for the task and likely files. During or after meaningful work, record concise operational memories with `repo_id` `my_notes` when they would help future agents: actions taken, design decisions, new findings, issues and root causes, how fixes were implemented, fragile areas, feature implementation details, verification notes, and follow-up warnings.
+
+Keep memories durable and safe. Do not store credentials, API keys, Zotero secrets, personal vault data, private note contents, `.env` values, generated package contents, or verbose transcripts. Prefer short summaries tied to files, commands, decisions, and risks that future coding agents can act on.
+
 ## Testing Guidelines
 
 Tests use Node’s built-in `node:test` and assertion modules. Name test files with `*.test.js` under `tests/`. Add focused tests near changed behavior, and add Electron regression scenarios for user-facing editor, AI, or navigation workflows. Run `npm run test:editor`, then `npm run test:all`.

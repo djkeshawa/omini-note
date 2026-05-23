@@ -586,6 +586,13 @@ function sanitizeZoteroSearchPayload(payload = {}) {
   };
 }
 
+function sanitizeZoteroListPayload(payload = {}) {
+  if (!isPlainObject(payload)) throw new Error('Invalid Zotero list request');
+  return {
+    limit: Math.max(1, Math.min(20, Math.trunc(Number(payload.limit) || 20))),
+  };
+}
+
 function sanitizeZoteroReadPayload(payload = {}) {
   if (!isPlainObject(payload)) throw new Error('Invalid Zotero read request');
   const itemKey = capString(payload.itemKey || payload.key, 'itemKey', 80);
@@ -1167,6 +1174,7 @@ ipcMain.handle('mn:importNovelFiles', wrap(importNovelFilesFromIpc));
 // Zotero Desktop local API
 ipcMain.handle('mn:zotero.status',  wrap(() => zotero.status()));
 ipcMain.handle('mn:zotero.search',  wrap((payload) => zotero.search(sanitizeZoteroSearchPayload(payload))));
+ipcMain.handle('mn:zotero.list',    wrap((payload) => zotero.list(sanitizeZoteroListPayload(payload))));
 ipcMain.handle('mn:zotero.read',    wrap((payload) => zotero.read(sanitizeZoteroReadPayload(payload))));
 
 // AI (Ollama)

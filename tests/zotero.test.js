@@ -100,6 +100,23 @@ test('Zotero search falls back to local title ranking when API query has no hits
   });
 });
 
+test('Zotero list returns recent top-level document items without a query', async () => {
+  const calls = [];
+  await withMockFetch((url) => {
+    calls.push(new URL(url));
+    return jsonResponse([
+      { key: 'NOTE1', data: { key: 'NOTE1', itemType: 'note', parentItem: 'PARENT1', note: 'child note' } },
+      { key: 'ATTACH1', data: { key: 'ATTACH1', itemType: 'attachment', parentItem: 'PARENT1', title: 'PDF' } },
+      { key: 'PARENT1', data: { key: 'PARENT1', itemType: 'preprint', title: 'Recursive Language Models', date: '2025' } },
+    ]);
+  }, async () => {
+    const result = await zotero.list({ limit: 10 });
+    assert.equal(calls[0].searchParams.has('q'), false);
+    assert.equal(calls[0].searchParams.get('sort'), 'dateModified');
+    assert.deepEqual(result.results.map(item => item.key), ['PARENT1']);
+  });
+});
+
 test('Zotero read includes attachment full text when available', async () => {
   await withMockFetch((url) => {
     const parsed = new URL(url);

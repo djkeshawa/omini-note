@@ -90,8 +90,17 @@
     if (!text) return false;
     const hasDocumentNoun = /\bzotero\b/.test(text) || /\b(papers?|articles?|documents?|publications?|references?|citations?|pdfs?|stud(?:y|ies))\b/.test(text);
     if (!hasDocumentNoun) return false;
+    if (isZoteroListRequest(text)) return true;
     if (/\b(summari[sz]e|summari[sz]ing|summary|get|read|explain|find|search|show|check|create|make|write|what|why|how|tell me|review)\b/.test(text)) return true;
     return documentSearchQuery(text).split(/\s+/).filter(Boolean).length >= 2;
+  }
+
+  function isZoteroListRequest(q) {
+    const text = String(q || '').toLowerCase();
+    if (!/\bzotero\b/.test(text)) return false;
+    if (/\b(summari[sz]e|summary|explain|read|review|create|make|write|use|improve)\b/.test(text)) return false;
+    return /\b(list|list down|show|display|what|which)\b/.test(text)
+      && /\b(papers?|articles?|documents?|publications?|references?|citations?|pdfs?|items?|library)\b/.test(text);
   }
 
   function zoteroUnavailableMessage() {
@@ -123,6 +132,18 @@
   }
 
   function makeZoteroSearchPlan(query) {
+    if (isZoteroListRequest(query)) {
+      return {
+        type: 'app-action-plan',
+        intent: 'zotero-document-list',
+        confidence: 'high',
+        source: 'document-router',
+        title: 'List Zotero papers',
+        steps: [{ actionId: 'zotero-list', args: { limit: 20 }, label: 'List Zotero papers' }],
+        requiresConfirmation: false,
+        message: '',
+      };
+    }
     const cleanQuery = documentSearchQuery(query) || String(query || '').trim();
     return {
       type: 'app-action-plan',
@@ -171,6 +192,9 @@
     }
 
     if (isLikelyDocumentQuestion(text)) {
+      if (isZoteroListRequest(text) && hasRegistryAction(appRegistry, 'zotero-list')) {
+        return { mode: 'app_action', type: 'app_action', plan: makeZoteroSearchPlan(text), activeLabel: 'Listing Zotero papers...' };
+      }
       if (hasRegistryAction(appRegistry, 'zotero-search')) {
         return { mode: 'app_action', type: 'app_action', plan: makeZoteroSearchPlan(text), activeLabel: 'Searching Zotero...' };
       }
@@ -471,6 +495,7 @@
     routeRequest,
     isClearlyNoteQuestion,
     isLikelyDocumentQuestion,
+    isZoteroListRequest,
     zoteroUnavailableMessage,
     documentSearchQuery,
     isLikelyAppOperation,

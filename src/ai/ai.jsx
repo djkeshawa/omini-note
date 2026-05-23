@@ -1016,6 +1016,18 @@ function MnAskAI({
     return String(r.value?.answer || '').trim() || 'I found the Zotero item, but the model did not return a summary.';
   };
 
+  const formatZoteroList = (items = []) => {
+    const rows = (Array.isArray(items) ? items : [])
+      .filter(item => item?.key)
+      .slice(0, 20);
+    if (!rows.length) return 'I checked Zotero, but no papers were found.';
+    const lines = rows.map((item, index) => {
+      const meta = [item.creators, item.date].filter(Boolean).join(', ');
+      return `${index + 1}. ${item.title || item.key}${meta ? ` - ${meta}` : ''}`;
+    });
+    return `I found ${rows.length} Zotero paper${rows.length === 1 ? '' : 's'}:\n\n${lines.join('\n')}`;
+  };
+
   const runZoteroDocumentRequest = async ({ q, actionQuery, jobId, run }) => {
     const registry = window.MN_APP_ACTIONS;
     if (!registry?.run || !registry?.validate) {
@@ -1032,6 +1044,21 @@ function MnAskAI({
     if (!statusResult.ok) return { answer: `I cannot check Zotero: ${statusResult.error || 'unknown error'}`, sources: [], clarify: true };
     if (!statusResult.value?.reachable) {
       return { answer: zoteroStatusMessage(statusResult.value), sources: [], clarify: true };
+    }
+
+    if (aiRuntime.isZoteroListRequest?.(actionQuery) || aiRuntime.isZoteroListRequest?.(q)) {
+      setActiveAction('Listing Zotero papers...');
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: 'zotero-list', actionLabel: 'List Zotero papers', args: { limit: 20 } });
+      const listArgs = registry.validate('zotero-list', { limit: 20 });
+      const listResult = await registry.run('zotero-list', listArgs, {});
+      if (listResult.ok === false) return { answer: listResult.message || 'Could not list Zotero papers.', sources: [], clarify: true };
+      const results = Array.isArray(listResult.results) ? listResult.results : [];
+      aiRuntime.recordTrace?.(run, 'tool.done', { actionId: 'zotero-list', actionLabel: 'List Zotero papers', affected: results.length });
+      return {
+        answer: formatZoteroList(results),
+        sources: results.map(item => ({ type: 'zotero', id: item.key, title: item.title || item.key, snippet: 'Zotero' })),
+        action: true,
+      };
     }
 
     const cleanedQueries = [

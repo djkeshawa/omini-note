@@ -121,6 +121,7 @@ contextBridge.exposeInMainWorld('mn', {
   zotero: {
     status: () => ipcRenderer.invoke('mn:zotero.status'),
     search: (payload) => ipcRenderer.invoke('mn:zotero.search', payload),
+    list: (payload) => ipcRenderer.invoke('mn:zotero.list', payload),
     read: (payload) => ipcRenderer.invoke('mn:zotero.read', payload),
   },
 

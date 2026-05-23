@@ -252,6 +252,7 @@ function MnCalendarPanel({
 
   const ItemCard = ({ item, compact = false }) => {
     const overdue = item.remindAt?.at && item.remindAt.at < new Date();
+    const label = item.label || item.text || 'Reminder';
     return (
       <div
         onClick={() => setActiveKey(item.key)}
@@ -265,14 +266,45 @@ function MnCalendarPanel({
           minWidth: 0,
         }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
-          <span style={{
-            color: item.isReminderOnly ? T.warn : overdue ? T.danger : T.accent,
-            flexShrink: 0,
-            marginTop: 2,
-            display: 'inline-flex',
-          }}>
-            {mnCalendarIcon(item.isReminderOnly ? 'bell' : 'todo', T)}
-          </span>
+          {item.isReminderOnly ? (
+            <span style={{
+              color: T.warn,
+              flexShrink: 0,
+              marginTop: 2,
+              display: 'inline-flex',
+            }}>
+              {mnCalendarIcon('bell', T)}
+            </span>
+          ) : (
+            <button
+              type="button"
+              aria-label={`${item.checked ? 'Reopen' : 'Complete'} ${label}`}
+              title={item.checked ? 'Reopen todo' : 'Complete todo'}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleCheck?.(item);
+              }}
+              style={{
+                width: 15,
+                height: 15,
+                marginTop: 2,
+                flexShrink: 0,
+                border: `1.5px solid ${item.checked ? T.accent : T.line}`,
+                background: item.checked ? T.accent : 'transparent',
+                borderRadius: 4,
+                cursor: 'pointer',
+                padding: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+              {item.checked && (
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                  <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </button>
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
               fontFamily: 'var(--mn-body)',
@@ -283,7 +315,7 @@ function MnCalendarPanel({
               whiteSpace: compact ? 'nowrap' : 'normal',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-            }}>{item.label || item.text || 'Reminder'}</div>
+            }}>{label}</div>
             {!compact && (
               <div style={{
                 marginTop: 5,

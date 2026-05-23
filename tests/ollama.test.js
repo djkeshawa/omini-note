@@ -207,6 +207,43 @@ test('Chat returns setup guidance instead of failing when Ollama is unavailable'
   }
 });
 
+test('Chat uses the resolved Ollama model tag from status', async () => {
+  const ai = require('../lib/ai');
+  const originalFetch = global.fetch;
+  let chatModel = '';
+  global.fetch = async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname === '/api/tags') {
+      return {
+        ok: true,
+        async json() {
+          return { models: [{ name: 'gemma3:4b' }] };
+        },
+      };
+    }
+    if (parsed.pathname === '/api/chat') {
+      const body = JSON.parse(init.body || '{}');
+      chatModel = body.model;
+      return {
+        ok: true,
+        async json() {
+          return { message: { content: 'resolved model ok' } };
+        },
+      };
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  };
+  ai.setConfig({ provider: 'ollama', chatModel: 'gemma3', enabled: true }, { rejectUnknown: false });
+  try {
+    const result = await ai.chat({ text: 'write a short summary' });
+    assert.equal(result.ok, true);
+    assert.equal(result.answer, 'resolved model ok');
+    assert.equal(chatModel, 'gemma3:4b');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('Simple greetings are answered locally without waiting for the model', async () => {
   const ai = require('../lib/ai');
   const originalFetch = global.fetch;

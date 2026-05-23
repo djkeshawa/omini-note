@@ -696,6 +696,8 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(calendarPanel, /Add item on/);
   assert.match(calendarPanel, />\+ New<\/button>/);
   assert.match(calendarPanel, /onUpdateItem/);
+  assert.match(calendarPanel, /aria-label=\{`\$\{item\.checked \? 'Reopen' : 'Complete'\} \$\{label\}`\}/);
+  assert.match(todosPanel, /aria-label=\{`\$\{it\.checked \? 'Reopen' : 'Complete'\}/);
   assert.match(calendarPanel, /onSnoozeItem/);
   assert.doesNotMatch(appShell, /function MnAppTopToolbar/);
   assert.match(editor, /onOpenCalendar/);

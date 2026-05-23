@@ -696,6 +696,9 @@ async function runCalendarPlannerScenario(win) {
     const visible = await evaluate(win, `document.body.textContent.includes('QE agenda dated todo')`);
     return { ok: visible, visible };
   });
+
+  await clickButton(win, { aria: 'Complete QE agenda dated todo' });
+  await waitForPersistedNote(win, title, note => /- \[x\] QE agenda dated todo @remind \d{4}-\d{2}-\d{2}/.test(String(note.body || '')));
 }
 
 async function runCanvasCreateScenario(win) {

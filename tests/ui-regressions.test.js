@@ -110,6 +110,8 @@ test('Renderer regression covers user-centered app workflows', () => {
   assert.match(regression, /runScenario\(win, 'Navigation', 'sidebar opens agenda planner and graph panels'/);
   assert.match(regression, /runScenario\(win, 'Agenda', 'agenda creates dated reminders and todos'/);
   assert.match(regression, /QE agenda dated todo @remind \\d\{4\}-\\d\{2\}-\\d\{2\}/);
+  assert.match(regression, /Complete QE agenda dated todo/);
+  assert.match(regression, /- \\\[x\\\] QE agenda dated todo/);
   assert.match(regression, /runScenario\(win, 'Canvas', 'create, draw, move, undo, and redo a canvas object'/);
   assert.match(regression, /mouseDrag\(win, start, end/);
   assert.match(regression, /waitForCanvasContent\(win, title, 'canvas undo restores rectangle position'/);

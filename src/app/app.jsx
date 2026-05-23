@@ -3009,6 +3009,29 @@ function MnApp() {
       },
       ...(zoteroReaderEnabled ? [
         {
+          id: 'zotero-list',
+          label: 'List Zotero papers',
+          description: 'List recent Zotero Desktop papers and references without searching for a title.',
+          section: 'Zotero',
+          keywords: 'zotero paper papers documents references bibliography library list show',
+          risk: 'safe',
+          kind: 'read',
+          readOnly: true,
+          inputSchema: objectSchema({ limit: integerArg(20) }),
+          outputSchema: { type: 'object', additionalProperties: true },
+          run: async (args) => {
+            if (!window.mn?.zotero?.list) return { ok: false, message: 'Zotero integration is unavailable.' };
+            const res = await window.mn.zotero.list({ limit: args.limit || 20 });
+            if (!res.ok) return { ok: false, message: res.error || 'Could not list Zotero papers.' };
+            const results = res.value?.results || [];
+            return {
+              message: results.length ? `Found ${results.length} Zotero item${results.length === 1 ? '' : 's'}.` : 'No Zotero papers were found.',
+              results,
+              affected: results.map(item => ({ type: 'zotero', id: item.key, title: item.title || item.key })),
+            };
+          },
+        },
+        {
           id: 'zotero-search',
           label: 'Search Zotero',
           description: 'Search Zotero Desktop documents by title, author, abstract, note, and indexed full text.',

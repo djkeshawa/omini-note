@@ -246,6 +246,16 @@ test('AI execution runtime routes safely and validates planner tool calls', () =
 
   const zoteroRegistry = appActions.createRegistry([
     {
+      id: 'zotero-list',
+      label: 'List Zotero papers',
+      inputSchema: {
+        type: 'object',
+        properties: { limit: { type: 'integer', default: 20 } },
+        additionalProperties: false,
+      },
+      run: () => ({}),
+    },
+    {
       id: 'zotero-search',
       label: 'Search Zotero',
       inputSchema: {
@@ -277,6 +287,12 @@ test('AI execution runtime routes safely and validates planner tool calls', () =
   assert.equal(typoPaperRoute.type, 'app_action');
   assert.equal(typoPaperRoute.plan.steps[0].actionId, 'zotero-search');
   assert.equal(typoPaperRoute.plan.steps[0].args.query, 'RLM');
+  const zoteroListRoute = aiRuntime.routeRequest({ query: 'list down the papers in zotero', appRegistry: zoteroRegistry });
+  assert.equal(zoteroListRoute.type, 'app_action');
+  assert.equal(zoteroListRoute.plan.intent, 'zotero-document-list');
+  assert.equal(zoteroListRoute.plan.steps[0].actionId, 'zotero-list');
+  assert.equal(aiRuntime.isZoteroListRequest('list down the papers in zotero'), true);
+  assert.equal(aiRuntime.isZoteroListRequest('summarize the RLM paper in zotero'), false);
   assert.equal(aiRuntime.documentSearchQuery('ok. now Recursive Language models'), 'Recursive Language models');
   assert.equal(aiRuntime.documentSearchQuery('tell me about Recursive Language Models paper from Zotero'), 'Recursive Language Models');
   assert.equal(aiRuntime.documentSearchQuery('check zotero and create new note summarizing the RLM paper'), 'RLM');
