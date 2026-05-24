@@ -95,6 +95,26 @@ function installAiFixture() {
   };
   ai.toolPlan = async ({ messages = [] } = {}) => {
     const text = (messages || []).map(message => String(message?.content || '')).join('\n').toLowerCase();
+    if (text.includes('format this page')) {
+      return {
+        ok: true,
+        answer: '',
+        toolCalls: [{
+          name: 'edit-current-page',
+          args: { instruction: 'Format this page.' },
+        }],
+      };
+    }
+    if (text.includes('improve all supporting notes')) {
+      return {
+        ok: true,
+        answer: '',
+        toolCalls: [{
+          name: 'edit-supporting-notes',
+          args: { instruction: 'Improve all supporting notes.' },
+        }],
+      };
+    }
     if (text.includes('qe source target')) {
       return {
         ok: true,

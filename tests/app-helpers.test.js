@@ -167,6 +167,12 @@ test('Ask AI action classifier routes app functions and high-risk prompts safely
   assert.deepEqual(aiActions.classifyPrompt('can you summarise all my notes'), {
     type: 'notes',
   });
+  assert.deepEqual(aiActions.classifyPrompt('describe yourself'), {
+    type: 'chat',
+  });
+  assert.deepEqual(aiActions.classifyPrompt('what are you'), {
+    type: 'chat',
+  });
   assert.deepEqual(aiActions.classifyPrompt('tag this for reading'), {
     type: 'action',
     action: { type: 'tag-current-note', tag: 'reading' },

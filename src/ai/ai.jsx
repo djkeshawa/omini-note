@@ -76,9 +76,11 @@ const MN_AI_VIRTUAL_TOOLS = [
   {
     name: 'answer-notes',
     title: 'Answer from notes',
-    description: 'Answer a question by searching and reading the active vault notes. Use when the user asks about their notes, pages, tasks, tags, decisions, dates, links, or vault content.',
+    description: 'Answer a specific question by searching and reading the active vault notes. Use for latest note, recent note, task, tag, decision, date, link, backlink, page, or note-content questions. Do not use for whole-vault summaries when summarize-vault is available.',
     risk: 'safe',
     readOnly: true,
+    kind: 'read',
+    examples: ['what is my latest note?', 'what changed most recently in this vault?', 'summarize open tasks from my notes', 'what decisions did I write down last week?'],
     inputSchema: {
       type: 'object',
       properties: {
@@ -86,6 +88,39 @@ const MN_AI_VIRTUAL_TOOLS = [
       },
       required: ['query'],
       additionalProperties: false,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        answer: { type: 'string' },
+        sources: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      },
+      additionalProperties: true,
+    },
+  },
+  {
+    name: 'summarize-vault',
+    title: 'Summarize vault',
+    description: 'Create a whole-vault summary across all notes using the active vault. Use only when the user explicitly asks to summarize, recap, or overview all notes, the whole vault, everything, or the entire notebook.',
+    risk: 'safe',
+    readOnly: true,
+    kind: 'read',
+    examples: ['summarize all my notes', 'give me an overview of the whole vault', 'recap everything in this notebook'],
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', maxLength: 2000 },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        answer: { type: 'string' },
+        sources: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      },
+      additionalProperties: true,
     },
   },
   {
@@ -362,12 +397,14 @@ function mnAiCleanVirtualToolArgs(name, args = {}) {
 
 function mnAiToolCallsFromPlanResult(result = {}) {
   const value = result?.value || result || {};
-  if (value.ok === false) return { answer: String(value.error || '').trim(), toolCalls: [] };
+  if (value.ok === false) return { answer: String(value.error || '').trim(), error: String(value.error || '').trim(), mode: 'error', toolCalls: [] };
   const toolCalls = Array.isArray(value.toolCalls) ? value.toolCalls
     : Array.isArray(value.calls) ? value.calls
       : [];
   return {
     answer: String(value.answer || '').trim(),
+    error: String(value.error || '').trim(),
+    mode: String(value.mode || '').trim(),
     toolCalls: toolCalls.map(call => ({
       name: String(call?.name || call?.tool || call?.function?.name || '').trim(),
       args: call?.args && typeof call.args === 'object'
@@ -476,17 +513,83 @@ function MnAiSetupNotice({ status, T }) {
   );
 }
 
-function mnAiInlineText(text, T) {
+function mnAiWikiLinkParts(label) {
+  const raw = String(label || '').trim();
+  const [targetPart, aliasPart] = raw.split('|');
+  const target = String(targetPart || '').trim();
+  const title = target.replace(/#[\s\S]*$/, '').trim();
+  const alias = String(aliasPart || '').trim();
+  return {
+    raw,
+    title,
+    display: alias || target || raw,
+  };
+}
+
+function mnAiHeadingKey(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[*_`#:[\]()]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+const MN_AI_GENERIC_SUMMARY_HEADINGS = new Set([
+  'notes summary',
+  'summary',
+  'summary of all notes',
+  'all notes summary',
+  'vault summary',
+]);
+
+function mnAiIsGenericSummaryHeading(text) {
+  return MN_AI_GENERIC_SUMMARY_HEADINGS.has(mnAiHeadingKey(text));
+}
+
+function mnNormalizeAiResponseBlocks(blocks = []) {
+  let leadingGenericHeadings = 0;
+  while (
+    blocks[leadingGenericHeadings]?.type === 'heading' &&
+    mnAiIsGenericSummaryHeading(blocks[leadingGenericHeadings]?.text)
+  ) {
+    leadingGenericHeadings++;
+  }
+  if (leadingGenericHeadings <= 1) return blocks;
+  return blocks.slice(leadingGenericHeadings - 1);
+}
+
+function mnAiInlineText(text, T, options = {}) {
   const source = String(text || '');
   const parts = [];
-  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
+  const re = /(\[\[[^\]]+\]\])|(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
   let last = 0;
   let match;
   let key = 0;
   while ((match = re.exec(source))) {
     if (match.index > last) parts.push(<span key={key++}>{source.slice(last, match.index)}</span>);
     const token = match[0];
-    if (token.startsWith('`')) {
+    if (token.startsWith('[[')) {
+      const link = mnAiWikiLinkParts(token.slice(2, -2));
+      const canOpen = !!options.onOpenWikiLink && !!link.title;
+      parts.push(
+        <a key={key++}
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            if (canOpen) options.onOpenWikiLink(link.title);
+          }}
+          style={{
+            color: T.accent,
+            cursor: canOpen ? 'pointer' : 'default',
+            borderBottom: `1px dotted ${T.accent}`,
+            padding: '0 1px',
+            textDecoration: 'none',
+            fontFamily: 'inherit',
+          }}>
+          {link.display}
+        </a>
+      );
+    } else if (token.startsWith('`')) {
       parts.push(
         <code key={key++} style={{
           fontFamily: 'var(--mn-mono)',
@@ -583,8 +686,19 @@ function mnParseAiResponseBlocks(text) {
   return blocks;
 }
 
-function MnAiFormattedResponse({ text, T }) {
-  const blocks = React.useMemo(() => mnParseAiResponseBlocks(text), [text]);
+function MnAiFormattedResponse({ text, T, allNotes = [], onOpenNote, onClose, embedded = false }) {
+  const blocks = React.useMemo(() => mnNormalizeAiResponseBlocks(mnParseAiResponseBlocks(text)), [text]);
+  const onOpenWikiLink = React.useCallback((title) => {
+    const cleanTitle = String(title || '').trim().toLowerCase();
+    if (!cleanTitle) return;
+    const note = (allNotes || []).find(item => String(item?.title || '').trim().toLowerCase() === cleanTitle);
+    const opened = note?.id ? onOpenNote?.(note.id) : false;
+    if (opened !== false && !embedded) onClose && onClose();
+  }, [allNotes, onOpenNote, onClose, embedded]);
+  const renderInline = React.useCallback(
+    value => mnAiInlineText(value, T, { onOpenWikiLink }),
+    [T, onOpenWikiLink]
+  );
   if (!blocks.length) return null;
   return (
     <div style={{
@@ -607,7 +721,7 @@ function MnAiFormattedResponse({ text, T }) {
               fontWeight: 750,
               lineHeight: 1.35,
               color: T.ink,
-            }}>{mnAiInlineText(block.text, T)}</div>
+            }}>{renderInline(block.text)}</div>
           );
         }
         if (block.type === 'ul' || block.type === 'ol') {
@@ -634,7 +748,7 @@ function MnAiFormattedResponse({ text, T }) {
                       fontSize: 11,
                       lineHeight: 1.6,
                     }}>{marker}</span>
-                    <span>{mnAiInlineText(textValue, T)}</span>
+                    <span>{renderInline(textValue)}</span>
                   </div>
                 );
               })}
@@ -650,7 +764,7 @@ function MnAiFormattedResponse({ text, T }) {
               background: T.bgSub,
               color: T.inkMed,
               borderRadius: 6,
-            }}>{mnAiInlineText(block.lines.join(' '), T)}</blockquote>
+            }}>{renderInline(block.lines.join(' '))}</blockquote>
           );
         }
         if (block.type === 'code') {
@@ -683,7 +797,7 @@ function MnAiFormattedResponse({ text, T }) {
             </div>
           );
         }
-        return <p key={index} style={{ margin: 0 }}>{mnAiInlineText(block.text, T)}</p>;
+        return <p key={index} style={{ margin: 0 }}>{renderInline(block.text)}</p>;
       })}
     </div>
   );
@@ -1320,22 +1434,54 @@ function MnAskAI({
     throw new Error(`Unsupported AI write tool: ${name}`);
   };
 
-  const buildOrchestratorMessages = (q, priorMessages = []) => {
+  const mnAiToolCatalogForPrompt = (tools = []) => (Array.isArray(tools) ? tools : [])
+    .map(tool => ({
+      name: tool.name,
+      title: tool.title,
+      description: tool.description,
+      section: tool.section,
+      kind: tool.kind,
+      risk: tool.risk,
+      readOnly: !!tool.readOnly,
+      input_schema: tool.inputSchema || tool.input_schema,
+      output_schema: tool.outputSchema || tool.output_schema,
+      requires: tool.requires || [],
+      examples: tool.examples || [],
+    }));
+
+  const buildOrchestratorMessages = (q, priorMessages = [], tools = []) => {
     const conversation = mnBuildAskThreadMessages(priorMessages, q, { limit: 8 });
     const context = mnAiShouldShareCurrentContext(q) ? mnAiCurrentContextMessage(currentNote) : '';
-    if (!context) return conversation;
+    const toolContext = {
+      type: 'vispnote_tool_planning_input',
+      request: String(q || '').trim(),
+      instruction: 'Choose the best registered VispNote API. Use answer-notes for specific vault, note, task, tag, decision, link, backlink, recent-change, latest-note, or latest-update questions. Use summarize-vault only for explicit whole-vault summaries. Plugin APIs are exposed as plugin-* tools.',
+      available_apis: mnAiToolCatalogForPrompt(tools),
+    };
+    const messages = [
+      {
+        role: 'assistant',
+        content: `Structured VispNote API context:\n${JSON.stringify(toolContext, null, 2).slice(0, 12000)}`,
+      },
+      ...conversation,
+    ];
+    if (!context) return messages;
     return [
       { role: 'user', content: context },
-      ...conversation,
+      ...messages,
     ];
   };
 
   const orchestratorTools = () => {
     const registryTools = window.MN_APP_ACTIONS?.describeForAi?.() || [];
-    const tools = [...MN_AI_VIRTUAL_TOOLS, ...registryTools].slice(0, 100);
-    return currentNote
+    const pluginTools = registryTools.filter(tool => /^plugin-/.test(tool.name || '')).slice(0, 20);
+    const regularTools = registryTools.filter(tool => !/^plugin-/.test(tool.name || ''));
+    const regularLimit = Math.max(0, 100 - MN_AI_VIRTUAL_TOOLS.length - pluginTools.length);
+    const tools = [...MN_AI_VIRTUAL_TOOLS, ...regularTools.slice(0, regularLimit), ...pluginTools];
+    const available = currentNote
       ? tools
       : tools.filter(tool => tool.name !== 'edit-current-page');
+    return available.slice(0, 100);
   };
 
   const executeOrchestratorTool = async ({ call, q, jobId, run }) => {
@@ -1345,10 +1491,16 @@ function MnAskAI({
       setActiveAction('Researching notes...');
       aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Answer from notes', args });
       const prompt = String(args.query || q || '').trim();
-      const result = /\b(summari[sz]e|summary|overview|recap)\b/i.test(prompt) && /\b(all|my|entire|whole|vault|everything)\b/i.test(prompt)
-        ? await askVaultSummary({ prompt, jobId })
-        : await askNotes({ prompt, jobId });
+      const result = await askNotes({ prompt, jobId });
       aiRuntime.recordTrace?.(run, 'tool.done', { actionId: name, actionLabel: 'Answer from notes', affected: result.sources?.length || 0 });
+      return { final: { answer: result.answer, sources: result.sources || [] } };
+    }
+    if (name === 'summarize-vault') {
+      setActiveAction('Summarizing notes in batches...');
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Summarize vault', args });
+      const prompt = String(args.query || q || '').trim();
+      const result = await askVaultSummary({ prompt, jobId });
+      aiRuntime.recordTrace?.(run, 'tool.done', { actionId: name, actionLabel: 'Summarize vault', affected: result.sources?.length || 0 });
       return { final: { answer: result.answer, sources: result.sources || [] } };
     }
     if (name === 'edit-current-page') {
@@ -1416,7 +1568,7 @@ function MnAskAI({
     if (!window.mn?.ai?.toolPlan) return null;
     const tools = orchestratorTools();
     if (!tools.length) return null;
-    const toolMessages = buildOrchestratorMessages(actionQuery, priorMessages);
+    const toolMessages = buildOrchestratorMessages(actionQuery, priorMessages, tools);
     for (let round = 0; round < 4; round++) {
       setActiveAction(round === 0 ? 'Understanding request...' : 'Using tool results...');
       aiRuntime.recordTrace?.(run, 'planner.request', { tools: tools.length, round: round + 1, llmFirst: true });
@@ -1427,10 +1579,22 @@ function MnAskAI({
         tools,
         messages: toolMessages,
       });
-      if (!response.ok || (response.value && response.value.ok === false)) return null;
+      if (!response.ok || (response.value && response.value.ok === false)) {
+        const error = response.error || response.value?.error || 'The model could not choose an API for this request.';
+        aiRuntime.recordTrace?.(run, 'planner.failed', { error });
+        return { answer: error, sources: [], clarify: true };
+      }
       const planned = mnAiToolCallsFromPlanResult(response.value || response);
       aiRuntime.recordTrace?.(run, 'planner.result', { toolCalls: planned.toolCalls.length, answer: !!planned.answer, round: round + 1 });
       if (!planned.toolCalls.length) {
+        if (planned.mode === 'planner_failed' || planned.mode === 'no_tools' || planned.mode === 'error') {
+          aiRuntime.recordTrace?.(run, 'planner.failed', { error: planned.error || planned.mode });
+          return {
+            answer: planned.error || 'The model did not return a valid API call.',
+            sources: [],
+            clarify: true,
+          };
+        }
         return {
           answer: planned.answer || 'I need a little more detail before I can help with that.',
           sources: [],
@@ -1809,7 +1973,8 @@ function MnAskAI({
       });
     };
     try {
-      const skipLlmFirst = ((route.type === 'legacy_action' || route.type === 'action') && !!route.action) ||
+      const skipLlmFirst = !window.mn?.ai?.toolPlan ||
+        route.type === 'clarify' ||
         route.plan?.intent === 'zotero-document-search';
       const orchestrated = skipLlmFirst ? null : await runLlmOrchestrator({ q, actionQuery, priorMessages, jobId, run });
       if (orchestrated) {
@@ -2234,7 +2399,14 @@ function MnAskAI({
                   </div>
                 )}
                 {m.role !== 'user' && !m.error && !m.stopped && m.text
-                  ? <MnAiFormattedResponse text={m.text} T={T} />
+                  ? <MnAiFormattedResponse
+                      text={m.text}
+                      T={T}
+                      allNotes={allNotes}
+                      onOpenNote={onOpenNote}
+                      onClose={onClose}
+                      embedded={embedded}
+                    />
                   : (m.text || (m.streaming ? activeAction || 'Thinking...' : ''))}
                 {traceLabels.length > 0 && (
                   <div style={{

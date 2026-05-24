@@ -662,6 +662,11 @@ function SectionAI({ T }) {
   const apiKeyConfigured = apiKeyValue === 'configured';
   const apiKeyDirty = showApiKey ? !!config?.[`${providerMeta.keyField}Dirty`] : false;
   const baseValue = config?.[providerMeta.baseField] || providerMeta.baseDefault || '';
+  const statusButtonLabel = busy
+    ? 'Checking...'
+    : providerReady
+      ? (provider === 'ollama' ? 'Connected' : 'Ready')
+      : (provider === 'ollama' ? 'Connect' : 'Check');
 
   return (
     <div>
@@ -694,13 +699,13 @@ function SectionAI({ T }) {
               background: T.ink,
               color: T.bg,
               fontFamily: 'var(--mn-ui)',
-            fontSize: 12,
-            fontWeight: 500,
-            cursor: busy ? 'not-allowed' : 'pointer',
-            opacity: busy ? 0.6 : 1,
-            }}>{busy ? 'Checking...' : 'Connect'}</button>
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: busy ? 'not-allowed' : 'pointer',
+              opacity: busy ? 0.6 : 1,
+            }}>{statusButtonLabel}</button>
           ) : (
-            <BtnOutline T={T} onClick={load} disabled={busy}>{busy ? 'Checking...' : 'Check'}</BtnOutline>
+            <BtnOutline T={T} onClick={load} disabled={busy}>{statusButtonLabel}</BtnOutline>
           )}
         </div>
         {message && (

@@ -113,6 +113,76 @@ test('AI status explains cloud provider setup when API key is missing', async ()
   assert.match(result.setupMessage, /To use AI features/);
 });
 
+test('AI status verifies OpenRouter credentials before reporting ready', async () => {
+  const ai = require('../lib/ai');
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      async json() {
+        return { data: { total_credits: 10, total_usage: 1 } };
+      },
+      async text() {
+        return JSON.stringify({ data: { total_credits: 10, total_usage: 1 } });
+      },
+    };
+  };
+  ai.setConfig({
+    provider: 'openrouter',
+    openrouterApiKey: 'sk-or-v1-test',
+    chatModel: 'openai/gpt-4o-mini',
+    enabled: true,
+  }, { rejectUnknown: false });
+  try {
+    const result = await ai.status({ force: true });
+    assert.equal(result.providerReady, true);
+    assert.equal(result.chatModelOk, true);
+    assert.equal(result.reason, 'OpenRouter is configured');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://openrouter.ai/api/v1/credits');
+    assert.equal(calls[0].init.headers.authorization, 'Bearer sk-or-v1-test');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('AI status rejects OpenRouter configuration when API returns 401', async () => {
+  const ai = require('../lib/ai');
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: false,
+    status: 401,
+    statusText: 'Unauthorized',
+    async json() {
+      return { error: { message: 'User not found.', code: 401 } };
+    },
+    async text() {
+      return JSON.stringify({ error: { message: 'User not found.', code: 401 } });
+    },
+  });
+  ai.setConfig({
+    provider: 'openrouter',
+    openrouterApiKey: 'sk-or-v1-bad',
+    chatModel: 'openai/gpt-4o-mini',
+    enabled: true,
+  }, { rejectUnknown: false });
+  try {
+    const result = await ai.status({ force: true });
+    assert.equal(result.providerReady, false);
+    assert.equal(result.chatModelOk, false);
+    assert.equal(result.setupRequired, true);
+    assert.match(result.reason, /OpenRouter API key was rejected/);
+    assert.match(result.setupMessage, /Replace it in Settings > AI/);
+    assert.equal(result.config.openrouterApiKey, 'configured');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('Broad all-notes summaries use bounded context without recursive planner calls', async () => {
   const ai = require('../lib/ai');
   const notes = Array.from({ length: 30 }, (_, index) => ({
@@ -144,6 +214,38 @@ test('Broad all-notes summaries use bounded context without recursive planner ca
   assert.equal(context.researchToolCalls || 0, 0);
 });
 
+test('Latest-note questions use recent context instead of whole-vault summary context', async () => {
+  const ai = require('../lib/ai');
+  const notes = [
+    {
+      id: 'older',
+      title: 'Older note',
+      body: 'Older body',
+      modifiedAt: '2026-05-01T09:00:00.000Z',
+    },
+    {
+      id: 'latest',
+      title: 'Latest note',
+      body: 'Latest body',
+      modifiedAt: '2026-05-02T09:00:00.000Z',
+    },
+  ];
+  const storeApi = {
+    async loadVault() {
+      return { notes };
+    },
+  };
+  const context = await ai.buildVaultContext(
+    'vault',
+    'what is my latest note?',
+    { embedModelOk: false },
+    storeApi
+  );
+  assert.equal(context.mode, 'recent');
+  assert.equal(context.notes[0].id, 'latest');
+  assert.match(context.reason, /context item 1 is the latest saved note/);
+});
+
 test('Vault summaries use bounded map-reduce model calls', async () => {
   const ai = require('../lib/ai');
   const originalFetch = global.fetch;
@@ -152,7 +254,7 @@ test('Vault summaries use bounded map-reduce model calls', async () => {
     calls++;
     const body = JSON.parse(init.body || '{}');
     const text = JSON.stringify(body).includes('Combine these batch summaries')
-      ? 'Combined final summary with decisions and tasks.'
+      ? '## Summary of All Notes\n\nCombined final summary with decisions and tasks.'
       : `Batch summary ${calls}.`;
     return {
       ok: true,
@@ -186,6 +288,9 @@ test('Vault summaries use bounded map-reduce model calls', async () => {
     assert.equal(result.batches, 3);
     assert.equal(calls, 4);
     assert.match(result.answer, /Combined final summary/);
+    assert.match(result.answer, /^# Notes summary/);
+    assert.doesNotMatch(result.answer, /## Summary(\s|$)/);
+    assert.doesNotMatch(result.answer, /Summary of All Notes/);
     assert.equal(result.sources.length, 5);
   } finally {
     global.fetch = originalFetch;
@@ -258,6 +363,63 @@ test('Simple greetings are answered locally without waiting for the model', asyn
     assert.deepEqual(chunks, [result.answer]);
   } finally {
     global.fetch = originalFetch;
+  }
+});
+
+test('Assistant self-description is answered as chat without waiting for the model', async () => {
+  const ai = require('../lib/ai');
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('status should not be called'); };
+  ai.setConfig({ provider: 'ollama', chatModel: 'gemma3', enabled: true }, { rejectUnknown: false });
+  try {
+    const chunks = [];
+    const result = await ai.chatStream({ text: 'describe yourself', onToken: token => chunks.push(token) });
+    assert.equal(result.ok, true);
+    assert.equal(result.fast, true);
+    assert.match(result.answer, /VispNote's AI assistant/);
+    assert.deepEqual(chunks, [result.answer]);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('Tool planner reports invalid planner output without user-facing fallback text', async () => {
+  const ai = require('../lib/ai');
+  const originalFetch = global.fetch;
+  const originalConfig = ai.getConfig();
+  global.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname === '/api/chat') {
+      return {
+        ok: true,
+        async json() {
+          return { message: { content: 'not json' } };
+        },
+      };
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  };
+  ai.setConfig({ provider: 'ollama', chatModel: 'gemma3', enabled: true }, { rejectUnknown: false });
+  try {
+    const result = await ai.__test.providerToolPlan(
+      [{ role: 'user', content: 'tag this note as reading' }],
+      [{
+        name: 'tag-note',
+        description: 'Tag a note.',
+        inputSchema: {
+          type: 'object',
+          properties: { tag: { type: 'string' } },
+          required: ['tag'],
+          additionalProperties: false,
+        },
+      }]
+    );
+    assert.equal(result.mode, 'planner_failed');
+    assert.equal(result.answer, '');
+    assert.match(result.error, /valid JSON/);
+  } finally {
+    global.fetch = originalFetch;
+    ai.setConfig(originalConfig, { rejectUnknown: false });
   }
 });
 

@@ -79,10 +79,16 @@
       /\bnotes?|vault|page|tasks?|todos?\b/.test(text);
   }
 
+  function isAssistantMetaChat(q) {
+    const normalized = String(q || '').toLowerCase().trim().replace(/[!?.\s]+$/g, '');
+    return /^(help|capabilities)$/.test(normalized) ||
+      /\b(who are you|what are you|describe yourself|introduce yourself|tell me about yourself|what can you do|how do you work|what are your capabilities)\b/.test(normalized);
+  }
+
   function isCasualChat(q) {
     const normalized = String(q || '').toLowerCase().trim().replace(/[!?.\s]+$/g, '');
     return /^(hi|hello|hey|yo|sup|thanks|thank you|ok|okay|cool|nice|good morning|good afternoon|good evening)$/.test(normalized) ||
-      /\b(who are you|what can you do|help|how do you work|what are your capabilities)\b/.test(normalized);
+      isAssistantMetaChat(normalized);
   }
 
   function isLikelyDocumentQuestion(q) {
@@ -182,6 +188,7 @@
         message: 'What should I apply that to? For example: "fix grammar in this note", "summarize this page", or "clean up the current note".',
       };
     }
+    if (isCasualChat(text)) return { mode: 'chat', type: 'chat', activeLabel: 'Thinking...' };
     const classified = aiActions?.classifyPrompt ? aiActions.classifyPrompt(text) : { type: 'notes' };
     if (classified?.type === 'chat' || isCasualChat(text)) return { mode: 'chat', type: 'chat', activeLabel: 'Thinking...' };
     if (classified?.type === 'action' && classified?.action?.type === 'action-plan') {
@@ -494,6 +501,7 @@
     recordTrace,
     routeRequest,
     isClearlyNoteQuestion,
+    isAssistantMetaChat,
     isLikelyDocumentQuestion,
     isZoteroListRequest,
     zoteroUnavailableMessage,

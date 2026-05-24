@@ -942,6 +942,13 @@ function sanitizeJsonValue(value, field, maxBytes = AI_TOOL_SCHEMA_LIMIT) {
   return JSON.parse(text);
 }
 
+function sanitizeStringList(value, field, limit = 8, maxChars = 240) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, limit)
+    .map((item, index) => capString(item || '', `${field}[${index}]`, maxChars))
+    .filter(Boolean);
+}
+
 function sanitizeAiToolPlanPayload(payload = {}) {
   const clean = sanitizeAiChatPayload(payload);
   const tools = Array.isArray(payload.tools) ? payload.tools : [];
@@ -953,6 +960,10 @@ function sanitizeAiToolPlanPayload(payload = {}) {
       name,
       title: capString(tool.title || tool.label || name, `tools[${index}].title`, 120),
       description: capText(tool.description || tool.title || name, `tools[${index}].description`, 1600),
+      section: capString(tool.section || '', `tools[${index}].section`, 80),
+      kind: capString(tool.kind || '', `tools[${index}].kind`, 40),
+      requires: sanitizeStringList(tool.requires, `tools[${index}].requires`, 8, 160),
+      examples: sanitizeStringList(tool.examples, `tools[${index}].examples`, 8, 240),
       risk: capString(tool.risk || 'safe', `tools[${index}].risk`, 40),
       readOnly: tool.readOnly === true,
       destructive: tool.destructive === true,

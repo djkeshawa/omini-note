@@ -172,7 +172,8 @@
     if (/^(hi|hello|hey|yo|sup|thanks|thank you|ok|okay|cool|nice|good morning|good afternoon|good evening)$/.test(normalized)) {
       return { type: 'chat' };
     }
-    if (/\b(who are you|what can you do|help|how do you work|what are your capabilities)\b/.test(s)) {
+    if (/^(help|capabilities)$/.test(normalized) ||
+        /\b(who are you|what are you|describe yourself|introduce yourself|tell me about yourself|what can you do|how do you work|what are your capabilities)\b/.test(s)) {
       return { type: 'chat' };
     }
     if (NOTEISH_RE.test(s)) return { type: 'notes' };

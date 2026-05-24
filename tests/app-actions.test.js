@@ -231,6 +231,9 @@ test('AI execution runtime routes safely and validates planner tool calls', () =
 
   assert.equal(aiRuntime.routeRequest({ query: 'fix it', appRegistry: registry }).type, 'clarify');
   assert.equal(aiRuntime.routeRequest({ query: 'can you summarize all my notes', appRegistry: registry }).type, 'notes');
+  assert.equal(aiRuntime.routeRequest({ query: 'describe yourself', aiActions, appRegistry: registry }).type, 'chat');
+  assert.equal(aiRuntime.routeRequest({ query: 'what are you', aiActions, appRegistry: registry }).type, 'chat');
+  assert.equal(aiRuntime.routeRequest({ query: 'what changed most recently in this vault?', aiActions, appRegistry: registry }).type, 'notes');
   assert.equal(aiRuntime.routeRequest({ query: 'open settings', appRegistry: registry }).type, 'app_action');
   assert.equal(aiRuntime.routeRequest({ query: 'find notes about reading', appRegistry: registry }).type, 'app_action');
   const formatCurrentRoute = aiRuntime.routeRequest({ query: 'format this page', aiActions, appRegistry: registry });

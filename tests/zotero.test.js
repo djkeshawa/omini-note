@@ -108,11 +108,13 @@ test('Zotero list returns recent top-level document items without a query', asyn
       { key: 'NOTE1', data: { key: 'NOTE1', itemType: 'note', parentItem: 'PARENT1', note: 'child note' } },
       { key: 'ATTACH1', data: { key: 'ATTACH1', itemType: 'attachment', parentItem: 'PARENT1', title: 'PDF' } },
       { key: 'PARENT1', data: { key: 'PARENT1', itemType: 'preprint', title: 'Recursive Language Models', date: '2025' } },
+      { key: 'BOOK1', data: { key: 'BOOK1', itemType: 'book', title: 'Local First Software' } },
     ]);
   }, async () => {
-    const result = await zotero.list({ limit: 10 });
+    const result = await zotero.list({ limit: 1 });
     assert.equal(calls[0].searchParams.has('q'), false);
     assert.equal(calls[0].searchParams.get('sort'), 'dateModified');
+    assert.equal(calls[0].searchParams.get('limit'), '100');
     assert.deepEqual(result.results.map(item => item.key), ['PARENT1']);
   });
 });

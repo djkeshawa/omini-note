@@ -217,6 +217,9 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /function mnBuildContextualActionQuery\(priorMessages = \[\], currentQuery = ''\)/);
   assert.match(ai, /const MN_AI_VIRTUAL_TOOLS = \[/);
   assert.match(ai, /name: 'answer-notes'/);
+  assert.match(ai, /latest note, recent note, task, tag, decision/);
+  assert.match(ai, /name: 'summarize-vault'/);
+  assert.match(ai, /Use only when the user explicitly asks to summarize, recap, or overview all notes/);
   assert.match(ai, /name: 'edit-current-page'/);
   assert.match(ai, /const MN_AI_VIRTUAL_WRITE_TOOLS = new Set/);
   assert.match(ai, /risk: 'confirm'/);
@@ -226,8 +229,14 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /makeVirtualWriteReview/);
   assert.match(ai, /runConfirmedVirtualWriteTool/);
   assert.match(ai, /if \(!String\(inputArgs\.instruction \|\| ''\)\.trim\(\) && q\) inputArgs\.instruction = q;/);
+  assert.match(ai, /Structured VispNote API context/);
+  assert.match(ai, /Plugin APIs are exposed as plugin-\* tools/);
+  assert.match(ai, /Use summarize-vault only for explicit whole-vault summaries/);
+  assert.match(ai, /const pluginTools = registryTools\.filter/);
+  assert.doesNotMatch(ai, /planner\.fallback_to_notes/);
   assert.match(ai, /const runLlmOrchestrator = async/);
   assert.match(ai, /await runLlmOrchestrator\(\{ q, actionQuery, priorMessages, jobId, run \}\)/);
+  assert.match(ai, /const skipLlmFirst = !window\.mn\?\.ai\?\.toolPlan \|\|[\s\S]*route\.type === 'clarify'/);
   assert.match(ai, /const scrollVersion = messages\.map/);
   assert.match(ai, /onScroll=\{rememberScrollPosition\}/);
   assert.match(ai, /data-mn-chat-bottom="true"/);
@@ -272,7 +281,8 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /openrouter: 'OpenRouter'/);
   assert.match(ai, /\$\{providerLabel\} ready/);
   assert.match(ai, /Enter to ask · Shift\+Enter for newline/);
-  assert.match(ai, /const skipLlmFirst = \(\(route\.type === 'legacy_action' \|\| route\.type === 'action'\) && !!route\.action\) \|\|/);
+  assert.doesNotMatch(ai, /route\.type === 'notes' \|\|/);
+  assert.doesNotMatch(ai, /route\.type === 'chat' \|\|/);
   assert.match(ai, /route\.plan\?\.intent === 'zotero-document-search'/);
   assert.match(ai, /const \[openSources, setOpenSources\]/);
   assert.match(ai, /name: 'edit-supporting-notes'/);
@@ -297,9 +307,14 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /function mnParseAiResponseBlocks\(text\)/);
   assert.match(ai, /function mnAiLooksLikeSectionLabel\(text\)/);
   assert.match(ai, /promoted: true/);
-  assert.match(ai, /function MnAiFormattedResponse\(\{ text, T \}\)/);
+  assert.match(ai, /function mnAiWikiLinkParts\(label\)/);
+  assert.match(ai, /function mnNormalizeAiResponseBlocks\(blocks = \[\]\)/);
+  assert.match(ai, /mnAiIsGenericSummaryHeading/);
+  assert.match(ai, /token\.startsWith\('\[\['\)/);
+  assert.match(ai, /onOpenWikiLink\(link\.title\)/);
+  assert.match(ai, /function MnAiFormattedResponse\(\{ text, T, allNotes = \[\], onOpenNote, onClose, embedded = false \}\)/);
   assert.match(ai, /gridTemplateColumns: block\.type === 'ol'/);
-  assert.match(ai, /<MnAiFormattedResponse text=\{m\.text\} T=\{T\} \/>/);
+  assert.match(ai, /<MnAiFormattedResponse[\s\S]*text=\{m\.text\}[\s\S]*allNotes=\{allNotes\}[\s\S]*onOpenNote=\{onOpenNote\}/);
   assert.match(ai, /mnAskPrimaryButton/);
   assert.match(ai, /mnAskSecondaryButton/);
   assert.match(ai, /Clear/);
@@ -331,9 +346,15 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(aiLib, /const STATUS_CACHE_MS/);
   assert.match(aiLib, /const OLLAMA_KEEP_ALIVE = '10m'/);
   assert.match(aiLib, /const PROVIDERS = \{/);
-  assert.match(aiLib, /Decide whether to answer directly, inspect note context, ask a clarifying question, or call tools/);
+  assert.match(aiLib, /Choose from the provided VispNote APIs/);
   assert.match(aiLib, /Format intentionally: use markdown headings for section titles, bullets only for real list items/);
   assert.match(aiLib, /Emoji are allowed when they naturally improve tone or scanability/);
+  assert.match(aiLib, /call answer-notes with the user query/);
+  assert.match(aiLib, /call summarize-vault instead of answer-notes/);
+  assert.match(aiLib, /Plugin APIs appear as plugin-\* tools/);
+  assert.match(aiLib, /Structured tool-planning input/);
+  assert.match(aiLib, /mode: 'planner_failed'/);
+  assert.match(aiLib, /error: 'Planner did not return valid JSON.'/);
   assert.match(aiLib, /openrouterApiKey/);
   assert.match(aiLib, /openaiApiKey/);
   assert.match(aiLib, /anthropicApiKey/);
@@ -358,6 +379,10 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(aiLib, /embedModelReason/);
   assert.match(aiLib, /String\(systemMessage \|\| ''\)\.trim\(\) \|\| EDIT_SYSTEM_PROMPT/);
   assert.match(main, /async function prepareAiEditPayload/);
+  assert.match(main, /function sanitizeStringList/);
+  assert.match(main, /section: capString\(tool\.section/);
+  assert.match(main, /requires: sanitizeStringList\(tool\.requires/);
+  assert.match(main, /examples: sanitizeStringList\(tool\.examples/);
   assert.doesNotMatch(main, /payload\.systemMessage \? capString\(payload\.systemMessage/);
   assert.doesNotMatch(main, /payload\.model \? capString\(payload\.model/);
   assert.match(ollama, /async function embed\(model, text, opts = \{\}\)/);
@@ -373,6 +398,8 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(settings, /PII reduction/);
   assert.match(settings, /Provider API base URL/);
   assert.match(settings, /Cloud providers are used for chat, note creation, and editing/);
+  assert.match(settings, /const statusButtonLabel = busy[\s\S]*providerReady[\s\S]*'Connected'[\s\S]*'Ready'[\s\S]*'Connect'[\s\S]*'Check'/);
+  assert.match(settings, /<BtnOutline T=\{T\} onClick=\{load\} disabled=\{busy\}>\{statusButtonLabel\}<\/BtnOutline>/);
 });
 
 test('Canvas workspace is wired through storage, navigation, and note embeds', () => {
