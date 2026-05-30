@@ -77,7 +77,7 @@ function rendererStateScript() {
         commandPaletteOpen: dialogs.some(text => text.includes('Command palette')) || Boolean(document.querySelector('input[placeholder="Run a command or open a note..."]')),
         dialogs,
         buttons,
-        text: bodyText.slice(0, 500),
+        text: bodyText.slice(0, 2000),
       };
     })()
   `;
