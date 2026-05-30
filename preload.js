@@ -1,6 +1,18 @@
 // Preload: exposes a safe IPC bridge as window.mn for the renderer.
 const { contextBridge, ipcRenderer } = require('electron');
 
+const NOTES_VAULTS_CHANNELS = Object.freeze({
+  noteList: 'vispnote:v1:note:list',
+  noteOpen: 'vispnote:v1:note:open',
+  noteSave: 'vispnote:v1:note:save',
+  noteDelete: 'vispnote:v1:note:delete',
+  vaultList: 'vispnote:v1:vault:list',
+  vaultCreate: 'vispnote:v1:vault:create',
+  vaultRename: 'vispnote:v1:vault:rename',
+  vaultDelete: 'vispnote:v1:vault:delete',
+  vaultSelect: 'vispnote:v1:vault:select',
+});
+
 function requestId(prefix) {
   const crypto = globalThis.crypto;
   const id = typeof crypto?.randomUUID === 'function'
@@ -11,6 +23,17 @@ function requestId(prefix) {
 
 contextBridge.exposeInMainWorld('mn', {
   // Vaults
+  notesVaults: {
+    listNotes: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteList, payload),
+    openNote: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteOpen, payload),
+    saveNote: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteSave, payload),
+    deleteNote: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteDelete, payload),
+    listVaults: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultList, payload),
+    createVault: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultCreate, payload),
+    renameVault: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultRename, payload),
+    deleteVault: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultDelete, payload),
+    selectVault: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultSelect, payload),
+  },
   listVaults: () => ipcRenderer.invoke('mn:listVaults'),
   createVault: (name, options) => ipcRenderer.invoke('mn:createVault', name, options),
   renameVault: (id, name) => ipcRenderer.invoke('mn:renameVault', id, name),

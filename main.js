@@ -7,6 +7,7 @@ const store = require('./lib/store');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
 const zotero = require('./lib/zotero');
+const { registerNotesVaultHandlers } = require('./lib/ipc/notesVaultHandlers');
 
 let mainWindow = null;
 let tray = null;
@@ -1043,6 +1044,14 @@ async function importNovelFilesFromIpc() {
 }
 
 // Vault management
+registerNotesVaultHandlers(ipcMain, {
+  store,
+  idx,
+  ai,
+  withIndexVaultLock,
+  runOptionalSearchIndexTask,
+});
+
 ipcMain.handle('mn:listVaults',     wrap(store.listVaults));
 ipcMain.handle('mn:createVault',    wrap(async (name, options) => {
   const v = await store.createVault(name, options);

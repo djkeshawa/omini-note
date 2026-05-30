@@ -27,7 +27,7 @@ The project is designed around a simple rule: your notes should stay usable as p
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 24.15.0 or newer within Node 24
 - npm
 - Linux, macOS, or Windows environment capable of running Electron
 - Optional: Ollama for local AI features

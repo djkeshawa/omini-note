@@ -70,6 +70,9 @@ const {
 } = window.MN_APP_RUNTIME || {};
 
 const MN_APP_SHELL = window.MN_APP_SHELL || {};
+const MN_NOTES_VAULTS_SERVICE = window.MN_NOTES_VAULTS_SERVICE || {};
+const MN_VAULTS_SERVICE = window.MN_VAULTS_SERVICE || {};
+const MN_NOTES_VAULTS_STATE = window.MN_NOTES_VAULTS_STATE || {};
 const {
   HAS_DISK = typeof window !== 'undefined' && !!window.mn,
   MnLaunchScreen,
@@ -576,9 +579,9 @@ function MnApp() {
   }, [activeVaultId, tags, selectedId]);
 
   const loadVaultBundle = useCallbackA(async (vaultId) => {
-    const vaultRes = await window.mn.loadVault(vaultId);
+    const vaultRes = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, vaultId);
     if (!vaultRes.ok) throw new Error(vaultRes.error);
-    const vault = vaultRes.value;
+    const vault = vaultRes.value || vaultRes.data?.vault;
     if (Array.isArray(vault.warnings) && vault.warnings.length) {
       showAppNotice('Vault loaded with warnings', `${vault.warnings.length} note file${vault.warnings.length === 1 ? '' : 's'} could not be read.`, 'warn');
     }
@@ -660,9 +663,9 @@ function MnApp() {
           setTweaks(t => ({ ...t, ...prefs.tweaks }));
         }
 
-        const vlistRes = await window.mn.listVaults();
+        const vlistRes = await MN_NOTES_VAULTS_SERVICE.listVaults(window.mn);
         if (!vlistRes.ok) throw new Error(vlistRes.error);
-        const vlist = vlistRes.value;
+        const vlist = vlistRes.value || vlistRes.data?.vaults || [];
         if (!vlist.length) throw new Error('No vaults found');
 
         const activeId = vlist.some(vault => vault.id === prefs.activeVaultId)
@@ -726,7 +729,8 @@ function MnApp() {
       }
       dirtyMissingWarnedRef.current.delete(dirtyKey);
       try {
-        const res = await window.mn.saveNote(
+        const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
+          window.mn,
           vaultId,
           noteForDisk(n, mnBlocksToMd),
           { expectedModifiedAt: n.diskModifiedAt || null }
@@ -747,10 +751,10 @@ function MnApp() {
         const saved = res?.value;
         if (saved?.diskModifiedAt || saved?.modifiedAt) {
           const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
-          const updateDiskStamp = note => note.id === id ? { ...note, diskModifiedAt } : note;
-          if (vaultId === activeVaultId) setNotes(ns => ns.map(updateDiskStamp));
+          const updateDiskStamp = notesList => MN_NOTES_VAULTS_STATE.updateNoteDiskStamp(notesList, id, diskModifiedAt);
+          if (vaultId === activeVaultId) setNotes(updateDiskStamp);
           setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
-            ? { ...v, notes: v.notes.map(updateDiskStamp) }
+            ? { ...v, notes: updateDiskStamp(v.notes) }
             : v));
         }
         setDirtyNotes(cur => {
@@ -813,9 +817,9 @@ function MnApp() {
   const refreshVaultRegistry = useCallbackA(async ({ reloadActive = false, reason = '' } = {}) => {
     if (!HAS_DISK) return { ok: true };
     try {
-      const res = await window.mn.listVaults();
+      const res = await MN_NOTES_VAULTS_SERVICE.listVaults(window.mn);
       if (!res.ok) throw new Error(res.error);
-      const metas = res.value || [];
+      const metas = res.value || res.data?.vaults || [];
       if (!metas.length) throw new Error('No vaults found');
       const validIds = new Set(metas.map(v => v.id));
       const nextActiveId = validIds.has(activeVaultId) ? activeVaultId : metas[0].id;
@@ -971,19 +975,20 @@ function MnApp() {
     let targetCanvases = target.canvases;
     if (!targetNotes && HAS_DISK) {
       try {
-        const res = await window.mn.loadVault(id);
+        const res = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, id);
         if (!res.ok) throw new Error(res.error);
-        if (Array.isArray(res.value.warnings) && res.value.warnings.length) {
-          showAppNotice('Vault loaded with warnings', `${res.value.warnings.length} note file${res.value.warnings.length === 1 ? '' : 's'} could not be read.`, 'warn');
+        const loadedVault = res.value || res.data?.vault;
+        if (Array.isArray(loadedVault.warnings) && loadedVault.warnings.length) {
+          showAppNotice('Vault loaded with warnings', `${loadedVault.warnings.length} note file${loadedVault.warnings.length === 1 ? '' : 's'} could not be read.`, 'warn');
         }
-        targetNotes = normalizeNotes(res.value.notes, mnMdToBlocks);
-        targetTags = res.value.tags || [];
-        targetSel = targetNotes.some(note => note.id === res.value.lastSelectedId)
-          ? res.value.lastSelectedId
+        targetNotes = normalizeNotes(loadedVault.notes, mnMdToBlocks);
+        targetTags = loadedVault.tags || [];
+        targetSel = targetNotes.some(note => note.id === loadedVault.lastSelectedId)
+          ? loadedVault.lastSelectedId
           : targetNotes[0]?.id || null;
-        targetNovelistMode = !!res.value.novelistMode;
-        targetWorkflowStates = res.value.workflowStates || null;
-        targetNovelistAiConfig = res.value.novelistAiConfig || null;
+        targetNovelistMode = !!loadedVault.novelistMode;
+        targetWorkflowStates = loadedVault.workflowStates || null;
+        targetNovelistAiConfig = loadedVault.novelistAiConfig || null;
       } catch (e) {
         console.error('loadVault failed', id, e);
         await refreshVaultRegistry({ reloadActive: true, reason: 'selectVault-load-failed' });
@@ -1013,7 +1018,10 @@ function MnApp() {
     setTrashItems([]);
     setTrashError('');
     setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
-    if (HAS_DISK) window.mn.setPrefs({ activeVaultId: id });
+    if (HAS_DISK) {
+      const selected = await MN_VAULTS_SERVICE.selectVault(window.mn, id);
+      if (!selected.ok) window.mn.setPrefs({ activeVaultId: id });
+    }
   }, [activeVaultId, vaults, notes, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, refreshVaultRegistry, navigateView, showAppNotice]);
 
   const persistNovelistSetup = async (vaultId, sourceNotes, sourceTags, sourceWorkflowStates = null, options = {}) => {
@@ -1034,7 +1042,8 @@ function MnApp() {
     if (HAS_DISK && vaultId) {
       await window.mn.saveVaultMeta(vaultId, { tags: nextTags, novelistMode: true, workflowStates: nextWorkflowStates });
       for (const note of nextNotes) {
-        await window.mn.saveNote(vaultId, noteForDisk(note, mnBlocksToMd));
+        const res = await MN_NOTES_VAULTS_SERVICE.saveNote(window.mn, vaultId, noteForDisk(note, mnBlocksToMd));
+        if (!res.ok) throw new Error(res.error);
       }
     }
     return { notes: nextNotes, tags: nextTags, workflowStates: nextWorkflowStates };
@@ -1079,15 +1088,15 @@ function MnApp() {
       return;
     }
     try {
-      const res = await window.mn.createVault(name, { type: vaultType, workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null });
+      const res = await MN_VAULTS_SERVICE.createVault(window.mn, name, { type: vaultType, workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null });
       if (!res.ok) throw new Error(res.error);
       const v = res.value;
 
       // Load first, then switch atomically. This prevents the previous vault's
       // notes from appearing under the newly-created vault if disk IO is slow.
-      const loadRes = await window.mn.loadVault(v.id);
+      const loadRes = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, v.id);
       if (!loadRes.ok) throw new Error(loadRes.error);
-      const loaded = loadRes.value;
+      const loaded = loadRes.value || loadRes.data?.vault;
       let loadedNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
       let loadedTags = loaded.tags || [];
       if (vaultType === 'novelist') {
@@ -1111,7 +1120,8 @@ function MnApp() {
           .map(x => x.id === activeVaultId ? { ...x, notes, tags, lastSelectedId: selectedId, canvases } : x),
         { ...v, notes: loadedNotes, tags: loadedTags, lastSelectedId: loaded.lastSelectedId || loadedNotes[0]?.id || null, canvases: [], workflowStates: loaded.workflowStates || null, novelistAiConfig: loaded.novelistAiConfig || null, novelistMode: vaultType === 'novelist' },
       ]);
-      window.mn.setPrefs({ activeVaultId: v.id });
+      const selected = await MN_VAULTS_SERVICE.selectVault(window.mn, v.id);
+      if (!selected.ok) window.mn.setPrefs({ activeVaultId: v.id });
     } catch (e) {
       console.error('createVault failed', e);
       showAppNotice('Could not create vault', e.message || String(e));
@@ -1155,7 +1165,7 @@ function MnApp() {
     setVaults(vs => vs.map(v => v.id === id ? { ...v, name: cleanName } : v));
     if (HAS_DISK) {
       try {
-        const res = await window.mn.renameVault(id, cleanName);
+        const res = await MN_VAULTS_SERVICE.renameVault(window.mn, id, cleanName);
         if (!res.ok) throw new Error(res.error);
       }
       catch (e) {
@@ -1186,7 +1196,7 @@ function MnApp() {
 
     if (HAS_DISK) {
       try {
-        const res = await window.mn.deleteVault(id);
+        const res = await MN_VAULTS_SERVICE.deleteVault(window.mn, id);
         if (!res.ok) throw new Error(res.error);
         nextVaults = (res.value?.vaults || localRemaining).map(meta => {
           const cached = localRemaining.find(v => v.id === meta.id) || {};
@@ -1221,9 +1231,9 @@ function MnApp() {
     let nextSelectedId = nextMeta.lastSelectedId || null;
     if (HAS_DISK) {
       try {
-        const loadRes = await window.mn.loadVault(nextMeta.id);
+        const loadRes = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, nextMeta.id);
         if (!loadRes.ok) throw new Error(loadRes.error);
-        const loaded = loadRes.value;
+        const loaded = loadRes.value || loadRes.data?.vault;
         nextNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
         nextTags = loaded.tags || [];
         nextSelectedId = loaded.lastSelectedId || nextNotes[0]?.id || null;
@@ -1252,7 +1262,10 @@ function MnApp() {
     setQuery('');
     tagsDirty.current = false;
     navigateView('notes');
-    if (HAS_DISK) window.mn.setPrefs({ activeVaultId: nextMeta.id });
+    if (HAS_DISK) {
+      const selected = await MN_VAULTS_SERVICE.selectVault(window.mn, nextMeta.id);
+      if (!selected.ok) window.mn.setPrefs({ activeVaultId: nextMeta.id });
+    }
     return { ok: true };
   }, [activeVaultId, vaults, notes, tags, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks]);
 
@@ -1915,13 +1928,13 @@ function MnApp() {
       return next;
     });
     setNotes(ns => {
-      const next = ns.filter(x => x.id !== id);
+      const next = MN_NOTES_VAULTS_STATE.removeNote(ns, id);
       setSelectedId(current => current === id ? (next[0]?.id || null) : current);
       return next;
     });
     if (HAS_DISK && activeVaultId) {
       try {
-        const res = await window.mn.deleteNote(activeVaultId, id, noteForDisk(n, mnBlocksToMd));
+        const res = await MN_NOTES_VAULTS_SERVICE.deleteNote(window.mn, activeVaultId, id, noteForDisk(n, mnBlocksToMd));
         if (res && res.ok === false) throw new Error(res.error);
         if (res?.value?.trashId) {
           setTrashItems(items => [res.value, ...items.filter(item => item.trashId !== res.value.trashId)]);
@@ -2074,9 +2087,10 @@ function MnApp() {
     const conflict = conflictNotice;
     if (!conflict?.vaultId || !conflict?.noteId) return;
     try {
-      const res = await window.mn.loadVault(conflict.vaultId);
+      const res = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, conflict.vaultId);
       if (!res.ok) throw new Error(res.error || 'Could not reload note');
-      const loaded = normalizeNotes(res.value.notes || [], mnMdToBlocks);
+      const vault = res.value || res.data?.vault;
+      const loaded = normalizeNotes(vault.notes || [], mnMdToBlocks);
       const diskNote = loaded.find(note => note.id === conflict.noteId);
       if (!diskNote) throw new Error('The disk version no longer exists.');
       if (conflict.vaultId === activeVaultId) {

@@ -53,3 +53,9 @@ Pull requests should include a problem/solution summary, linked issue when avail
 ## Security & Configuration Tips
 
 Do not commit credentials, AI API keys, Zotero secrets, generated packages, or personal vault data. Validate IPC inputs in `main.js`, keep external URL behavior allowlisted, and preserve data-safety tests when touching storage or import/export paths.
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read
+[specs/001-architecture-refactor/plan.md](/home/dinethj/Documents/projects/my_notes/specs/001-architecture-refactor/plan.md)
+<!-- SPECKIT END -->
