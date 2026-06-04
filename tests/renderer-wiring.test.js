@@ -1224,3 +1224,87 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(appNovelistSource, /function mnReplaceWikiLinkTitle/);
   assert.match(app, /window\.mnWriteNovelistAiConfig\?\.\(activeVault\.novelistAiConfig, activeVaultId\)/);
 });
+
+test('Markdown input rules load before outliner modules and stay renderer-scoped', () => {
+  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const renderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
+  const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
+  const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
+
+  const entryIndex = source => rendererEntry.indexOf(`import './${source}';`);
+  assert.ok(entryIndex('editor/markdownInputRules.js') > entryIndex('editor/editorOps.js'));
+  assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') > entryIndex('editor/markdownInputRules.js'));
+  assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') < entryIndex('editor/outlinerRenderers.jsx'));
+  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/outlinerRenderers.jsx'));
+  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/outliner.jsx'));
+
+  assert.match(helper, /MN_MARKDOWN_INPUT_RULES/);
+  assert.match(inlineRenderers, /window\.MN_MARKDOWN_INLINE_RENDERERS/);
+  assert.match(inlineRenderers, /function mnRenderMarkdownInlineText/);
+  assert.match(inlineRenderers, /MN_MARKDOWN_INPUT_RULES\.parseInlineMarkdown/);
+  assert.match(inlineRenderers, /window\.mn\?\.openExternal\?\.\(segment\.url\)/);
+  assert.match(outliner, /MN_MARKDOWN_INPUT_RULES\.findBlockStarterConversion/);
+  assert.match(outliner, /inputType: e\.nativeEvent\?\.inputType/);
+  assert.match(outliner, /onChangeKind\(block\.id, blockStarter\.patch\)/);
+  assert.match(outliner, /pendingCaretRef\.current = blockStarter\.caret/);
+  assert.doesNotMatch(outliner, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
+  assert.match(renderers, /window\.MN_MARKDOWN_INLINE_RENDERERS/);
+  assert.doesNotMatch(inlineRenderers, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
+  assert.doesNotMatch(renderers, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
+});
+
+test('Markdown input rules preserve paste, slash menu, and selection formatting hooks', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const handlePasteIndex = outliner.indexOf('const handlePaste = (e) =>');
+  const inputRuleIndex = outliner.indexOf('MN_MARKDOWN_INPUT_RULES.findBlockStarterConversion');
+  const slashIndex = outliner.indexOf('const sm = mnFindSlashCommandTrigger(v, pos)');
+  const selectionIndex = outliner.indexOf('const applyAnnotation = (kind) =>');
+
+  assert.ok(inputRuleIndex > 0);
+  assert.ok(handlePasteIndex > inputRuleIndex);
+  assert.match(outliner, /const markdown = mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable\(e\)/);
+  assert.match(outliner, /parseClipboardBlocks\?\.\(e\.clipboardData, \{ allowSingle: false \}\)/);
+  assert.match(outliner, /const sm = mnFindSlashCommandTrigger\(v, pos\)/);
+  assert.ok(slashIndex > inputRuleIndex);
+  assert.match(outliner, /if \(slashQ != null\)/);
+  assert.match(outliner, /mnApplyAnnotationRange/);
+  assert.ok(selectionIndex > 0);
+  assert.doesNotMatch(outliner.slice(inputRuleIndex, handlePasteIndex), /parseInlineMarkdown|mnBlocksToMd|mnMdToBlocks/);
+});
+
+test('Markdown inline rendering is preserved when spellcheck issues are present', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
+
+  assert.match(inlineRenderers, /function mnRenderMarkdownInlineText\(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0\)/);
+  assert.match(inlineRenderers, /renderPlainText\(segment\.text, textOffset\)/);
+  assert.match(inlineRenderers, /mnRenderMarkdownInlineText\(sub, T, onOpen, onTagClick, allNotes, renderPlainText, seg\.s\)/);
+  assert.match(outliner, /function mnRenderSpellCheckedText\(text, issues, T, onOpenMenu, offset = 0\)/);
+  assert.match(outliner, /start: baseOffset \+ start/);
+  assert.match(outliner, /const renderSpellText = spellCheck && Object\.keys\(spellIssues \|\| \{\}\)\.length/);
+  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText\)/);
+  assert.doesNotMatch(outliner, /return mnRenderSpellCheckedText\(content, spellIssues, T, setSpellMenu\)/);
+});
+
+test('Structural markdown blocks edit with markdown source prefixes', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
+  const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
+
+  assert.match(helper, /function editableMarkdownForBlock/);
+  assert.match(helper, /function parseEditableMarkdownBlock/);
+  assert.match(helper, /function displayProjectionForMarkdownSourceBlock/);
+  assert.ok(helper.includes('value.match(/^(#{1,6})\\s(.*)$/s)'));
+  assert.ok(helper.includes('value.match(/^(#{1,6})\\s+(.*)$/s)'));
+  assert.ok(outline.includes('const h = line.match(/^(#{1,6})\\s+(.*)$/);'));
+  assert.match(outliner, /const editorValue = MN_MARKDOWN_INPUT_RULES\.editableMarkdownForBlock\?\.\(block\) \?\? block\.content/);
+  assert.match(outliner, /const markdownDisplayProjection = MN_MARKDOWN_INPUT_RULES\.displayProjectionForMarkdownSourceBlock\?\.\(block\)/);
+  assert.match(outliner, /const displayBlock = markdownDisplayProjection\?\.block \|\| block/);
+  assert.match(outliner, /value=\{editorValue\}/);
+  assert.match(outliner, /MN_MARKDOWN_INPUT_RULES\.parseEditableMarkdownBlock\?\.\(\{ block, text: v \}\)/);
+  assert.match(outliner, /contentOffsetToEditorOffset\?\.\(block, contentCaret\)/);
+  assert.match(outliner, /editorOffsetToContentOffset\?\.\(block, ta\?\.selectionStart/);
+  assert.match(outliner, /displaySourceOffset \+ contentCaret/);
+  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText\)/);
+});

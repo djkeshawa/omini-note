@@ -1,6 +1,10 @@
 // Outliner rendering helpers and AI edit action metadata.
 
-const MnInline = window.MnInline;
+const {
+  mnRenderSpecialInlineText,
+  mnRenderMarkdownInlineText,
+  mnRenderAnnotated,
+} = window.MN_MARKDOWN_INLINE_RENDERERS || {};
 
 const MN_AI_ACTIONS = [
   {
@@ -71,62 +75,6 @@ function MnAiIcon({ size = 13 }) {
       <path d="M8 2L9.5 6.5L14 8L9.5 9.5L8 14L6.5 9.5L2 8L6.5 6.5L8 2Z" strokeLinejoin="round"/>
       <path d="M4 3.5L4.7 5.1L6.2 5.8L4.7 6.5L4 8L3.3 6.5L1.8 5.8L3.3 5.1L4 3.5Z" strokeLinejoin="round"/>
     </svg>
-  );
-}
-
-// ── Annotated text rendering ───────────────────────────────────────────
-// Annotations: array of { start, end, kind } overlapping spans
-function mnRenderAnnotated(text, annotations, T, onOpen, onTagClick, allNotes) {
-  if (!annotations || annotations.length === 0) {
-    return <MnInline text={text} T={T} onOpen={onOpen} onTagClick={onTagClick} allNotes={allNotes} />;
-  }
-  // Build segments: split text at every annotation boundary
-  const points = new Set([0, text.length]);
-  for (const a of annotations) { points.add(a.start); points.add(a.end); }
-  const sorted = [...points].sort((a, b) => a - b);
-  const segs = [];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const s = sorted[i], e = sorted[i + 1];
-    if (s === e) continue;
-    const kinds = annotations.filter(a => a.start <= s && a.end >= e).map(a => a.kind);
-    segs.push({ s, e, kinds });
-  }
-  return (
-    <>
-      {segs.map((seg, i) => {
-        const sub = text.slice(seg.s, seg.e);
-        let content = <MnInline text={sub} T={T} onOpen={onOpen} onTagClick={onTagClick} allNotes={allNotes} />;
-        let style = {};
-        let wrap = (n) => n;
-        for (const k of seg.kinds) {
-          if (k === 'bold') style.fontWeight = 600;
-          else if (k === 'italic') style.fontStyle = 'italic';
-          else if (k === 'strike') style.textDecoration = 'line-through';
-          else if (k === 'underline') style.textDecoration = (style.textDecoration ? style.textDecoration + ' underline' : 'underline');
-          else if (k === 'code') {
-            style.fontFamily = 'var(--mn-mono)';
-            style.fontSize = '0.92em';
-            style.background = T.bgSub;
-            style.padding = '1px 5px';
-            style.borderRadius = 3;
-            style.border = `1px solid ${T.lineSub}`;
-          }
-          else if (k === 'hi-yellow') style.background = 'oklch(0.93 0.10 95 / 0.55)';
-          else if (k === 'hi-green')  style.background = 'oklch(0.92 0.09 145 / 0.55)';
-          else if (k === 'hi-pink')   style.background = 'oklch(0.90 0.08 0 / 0.55)';
-          else if (k === 'hi-blue')   style.background = 'oklch(0.91 0.08 240 / 0.55)';
-          else if (k === 'color-red')    style.color = 'oklch(0.55 0.18 27)';
-          else if (k === 'color-blue')   style.color = 'oklch(0.50 0.16 240)';
-          else if (k === 'color-purple') style.color = 'oklch(0.50 0.18 290)';
-          else if (k === 'color-green')  style.color = 'oklch(0.50 0.13 150)';
-          else if (k === 'fs-small') style.fontSize = '0.88em';
-          else if (k === 'fs-default') style.fontSize = '1em';
-          else if (k === 'fs-large') style.fontSize = '1.14em';
-          else if (k === 'fs-x-large') style.fontSize = '1.3em';
-        }
-        return <span key={i} style={style}>{content}</span>;
-      })}
-    </>
   );
 }
 
@@ -278,6 +226,8 @@ window.MN_OUTLINER_RENDERERS = {
   MN_AI_ACTIONS,
   mnAiAction,
   MnAiIcon,
+  mnRenderSpecialInlineText,
+  mnRenderMarkdownInlineText,
   mnRenderAnnotated,
   MN_CODE_LANGUAGES,
   mnNormalizeCodeLanguage,

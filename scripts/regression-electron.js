@@ -190,6 +190,36 @@ async function setActiveEditorText(win, value) {
   if (!result.ok) throw new Error('Active editor textarea not found');
 }
 
+async function typeActiveEditorText(win, text) {
+  for (const ch of String(text || '')) {
+    const result = await evaluate(win, `
+      (() => {
+        const ch = ${JSON.stringify(ch)};
+        const el = document.activeElement?.getAttribute?.('data-mn-block-content') === 'editor'
+          ? document.activeElement
+          : document.querySelector('[data-mn-block-content="editor"]');
+        if (!el) return { ok: false };
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? start;
+        const next = el.value.slice(0, start) + ch + el.value.slice(end);
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+        if (setter) setter.call(el, next);
+        else el.value = next;
+        const pos = start + ch.length;
+        el.setSelectionRange(pos, pos);
+        const event = typeof InputEvent === 'function'
+          ? new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })
+          : new Event('input', { bubbles: true });
+        el.dispatchEvent(event);
+        el.focus();
+        return { ok: true, value: next };
+      })()
+    `);
+    if (!result.ok) throw new Error('Active editor textarea not found for typing');
+    await wait(50);
+  }
+}
+
 async function clickVisibleText(win, text) {
   const result = await evaluate(win, `
     (() => {
@@ -591,6 +621,70 @@ async function runShiftTabOutdentScenario(win) {
   await waitForEditorLayout(win, 'Shift+Tab returns empty paragraph to parent level', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing);
 }
 
+async function runMarkdownTypingScenario(win) {
+  await seedEditorNote(win, {
+    id: 'qe_editor_markdown_typing',
+    title: 'QE Editor Markdown Typing',
+    body: 'Parent',
+  });
+  await focusEditorRow(win, 0);
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'markdown typing creates empty paragraph', rows => rows.length === 2 && rows[1].kind === 'paragraph' && rows[1].editing);
+
+  await typeActiveEditorText(win, '# ');
+  await waitForEditorLayout(win, 'heading starter converts immediately', rows => rows[1]?.kind === 'heading' && rows[1]?.value === '# ' && rows[1]?.editing);
+  await typeActiveEditorText(win, 'Markdown heading');
+  await waitForEditorLayout(win, 'heading content remains editable as markdown source', rows => rows[1]?.kind === 'heading' && rows[1]?.value === '# Markdown heading');
+
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'paragraph after heading is editable', rows => rows.length >= 3 && rows[2]?.kind === 'paragraph' && rows[2]?.editing);
+  await typeActiveEditorText(win, '- [ ] ');
+  await waitForEditorLayout(win, 'todo starter converts immediately', rows => rows[2]?.kind === 'todo' && rows[2]?.value === '- [ ] ' && rows[2]?.editing);
+  await typeActiveEditorText(win, 'Checklist item');
+  await waitForEditorLayout(win, 'todo content remains editable as markdown source', rows => rows[2]?.kind === 'todo' && rows[2]?.value === '- [ ] Checklist item');
+
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'paragraph after todo is editable', rows => rows.length >= 4 && rows[3]?.kind === 'todo' && rows[3]?.editing);
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'empty todo exits to paragraph', rows => rows.length >= 4 && rows[3]?.kind === 'paragraph' && rows[3]?.editing);
+  await typeActiveEditorText(win, 'Safe [Example](https://example.com) and literal [Bad](javascript:alert(1)) plus ~~strike~~.');
+  await waitForEditorLayout(win, 'inline markdown content is preserved as source', rows => rows[3]?.value.includes('[Example](https://example.com)') && rows[3]?.value.includes('~~strike~~'));
+}
+
+async function runMarkdownCompatibilityScenario(win) {
+  await seedEditorNote(win, {
+    id: 'qe_editor_markdown_compatibility',
+    title: 'QE Editor Markdown Compatibility',
+    body: 'Parent\n\n| Name | Notes |\n| --- | --- |\n| Ada | Pipes \\\\| stay |\n\n```js\nconst answer = 42;\n```\n\n[[Wiki Page]] #tag @remind 2026-06-01 09:00',
+  });
+  await waitForEditorLayout(win, 'markdown table and code remain specialized', rows => (
+    rows.some(row => row.kind === 'table' && row.text.includes('Ada'))
+      && rows.some(row => row.kind === 'code' && row.text.includes('const answer'))
+      && rows.some(row => row.text.includes('Wiki Page'))
+  ));
+}
+
+async function runMarkdownPredictabilityScenario(win) {
+  await seedEditorNote(win, {
+    id: 'qe_editor_markdown_predictability',
+    title: 'QE Editor Markdown Predictability',
+    body: 'Parent',
+  });
+  await focusEditorRow(win, 0);
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'literal marker paragraph is editable', rows => rows.length === 2 && rows[1].kind === 'paragraph' && rows[1].editing);
+  await typeActiveEditorText(win, ' # ');
+  await waitForEditorLayout(win, 'leading-space marker remains literal', rows => rows[1]?.kind === 'paragraph' && rows[1]?.value === ' # ');
+  await pressAccelerator(win, 'A', ['control']);
+  await typeActiveEditorText(win, '/');
+  await waitForEditorLayout(win, 'slash command text remains in editor', rows => rows[1]?.kind === 'paragraph' && rows[1]?.value.endsWith('/'));
+  await pressAccelerator(win, 'Escape');
+}
+
 async function runNoteCreateEditPersistenceScenario(win) {
   const title = 'QE User Scenario Note';
   const body = 'A user can create, edit, and persist this note.';
@@ -931,6 +1025,15 @@ async function runRegression() {
   });
   await runScenario(win, 'Editor', 'Shift+Tab returns an empty nested paragraph to parent level', async () => {
     await runShiftTabOutdentScenario(win);
+  });
+  await runScenario(win, 'Editor', 'markdown starters convert while typing and inline markdown stays portable', async () => {
+    await runMarkdownTypingScenario(win);
+  });
+  await runScenario(win, 'Editor', 'existing markdown tables, code, and app syntax stay compatible', async () => {
+    await runMarkdownCompatibilityScenario(win);
+  });
+  await runScenario(win, 'Editor', 'literal markers and slash commands remain predictable after markdown rules', async () => {
+    await runMarkdownPredictabilityScenario(win);
   });
 
   const finalState = await state(win);

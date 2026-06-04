@@ -11,6 +11,8 @@ import './editor/blockFeatures.jsx';
 import './editor/tableOps.js';
 import './editor/outline.jsx';
 import './editor/editorOps.js';
+import './editor/markdownInputRules.js';
+import './editor/markdownInlineRenderers.jsx';
 import './editor/codeHighlighter.jsx';
 import './editor/outlinerHistory.js';
 import './editor/outlinerRenderers.jsx';

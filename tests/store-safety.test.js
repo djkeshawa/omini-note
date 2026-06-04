@@ -503,6 +503,8 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const outlinerRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
+  const markdownInlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
+  const markdownInputRules = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
@@ -590,6 +592,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(outlinerRenderers, /sandbox=""/);
   assert.match(outlinerRenderers, /function mnMermaidSvgHeight/);
   assert.match(outlinerRenderers, /pointerEvents: 'none'/);
+  assert.match(markdownInlineRenderers, /window\.mn\?\.openExternal\?\.\(segment\.url\)/);
+  assert.doesNotMatch(markdownInputRules, /mnMdToBlocks|mnBlocksToMd|dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
+  assert.doesNotMatch(markdownInlineRenderers, /dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
   assert.doesNotMatch(aiSource, /env:\s*\{\s*\.\.\.process\.env/);
 
   assert.match(storeSource, /function sanitizeVaultMetaPatch/);
