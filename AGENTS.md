@@ -36,9 +36,15 @@ Before continuing an existing thread, quickly check the user's latest intent and
 
 ## Agent Memory Workflow
 
-Use the LLM Memory MCP as durable project memory during coding work. Before editing or investigating a non-trivial change, recall relevant memories for the task and likely files. During or after meaningful work, record concise operational memories with `repo_id` `my_notes` when they would help future agents: actions taken, design decisions, new findings, issues and root causes, how fixes were implemented, fragile areas, feature implementation details, verification notes, and follow-up warnings.
+Use the LLM Memory MCP as durable project memory during coding work, but never treat memory as the source of truth. Memory reduces hallucination only when it is recalled early and verified against the live repository.
 
-Keep memories durable and safe. Do not store credentials, API keys, Zotero secrets, personal vault data, private note contents, `.env` values, generated package contents, or verbose transcripts. Prefer short summaries tied to files, commands, decisions, and risks that future coding agents can act on.
+- Start non-trivial sessions with `memory_session_start` using `repo_id` `my_notes`, the user’s concrete task, and likely files.
+- Before editing or investigating, use `memory_before_change` or `memory_recall` to find relevant past decisions, warnings, root causes, and verification notes.
+- Verify recalled facts with current project state before relying on them: inspect files with `rg`, `find`, `sed`, `git status`, `git diff`, `git log`, or focused tests as appropriate.
+- When summarizing history, separate facts confirmed from git/files/tests from memory-derived context. Use concrete dates from `git log` or the shell date instead of guessing.
+- If memory and the repository disagree, trust the repository and mention the discrepancy when it matters.
+- During or after meaningful work, record concise operational memories with `memory_after_work` and `repo_id` `my_notes` when they would help future agents: actions taken, design decisions, new findings, issues and root causes, how fixes were implemented, fragile areas, feature implementation details, verification notes, and follow-up warnings.
+- Keep memories durable and safe. Do not store credentials, API keys, Zotero secrets, personal vault data, private note contents, `.env` values, generated package contents, or verbose transcripts. Prefer short summaries tied to files, commands, decisions, and risks that future coding agents can act on.
 
 ## Testing Guidelines
 
@@ -53,9 +59,3 @@ Pull requests should include a problem/solution summary, linked issue when avail
 ## Security & Configuration Tips
 
 Do not commit credentials, AI API keys, Zotero secrets, generated packages, or personal vault data. Validate IPC inputs in `main.js`, keep external URL behavior allowlisted, and preserve data-safety tests when touching storage or import/export paths.
-
-<!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read
-[specs/001-architecture-refactor/plan.md](/home/dinethj/Documents/projects/my_notes/specs/001-architecture-refactor/plan.md)
-<!-- SPECKIT END -->
