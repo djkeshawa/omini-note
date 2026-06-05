@@ -747,6 +747,59 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(store, /path\.relative\(dir, file\)/);
 });
 
+test('Pastel theme is selectable and keeps existing theme contracts', () => {
+  const themeSource = fs.readFileSync(path.join(__dirname, '../src/shared/theme.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const sandbox = { window: {} };
+  vm.runInNewContext(themeSource, sandbox);
+  const hueOf = (value) => {
+    const match = String(value || '').match(/oklch\(\s*[\d.]+\s+[\d.]+\s+(-?[\d.]+)/);
+    return match ? Number(match[1]) : null;
+  };
+  const assertHueBetween = (token, min, max) => {
+    const hue = hueOf(themes.pastel[token]);
+    assert.ok(hue >= min && hue <= max, `${token} hue ${hue} expected in ${min}-${max}`);
+  };
+
+  const themes = sandbox.window.MN_THEMES;
+  assert.ok(themes.light);
+  assert.ok(themes.dark);
+  assert.ok(themes.pastel);
+  assert.notEqual(themes.pastel, themes.light);
+
+  const requiredKeys = Object.keys(themes.light).sort();
+  assert.deepEqual(Object.keys(themes.dark).sort(), requiredKeys);
+  assert.deepEqual(Object.keys(themes.pastel).sort(), requiredKeys);
+  for (const token of ['bg', 'ink', 'line', 'accent', 'focus', 'danger', 'success', 'warn']) {
+    assert.match(themes.pastel[token], /^oklch\(/, token);
+  }
+  assert.notEqual(themes.pastel.bg, themes.light.bg);
+  assert.notEqual(themes.pastel.accent, themes.light.accent);
+  assert.notEqual(themes.pastel.accent, themes.dark.accent);
+  assertHueBetween('bgOuter', 220, 260);
+  assertHueBetween('bgSub', 280, 305);
+  assertHueBetween('bgInput', 315, 340);
+  assertHueBetween('danger', 5, 30);
+  assertHueBetween('warn', 45, 65);
+  assertHueBetween('accent', 275, 300);
+  assertHueBetween('focus', 275, 300);
+  assertHueBetween('selBg', 315, 340);
+  const greenTokens = Object.entries(themes.pastel)
+    .filter(([, value]) => {
+      const hue = hueOf(value);
+      return hue != null && hue >= 120 && hue <= 185;
+    })
+    .map(([key]) => key)
+    .sort();
+  assert.deepEqual(greenTokens, ['success', 'successSoft']);
+
+  assert.match(settings, /Light, dark, or pastel color scheme\./);
+  assert.match(settings, /value: 'light', label: 'Light'/);
+  assert.match(settings, /value: 'dark', label: 'Dark'/);
+  assert.match(settings, /value: 'pastel', label: 'Pastel'/);
+  assert.doesNotMatch(settings, /ipcRenderer|require\('electron'\)|package\.json/);
+});
+
 test('Electron installs native edit context menu for right-click copy paste cut', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');

@@ -252,9 +252,9 @@ function SectionAppearance({ tweaks, setTweak, T }) {
     <div>
       <H T={T} label="Appearance" sub="Make VispNote look the way you think." />
       <SettingsCard T={T}>
-        <Row T={T} label="Theme" sub="Light or dark color scheme.">
+        <Row T={T} label="Theme" sub="Light, dark, or pastel color scheme.">
           <Segmented T={T} value={tweaks.theme} onChange={v => setTweak('theme', v)}
-            options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
+            options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'pastel', label: 'Pastel' }]} />
         </Row>
         <Row T={T} label="Interface density" sub="Tighter rows fit more on screen.">
           <Segmented T={T} value={tweaks.density} onChange={v => setTweak('density', v)}
