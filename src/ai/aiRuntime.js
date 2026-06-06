@@ -11,6 +11,13 @@
   const MAX_REPAIR_ROUNDS = 1;
   const TRACE_LIMIT = 40;
   const CONTEXTUAL_AI_SECTION_KINDS = ['fact', 'suggestion', 'preview'];
+  const CURRENT_NOTE_SUGGESTION_SECTIONS = [
+    { title: 'Summary', kind: 'fact', aliases: ['Summary', 'Brief summary'] },
+    { title: 'Tasks', kind: 'suggestion', aliases: ['Tasks', 'Task extraction', 'Open tasks'] },
+    { title: 'Tags', kind: 'suggestion', aliases: ['Tags', 'Tag suggestions'] },
+    { title: 'Links', kind: 'suggestion', aliases: ['Links', 'Link suggestions', 'Wiki links'] },
+    { title: 'Gaps or contradictions', kind: 'suggestion', aliases: ['Gaps or contradictions', 'Missing context', 'Contradictions'] },
+  ];
   const CONTEXTUAL_AI_PROVIDER_LABELS = {
     ollama: 'Ollama',
     openai: 'OpenAI',
@@ -591,6 +598,119 @@
     };
   }
 
+  function currentNoteRelatedNotes(note = {}, allNotes = [], options = {}) {
+    const limit = Math.max(0, Math.min(Number(options.limit) || 5, 12));
+    if (!limit || !note) return [];
+    const noteId = String(note.id || '');
+    const body = String(note.body || '');
+    const title = cleanContextText(note.title || '', 180).toLowerCase();
+    const linkedTitles = new Set();
+    let match;
+    const wikiRe = /\[\[([^\]]+)\]\]/g;
+    while ((match = wikiRe.exec(body))) {
+      const linkedTitle = cleanContextText(String(match[1] || '').split('|')[0], 180).toLowerCase();
+      if (linkedTitle) linkedTitles.add(linkedTitle);
+    }
+    const related = [];
+    for (const candidate of allNotes || []) {
+      if (!candidate || String(candidate.id || '') === noteId) continue;
+      const candidateTitle = cleanContextText(candidate.title || '', 180).toLowerCase();
+      const candidateBody = String(candidate.body || '');
+      const isLinked = candidateTitle && linkedTitles.has(candidateTitle);
+      const isBacklink = title && candidateBody.toLowerCase().includes(`[[${title}]]`);
+      if (!isLinked && !isBacklink) continue;
+      related.push(candidate);
+      if (related.length >= limit) break;
+    }
+    return related;
+  }
+
+  function currentNoteSuggestionSources(note = {}, allNotes = [], options = {}) {
+    const limit = Math.max(1, Math.min(Number(options.limit) || 8, 16));
+    return contextualAiSourcesFromNotes([
+      note,
+      ...currentNoteRelatedNotes(note, allNotes, { limit: Math.max(0, limit - 1) }),
+    ], { limit, requireId: false });
+  }
+
+  function buildCurrentNoteSuggestionPrompt({ note = {}, allNotes = [], maxBodyChars = 6000, relatedLimit = 5 } = {}) {
+    const title = cleanContextText(note.title || 'Untitled', 180) || 'Untitled';
+    const sourceId = cleanContextText(note.id || title, 180);
+    const tags = (note.tags || []).map(tag => cleanContextText(tag, 80)).filter(Boolean);
+    const body = cleanContextText(note.body || '', maxBodyChars);
+    const sources = currentNoteSuggestionSources(note, allNotes, { limit: relatedLimit + 1 });
+    const related = sources.filter(source => source.id !== sourceId && source.title !== title);
+    const relatedLines = related.length
+      ? related.map(source => `- ${source.title} [${source.id || source.title}]${source.snippet ? `: ${source.snippet}` : ''}`)
+      : ['- None.'];
+    return [
+      'Review the selected VispNote note and return note-level suggestions only.',
+      'Use only the note body, tags, and related notes supplied here. Do not invent facts.',
+      'Keep factual summary separate from suggestions. Cite source refs in brackets such as [source-id] when making a claim.',
+      'Do not return an edited note body and do not propose hidden mutations.',
+      'Return exactly these Markdown headings: Summary, Tasks, Tags, Links, Gaps or contradictions.',
+      '',
+      `Current note: ${title}`,
+      `Source ref: ${sourceId || title}`,
+      tags.length ? `Current tags: ${tags.map(tag => `#${tag}`).join(' ')}` : 'Current tags: none',
+      '',
+      'Current note body:',
+      body || '(empty note)',
+      '',
+      'Related source notes:',
+      ...relatedLines,
+    ].join('\n');
+  }
+
+  function extractMarkdownSection(text = '', labels = []) {
+    const wanted = (labels || []).map(label => cleanContextText(label, 160).toLowerCase()).filter(Boolean);
+    if (!wanted.length) return '';
+    const knownHeadings = CURRENT_NOTE_SUGGESTION_SECTIONS
+      .flatMap(def => [def.title, ...(def.aliases || [])])
+      .map(label => cleanContextText(label, 160).toLowerCase())
+      .filter(Boolean);
+    const lines = String(text || '').split(/\r?\n/);
+    let collecting = false;
+    const out = [];
+    for (const line of lines) {
+      const headingText = line.replace(/^#{1,6}\s+/, '').replace(/[:*]+$/g, '').trim().toLowerCase();
+      const isHeading = /^#{1,6}\s+/.test(line);
+      const isKnownHeading = knownHeadings.includes(headingText);
+      if ((isHeading || isKnownHeading) && wanted.includes(headingText)) {
+        collecting = true;
+        continue;
+      }
+      if (collecting && (isHeading || isKnownHeading)) break;
+      if (collecting) out.push(line);
+    }
+    return out.join('\n').trim();
+  }
+
+  function makeCurrentNoteSuggestionResult({ aiText = '', note = {}, allNotes = [], status = null, createdAt = null } = {}) {
+    const sources = currentNoteSuggestionSources(note, allNotes);
+    const sourceIds = sources.map(source => source.id || source.title).filter(Boolean);
+    const fallback = cleanContextText(aiText, 1200);
+    const sections = CURRENT_NOTE_SUGGESTION_SECTIONS.map(def => {
+      const content = extractMarkdownSection(aiText, def.aliases)
+        || (def.title === 'Summary' ? fallback : '')
+        || 'No suggestion returned.';
+      return {
+        kind: def.kind,
+        title: def.title,
+        content,
+        sourceIds,
+      };
+    });
+    return makeContextualAiResult({
+      status,
+      title: 'Current note suggestions',
+      outputKind: 'note-suggestions',
+      sources,
+      sections,
+      createdAt,
+    });
+  }
+
   function getRecentTraces() {
     return recentTraces.slice();
   }
@@ -626,6 +746,8 @@
     normalizeContextualAiSection,
     normalizeContextualAiSections,
     makeContextualAiResult,
+    buildCurrentNoteSuggestionPrompt,
+    makeCurrentNoteSuggestionResult,
     getRecentTraces,
   };
 });

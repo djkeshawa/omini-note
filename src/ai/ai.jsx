@@ -803,6 +803,122 @@ function MnAiFormattedResponse({ text, T, allNotes = [], onOpenNote, onClose, em
   );
 }
 
+function MnCurrentNoteSuggestionsCard({ result, busy, error, T, onRefresh, onReject, onOpenNote, onClose, embedded, noteIdSet }) {
+  const sources = Array.isArray(result?.sources) ? result.sources : [];
+  const sourceById = new Map(sources.map(source => [String(source.id || source.title || ''), source]));
+  const openSource = (source) => {
+    const sourceId = String(source?.id || '');
+    if (!sourceId || !noteIdSet?.has?.(sourceId)) return;
+    const opened = onOpenNote?.(sourceId);
+    if (opened !== false && !embedded) onClose && onClose();
+  };
+  return (
+    <div style={{
+      marginBottom: 16,
+      padding: 12,
+      borderRadius: 8,
+      border: `1px solid ${T.lineSub}`,
+      background: T.bgSub,
+      color: T.ink,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 9 }}>
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720 }}>Current note suggestions</div>
+        {result?.providerModelLabel && (
+          <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{result.providerModelLabel}</div>
+        )}
+        {result?.hosted && (
+          <div style={{
+            fontFamily: 'var(--mn-mono)',
+            fontSize: 10,
+            color: T.warn || T.inkDim,
+            textTransform: 'uppercase',
+          }}>Hosted provider</div>
+        )}
+        <div style={{ flex: 1 }} />
+        <button type="button" onClick={onRefresh} disabled={busy} style={mnAskSecondaryButton(T)}>
+          {busy ? 'Checking...' : 'Refresh'}
+        </button>
+        <button type="button" onClick={onReject} disabled={busy} style={mnAskSecondaryButton(T)}>
+          Reject
+        </button>
+      </div>
+      {error && (
+        <div style={{
+          border: `1px solid color-mix(in oklab, ${T.warn || T.danger || T.ink} 35%, ${T.lineSub})`,
+          borderRadius: 7,
+          background: T.bg,
+          color: T.warn || T.danger || T.ink,
+          padding: '8px 10px',
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 12.5,
+          marginBottom: result ? 10 : 0,
+        }}>{error}</div>
+      )}
+      {busy && !result && !error && (
+        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim }}>Generating suggestions...</div>
+      )}
+      {result?.sections?.length > 0 && (
+        <div style={{ display: 'grid', gap: 9 }}>
+          {result.sections.map(section => {
+            const sectionSources = (section.sourceIds || [])
+              .map(id => sourceById.get(String(id)))
+              .filter(Boolean)
+              .slice(0, 4);
+            return (
+              <div key={`${section.kind}:${section.title}`} style={{
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 7,
+                background: T.bg,
+                padding: '9px 10px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 4, flexWrap: 'wrap' }}>
+                  <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 720, color: T.ink }}>{section.title}</div>
+                  <div style={{
+                    fontFamily: 'var(--mn-mono)',
+                    fontSize: 10,
+                    color: section.kind === 'fact' ? T.inkDim : T.accent,
+                    textTransform: 'uppercase',
+                  }}>{section.kind}</div>
+                </div>
+                <div style={{
+                  fontFamily: 'var(--mn-body)',
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  whiteSpace: 'pre-wrap',
+                  color: T.inkMed,
+                }}>{section.content}</div>
+                {sectionSources.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                    <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, padding: '4px 0' }}>Evidence</span>
+                    {sectionSources.map(source => (
+                      <button
+                        key={source.id || source.title}
+                        type="button"
+                        onClick={() => openSource(source)}
+                        style={{
+                          border: `1px solid ${T.lineSub}`,
+                          borderRadius: 999,
+                          background: T.bgSub,
+                          color: T.inkMed,
+                          cursor: source.id && noteIdSet?.has?.(String(source.id)) ? 'pointer' : 'default',
+                          padding: '4px 8px',
+                          fontFamily: 'var(--mn-ui)',
+                          fontSize: 11.5,
+                        }}>
+                        {source.title || source.id}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MnAskAI({
   vaultId, currentNote, allNotes, onClose, onOpenNote, onCreateNote, onApplyCurrentPageBody, onApplyNoteBodies, onTagCurrentNote,
   session, setSession, onBackgroundComplete, initialQuery, T, embedded = false,
@@ -810,6 +926,9 @@ function MnAskAI({
   const [query, setQuery] = useStateAI('');
   const [status, setStatus] = useStateAI(null);
   const [openSources, setOpenSources] = useStateAI({});
+  const [noteSuggestions, setNoteSuggestions] = useStateAI(null);
+  const [noteSuggestionsBusy, setNoteSuggestionsBusy] = useStateAI(false);
+  const [noteSuggestionsError, setNoteSuggestionsError] = useStateAI('');
   const [localSession, setLocalSession] = useStateAI({
     messages: [],
     pending: false,
@@ -867,6 +986,12 @@ function MnAskAI({
     setQuery(initialQuery);
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [initialQuery]);
+
+  useEffectAI(() => {
+    setNoteSuggestions(null);
+    setNoteSuggestionsError('');
+    setNoteSuggestionsBusy(false);
+  }, [currentNote?.id]);
 
   useEffectAI(() => {
     const scrollNode = scrollRef.current;
@@ -2153,6 +2278,72 @@ function MnAskAI({
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
+  const rejectCurrentNoteSuggestions = () => {
+    if (noteSuggestionsBusy) return;
+    setNoteSuggestions(null);
+    setNoteSuggestionsError('');
+  };
+
+  const requestCurrentNoteSuggestions = async () => {
+    if (noteSuggestionsBusy) return null;
+    if (!currentNote) {
+      setNoteSuggestionsError('Open a note before requesting suggestions.');
+      return null;
+    }
+    if (!aiRuntime.buildCurrentNoteSuggestionPrompt || !aiRuntime.makeCurrentNoteSuggestionResult) {
+      setNoteSuggestionsError('Current note suggestions are unavailable in this build.');
+      return null;
+    }
+    if (!window.mn?.ai?.chat) {
+      setNoteSuggestionsError('AI chat is unavailable in this build.');
+      return null;
+    }
+    const jobId = mnAskAiJobId();
+    setNoteSuggestionsBusy(true);
+    setNoteSuggestionsError('');
+    try {
+      let statusValue = status;
+      try {
+        const statusResult = await window.mn.ai.status?.();
+        if (statusResult?.ok) {
+          statusValue = statusResult.value;
+          setStatus(statusResult.value);
+        }
+      } catch (e) {}
+      const prompt = aiRuntime.buildCurrentNoteSuggestionPrompt({ note: currentNote, allNotes });
+      const response = await window.mn.ai.chat({
+        jobId,
+        timeoutMs: MN_AI_CHAT_TIMEOUT_MS,
+        maxTokens: 900,
+        messages: [
+          {
+            role: 'system',
+            content: 'You produce grounded current-note suggestions for VispNote. Use only supplied sources, keep facts separate from suggestions, and cite evidence refs.',
+          },
+          { role: 'user', content: prompt },
+        ],
+      });
+      if (!response?.ok) throw new Error(response?.error || 'Current note suggestions failed.');
+      if (response.value && response.value.ok === false) throw new Error(response.value.error || 'Current note suggestions failed.');
+      const aiText = String(response.value?.answer || response.answer || '').trim();
+      const result = aiRuntime.makeCurrentNoteSuggestionResult({
+        aiText,
+        note: currentNote,
+        allNotes,
+        status: statusValue,
+        createdAt: new Date().toISOString(),
+      });
+      setNoteSuggestions(result);
+      return result;
+    } catch (e) {
+      const message = e?.message || String(e) || 'Current note suggestions failed.';
+      setNoteSuggestionsError(message);
+      return null;
+    } finally {
+      setNoteSuggestionsBusy(false);
+    }
+  };
+
   const resizeComposer = () => {
     const el = inputRef.current;
     if (!el) return;
@@ -2301,6 +2492,19 @@ function MnAskAI({
             <div style={{ flex: 1, fontSize: 11, color: T.inkDim, fontFamily: 'var(--mn-mono)' }}>
               {footerHint}
             </div>
+            {currentNote && (
+              <button
+                type="button"
+                onClick={requestCurrentNoteSuggestions}
+                disabled={pending || noteSuggestionsBusy}
+                style={{
+                  ...mnAskSecondaryButton(T),
+                  cursor: pending || noteSuggestionsBusy ? 'not-allowed' : 'pointer',
+                  opacity: pending || noteSuggestionsBusy ? 0.6 : 1,
+                }}>
+                {noteSuggestionsBusy ? 'Checking note...' : 'Suggest for note'}
+              </button>
+            )}
             <button onClick={submit} disabled={pending || !query.trim() || !canAsk}
               style={{
                 ...mnAskPrimaryButton(T),
@@ -2357,6 +2561,20 @@ function MnAskAI({
             }}>{error}</div>
           )}
           {messages.length === 0 && <MnAiSetupNotice status={status} T={T} />}
+          {(noteSuggestions || noteSuggestionsBusy || noteSuggestionsError) && (
+            <MnCurrentNoteSuggestionsCard
+              result={noteSuggestions}
+              busy={noteSuggestionsBusy}
+              error={noteSuggestionsError}
+              T={T}
+              onRefresh={requestCurrentNoteSuggestions}
+              onReject={rejectCurrentNoteSuggestions}
+              onOpenNote={onOpenNote}
+              onClose={onClose}
+              embedded={embedded}
+              noteIdSet={noteIdSet}
+            />
+          )}
           {messages.map((m, idx) => {
             const previousUser = [...messages.slice(0, idx)].reverse().find(item => item.role === 'user')?.text || '';
             const canReport = m.role === 'assistant' && !m.error && !m.stopped && String(m.text || '').trim();
