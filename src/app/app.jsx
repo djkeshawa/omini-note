@@ -633,6 +633,7 @@ function MnApp() {
   const dirtyMissingWarnedRef = useRefA(new Set());
   const vaultActivationSeq = useRefA(0);
   const noteMetadataHistoryRef = useRefA({ undo: [], redo: [], activeKey: null });
+  const aiNoteBodyRestoreRef = useRefA(new Map());
   const cloneNoteForMetadataHistory = useCallbackA((note) => note ? ({
     id: note.id,
     title: note.title,
@@ -2076,6 +2077,36 @@ function MnApp() {
     byId.forEach((_, id) => markDirty(id));
     return byId.size;
   }, [notesWithBody, markDirty, mnMdToBlocks, mnBlocksToMd]);
+
+  const applyAiCurrentPageBody = useCallbackA((noteId, body, options = {}) => {
+    const id = String(noteId || '');
+    const current = notesWithBody.find(note => note.id === id);
+    if (!current) return { ok: false, error: 'No current page is open to edit.' };
+    if (typeof body !== 'string') return { ok: false, error: 'AI edit body is invalid.' };
+    const previousBody = typeof options.previousBody === 'string'
+      ? options.previousBody
+      : String(current.body || '');
+    aiNoteBodyRestoreRef.current.set(id, {
+      body: previousBody,
+      title: current.title || 'Current page',
+      instruction: String(options.instruction || ''),
+      at: new Date().toISOString(),
+    });
+    const applied = updateNoteBodies([{ id, body }]);
+    return applied
+      ? { ok: true, restoreAvailable: true, noteId: id }
+      : { ok: false, error: 'Could not apply AI edit.' };
+  }, [notesWithBody, updateNoteBodies]);
+
+  const restoreAiCurrentPageBody = useCallbackA((noteId) => {
+    const id = String(noteId || '');
+    const snapshot = aiNoteBodyRestoreRef.current.get(id);
+    if (!snapshot) return { ok: false, error: 'No previous AI edit body is available.' };
+    const applied = updateNoteBodies([{ id, body: snapshot.body }]);
+    if (!applied) return { ok: false, error: 'Could not restore previous AI edit body.' };
+    aiNoteBodyRestoreRef.current.delete(id);
+    return { ok: true, noteId: id, title: snapshot.title || 'Current page' };
+  }, [updateNoteBodies]);
 
   const openNoteById = useCallbackA((id) => {
     const noteId = String(id || '');
@@ -3940,10 +3971,12 @@ function MnApp() {
               onOpenNote={openNoteById}
               onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] }, { open: false })}
               onTagCurrentNote={tagCurrentNoteFromAi}
-              onApplyCurrentPageBody={(body) => {
-                if (!selectedNote) return;
-                updateNoteBodies([{ id: selectedNote.id, body }]);
+              onApplyCurrentPageBody={(body, options) => {
+                if (!selectedNote) return { ok: false, error: 'No selected note.' };
+                return applyAiCurrentPageBody(selectedNote.id, body, options);
               }}
+              onRestoreCurrentPageBody={restoreAiCurrentPageBody}
+              onOpenCurrentNoteVersions={(noteId) => setVersionTargetId(noteId || selectedNote?.id || null)}
               onApplyNoteBodies={updateNoteBodies}
               session={activeAskAiSession}
               setSession={setActiveAskAiSession}

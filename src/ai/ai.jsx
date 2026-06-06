@@ -331,6 +331,68 @@ function mnAiCurrentNoteMarkdown(note) {
   }
 }
 
+function mnAiMarkdownMarkers(text = '') {
+  const body = String(text || '');
+  const collect = (re, map = value => value) => {
+    const seen = new Set();
+    const out = [];
+    let match;
+    while ((match = re.exec(body))) {
+      const value = String(map(match) || '').trim();
+      const key = value.toLowerCase();
+      if (!value || seen.has(key)) continue;
+      seen.add(key);
+      out.push(value);
+    }
+    return out;
+  };
+  return {
+    wikiLinks: collect(/\[\[([^\]]+)\]\]/g, match => match[1]),
+    tags: collect(/(^|[\s(])#([A-Za-z0-9_-]+)/g, match => match[2]),
+    properties: collect(/^\s*-?\s*([A-Za-z_][A-Za-z0-9_-]*)::\s.*$/gm, match => match[1]),
+    taskCount: (body.match(/^\s*[-*]\s+\[[ xX]\]\s+/gm) || []).length,
+  };
+}
+
+function mnAiMissingMarkdownMarkers(before = '', after = '') {
+  const left = mnAiMarkdownMarkers(before);
+  const right = mnAiMarkdownMarkers(after);
+  const missing = (from, to) => from.filter(value => !to.some(item => item.toLowerCase() === value.toLowerCase()));
+  const missingWikiLinks = missing(left.wikiLinks, right.wikiLinks);
+  const missingTags = missing(left.tags, right.tags);
+  const missingProperties = missing(left.properties, right.properties);
+  const taskCountReduced = right.taskCount < left.taskCount;
+  const warnings = [
+    missingWikiLinks.length ? `Wiki links changed: ${missingWikiLinks.map(item => `[[${item}]]`).join(', ')}` : '',
+    missingTags.length ? `Tags changed: ${missingTags.map(item => `#${item}`).join(', ')}` : '',
+    missingProperties.length ? `Properties changed: ${missingProperties.join(', ')}` : '',
+    taskCountReduced ? `Task count changed: ${left.taskCount} to ${right.taskCount}` : '',
+  ].filter(Boolean);
+  return {
+    ok: !warnings.length,
+    before: left,
+    after: right,
+    missingWikiLinks,
+    missingTags,
+    missingProperties,
+    taskCountReduced,
+    warnings,
+  };
+}
+
+function mnAiBuildMarkdownPreview(before = '', after = '') {
+  const beforeText = String(before || '');
+  const afterText = String(after || '');
+  return {
+    before: beforeText,
+    after: afterText,
+    changed: beforeText !== afterText,
+    beforeLines: beforeText ? beforeText.split(/\r?\n/).length : 0,
+    afterLines: afterText ? afterText.split(/\r?\n/).length : 0,
+    preservation: mnAiMissingMarkdownMarkers(beforeText, afterText),
+  };
+}
+
 function mnAiShouldShareCurrentContext(query = '') {
   const text = String(query || '').toLowerCase();
   return /\b(this|current|open|selected|active)\s+(page|note|document)\b/.test(text)
@@ -921,7 +983,7 @@ function MnCurrentNoteSuggestionsCard({ result, busy, error, T, onRefresh, onRej
 
 function MnAskAI({
   vaultId, currentNote, allNotes, onClose, onOpenNote, onCreateNote, onApplyCurrentPageBody, onApplyNoteBodies, onTagCurrentNote,
-  session, setSession, onBackgroundComplete, initialQuery, T, embedded = false,
+  onRestoreCurrentPageBody, onOpenCurrentNoteVersions, session, setSession, onBackgroundComplete, initialQuery, T, embedded = false,
 }) {
   const [query, setQuery] = useStateAI('');
   const [status, setStatus] = useStateAI(null);
@@ -1345,7 +1407,7 @@ function MnAskAI({
           clarify: true,
         };
       }
-      return makeVirtualWriteReview('edit-current-page', { instruction: zoteroEditInstruction(readResult, q) }, q);
+      return await makeVirtualWriteReview('edit-current-page', { instruction: zoteroEditInstruction(readResult, q) }, q);
     }
     setActiveAction('Summarizing Zotero paper...');
     const answer = await summarizeZoteroRead({ readResult, query: q, jobId });
@@ -1478,7 +1540,7 @@ function MnAskAI({
     };
   };
 
-  const makeVirtualWriteReview = (name, args = {}, q = '') => {
+  const makeVirtualWriteReview = async (name, args = {}, q = '') => {
     const inputArgs = { ...(args || {}) };
     if (!String(inputArgs.instruction || '').trim() && q) inputArgs.instruction = q;
     const cleanArgs = mnAiCleanVirtualToolArgs(name, inputArgs);
@@ -1486,12 +1548,34 @@ function MnAskAI({
     if (!instruction) throw new Error('Edit instruction is empty');
     if (name === 'edit-current-page') {
       if (!currentNote) throw new Error('No current page is open to edit');
-      const step = { actionId: name, label: 'Edit current page', risk: 'confirm', args: { instruction }, virtual: true };
+      if (!onApplyCurrentPageBody) throw new Error('Current page editing is not available');
+      setActiveAction('Drafting page preview...');
+      const previousBody = mnAiCurrentNoteMarkdown(currentNote);
+      const reviewedBody = String(await askEdit({
+        scope: 'current page preview',
+        instruction,
+        text: previousBody,
+        jobId: mnAskAiJobId(),
+      }) || '');
+      if (!reviewedBody.trim()) throw new Error('AI returned an empty page preview.');
+      const markdownPreview = mnAiBuildMarkdownPreview(previousBody, reviewedBody);
+      const markerWarnings = markdownPreview.preservation.warnings || [];
+      const step = {
+        actionId: name,
+        label: 'Apply reviewed AI page edit',
+        risk: 'confirm',
+        args: { instruction },
+        reviewedBody,
+        previousBody,
+        virtual: true,
+      };
       const preview = {
         title: 'Review AI page edit',
-        message: `Review before AI edits "${currentNote.title || 'current page'}".`,
-        steps: ['Send the current page body to the AI editor', 'Apply the returned page body'],
+        message: `Review before AI edits "${currentNote.title || 'current page'}". Exact Markdown preview is ready.`,
+        steps: ['Generated an edited Markdown preview', 'Apply the reviewed Markdown through the note update path'],
         affected: [{ type: 'note', id: currentNote.id, title: currentNote.title || 'Current page' }],
+        markdownPreview,
+        markerWarnings,
       };
       const result = { risk: 'confirm', preview, message: preview.message };
       return {
@@ -1525,7 +1609,7 @@ function MnAskAI({
     throw new Error(`Unsupported AI write tool: ${name}`);
   };
 
-  const runConfirmedVirtualWriteTool = async ({ name, args = {}, q = '', jobId, run } = {}) => {
+  const runConfirmedVirtualWriteTool = async ({ name, args = {}, reviewedBody = null, previousBody = null, q = '', jobId, run } = {}) => {
     const inputArgs = { ...(args || {}) };
     if (!String(inputArgs.instruction || '').trim() && q) inputArgs.instruction = q;
     const cleanArgs = mnAiCleanVirtualToolArgs(name, inputArgs);
@@ -1533,15 +1617,27 @@ function MnAskAI({
     if (!instruction) throw new Error('Edit instruction is empty');
     if (name === 'edit-current-page') {
       if (!currentNote || !onApplyCurrentPageBody) throw new Error('No current page is open to edit');
-      setActiveAction('Editing page...');
-      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Edit current page', args: { instruction } });
-      const body = mnAiCurrentNoteMarkdown(currentNote);
-      const edited = await askEdit({ scope: 'current page', instruction, text: body, jobId });
-      onApplyCurrentPageBody(edited);
+      setActiveAction('Applying reviewed page edit...');
+      aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Apply reviewed page edit', args: { instruction } });
+      const bodyBeforeApply = typeof previousBody === 'string' ? previousBody : mnAiCurrentNoteMarkdown(currentNote);
+      const bodyToApply = typeof reviewedBody === 'string' ? reviewedBody : await askEdit({
+        scope: 'current page',
+        instruction,
+        text: bodyBeforeApply,
+        jobId,
+      });
+      const applied = onApplyCurrentPageBody(bodyToApply, {
+        source: 'ai',
+        instruction,
+        previousBody: bodyBeforeApply,
+        reviewedBody: bodyToApply,
+      });
+      if (applied?.ok === false) throw new Error(applied.error || 'Could not apply reviewed AI edit.');
       aiRuntime.recordTrace?.(run, 'tool.done', { actionId: name, actionLabel: 'Edit current page', affected: 1 });
       return {
         answer: `Updated "${currentNote.title || 'current page'}".`,
-        sources: [{ id: currentNote.id, title: currentNote.title || 'Current page', snippet: edited.slice(0, 200) }],
+        sources: [{ id: currentNote.id, title: currentNote.title || 'Current page', snippet: String(bodyToApply || '').slice(0, 200) }],
+        restore: applied?.restoreAvailable === false ? null : { noteId: currentNote.id, title: currentNote.title || 'Current page' },
         action: true,
       };
     }
@@ -1630,11 +1726,11 @@ function MnAskAI({
     }
     if (name === 'edit-current-page') {
       aiRuntime.recordTrace?.(run, 'tool.preview', { actionId: name, actionLabel: 'Edit current page', risk: 'confirm' });
-      return { final: makeVirtualWriteReview(name, args, q) };
+      return { final: await makeVirtualWriteReview(name, args, q) };
     }
     if (name === 'edit-supporting-notes') {
       aiRuntime.recordTrace?.(run, 'tool.preview', { actionId: name, actionLabel: 'Edit supporting notes', risk: 'confirm' });
-      return { final: makeVirtualWriteReview(name, args, q) };
+      return { final: await makeVirtualWriteReview(name, args, q) };
     }
 
     const registry = window.MN_APP_ACTIONS;
@@ -1890,11 +1986,21 @@ function MnAskAI({
       const run = aiRuntime.makeRun ? aiRuntime.makeRun({ runId: jobId, query: review.query || '', mode: 'review' }) : null;
       const completed = [];
       const sources = [];
+      let restore = null;
       for (const step of review.steps) {
         if (MN_AI_VIRTUAL_WRITE_TOOLS.has(step.actionId)) {
-          const result = await runConfirmedVirtualWriteTool({ name: step.actionId, args: step.args || {}, q: review.query || '', jobId, run });
+          const result = await runConfirmedVirtualWriteTool({
+            name: step.actionId,
+            args: step.args || {},
+            reviewedBody: step.reviewedBody,
+            previousBody: step.previousBody,
+            q: review.query || '',
+            jobId,
+            run,
+          });
           if (result.clarify) throw new Error(result.answer || 'AI action could not run');
           completed.push(result.answer || step.label || step.actionId);
+          if (result.restore) restore = result.restore;
           (result.sources || []).forEach(item => {
             if (item?.id && !sources.some(source => source.id === item.id)) sources.push({ id: item.id, title: item.title || item.id, snippet: item.snippet || 'AI edit' });
           });
@@ -1911,7 +2017,7 @@ function MnAskAI({
       updateSession(prev => ({
         ...(prev || {}),
         messages: (prev?.messages || []).map(m => m.id === messageId
-          ? { ...m, text: completed.join('\n') || 'Confirmed and completed.', sources, review: null, reviewBusy: false }
+          ? { ...m, text: completed.join('\n') || 'Confirmed and completed.', sources, restore, review: null, reviewBusy: false }
           : m),
       }));
     } catch (e) {
@@ -1968,6 +2074,42 @@ function MnAskAI({
     }
   };
 
+  const restoreAiEdit = async (messageId, restore) => {
+    if (!restore?.noteId || !onRestoreCurrentPageBody) return;
+    updateSession(prev => ({
+      ...(prev || {}),
+      messages: (prev?.messages || []).map(m => m.id === messageId ? { ...m, restoreBusy: true } : m),
+    }));
+    try {
+      const result = await onRestoreCurrentPageBody(restore.noteId);
+      if (result?.ok === false) throw new Error(result.error || 'Could not restore previous AI edit.');
+      updateSession(prev => ({
+        ...(prev || {}),
+        messages: (prev?.messages || []).map(m => m.id === messageId
+          ? {
+              ...m,
+              text: `${String(m.text || '').trim()}\nPrevious note body restored.`,
+              restore: null,
+              restoreBusy: false,
+            }
+          : m),
+      }));
+    } catch (e) {
+      updateSession(prev => ({
+        ...(prev || {}),
+        messages: (prev?.messages || []).map(m => m.id === messageId
+          ? { ...m, text: e.message || String(e), error: true, restore: null, restoreBusy: false }
+          : m),
+      }));
+    }
+  };
+
+  const openAiEditVersionHistory = (restore) => {
+    const noteId = restore?.noteId || currentNote?.id;
+    if (!noteId || !onOpenCurrentNoteVersions) return;
+    onOpenCurrentNoteVersions(noteId);
+  };
+
   const runAction = async (q, action, jobId) => {
     if (action.type === 'high-risk-disabled') {
       return { answer: action.reason, sources: [], action: true };
@@ -2004,7 +2146,7 @@ function MnAskAI({
     }
 
     if (action.type === 'edit-supporting-notes') {
-      return makeVirtualWriteReview('edit-supporting-notes', { instruction: q }, q);
+      return await makeVirtualWriteReview('edit-supporting-notes', { instruction: q }, q);
     }
 
     if (action.type === 'edit-current') {
@@ -2016,7 +2158,7 @@ function MnAskAI({
       const instruction = action.action === 'link' || action.action === 'format-link'
         ? `${action.action === 'format-link' ? MN_ASK_EDIT_ACTIONS.format + '\n\n' : ''}${MN_ASK_EDIT_ACTIONS.link}\n\nExisting note titles:\n${noteTitles}`
         : MN_ASK_EDIT_ACTIONS[action.action];
-      return makeVirtualWriteReview('edit-current-page', { instruction }, q);
+      return await makeVirtualWriteReview('edit-current-page', { instruction }, q);
     }
 
     return null;
@@ -2680,6 +2822,77 @@ function MnAskAI({
                     {m.review.message && (
                       <div style={{ marginTop: 9, fontSize: 12.5, color: T.inkMed }}>{m.review.message}</div>
                     )}
+                    {m.review.preview?.markdownPreview && (
+                      <div style={{
+                        marginTop: 10,
+                        border: `1px solid ${T.lineSub}`,
+                        borderRadius: 7,
+                        background: T.bg,
+                        overflow: 'hidden',
+                      }}>
+                        <div style={{
+                          display: 'flex',
+                          gap: 8,
+                          alignItems: 'center',
+                          padding: '7px 9px',
+                          borderBottom: `1px solid ${T.lineSub}`,
+                          fontFamily: 'var(--mn-ui)',
+                          fontSize: 12,
+                          color: T.inkMed,
+                        }}>
+                          <span style={{ fontWeight: 720, color: T.ink }}>Exact Markdown preview</span>
+                          <span style={{ fontFamily: 'var(--mn-mono)', color: T.inkDim }}>
+                            {m.review.preview.markdownPreview.beforeLines} {'->'} {m.review.preview.markdownPreview.afterLines} lines
+                          </span>
+                        </div>
+                        {m.review.preview.markerWarnings?.length > 0 && (
+                          <div style={{
+                            padding: '7px 9px',
+                            borderBottom: `1px solid ${T.lineSub}`,
+                            background: `color-mix(in oklab, ${T.warn || T.danger || T.ink} 8%, ${T.bg})`,
+                            color: T.warn || T.danger || T.ink,
+                            fontFamily: 'var(--mn-ui)',
+                            fontSize: 12,
+                            lineHeight: 1.45,
+                          }}>
+                            <div style={{ fontWeight: 720 }}>Markdown preservation check</div>
+                            {m.review.preview.markerWarnings.map((warning, warningIndex) => (
+                              <div key={warningIndex}>{warning}</div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                        }}>
+                          {[
+                            ['Before', m.review.preview.markdownPreview.before, 'before'],
+                            ['After', m.review.preview.markdownPreview.after, 'after'],
+                          ].map(([label, value, key]) => (
+                            <div key={key} style={{ minWidth: 0, borderRight: key === 'before' ? `1px solid ${T.lineSub}` : 'none' }}>
+                              <div style={{
+                                padding: '5px 10px',
+                                borderBottom: `1px solid ${T.lineSub}`,
+                                color: T.inkDim,
+                                fontFamily: 'var(--mn-mono)',
+                                fontSize: 10.5,
+                              }}>{label}</div>
+                              <pre data-mn-ai-edit-preview={key} style={{
+                                margin: 0,
+                                padding: 10,
+                                maxHeight: 230,
+                                overflow: 'auto',
+                                whiteSpace: 'pre-wrap',
+                                fontFamily: 'var(--mn-mono)',
+                                fontSize: 11.5,
+                                lineHeight: 1.55,
+                                color: T.ink,
+                              }}>{value}</pre>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {m.review.steps?.length > 0 && (
                       <pre style={{
                         marginTop: 9,
@@ -2704,7 +2917,7 @@ function MnAskAI({
                       </button>
                       <button
                         onClick={() => editReviewArgs(m.id, m.review)}
-                        disabled={m.reviewBusy}
+                        disabled={m.reviewBusy || !!m.review.preview?.markdownPreview}
                         style={mnAskSecondaryButton(T)}>
                         Edit Args
                       </button>
@@ -2782,6 +2995,40 @@ function MnAskAI({
                         );
                       })}
                     </div>
+                  )}
+                </div>
+              )}
+              {m.restore && (
+                <div style={{
+                  marginTop: 10,
+                  padding: 10,
+                  borderRadius: 8,
+                  border: `1px solid ${T.lineSub}`,
+                  background: T.bgSub,
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                }}>
+                  <div style={{ flex: 1, minWidth: 180, fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkMed }}>
+                    Previous note body saved for this AI edit.
+                  </div>
+                  {onRestoreCurrentPageBody && (
+                    <button
+                      type="button"
+                      onClick={() => restoreAiEdit(m.id, m.restore)}
+                      disabled={m.restoreBusy}
+                      style={mnAskSecondaryButton(T)}>
+                      {m.restoreBusy ? 'Restoring...' : 'Undo AI edit'}
+                    </button>
+                  )}
+                  {onOpenCurrentNoteVersions && (
+                    <button
+                      type="button"
+                      onClick={() => openAiEditVersionHistory(m.restore)}
+                      style={mnAskSecondaryButton(T)}>
+                      Version history
+                    </button>
                   )}
                 </div>
               )}
