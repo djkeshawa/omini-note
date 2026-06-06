@@ -834,11 +834,24 @@ function MnRecentlyDeletedPanel({
 // ────────────────────────────────────────────────────────────
 // Quick-capture popover (floating)
 // ────────────────────────────────────────────────────────────
-function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
+function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = [], T, theme }) {
   const [title, setTitle] = useStateP('');
   const [body, setBody] = useStateP('');
   const [selected, setSelected] = useStateP([]);
+  const [destinationId, setDestinationId] = useStateP('new');
+  const [templateId, setTemplateId] = useStateP('raw');
   const titleRef = useRefP(null);
+  const destinationChoices = destinations.length
+    ? destinations
+    : [{ id: 'new', label: 'New note', noteTitle: 'New note', disabled: false }];
+  const templateChoices = [
+    { id: 'raw', title: 'No template' },
+    ...templates,
+  ];
+  const activeDestination = destinationChoices.find(item => item.id === destinationId && !item.disabled)
+    || destinationChoices.find(item => !item.disabled)
+    || destinationChoices[0];
+  const activeTemplate = templateChoices.find(item => item.id === templateId) || templateChoices[0];
 
   useEffectP(() => {
     const focusHandle = setTimeout(() => titleRef.current?.focus(), 60);
@@ -852,7 +865,13 @@ function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
 
   const submit = () => {
     if (!title.trim() && !body.trim()) return onClose();
-    onSave({ title: title.trim() || 'Untitled', body, tags: selected });
+    onSave({
+      title: title.trim() || 'Untitled',
+      body,
+      tags: selected,
+      destinationId: activeDestination?.id || 'new',
+      templateId: activeTemplate?.id === 'raw' ? '' : activeTemplate?.id,
+    });
   };
 
   return (
@@ -886,6 +905,53 @@ function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
           }}>⌘⇧N</span>
         </div>
         <div style={{ padding: 16 }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            gap: 8,
+            marginBottom: 12,
+          }}>
+            <select
+              value={activeDestination?.id || 'new'}
+              onChange={e => setDestinationId(e.target.value)}
+              aria-label="Capture destination"
+              style={{
+                minWidth: 0,
+                padding: '6px 8px',
+                borderRadius: 6,
+                border: `1px solid ${T.line}`,
+                background: T.bg,
+                color: T.ink,
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12,
+              }}>
+              {destinationChoices.map(item => (
+                <option key={item.id} value={item.id} disabled={item.disabled}>
+                  {item.label || item.noteTitle || item.id}
+                </option>
+              ))}
+            </select>
+            <select
+              value={activeTemplate?.id || 'raw'}
+              onChange={e => setTemplateId(e.target.value)}
+              aria-label="Capture template"
+              style={{
+                minWidth: 0,
+                padding: '6px 8px',
+                borderRadius: 6,
+                border: `1px solid ${T.line}`,
+                background: T.bg,
+                color: T.ink,
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12,
+              }}>
+              {templateChoices.map(item => (
+                <option key={item.id} value={item.id}>
+                  {item.title || item.id}
+                </option>
+              ))}
+            </select>
+          </div>
           <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)}
             placeholder="Title"
             style={{
@@ -925,7 +991,7 @@ function MnQuickCapture({ onSave, onClose, tags, T, theme }) {
         }}>
           <div style={{
             fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim,
-          }}>dated {new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
+          }}>{activeDestination?.label || 'New note'} · {activeTemplate?.title || 'No template'}</div>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{
             padding: '4px 12px', borderRadius: 5,

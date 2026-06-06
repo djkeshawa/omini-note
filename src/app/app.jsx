@@ -1989,6 +1989,85 @@ function MnApp() {
     markDirty(id);
   }, [markDirty, mnMdToBlocks, mnBlocksToMd]);
 
+  const quickCaptureMergeTags = useCallbackA((...groups) => {
+    const seen = new Set();
+    const out = [];
+    groups.flat().forEach(tag => {
+      const clean = normalizeTagName(tag);
+      if (!clean || seen.has(clean)) return;
+      seen.add(clean);
+      out.push(clean);
+    });
+    return out;
+  }, []);
+
+  const quickCaptureRawMarkdown = useCallbackA(({ title = '', body = '' } = {}) => {
+    const cleanTitle = String(title || '').trim();
+    const cleanBody = String(body || '').trim();
+    if (cleanTitle && cleanBody) return `## ${cleanTitle}\n\n${cleanBody}\n`;
+    if (cleanBody) return `${cleanBody}\n`;
+    if (cleanTitle) return `## ${cleanTitle}\n`;
+    return '';
+  }, []);
+
+  const quickCaptureAppendBody = useCallbackA((existingBody = '', captureBody = '') => {
+    const left = String(existingBody || '').replace(/\s+$/g, '');
+    const right = String(captureBody || '').trim();
+    return [left, right].filter(Boolean).join('\n\n') + (right ? '\n' : '');
+  }, []);
+
+  const saveQuickCapture = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [], destinationId = 'new', templateId = '' } = {}) => {
+    const cleanTitle = String(title || '').trim() || 'Untitled';
+    const destinationOptions = { notes: notesWithBody, currentNote: selectedNote };
+    const templateSelected = !!String(templateId || '').trim();
+    if (templateSelected && MN_APP_HELPERS.captureBuildSavePlan) {
+      const text = destinationId === 'new'
+        ? (String(body || '').trim() || cleanTitle)
+        : [cleanTitle, body].map(value => String(value || '').trim()).filter(Boolean).join('\n\n');
+      const plan = MN_APP_HELPERS.captureBuildSavePlan({
+        destinationId,
+        templateId,
+        text,
+        noteTitle: cleanTitle,
+        notes: notesWithBody,
+        currentNote: selectedNote,
+      });
+      const tagsForCapture = quickCaptureMergeTags(plan.tags || [], noteTags);
+      if (plan.action === 'append' && plan.noteId) {
+        updateNoteBody(plan.noteId, previous => quickCaptureAppendBody(previous, plan.appendText || plan.body || ''));
+        setSelectedId(plan.noteId);
+        navigateView('notes');
+        return plan.noteId;
+      }
+      return createNote({
+        title: uniqueNoteTitle(plan.createNote?.title || cleanTitle),
+        body: plan.createNote?.body || plan.body || '',
+        tags: tagsForCapture,
+      });
+    }
+
+    const destination = MN_APP_HELPERS.captureDestinationById
+      ? MN_APP_HELPERS.captureDestinationById(destinationId, destinationOptions)
+      : { id: 'new' };
+    const activeDestination = destination?.disabled && destination.fallbackDestinationId && MN_APP_HELPERS.captureDestinationById
+      ? MN_APP_HELPERS.captureDestinationById(destination.fallbackDestinationId, destinationOptions)
+      : destination;
+    const rawBody = activeDestination?.id === 'new'
+      ? body
+      : quickCaptureRawMarkdown({ title: cleanTitle, body });
+    if (activeDestination?.noteId) {
+      updateNoteBody(activeDestination.noteId, previous => quickCaptureAppendBody(previous, rawBody));
+      setSelectedId(activeDestination.noteId);
+      navigateView('notes');
+      return activeDestination.noteId;
+    }
+    return createNote({
+      title: uniqueNoteTitle(activeDestination?.id === 'new' ? cleanTitle : (activeDestination?.noteTitle || cleanTitle)),
+      body: rawBody,
+      tags: quickCaptureMergeTags(activeDestination?.tags || [], noteTags),
+    });
+  }, [createNote, navigateView, notesWithBody, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, selectedNote, uniqueNoteTitle, updateNoteBody]);
+
   const addQuickTodayTask = useCallbackA((text) => {
     const clean = String(text || '').replace(/\s+/g, ' ').trim();
     if (!clean) return false;
@@ -4179,9 +4258,13 @@ function MnApp() {
         {captureOpen && (
           <MnQuickCapture
             tags={tags}
+            destinations={MN_APP_HELPERS.captureDestinationChoices
+              ? MN_APP_HELPERS.captureDestinationChoices({ notes: notesWithBody, currentNote: selectedNote })
+              : []}
+            templates={MN_APP_HELPERS.captureTemplateChoices ? MN_APP_HELPERS.captureTemplateChoices() : []}
             onClose={() => setCaptureOpen(false)}
-            onSave={({ title, body, tags: noteTags }) => {
-              createNote({ title, body, tags: noteTags });
+            onSave={(capture) => {
+              saveQuickCapture(capture);
               setCaptureOpen(false);
             }}
             T={T} theme={theme}
