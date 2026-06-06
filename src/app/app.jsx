@@ -1610,6 +1610,13 @@ function MnApp() {
     [notesWithBody]
   );
 
+  const calendarActionItems = useMemoA(
+    () => MN_APP_HELPERS.agendaDecorateActionItems
+      ? MN_APP_HELPERS.agendaDecorateActionItems(calendarTaskItems, notesWithBody)
+      : calendarTaskItems,
+    [calendarTaskItems, notesWithBody]
+  );
+
   const todayDailyNote = useMemoA(() => (
     MN_APP_HELPERS.rollupFindDailyNote
       ? MN_APP_HELPERS.rollupFindDailyNote(notesWithBody)
@@ -3778,7 +3785,7 @@ function MnApp() {
             <MnCalendarPanel
               notes={notesWithBody}
               tags={tags}
-              items={calendarTaskItems}
+              items={calendarActionItems}
               selectedNoteId={selectedId || ''}
               weekStart={tweaks.weekStart || 'monday'}
               snoozeMinutes={tweaks.snoozeMinutes || '15'}

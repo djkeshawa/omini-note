@@ -100,6 +100,10 @@ function MnCalendarPanel({
   const [createDate, setCreateDate] = useStateC(todayKey);
   const [createTime, setCreateTime] = useStateC('09:00');
   const [createNoteId, setCreateNoteId] = useStateC(selectedNoteId || notes[0]?.id || '');
+  const [filterStatus, setFilterStatus] = useStateC('all');
+  const [filterTag, setFilterTag] = useStateC('');
+  const [filterSourceId, setFilterSourceId] = useStateC('');
+  const helpers = window.MN_APP_HELPERS || {};
 
   useEffectC(() => {
     if (selectedNoteId) setCreateNoteId(selectedNoteId);
@@ -116,7 +120,22 @@ function MnCalendarPanel({
     return map;
   }, [tags]);
 
-  const activeItem = useMemoC(() => items.find(item => item.key === activeKey) || null, [items, activeKey]);
+  const filteredItems = useMemoC(() => (
+    helpers.agendaFilterActionItems
+      ? helpers.agendaFilterActionItems(items, notes, { status: filterStatus, tag: filterTag, sourceNoteId: filterSourceId })
+      : (items || [])
+  ), [helpers, items, notes, filterStatus, filterTag, filterSourceId]);
+  const sourceOptions = useMemoC(() => {
+    const ids = new Set((items || []).map(item => item.noteId).filter(Boolean));
+    return notes.filter(note => ids.has(note.id));
+  }, [items, notes]);
+  const tagOptions = useMemoC(() => {
+    const names = new Set();
+    (items || []).forEach(item => (item.actionDetail?.inheritedTags || item.noteTags || []).forEach(tag => names.add(tag)));
+    tags.forEach(tag => { if (names.has(tag.name)) names.add(tag.name); });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [items, tags]);
+  const activeItem = useMemoC(() => filteredItems.find(item => item.key === activeKey) || null, [filteredItems, activeKey]);
 
   useEffectC(() => {
     if (!activeItem) return;
@@ -131,7 +150,7 @@ function MnCalendarPanel({
     const now = new Date();
     const overdue = [];
     const upcoming = [];
-    items.forEach(item => {
+    filteredItems.forEach(item => {
       if (item.checked) return;
       const key = mnCalendarItemDateKey(item);
       if (!key) {
@@ -149,7 +168,7 @@ function MnCalendarPanel({
     overdue.sort((a, b) => (a.remindAt?.at || 0) - (b.remindAt?.at || 0));
     upcoming.sort((a, b) => (a.remindAt?.at || 0) - (b.remindAt?.at || 0));
     return { byDate, undated, overdue, upcoming };
-  }, [items]);
+  }, [filteredItems]);
 
   const days = useMemoC(() => mnCalendarMonthDays(anchor, weekStart), [anchor, weekStart]);
   const selectedItems = grouped.byDate[selectedKey] || [];
@@ -253,6 +272,13 @@ function MnCalendarPanel({
   const ItemCard = ({ item, compact = false }) => {
     const overdue = item.remindAt?.at && item.remindAt.at < new Date();
     const label = item.label || item.text || 'Reminder';
+    const detail = item.actionDetail || helpers.agendaActionDetail?.(item, notes) || {};
+    const detailTags = detail.inheritedTags || item.noteTags || [];
+    const dateDetails = [
+      detail.scheduledDate ? `scheduled ${detail.scheduledDate}${detail.scheduledTime ? ` ${detail.scheduledTime}` : ''}` : '',
+      detail.createdDate ? `created ${detail.createdDate}` : detail.titleDate ? `title ${detail.titleDate}` : '',
+      detail.modifiedDate ? `modified ${detail.modifiedDate}` : '',
+    ].filter(Boolean);
     return (
       <div
         onClick={() => setActiveKey(item.key)}
@@ -327,11 +353,13 @@ function MnCalendarPanel({
                 fontFamily: 'var(--mn-mono)',
                 fontSize: 10,
               }}>
-                <span style={{ color: T.inkMed }}>{item.noteTitle}</span>
+                <span style={{ color: T.inkMed }}>{detail.sourceNoteTitle || item.noteTitle}</span>
+                {detail.reason && <span style={{ color: overdue ? T.danger : T.accent }}>{detail.reason}</span>}
                 {item.remindAt && <span style={{ color: overdue ? T.danger : T.warn }}>{mnCalendarTimeText(item)}</span>}
-                {(item.noteTags || []).slice(0, 2).map(tag => (
+                {detailTags.slice(0, 3).map(tag => (
                   <span key={tag} style={{ color: mnGetTagColor(tagHue[tag] ?? 240, theme) }}>#{tag}</span>
                 ))}
+                {dateDetails.slice(0, 2).map(text => <span key={text}>{text}</span>)}
               </div>
             )}
           </div>
@@ -397,6 +425,33 @@ function MnCalendarPanel({
             <button onClick={() => setMode('month')} style={pillBtn(mode === 'month')}>Month</button>
             <button onClick={() => setMode('agenda')} style={pillBtn(mode === 'agenda')}>Agenda</button>
           </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {[
+            ['all', 'All'],
+            ['overdue', 'Overdue'],
+            ['today', 'Today'],
+            ['upcoming', 'Upcoming'],
+            ['unscheduled', 'Unscheduled'],
+          ].map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setFilterStatus(value)} style={pillBtn(filterStatus === value)}>
+              {label}
+            </button>
+          ))}
+          <select aria-label="Filter Agenda by tag" value={filterTag} onChange={event => setFilterTag(event.target.value)} style={{ ...mnCalendarInput(T), width: 170 }}>
+            <option value="">All tags</option>
+            {tagOptions.map(tag => <option key={tag} value={tag}>#{tag}</option>)}
+          </select>
+          <select aria-label="Filter Agenda by source note" value={filterSourceId} onChange={event => setFilterSourceId(event.target.value)} style={{ ...mnCalendarInput(T), width: 210 }}>
+            <option value="">All source notes</option>
+            {sourceOptions.map(note => <option key={note.id} value={note.id}>{note.title || 'Untitled'}</option>)}
+          </select>
+          {(filterStatus !== 'all' || filterTag || filterSourceId) && (
+            <button type="button" onClick={() => { setFilterStatus('all'); setFilterTag(''); setFilterSourceId(''); }} style={pillBtn(false)}>
+              Clear filters
+            </button>
+          )}
         </div>
 
         <div style={{
@@ -625,6 +680,27 @@ function MnCalendarPanel({
                   <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
                     Linked to {activeItem.noteTitle || 'Untitled'}.
                   </div>
+                  {(() => {
+                    const detail = activeItem.actionDetail || helpers.agendaActionDetail?.(activeItem, notes) || {};
+                    const rows = [
+                      ['Source', detail.sourceNoteTitle || activeItem.noteTitle || 'Untitled'],
+                      ['Reason', detail.reason || 'from note'],
+                      ['Scheduled', detail.scheduledDate ? `${detail.scheduledDate}${detail.scheduledTime ? ` ${detail.scheduledTime}` : ''}` : 'Unscheduled'],
+                      ['Created/title', detail.createdDate || detail.titleDate || 'Unknown'],
+                      ['Modified', detail.modifiedDate || 'Unknown'],
+                      ['Tags', (detail.inheritedTags || []).length ? detail.inheritedTags.map(tag => `#${tag}`).join(' ') : 'None'],
+                    ];
+                    return (
+                      <div style={{ display: 'grid', gap: 4, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+                        {rows.map(([label, value]) => (
+                          <div key={label} style={{ display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr)', gap: 8 }}>
+                            <span>{label}</span>
+                            <span style={{ color: T.inkMed, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}

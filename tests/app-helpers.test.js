@@ -305,6 +305,25 @@ test('App helpers collect reminders and workflow notes without renderer state', 
   assert.equal(appHelpers.rollupReminderReasonLabel(todayReminders[0]), 'overdue');
   assert.equal(appHelpers.rollupReminderReasonLabel(todayReminders[1]), 'due today');
   assert.equal(appHelpers.rollupReminderReasonLabel({ rollupStatus: 'upcoming' }), 'upcoming');
+  const agendaItems = [
+    { type: 'todo', noteId: 'today', noteTitle: 'Today note', label: 'Call', checked: false, noteDate: '2026-06-06T09:00:00.000Z', noteTags: ['todo'] },
+    { type: 'todo', noteId: 'yesterday', noteTitle: 'Yesterday note', label: 'Past', checked: false, remindAt: { date: '2026-06-05', time: '09:00', at: new Date('2026-06-05T09:00:00.000Z') } },
+    { type: 'reminder', isReminderOnly: true, noteId: 'today', noteTitle: 'Today note', label: 'Ping', checked: false, remindAt: { date: '2026-06-06', time: '14:00', at: new Date('2026-06-06T14:00:00.000Z') } },
+    { type: 'todo', noteId: 'title', noteTitle: '2026-06-01 Archive', label: 'Later', checked: false, remindAt: { date: '2026-06-10', at: new Date('2026-06-10T09:00:00.000Z') } },
+  ];
+  const detail = appHelpers.agendaActionDetail(agendaItems[0], rollupNotes, { now });
+  assert.equal(detail.status, 'unscheduled');
+  assert.equal(detail.sourceNoteTitle, 'Today note');
+  assert.equal(detail.reason, 'captured today');
+  assert.equal(detail.createdDate, '2026-06-06');
+  assert.equal(detail.modifiedDate, '');
+  assert.deepEqual(detail.inheritedTags, ['todo']);
+  assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { status: 'overdue' }, { now }).map(item => item.label), ['Past']);
+  assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { status: 'today' }, { now }).map(item => item.label), ['Ping']);
+  assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { status: 'upcoming' }, { now }).map(item => item.label), ['Later']);
+  assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { status: 'unscheduled' }, { now }).map(item => item.label), ['Call']);
+  assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { tag: 'todo' }, { now }).map(item => item.label), ['Call']);
+  assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { sourceNoteId: 'title' }, { now }).map(item => item.label), ['Later']);
 
   assert.match(
     appHelpers.rollupAppendQuickTask('# 2026-06-06\n\n## Tasks\n- [ ] \n\n## Notes\n- note\n', 'Buy milk'),

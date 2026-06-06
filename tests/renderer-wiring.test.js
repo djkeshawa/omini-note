@@ -705,6 +705,9 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /item\.blockId/);
   assert.match(app, /mnCollectReminderItems\(notesWithBody\)/);
   assert.match(app, /mnCollectTaskItems\(notesWithBody\)/);
+  assert.match(app, /calendarActionItems/);
+  assert.match(app, /agendaDecorateActionItems\(calendarTaskItems, notesWithBody\)/);
+  assert.match(app, /items=\{calendarActionItems\}/);
   assert.match(app, /todayDailyNote/);
   assert.match(app, /todayAgendaItems/);
   assert.match(app, /addQuickTodayTask/);
@@ -745,6 +748,17 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(todosPanel, /collectTaskItems/);
   assert.match(todosPanel, /isReminderOnly/);
   assert.match(calendarPanel, /function MnCalendarPanel/);
+  assert.match(calendarPanel, /filterStatus/);
+  assert.match(calendarPanel, /Filter Agenda by tag/);
+  assert.match(calendarPanel, /Filter Agenda by source note/);
+  assert.match(calendarPanel, /\['overdue', 'Overdue'\]/);
+  assert.match(calendarPanel, /\['unscheduled', 'Unscheduled'\]/);
+  assert.match(calendarPanel, /Clear filters/);
+  assert.match(calendarPanel, /agendaFilterActionItems/);
+  assert.match(calendarPanel, /agendaActionDetail/);
+  assert.match(calendarPanel, /\['Source', detail\.sourceNoteTitle/);
+  assert.match(calendarPanel, /\['Reason', detail\.reason/);
+  assert.match(calendarPanel, /\['Scheduled', detail\.scheduledDate/);
   assert.match(calendarPanel, /Inbox todos/);
   assert.match(calendarPanel, /createOpen/);
   assert.match(calendarPanel, /Add item on/);
@@ -820,6 +834,9 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function rollupAppendReflection/);
   assert.match(appHelpers, /function rollupBuildEndDayRecap/);
   assert.match(appHelpers, /function rollupAppendEndDayRecap/);
+  assert.match(appHelpers, /function agendaActionStatus/);
+  assert.match(appHelpers, /function agendaActionDetail/);
+  assert.match(appHelpers, /function agendaFilterActionItems/);
   assert.match(appHelpers, /Review notes from \$\{today\} for decisions to keep\./);
   assert.match(appRuntime, /"startupView": "notes"/);
   assert.match(appRuntime, /"rollupDefaultRange": "today"/);

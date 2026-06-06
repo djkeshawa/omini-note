@@ -422,6 +422,68 @@
     return 'upcoming';
   }
 
+  function agendaActionStatus(item = {}, now = new Date()) {
+    if (item.checked) return 'completed';
+    const key = rollupReminderDateKey(item);
+    const today = todayIsoDate(now);
+    if (!key) return 'unscheduled';
+    if (key < today) return 'overdue';
+    if (key === today) return 'today';
+    return 'upcoming';
+  }
+
+  function agendaActionReasonLabel(item = {}, note = null, now = new Date()) {
+    const status = agendaActionStatus(item, now);
+    if (status === 'completed') return 'completed';
+    if (status === 'unscheduled') return rollupTaskReasonLabel(item, note, now);
+    if (status === 'overdue') return 'overdue';
+    if (status === 'today') return item.isReminderOnly ? 'due today' : 'scheduled today';
+    return 'upcoming';
+  }
+
+  function agendaActionDetail(item = {}, notes = [], options = {}) {
+    const noteById = new Map((notes || []).map(note => [note.id, note]));
+    const note = noteById.get(item.noteId) || null;
+    const status = agendaActionStatus(item, options.now || new Date());
+    const tags = Array.from(new Set([
+      ...((Array.isArray(note?.tags) ? note.tags : [])),
+      ...((Array.isArray(item.noteTags) ? item.noteTags : [])),
+    ].map(tag => String(tag || '').trim()).filter(Boolean)));
+    const scheduledDate = rollupReminderDateKey(item);
+    return {
+      status,
+      reason: agendaActionReasonLabel(item, note, options.now || new Date()),
+      sourceNoteId: item.noteId || note?.id || '',
+      sourceNoteTitle: note?.title || item.noteTitle || 'Untitled',
+      titleDate: note ? rollupTitleDateKey(note) : rollupTitleDateKey({ title: item.noteTitle }),
+      createdDate: rollupDateKey(note?.date || item.noteDate),
+      modifiedDate: rollupDateKey(note?.modifiedAt || item.noteModifiedAt),
+      scheduledDate,
+      scheduledTime: item.remindAt?.time || '',
+      inheritedTags: tags,
+    };
+  }
+
+  function agendaDecorateActionItems(items = [], notes = [], options = {}) {
+    return (items || []).map(item => {
+      const detail = agendaActionDetail(item, notes, options);
+      return { ...item, actionStatus: detail.status, actionDetail: detail };
+    });
+  }
+
+  function agendaFilterActionItems(items = [], notes = [], filters = {}, options = {}) {
+    const status = String(filters.status || 'all');
+    const tag = String(filters.tag || '').trim();
+    const sourceNoteId = String(filters.sourceNoteId || '').trim();
+    return agendaDecorateActionItems(items, notes, options).filter(item => {
+      const detail = item.actionDetail || {};
+      if (status !== 'all' && detail.status !== status) return false;
+      if (tag && !(detail.inheritedTags || []).includes(tag)) return false;
+      if (sourceNoteId && detail.sourceNoteId !== sourceNoteId) return false;
+      return true;
+    });
+  }
+
   function rollupQuickTaskLine(text = '') {
     const clean = String(text || '').replace(/\s+/g, ' ').trim();
     return clean ? `- [ ] ${clean}` : '';
@@ -1336,6 +1398,11 @@
     rollupFindDailyNote,
     rollupTaskReasonLabel,
     rollupReminderReasonLabel,
+    agendaActionStatus,
+    agendaActionReasonLabel,
+    agendaActionDetail,
+    agendaDecorateActionItems,
+    agendaFilterActionItems,
     rollupAppendQuickTask,
     rollupAppendReflection,
     rollupBuildEndDayRecap,
