@@ -324,6 +324,47 @@ test('App helpers collect reminders and workflow notes without renderer state', 
   assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { status: 'unscheduled' }, { now }).map(item => item.label), ['Call']);
   assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { tag: 'todo' }, { now }).map(item => item.label), ['Call']);
   assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { sourceNoteId: 'title' }, { now }).map(item => item.label), ['Later']);
+  const deferredTasks = appHelpers.collectTaskItems([
+    {
+      id: 'defer',
+      title: 'Deferred',
+      date: '2026-06-06T09:00:00.000Z',
+      body: [
+        '- [ ] Hidden @defer 2026-06-10',
+        '- [ ] Alias @hide-until 2026-06-10',
+        '- [ ] Ready @defer 2026-06-05',
+        '- [ ] Scheduled @remind 2026-06-06 @defer 2026-06-10',
+      ].join('\n'),
+    },
+  ], parser, walk);
+  assert.equal(deferredTasks.find(item => item.label === 'Hidden').deferUntil, '2026-06-10');
+  assert.equal(deferredTasks.find(item => item.label === 'Alias').deferUntil, '2026-06-10');
+  assert.equal(appHelpers.agendaIsDeferred(deferredTasks.find(item => item.label === 'Hidden'), now), true);
+  assert.equal(appHelpers.agendaIsDeferred(deferredTasks.find(item => item.label === 'Ready'), now), false);
+  assert.deepEqual(
+    appHelpers.agendaFilterActionItems(deferredTasks, rollupNotes, {}, { now }).map(item => item.label),
+    ['Ready']
+  );
+  assert.deepEqual(
+    appHelpers.rollupFilterTaskItems(deferredTasks, [{ id: 'defer', title: 'Deferred', date: '2026-06-06T09:00:00.000Z' }], { range: 'today', now }).map(item => item.label),
+    ['Ready']
+  );
+  assert.deepEqual(
+    appHelpers.agendaFilterActionItems(deferredTasks, rollupNotes, {}, { now: new Date('2026-06-11T12:00:00.000Z') }).map(item => item.label),
+    ['Hidden', 'Alias', 'Ready', 'Scheduled']
+  );
+  const duplicateBlockTasks = appHelpers.collectTaskItems([
+    { id: 'dup', title: 'Dup', blocks: [{ id: 'same', kind: 'todo', checked: false, content: 'Repeat' }] },
+  ], parser, (blocks, visit) => { visit(blocks[0]); visit(blocks[0]); });
+  assert.equal(duplicateBlockTasks.length, 1);
+  assert.equal(
+    appHelpers.agendaBuildTaskContent('Call @remind 2026-06-01 @hide-until 2026-06-02', '2026-06-08', '09:00', '2026-06-10'),
+    'Call @remind 2026-06-08 09:00 @defer 2026-06-10'
+  );
+  assert.equal(appHelpers.agendaBodyHasActionText('- [ ] Call @defer 2026-06-10', 'Call @remind 2026-06-08'), true);
+  assert.equal(appHelpers.agendaBodyHasActionText('Call', 'Call'), false);
+  assert.equal(appHelpers.agendaReplaceUniqueSourceText('One\nTwo', 'Two', 'Done'), 'One\nDone');
+  assert.equal(appHelpers.agendaReplaceUniqueSourceText('Repeat\nRepeat', 'Repeat', 'Done'), 'Repeat\nRepeat');
   const scheduleNow = new Date(2026, 5, 6, 10, 0, 0);
   assert.deepEqual(appHelpers.agendaParseScheduleInput('today', { now: scheduleNow }), {
     ok: true,

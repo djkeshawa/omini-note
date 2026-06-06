@@ -143,11 +143,13 @@
       const pushItem = (text, meta = {}) => {
         const remindAt = parser.parse(text);
         if (!remindAt) return;
+        const defer = agendaParseDeferMarker(text);
         out.push({
           noteId: note.id,
           noteTitle: note.title,
-          text: parser.strip ? parser.strip(text) : String(text || '').replace(remindAt.raw, '').trim(),
+          text: agendaStripDeferMarkers(parser.strip ? parser.strip(text) : String(text || '').replace(remindAt.raw, '').trim()),
           remindAt,
+          deferUntil: defer?.date || '',
           ...meta,
         });
       };
@@ -173,29 +175,119 @@
       item.blockId ?? item.line ?? '',
       item.remindAt?.date || '',
       item.remindAt?.time || '',
+      item.deferUntil || '',
       item.text || '',
     ].join('|');
   }
 
+  function agendaParseDeferMarker(text = '') {
+    const pattern = /(^|\s)@(defer|hide-until)\s+(\d{4}-\d{2}-\d{2})(?=\s|$)/ig;
+    let match;
+    while ((match = pattern.exec(String(text || '')))) {
+      if (!rollupIsValidIsoDateKey(match[3])) continue;
+      return {
+        raw: match[0].trim(),
+        date: match[3],
+        marker: String(match[2] || '').toLowerCase(),
+      };
+    }
+    return null;
+  }
+
+  function agendaStripDeferMarkers(text = '') {
+    return String(text || '')
+      .replace(/(^|\s)@(defer|hide-until)\s+\d{4}-\d{2}-\d{2}(?=\s|$)/ig, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function agendaCleanActionText(text = '') {
+    return agendaStripDeferMarkers(String(text || '')
+      .replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '')
+      .replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/ig, ' '))
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function agendaBuildTaskContent(text = '', date = '', time = '', deferUntil = '') {
+    const clean = agendaCleanActionText(text);
+    if (!clean) return '';
+    const cleanDate = String(date || '').trim();
+    const cleanTime = String(time || '').trim();
+    const cleanDefer = String(deferUntil || '').trim();
+    const parts = [clean];
+    if (rollupIsValidIsoDateKey(cleanDate)) {
+      parts.push(`@remind ${[cleanDate, cleanTime].filter(Boolean).join(' ')}`);
+    }
+    if (rollupIsValidIsoDateKey(cleanDefer)) {
+      parts.push(`@defer ${cleanDefer}`);
+    }
+    return parts.join(' ');
+  }
+
+  function agendaIsDeferred(item = {}, now = new Date()) {
+    const parsed = item.deferUntil || agendaParseDeferMarker(item.text || item.label || '')?.date || '';
+    const deferUntil = String(parsed || '').trim();
+    if (!rollupIsValidIsoDateKey(deferUntil) || item.checked) return false;
+    return deferUntil > todayIsoDate(now);
+  }
+
+  function agendaNormalizeActionIdentity(text = '') {
+    return agendaCleanActionText(text).toLowerCase();
+  }
+
+  function agendaLineLooksAction(line = '') {
+    return /^\s*[-*]\s+\[[ xX]\]\s+/.test(String(line || ''))
+      || /@(remind|defer|hide-until)\s+\d{4}-\d{2}-\d{2}/i.test(String(line || ''));
+  }
+
+  function agendaBodyHasActionText(body = '', text = '') {
+    const target = agendaNormalizeActionIdentity(text);
+    if (!target) return false;
+    return String(body || '').split('\n')
+      .some(line => agendaLineLooksAction(line) && agendaNormalizeActionIdentity(line) === target);
+  }
+
+  function agendaReplaceUniqueSourceText(body = '', source = '', nextText = '') {
+    const text = String(body || '');
+    const needle = String(source || '').trim();
+    if (!needle) return text;
+    const first = text.indexOf(needle);
+    if (first < 0) return text;
+    const second = text.indexOf(needle, first + needle.length);
+    if (second >= 0) return text;
+    return `${text.slice(0, first)}${nextText}${text.slice(first + needle.length)}`;
+  }
+
   function collectTaskItems(notes = [], parser, walk) {
     const out = [];
+    const seenSources = new Set();
     const parse = text => parser?.parse?.(text) || null;
     const strip = text => parser?.strip ? parser.strip(text) : String(text || '').replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g, '').trim();
     const push = (note, text, meta = {}) => {
       const raw = String(text || '');
       const remindAt = parse(raw);
+      const defer = agendaParseDeferMarker(raw);
       const isTodo = meta.kind === 'todo';
       if (!isTodo && !remindAt) return;
+      const sourceKey = [
+        note.id,
+        meta.blockId ?? meta.line ?? agendaNormalizeActionIdentity(raw),
+        isTodo ? 'todo' : 'reminder',
+      ].join('|');
+      if (seenSources.has(sourceKey)) return;
+      seenSources.add(sourceKey);
       const item = {
         type: isTodo ? 'todo' : 'reminder',
         noteId: note.id,
         noteTitle: note.title || 'Untitled',
         noteTags: Array.isArray(note.tags) ? note.tags : [],
         text: raw,
-        label: strip(raw),
+        label: agendaCleanActionText(strip(raw)),
         checked: !!meta.checked,
         isReminderOnly: !isTodo,
         remindAt,
+        deferUntil: defer?.date || '',
         noteDate: note.date,
         blockId: meta.blockId,
         line: meta.line,
@@ -361,6 +453,7 @@
     const weekStart = options.weekStart || 'monday';
     return (items || [])
       .filter(item => {
+        if (agendaIsDeferred(item, now)) return false;
         if (!item || item.checked || item.isReminderOnly || item.type === 'reminder') return false;
         const note = noteById.get(item.noteId) || { date: item.noteDate, title: item.noteTitle };
         const key = rollupNoteDateKey(note, groupBy) || rollupDateKey(item.noteDate);
@@ -387,6 +480,7 @@
         return { ...item, rollupDateKey: key, rollupStatus: status };
       })
       .filter(item => {
+        if (agendaIsDeferred(item, now)) return false;
         if (!rollupIsValidIsoDateKey(item.rollupDateKey)) return false;
         return item.rollupDateKey < today || rollupDateKeyInRange(item.rollupDateKey, range, now, weekStart);
       })
@@ -424,6 +518,7 @@
 
   function agendaActionStatus(item = {}, now = new Date()) {
     if (item.checked) return 'completed';
+    if (agendaIsDeferred(item, now)) return 'deferred';
     const key = rollupReminderDateKey(item);
     const today = todayIsoDate(now);
     if (!key) return 'unscheduled';
@@ -460,6 +555,7 @@
       modifiedDate: rollupDateKey(note?.modifiedAt || item.noteModifiedAt),
       scheduledDate,
       scheduledTime: item.remindAt?.time || '',
+      deferUntil: item.deferUntil || '',
       inheritedTags: tags,
     };
   }
@@ -477,6 +573,7 @@
     const sourceNoteId = String(filters.sourceNoteId || '').trim();
     return agendaDecorateActionItems(items, notes, options).filter(item => {
       const detail = item.actionDetail || {};
+      if (detail.status === 'deferred' && status !== 'deferred') return false;
       if (status !== 'all' && detail.status !== status) return false;
       if (tag && !(detail.inheritedTags || []).includes(tag)) return false;
       if (sourceNoteId && detail.sourceNoteId !== sourceNoteId) return false;
@@ -1475,6 +1572,14 @@
     agendaActionDetail,
     agendaDecorateActionItems,
     agendaFilterActionItems,
+    agendaParseDeferMarker,
+    agendaStripDeferMarkers,
+    agendaCleanActionText,
+    agendaBuildTaskContent,
+    agendaIsDeferred,
+    agendaNormalizeActionIdentity,
+    agendaBodyHasActionText,
+    agendaReplaceUniqueSourceText,
     agendaParseScheduleInput,
     rollupAppendQuickTask,
     rollupAppendReflection,

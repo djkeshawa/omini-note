@@ -142,17 +142,23 @@ const MN_NOVEL_IMPORT_TOOL = {
 };
 
 function mnCalendarCleanTaskText(value = '') {
+  if (MN_APP_HELPERS?.agendaCleanActionText) return MN_APP_HELPERS.agendaCleanActionText(value);
   return String(value || '')
     .replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '')
     .replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g, '')
     .trim();
 }
 
-function mnCalendarTaskContent(text, date = '', time = '') {
+function mnCalendarTaskContent(text, date = '', time = '', deferUntil = '') {
+  if (MN_APP_HELPERS?.agendaBuildTaskContent) return MN_APP_HELPERS.agendaBuildTaskContent(text, date, time, deferUntil);
   const clean = mnCalendarCleanTaskText(text);
   const cleanDate = String(date || '').trim();
   const cleanTime = String(time || '').trim();
-  return cleanDate ? `${clean} @remind ${[cleanDate, cleanTime].filter(Boolean).join(' ')}` : clean;
+  const cleanDefer = String(deferUntil || '').trim();
+  return [
+    cleanDate ? `${clean} @remind ${[cleanDate, cleanTime].filter(Boolean).join(' ')}` : clean,
+    cleanDefer ? `@defer ${cleanDefer}` : '',
+  ].filter(Boolean).join(' ');
 }
 
 function mnCalendarReminderDateParts(date = new Date()) {
@@ -542,6 +548,10 @@ function MnApp() {
   const [dirtyNotes, setDirtyNotes] = useStateA(() => new Map());
   const dirtyNotesRef = useRefA(dirtyNotes);
   const noteDiskStampRef = useRefA(new Map());
+  const savingDirtyKeysRef = useRefA(new Set());
+  const pendingDirtyKeysRef = useRefA(new Set());
+  const notesRef = useRefA(notes);
+  const vaultsRef = useRefA(vaults);
   const dirtyRevisionRef = useRefA(0);
   const dirtyMissingWarnedRef = useRefA(new Set());
   const vaultActivationSeq = useRefA(0);
@@ -734,12 +744,22 @@ function MnApp() {
   }, [activeVaultId, notes, vaults]);
 
   useEffectA(() => {
+    const pickNewerDiskStamp = (current, incoming) => {
+      if (!current) return incoming;
+      if (!incoming) return current;
+      const currentTime = new Date(current).getTime();
+      const incomingTime = new Date(incoming).getTime();
+      if (!Number.isFinite(currentTime)) return incoming;
+      if (!Number.isFinite(incomingTime)) return current;
+      return incomingTime >= currentTime ? incoming : current;
+    };
     const stamps = new Map();
     const remember = (vaultId, noteList) => {
       if (!vaultId || !Array.isArray(noteList)) return;
       noteList.forEach(note => {
         if (note?.id && note.diskModifiedAt) {
-          stamps.set(mnDirtyNoteKey(vaultId, note.id), note.diskModifiedAt);
+          const key = mnDirtyNoteKey(vaultId, note.id);
+          stamps.set(key, pickNewerDiskStamp(noteDiskStampRef.current.get(key), note.diskModifiedAt));
         }
       });
     };
@@ -749,75 +769,98 @@ function MnApp() {
   }, [activeVaultId, notes, vaults]);
 
   useEffectA(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffectA(() => {
+    vaultsRef.current = vaults;
+  }, [vaults]);
+
+  useEffectA(() => {
     dirtyNotesRef.current = dirtyNotes;
   }, [dirtyNotes]);
 
-  const saveDirtyNotesNow = useCallbackA(async (entries, currentNotes = notes, currentVaults = vaults) => {
+  const saveDirtyNotesNow = useCallbackA(async function saveDirtyNotesNowImpl(entries, currentNotes = notesRef.current, currentVaults = vaultsRef.current) {
     if (!HAS_DISK || !entries?.length) return;
     for (const entry of entries) {
       const id = entry?.id;
       const vaultId = entry?.vaultId;
       const revision = entry?.revision;
       if (!id || !vaultId) continue;
-      const noteList = findNotesForVault(vaultId, currentNotes, currentVaults);
-      const n = noteList.find(x => x.id === id);
       const dirtyKey = mnDirtyNoteKey(vaultId, id);
-      if (!n) {
-        if (!dirtyMissingWarnedRef.current.has(dirtyKey)) {
-          dirtyMissingWarnedRef.current.add(dirtyKey);
-          showAppNotice('Could not autosave note', 'A dirty note could not be matched to its vault. Switch back to the vault or reload before closing.', 'warn');
-        }
-        console.warn('dirty note could not be matched for autosave', { vaultId, id });
+      if (savingDirtyKeysRef.current.has(dirtyKey)) {
+        pendingDirtyKeysRef.current.add(dirtyKey);
         continue;
       }
-      dirtyMissingWarnedRef.current.delete(dirtyKey);
-      const saveOptions = { expectedModifiedAt: n.diskModifiedAt || null };
-      saveOptions.expectedModifiedAt = noteDiskStampRef.current.get(dirtyKey) || saveOptions.expectedModifiedAt;
-      const expectedModifiedAt = saveOptions.expectedModifiedAt;
+      savingDirtyKeysRef.current.add(dirtyKey);
+      const noteList = findNotesForVault(vaultId, currentNotes, currentVaults);
+      const n = noteList.find(x => x.id === id);
       try {
-        const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
-          window.mn,
-          vaultId,
-          noteForDisk(n, mnBlocksToMd),
-          saveOptions
-        );
-        if (res && res.ok === false) {
-          if (res.code === 'NOTE_CONFLICT') {
-            setConflictNotice({
-              vaultId,
-              noteId: id,
-              title: n.title || 'Untitled',
-              currentModifiedAt: res.currentModifiedAt || null,
-              expectedModifiedAt: res.expectedModifiedAt || expectedModifiedAt,
-            });
-            continue;
+        if (!n) {
+          if (!dirtyMissingWarnedRef.current.has(dirtyKey)) {
+            dirtyMissingWarnedRef.current.add(dirtyKey);
+            showAppNotice('Could not autosave note', 'A dirty note could not be matched to its vault. Switch back to the vault or reload before closing.', 'warn');
           }
-          throw new Error(res.error || 'Save failed');
+          console.warn('dirty note could not be matched for autosave', { vaultId, id });
+          continue;
         }
-        const saved = res?.value;
-        if (saved?.diskModifiedAt || saved?.modifiedAt) {
-          const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
-          noteDiskStampRef.current.set(dirtyKey, diskModifiedAt);
-          const updateDiskStamp = notesList => MN_NOTES_VAULTS_STATE.updateNoteDiskStamp(notesList, id, diskModifiedAt);
-          if (vaultId === activeVaultId) setNotes(updateDiskStamp);
-          setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
-            ? { ...v, notes: updateDiskStamp(v.notes) }
-            : v));
+        dirtyMissingWarnedRef.current.delete(dirtyKey);
+        const saveOptions = { expectedModifiedAt: n.diskModifiedAt || null };
+        saveOptions.expectedModifiedAt = noteDiskStampRef.current.get(dirtyKey) || saveOptions.expectedModifiedAt;
+        const expectedModifiedAt = saveOptions.expectedModifiedAt;
+        try {
+          const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
+            window.mn,
+            vaultId,
+            noteForDisk(n, mnBlocksToMd),
+            saveOptions
+          );
+          if (res && res.ok === false) {
+            if (res.code === 'NOTE_CONFLICT') {
+              setConflictNotice({
+                vaultId,
+                noteId: id,
+                title: n.title || 'Untitled',
+                currentModifiedAt: res.currentModifiedAt || null,
+                expectedModifiedAt: res.expectedModifiedAt || expectedModifiedAt,
+              });
+              continue;
+            }
+            throw new Error(res.error || 'Save failed');
+          }
+          const saved = res?.value;
+          if (saved?.diskModifiedAt || saved?.modifiedAt) {
+            const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
+            noteDiskStampRef.current.set(dirtyKey, diskModifiedAt);
+            const updateDiskStamp = notesList => MN_NOTES_VAULTS_STATE.updateNoteDiskStamp(notesList, id, diskModifiedAt);
+            if (vaultId === activeVaultId) setNotes(updateDiskStamp);
+            setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
+              ? { ...v, notes: updateDiskStamp(v.notes) }
+              : v));
+          }
+          setDirtyNotes(cur => {
+            const current = cur.get(dirtyKey);
+            if (!current || current.vaultId !== vaultId) return cur;
+            if (revision != null && current.revision !== revision) return cur;
+            const next = new Map(cur);
+            next.delete(dirtyKey);
+            return next;
+          });
+        } catch (e) {
+          console.error('saveNote failed', id, e);
+          showAppNotice('Could not save note', e.message || String(e));
         }
-        setDirtyNotes(cur => {
-          const current = cur.get(dirtyKey);
-          if (!current || current.vaultId !== vaultId) return cur;
-          if (revision != null && current.revision !== revision) return cur;
-          const next = new Map(cur);
-          next.delete(dirtyKey);
-          return next;
-        });
-      } catch (e) {
-        console.error('saveNote failed', id, e);
-        showAppNotice('Could not save note', e.message || String(e));
+      } finally {
+        savingDirtyKeysRef.current.delete(dirtyKey);
+        if (pendingDirtyKeysRef.current.delete(dirtyKey)) {
+          const pendingEntry = dirtyNotesRef.current.get(dirtyKey);
+          if (pendingEntry) {
+            setTimeout(() => saveDirtyNotesNowImpl([pendingEntry], notesRef.current, vaultsRef.current), 0);
+          }
+        }
       }
     }
-  }, [findNotesForVault, notes, vaults, activeVaultId, showAppNotice]);
+  }, [findNotesForVault, activeVaultId, showAppNotice]);
 
   // ── Persist dirty notes (debounced) ────────────────────────────────────
   useEffectA(() => {
@@ -1584,6 +1627,7 @@ function MnApp() {
     const now = Date.now();
     const snoozed = mnReadSnoozedReminders();
     return mnCollectReminderItems(notesWithBody)
+      .filter(item => !(MN_APP_HELPERS.agendaIsDeferred && MN_APP_HELPERS.agendaIsDeferred(item)))
       .map(item => {
         const dueTime = item.remindAt?.at?.getTime?.() || 0;
         const snoozedUntil = Number(snoozed[item.key]) || 0;
@@ -1626,6 +1670,7 @@ function MnApp() {
   const todayAgendaItems = useMemoA(() => {
     const today = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
     return (calendarTaskItems || [])
+      .filter(item => !(MN_APP_HELPERS.agendaIsDeferred && MN_APP_HELPERS.agendaIsDeferred(item)))
       .filter(item => item?.remindAt?.date === today)
       .sort((a, b) => String(a.remindAt?.time || '').localeCompare(String(b.remindAt?.time || '')) || String(a.label || a.text || '').localeCompare(String(b.label || b.text || '')))
       .slice(0, 5);
@@ -1894,7 +1939,8 @@ function MnApp() {
     const nextText = mnCalendarTaskContent(
       patch.text ?? item.label ?? item.text,
       patch.date ?? item.remindAt?.date ?? '',
-      patch.time ?? item.remindAt?.time ?? ''
+      patch.time ?? item.remindAt?.time ?? '',
+      Object.prototype.hasOwnProperty.call(patch, 'deferUntil') ? patch.deferUntil : item.deferUntil
     );
     if (!nextText) return false;
     const nextChecked = Object.prototype.hasOwnProperty.call(patch, 'checked') ? !!patch.checked : item.checked;
@@ -1921,9 +1967,12 @@ function MnApp() {
     updateNoteBody(item.noteId, body => {
       const source = String(item.text || '').trim();
       if (!source) return body;
+      if (MN_APP_HELPERS.agendaReplaceUniqueSourceText) {
+        return MN_APP_HELPERS.agendaReplaceUniqueSourceText(body, source, nextText);
+      }
       const text = String(body || '');
       const index = text.indexOf(source);
-      if (index < 0) return body;
+      if (index < 0 || text.indexOf(source, index + source.length) >= 0) return body;
       return `${text.slice(0, index)}${nextText}${text.slice(index + source.length)}`;
     });
     return true;
@@ -1931,9 +1980,11 @@ function MnApp() {
 
   const createCalendarTaskItem = useCallbackA(({ noteId, text, type, date, time } = {}) => {
     const id = String(noteId || selectedId || '').trim();
-    if (!id || !notes.some(note => note.id === id)) return false;
+    const note = notes.find(candidate => candidate.id === id);
+    if (!id || !note) return false;
     const content = mnCalendarTaskContent(text, date, type === 'reminder' ? time : '');
     if (!content) return false;
+    if (MN_APP_HELPERS.agendaBodyHasActionText && MN_APP_HELPERS.agendaBodyHasActionText(note.body || '', content)) return false;
     updateNoteBody(id, body => {
       const source = String(body || '').replace(/\s+$/g, '');
       return `${source}${source ? '\n' : ''}- [ ] ${content}\n`;
@@ -3443,6 +3494,7 @@ function MnApp() {
       const today = new Date().toDateString();
       const snoozed = mnReadSnoozedReminders();
       const due = mnCollectReminderItems(notesWithBody)
+        .filter(item => !(MN_APP_HELPERS.agendaIsDeferred && MN_APP_HELPERS.agendaIsDeferred(item)))
         .filter(item => {
           const dueTime = item.remindAt?.at?.getTime?.();
           if (!dueTime || dueTime > now) return false;
