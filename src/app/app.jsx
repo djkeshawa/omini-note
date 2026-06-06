@@ -349,6 +349,24 @@ function mnNormalizeOnboardingMode(value) {
   return ['general', 'daily', 'researcher', 'writer'].includes(clean) ? clean : '';
 }
 
+const MN_PHASE5_METRICS_STORAGE_KEY = 'mn_phase5_metrics_v1';
+
+function mnReadLocalPhase5Metrics() {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    return JSON.parse(window.localStorage.getItem(MN_PHASE5_METRICS_STORAGE_KEY) || 'null');
+  } catch (e) {
+    return null;
+  }
+}
+
+function mnWriteLocalPhase5Metrics(metrics) {
+  if (typeof window === 'undefined' || !window.localStorage || !metrics) return;
+  try {
+    window.localStorage.setItem(MN_PHASE5_METRICS_STORAGE_KEY, JSON.stringify(metrics));
+  } catch (e) {}
+}
+
 function mnBuildDefaultSmartViewDefinitions() {
   const helpers = window.MN_APP_HELPERS || {};
   const today = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
@@ -538,6 +556,21 @@ function MnApp() {
       message: message || 'The operation could not be completed.',
       tone,
     });
+  }, []);
+
+  const recordPhase5Metric = useCallbackA((key, details = {}) => {
+    if (!MN_APP_HELPERS?.phase5RecordMetric) return null;
+    try {
+      const next = MN_APP_HELPERS.phase5RecordMetric(mnReadLocalPhase5Metrics(), key, details);
+      mnWriteLocalPhase5Metrics(next);
+      if (window.mn?.recordPhase5Metric) {
+        window.mn.recordPhase5Metric(key, details).catch(e => console.warn('recordPhase5Metric failed', e));
+      }
+      return next;
+    } catch (e) {
+      console.warn('Local Phase 5 metric ignored', e);
+      return null;
+    }
   }, []);
 
   const openAskAi = useCallbackA((initialQuery = '') => {
@@ -774,6 +807,9 @@ function MnApp() {
         if (!prefsRes.ok) throw new Error(prefsRes.error);
         const prefs = prefsRes.value;
         setCustomThemes(mnNormalizeCustomThemesForApp(prefs.customThemes));
+        if (prefs.phase5Metrics && MN_APP_HELPERS?.phase5SanitizeMetrics) {
+          mnWriteLocalPhase5Metrics(MN_APP_HELPERS.phase5SanitizeMetrics(prefs.phase5Metrics));
+        }
         const nextSmartViews = mnNormalizeSmartViewsForApp(prefs.smartViews);
         setSavedSmartViews(nextSmartViews);
         if (!Array.isArray(prefs.smartViews) && window.mn?.setPrefs) {
@@ -1131,6 +1167,7 @@ function MnApp() {
       const nextThemes = mnNormalizeCustomThemesForApp(value.customThemes);
       setCustomThemes(nextThemes);
       if (value.theme?.id) setTweak('theme', value.theme.id);
+      recordPhase5Metric('theme_installs', { themeId: value.theme?.id });
       showAppNotice('Theme installed', `${value.theme?.name || 'Theme'} is ready.`, 'info');
       return { ok: true, canceled: false, theme: value.theme };
     } catch (e) {
@@ -1138,7 +1175,7 @@ function MnApp() {
       showAppNotice('Could not install theme', error);
       return { ok: false, error };
     }
-  }, [showAppNotice]);
+  }, [recordPhase5Metric, showAppNotice]);
 
   const theme = tweaks.theme;
   const baseThemeMap = window.MN_THEMES || {};
@@ -1301,6 +1338,7 @@ function MnApp() {
       setTrashItems([]);
       setTrashError('');
       setActiveVaultId(id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
+      if (onboardingMode) recordPhase5Metric('onboarding_mode_selections', { onboardingMode });
       return;
     }
     try {
@@ -1342,12 +1380,13 @@ function MnApp() {
       ]);
       const selected = await MN_VAULTS_SERVICE.selectVault(window.mn, v.id);
       if (!selected.ok) window.mn.setPrefs({ activeVaultId: v.id });
+      if (onboardingMode) recordPhase5Metric('onboarding_mode_selections', { onboardingMode });
     } catch (e) {
       console.error('createVault failed', e);
       showAppNotice('Could not create vault', e.message || String(e));
       await refreshVaultRegistry({ reloadActive: false, reason: 'createVault-failed' });
     }
-  }, [activeVaultId, notes, vaults, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks, mnBlocksToMd, showAppNotice, refreshVaultRegistry]);
+  }, [activeVaultId, notes, vaults, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks, mnBlocksToMd, recordPhase5Metric, showAppNotice, refreshVaultRegistry]);
 
   const setActiveVaultNovelistMode = useCallbackA(async (enabled) => {
     if (!activeVaultId) return { ok: false, error: 'No active vault.' };
@@ -2055,13 +2094,16 @@ function MnApp() {
         updateNoteBody(plan.noteId, previous => quickCaptureAppendBody(previous, plan.appendText || plan.body || ''));
         setSelectedId(plan.noteId);
         navigateView('notes');
+        recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'append' });
         return plan.noteId;
       }
-      return createNote({
+      const id = createNote({
         title: uniqueNoteTitle(plan.createNote?.title || cleanTitle),
         body: plan.createNote?.body || plan.body || '',
         tags: tagsForCapture,
       });
+      recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'create' });
+      return id;
     }
 
     const destination = MN_APP_HELPERS.captureDestinationById
@@ -2077,14 +2119,17 @@ function MnApp() {
       updateNoteBody(activeDestination.noteId, previous => quickCaptureAppendBody(previous, rawBody));
       setSelectedId(activeDestination.noteId);
       navigateView('notes');
+      recordPhase5Metric('capture_saves', { destinationId: activeDestination.id, mode: 'append' });
       return activeDestination.noteId;
     }
-    return createNote({
+    const id = createNote({
       title: uniqueNoteTitle(activeDestination?.id === 'new' ? cleanTitle : (activeDestination?.noteTitle || cleanTitle)),
       body: rawBody,
       tags: quickCaptureMergeTags(activeDestination?.tags || [], noteTags),
     });
-  }, [createNote, navigateView, notesWithBody, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, selectedNote, uniqueNoteTitle, updateNoteBody]);
+    recordPhase5Metric('capture_saves', { destinationId: activeDestination?.id || 'new', mode: 'create' });
+    return id;
+  }, [createNote, navigateView, notesWithBody, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, recordPhase5Metric, selectedNote, uniqueNoteTitle, updateNoteBody]);
 
   const addQuickTodayTask = useCallbackA((text) => {
     const clean = String(text || '').replace(/\s+/g, ' ').trim();
@@ -3671,6 +3716,7 @@ function MnApp() {
               body: plan.createNote.body || '',
               tags: plan.createNote.tags || [],
             });
+            recordPhase5Metric('zotero_source_notes', { mode: 'create' });
             return {
               message: `Created Zotero source note "${title}".`,
               itemKey: plan.itemKey || itemKey,
@@ -3744,7 +3790,7 @@ function MnApp() {
       })),
     ];
     return makeRegistry(actions);
-  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openSmartView, plugins, rebuildIndex, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openSmartView, plugins, rebuildIndex, recordPhase5Metric, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
 
   useEffectA(() => {
     window.MN_APP_ACTIONS = appActionRegistry;

@@ -877,6 +877,19 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /destinations=\{MN_APP_HELPERS\.captureDestinationChoices/);
   assert.match(app, /templates=\{MN_APP_HELPERS\.captureTemplateChoices/);
   assert.match(app, /saveQuickCapture\(capture\)/);
+  assert.match(app, /MN_PHASE5_METRICS_STORAGE_KEY = 'mn_phase5_metrics_v1'/);
+  assert.match(app, /const recordPhase5Metric = useCallbackA/);
+  assert.match(app, /phase5RecordMetric\(mnReadLocalPhase5Metrics\(\), key, details\)/);
+  assert.match(app, /recordPhase5Metric\('capture_saves'/);
+  assert.match(app, /recordPhase5Metric\('zotero_source_notes'/);
+  assert.match(appHelpers, /PHASE5_METRIC_KEYS/);
+  assert.match(appHelpers, /function phase5RecordMetric/);
+  assert.match(appHelpers, /Unsupported Phase 5 metric key/);
+  assert.doesNotMatch(appHelpers, /sendBeacon|XMLHttpRequest|fetch\(/);
+  assert.match(store, /PHASE5_METRIC_KEYS/);
+  assert.match(store, /sanitizePhase5Metrics\(cleanPatch\.phase5Metrics, \{ rejectUnknown: true \}\)/);
+  assert.match(store, /recordPhase5Metric\(cfg\.phase5Metrics, 'theme_installs'/);
+  assert.match(store, /recordPhase5Metric\(cfg\.phase5Metrics, 'onboarding_mode_selections'/);
   assert.match(utilityPanels, /Title date/);
   assert.match(utilityPanels, /No notes today/);
   assert.match(utilityPanels, /dailyNote \? 'Open daily note' : 'Create daily note'/);
@@ -1052,7 +1065,7 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(main, /function sanitizeSmartViewsForPrefs/);
   assert.match(main, /clean\.smartViews = sanitizeSmartViewsForPrefs\(value\)/);
   assert.match(store, /smartViews: Array\.isArray\(cfg\.smartViews\) \? cfg\.smartViews : null/);
-  assert.match(store, /new Set\(\['activeVaultId', 'tweaks', 'aiConfig', 'smartViews'\]\)/);
+  assert.match(store, /new Set\(\['activeVaultId', 'tweaks', 'aiConfig', 'smartViews', 'phase5Metrics'\]\)/);
   assert.match(store, /Object\.prototype\.hasOwnProperty\.call\(cleanPatch, 'smartViews'\)/);
 });
 

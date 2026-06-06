@@ -116,6 +116,44 @@ test('Capture save plans describe append and create behavior without mutation', 
   assert.equal(fallbackPlan.createNote.title, 'Reflection - 2026-06-06');
 });
 
+test('Phase 5 metric helpers record only allowlisted local counters', () => {
+  assert.deepEqual(appHelpers.phase5MetricChoices().map(item => item.id), [
+    'capture_saves',
+    'zotero_source_notes',
+    'theme_installs',
+    'onboarding_mode_selections',
+  ]);
+  assert.equal(appHelpers.phase5NormalizeMetricKey('capture_saves'), 'capture_saves');
+  assert.equal(appHelpers.phase5NormalizeMetricKey('constructor'), '');
+  assert.throws(
+    () => appHelpers.phase5RecordMetric(null, 'unsafe_metric'),
+    /Unsupported Phase 5 metric key/
+  );
+
+  const first = appHelpers.phase5RecordMetric(null, 'capture_saves', {
+    destinationId: 'today',
+    templateId: 'daily reflection',
+    noteTitle: 'Private title should be ignored',
+  }, { now: '2026-06-07T08:00:00.000Z' });
+  assert.equal(appHelpers.phase5MetricCount(first, 'capture_saves'), 1);
+  assert.equal(first.events[0].key, 'capture_saves');
+  assert.equal(first.events[0].at, '2026-06-07T08:00:00.000Z');
+  assert.deepEqual(first.events[0].details, {
+    destinationId: 'today',
+    templateId: 'daily-reflection',
+  });
+
+  const second = appHelpers.phase5RecordMetric(first, 'zotero_source_notes', {
+    mode: 'create',
+    itemKey: 'ABCD1234',
+  }, { now: '2026-06-07T09:00:00.000Z' });
+  assert.equal(appHelpers.phase5MetricCount(second, 'capture_saves'), 1);
+  assert.equal(appHelpers.phase5MetricCount(second, 'zotero_source_notes'), 1);
+  assert.equal(second.events.length, 2);
+  assert.deepEqual(second.events[1].details, { mode: 'create' });
+  assert.doesNotMatch(JSON.stringify(appHelpers), /sendBeacon|XMLHttpRequest|fetch\(/);
+});
+
 test('Zotero source-note helpers build deterministic drafts and idempotent plans', () => {
   const readResult = {
     item: {

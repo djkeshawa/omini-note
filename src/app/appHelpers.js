@@ -59,6 +59,20 @@
   const CONTEXTUAL_AI_SECTION_KINDS = ['fact', 'suggestion', 'preview'];
   const ZOTERO_ITEM_KEY_RE = /^[A-Za-z0-9_-]{1,80}$/;
   const ZOTERO_SOURCE_TAGS = ['research', 'source', 'zotero'];
+  const PHASE5_METRICS_FORMAT = 'vispnote.phase5Metrics.v1';
+  const PHASE5_METRIC_KEYS = [
+    'capture_saves',
+    'zotero_source_notes',
+    'theme_installs',
+    'onboarding_mode_selections',
+  ];
+  const PHASE5_METRIC_DETAIL_KEYS = new Set([
+    'destinationId',
+    'templateId',
+    'mode',
+    'themeId',
+    'onboardingMode',
+  ]);
   const CONTEXTUAL_AI_PROVIDER_LABELS = {
     ollama: 'Ollama',
     openai: 'OpenAI',
@@ -261,6 +275,90 @@
         ? { title: createTitle, tags, body }
         : null,
     };
+  }
+
+  function phase5MetricChoices() {
+    return PHASE5_METRIC_KEYS.map(id => ({ id }));
+  }
+
+  function phase5NormalizeMetricKey(value = '') {
+    const key = String(value || '').trim().toLowerCase();
+    return PHASE5_METRIC_KEYS.includes(key) ? key : '';
+  }
+
+  function phase5CleanMetricDetailValue(value) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : '';
+    const text = captureCleanText(value, 120).replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_.:-]+/g, '-').replace(/^-+|-+$/g, '');
+    return text.slice(0, 120);
+  }
+
+  function phase5SanitizeMetricDetails(details = {}) {
+    if (!details || typeof details !== 'object' || Array.isArray(details)) return {};
+    const clean = {};
+    for (const [key, value] of Object.entries(details)) {
+      if (!PHASE5_METRIC_DETAIL_KEYS.has(key)) continue;
+      const cleaned = phase5CleanMetricDetailValue(value);
+      if (cleaned === '' || cleaned == null) continue;
+      clean[key] = cleaned;
+    }
+    return clean;
+  }
+
+  function phase5SanitizeMetrics(metrics = {}) {
+    const source = metrics && typeof metrics === 'object' && !Array.isArray(metrics) ? metrics : {};
+    const counters = {};
+    const rawCounters = source.counters && typeof source.counters === 'object' && !Array.isArray(source.counters)
+      ? source.counters
+      : {};
+    for (const key of PHASE5_METRIC_KEYS) {
+      const count = Number(rawCounters[key]);
+      if (Number.isFinite(count) && count > 0) counters[key] = Math.min(Math.floor(count), 999999);
+    }
+    const events = (Array.isArray(source.events) ? source.events : [])
+      .map(event => {
+        const key = phase5NormalizeMetricKey(event?.key);
+        if (!key) return null;
+        const eventTime = event?.at ? new Date(event.at) : null;
+        const at = eventTime && Number.isFinite(eventTime.getTime()) ? eventTime.toISOString() : '';
+        return {
+          key,
+          at,
+          details: phase5SanitizeMetricDetails(event?.details),
+        };
+      })
+      .filter(event => event && event.at)
+      .slice(-100);
+    return {
+      format: PHASE5_METRICS_FORMAT,
+      counters,
+      events,
+      updatedAt: source.updatedAt && Number.isFinite(new Date(source.updatedAt).getTime()) ? new Date(source.updatedAt).toISOString() : null,
+    };
+  }
+
+  function phase5RecordMetric(metrics = {}, key = '', details = {}, options = {}) {
+    const metricKey = phase5NormalizeMetricKey(key);
+    if (!metricKey) throw new Error('Unsupported Phase 5 metric key');
+    const now = Number.isFinite(new Date(options.now).getTime()) ? new Date(options.now).toISOString() : new Date().toISOString();
+    const current = phase5SanitizeMetrics(metrics);
+    const counters = { ...current.counters, [metricKey]: (current.counters[metricKey] || 0) + 1 };
+    const events = [
+      ...current.events,
+      { key: metricKey, at: now, details: phase5SanitizeMetricDetails(details) },
+    ].slice(-100);
+    return {
+      format: PHASE5_METRICS_FORMAT,
+      counters,
+      events,
+      updatedAt: now,
+    };
+  }
+
+  function phase5MetricCount(metrics = {}, key = '') {
+    const metricKey = phase5NormalizeMetricKey(key);
+    if (!metricKey) return 0;
+    return phase5SanitizeMetrics(metrics).counters[metricKey] || 0;
   }
 
   function zoteroCleanItemKey(value = '') {
@@ -2824,6 +2922,8 @@
     CAPTURE_DESTINATIONS,
     CAPTURE_TEMPLATES,
     SMART_VIEW_FORMAT,
+    PHASE5_METRICS_FORMAT,
+    PHASE5_METRIC_KEYS,
     todayIsoDate,
     expandTemplate,
     templateById,
@@ -2834,6 +2934,12 @@
     captureDestinationById,
     captureBuildAppendMarkdown,
     captureBuildSavePlan,
+    phase5MetricChoices,
+    phase5NormalizeMetricKey,
+    phase5SanitizeMetricDetails,
+    phase5SanitizeMetrics,
+    phase5RecordMetric,
+    phase5MetricCount,
     zoteroCleanItemKey,
     zoteroNormalizeSource,
     zoteroBuildSourceNoteDraft,

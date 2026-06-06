@@ -377,6 +377,49 @@ test('Custom theme imports persist and reject unsafe files without mutation', as
   });
 });
 
+test('Local Phase 5 metrics persist safely and reject unsafe keys', async () => {
+  await withIsolatedStore(async (store) => {
+    const first = appHelpers.phase5RecordMetric(null, 'capture_saves', {
+      destinationId: 'today',
+      templateId: 'task',
+    }, { now: '2026-06-07T08:00:00.000Z' });
+    await store.setPrefs({ phase5Metrics: first });
+    let prefs = await store.getPrefs();
+    assert.equal(prefs.phase5Metrics.counters.capture_saves, 1);
+    assert.deepEqual(prefs.phase5Metrics.events[0].details, {
+      destinationId: 'today',
+      templateId: 'task',
+    });
+
+    await assert.rejects(
+      () => store.setPrefs({ phase5Metrics: { counters: { unsafe_metric: 1 }, events: [] } }),
+      /Unsupported Phase 5 metric key/
+    );
+    assert.equal((await store.getPrefs()).phase5Metrics.counters.capture_saves, 1);
+
+    const tokens = buildTestThemeTokens(320);
+    const themePath = path.join(store.ROOT, 'community-metrics.json');
+    fs.writeFileSync(themePath, JSON.stringify({
+      format: themes.THEME_FORMAT,
+      id: 'community_metrics',
+      name: 'Community Metrics',
+      tokens,
+    }), 'utf8');
+    await store.importThemeFile(themePath);
+    prefs = await store.getPrefs();
+    assert.equal(prefs.phase5Metrics.counters.theme_installs, 1);
+    assert.equal(prefs.phase5Metrics.events.at(-1).details.themeId, 'community_metrics');
+
+    await store.createVault('Daily Metrics', {
+      onboardingMode: 'daily',
+      now: '2026-06-07T09:00:00.000Z',
+    });
+    prefs = await store.getPrefs();
+    assert.equal(prefs.phase5Metrics.counters.onboarding_mode_selections, 1);
+    assert.equal(prefs.phase5Metrics.events.at(-1).details.onboardingMode, 'daily');
+  });
+});
+
 test('Note saves create restorable versions and reject stale disk writes', async () => {
   await withIsolatedStore(async (store) => {
     const [vault] = await store.listVaults();
