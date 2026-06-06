@@ -33,7 +33,7 @@ function MnSettingsModal({
   const sections = [
     { k: 'appearance', label: 'Appearance', group: 'Workspace', sub: 'Theme, density, fonts', icon: iconAppearance },
     { k: 'editor', label: 'Editor', group: 'Workspace', sub: 'Writing behavior', icon: iconEditor },
-    { k: 'notes', label: 'Notes & Tags', group: 'Workspace', sub: 'Lists and rollups', icon: iconNotes },
+    { k: 'notes', label: 'Notes & Tags', group: 'Workspace', sub: 'Lists and Today', icon: iconNotes },
     { k: 'reminders', label: 'Reminders', group: 'Automation', sub: 'Alerts and snooze', icon: iconBell },
     { k: 'ai', label: 'AI', group: 'Automation', sub: 'Models and providers', icon: iconAI },
     { k: 'plugins', label: 'Plugins', group: 'Automation', sub: 'Custom actions', icon: iconPlugin },
@@ -303,6 +303,10 @@ function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThe
           <Segmented T={T} value={tweaks.density} onChange={v => setTweak('density', v)}
             options={[{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }]} />
         </Row>
+        <Row T={T} label="Startup view" sub="Choose what opens when VispNote starts.">
+          <Segmented T={T} value={tweaks.startupView === 'today' ? 'today' : 'notes'} onChange={v => setTweak('startupView', v)}
+            options={[{ value: 'notes', label: 'Notes' }, { value: 'today', label: 'Today' }]} />
+        </Row>
         <Row T={T} label="Typography" sub="Font pairing used across the app.">
           <Select T={T} value={tweaks.fontChoice} onChange={v => setTweak('fontChoice', v)}
             options={Object.keys(MN_FONTS)} />
@@ -370,12 +374,12 @@ function SectionNotes({ tweaks, setTweak, T, stats }) {
         <Row T={T} label="Show pinned notes first" sub="Pin a note from its toolbar.">
           <Toggle T={T} checked={tweaks.pinnedFirst !== false} onChange={v => setTweak('pinnedFirst', v)} />
         </Row>
-        <Row T={T} label="Daily rollup heading format" sub="How Today view groups notes.">
+        <Row T={T} label="Today heading format" sub="How Today view groups notes.">
           <Segmented T={T} value={tweaks.rollupFormat || 'long'}
             onChange={v => setTweak('rollupFormat', v)}
             options={[{ value: 'long', label: 'Long' }, { value: 'short', label: 'Short' }]} />
         </Row>
-        <Row T={T} label="Today dashboard default range" sub="Initial range used when opening Daily rollup.">
+        <Row T={T} label="Today dashboard default range" sub="Initial range used when opening Today.">
           <Segmented T={T} value={tweaks.rollupDefaultRange || 'today'}
             onChange={v => setTweak('rollupDefaultRange', v)}
             options={[{ value: 'today', label: 'Today' }, { value: 'yesterday', label: 'Yesterday' }, { value: 'week', label: 'This week' }, { value: 'month', label: 'This month' }]} />
@@ -385,16 +389,16 @@ function SectionNotes({ tweaks, setTweak, T, stats }) {
             onChange={v => setTweak('rollupGroupBy', v)}
             options={[{ value: 'created', label: 'Created' }, { value: 'modified', label: 'Modified' }, { value: 'title-date', label: 'Title date' }]} />
         </Row>
-        <Row T={T} label="Show rollup previews" sub="Show a short note excerpt in Daily rollup.">
+        <Row T={T} label="Show Today previews" sub="Show a short note excerpt in Today.">
           <Toggle T={T} checked={tweaks.rollupShowPreviews !== false} onChange={v => setTweak('rollupShowPreviews', v)} />
         </Row>
-        <Row T={T} label="Show rollup tasks" sub="Show open checklist items in Daily rollup.">
+        <Row T={T} label="Show Today open loops" sub="Show open checklist items in Today.">
           <Toggle T={T} checked={tweaks.rollupShowTasks !== false} onChange={v => setTweak('rollupShowTasks', v)} />
         </Row>
-        <Row T={T} label="Show rollup reminders" sub="Show overdue and due reminders in Daily rollup.">
+        <Row T={T} label="Show Today reminders" sub="Show overdue and due reminders in Today.">
           <Toggle T={T} checked={tweaks.rollupShowReminders !== false} onChange={v => setTweak('rollupShowReminders', v)} />
         </Row>
-        <Row T={T} label="Collapse older rollup days" sub="Keep older day groups compact by default.">
+        <Row T={T} label="Collapse older Today days" sub="Keep older Today day groups compact by default.">
           <Toggle T={T} checked={tweaks.rollupCollapseOlder !== false} onChange={v => setTweak('rollupCollapseOlder', v)} />
         </Row>
         <Row T={T} label="Graph style" sub="How connection overlay is drawn." last>

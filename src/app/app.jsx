@@ -330,6 +330,10 @@ function mnThemeOptionsForApp(baseThemes, customThemes) {
   return [...builtIns, ...custom];
 }
 
+function mnNormalizeStartupView(value) {
+  return value === 'today' ? 'today' : 'notes';
+}
+
 function MnApp() {
   const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
@@ -676,10 +680,13 @@ function MnApp() {
         if (!prefsRes.ok) throw new Error(prefsRes.error);
         const prefs = prefsRes.value;
         setCustomThemes(mnNormalizeCustomThemesForApp(prefs.customThemes));
+        let startupView = 'notes';
         if (prefs.tweaks) {
           const mergedTweaks = { ...MN_TWEAK_DEFAULTS, ...prefs.tweaks };
+          startupView = mnNormalizeStartupView(mergedTweaks.startupView);
+          mergedTweaks.startupView = startupView;
           window.MN_LOGSEQ?.setWorkflowStates?.(mnNormalizeWorkflowStatesForApp(mergedTweaks.workflowStates));
-          setTweaks(t => ({ ...t, ...prefs.tweaks }));
+          setTweaks(t => ({ ...t, ...prefs.tweaks, startupView }));
         }
 
         const vlistRes = await MN_NOTES_VAULTS_SERVICE.listVaults(window.mn);
@@ -701,6 +708,7 @@ function MnApp() {
         setNotes(loaded.notes);
         setCanvases(loaded.canvases);
         setSelectedId(loaded.lastSelectedId || loaded.notes[0]?.id || null);
+        if (startupView === 'today') setView('today');
         if (prefs.activeVaultId !== activeId) window.mn.setPrefs({ activeVaultId: activeId });
         setBootState('ready');
       } catch (e) {
@@ -2707,7 +2715,7 @@ function MnApp() {
       },
       { id: 'graph', label: 'Open graph', description: 'Show the note graph.', section: 'Navigate', shortcut: 'Ctrl+G', inputSchema: objectSchema(), run: () => openView('graph') },
       { id: 'calendar', label: 'Open Agenda', description: 'Show scheduled todos and reminders.', section: 'Navigate', keywords: 'calendar schedule agenda reminder date', inputSchema: objectSchema(), run: () => openView('calendar') },
-      { id: 'today', label: 'Open Today', description: 'Show today rollup.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
+      { id: 'today', label: 'Open Today', description: 'Show the Today dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
       { id: 'todos', label: 'Open Agenda', description: 'Open the calendar planner for tasks and reminders.', section: 'Navigate', keywords: 'tasks checklist todos agenda calendar', hidden: true, aiHidden: true, inputSchema: objectSchema(), run: () => openView('calendar') },
       { id: 'canvas', label: 'Open canvas dashboard', description: 'Open the canvas dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => { openCanvasDashboard(); return { message: 'Opened canvas dashboard.' }; } },
       {

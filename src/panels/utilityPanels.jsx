@@ -244,7 +244,7 @@ function MnTodayPanel({
             </div>
             {range === 'today' && (
               <button type="button" onClick={onOpenOrCreateDailyNote} style={panelButton(true)}>
-                Create daily note
+                {dailyNote ? 'Open daily note' : 'Create daily note'}
               </button>
             )}
           </div>
@@ -363,7 +363,7 @@ function MnTodayPanel({
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               {visibleTasks.length === 0 && (
-                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '6px 0' }}>No open tasks</div>
+                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '6px 0' }}>No open loops for this range</div>
               )}
               {visibleTasks.map(item => (
                 <div key={item.key || `${item.noteId}:${item.line || item.blockId || taskLabel(item)}`} style={{
@@ -404,7 +404,7 @@ function MnTodayPanel({
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               {visibleReminders.length === 0 && (
-                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '6px 0' }}>No due reminders</div>
+                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '6px 0' }}>No reminders due in this range</div>
               )}
               {visibleReminders.map(item => {
                 const statusColor = item.rollupStatus === 'overdue' ? T.danger : item.rollupStatus === 'due-today' ? T.warn : T.inkDim;
