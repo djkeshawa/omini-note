@@ -106,6 +106,7 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const seed = fs.readFileSync(path.join(__dirname, '../lib/seed.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 
@@ -128,6 +129,17 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(app, /refreshVaultRegistry\(\{ reloadActive: true, reason: 'focus' \}\)/);
   assert.match(app, /onRefreshVaults=\{refreshVaultRegistry\}/);
   assert.match(app, /onCreateVault=\{createVault\}/);
+  assert.match(app, /function mnNormalizeOnboardingMode/);
+  assert.match(app, /onboardingMode: onboardingMode \|\| null/);
+  assert.match(settings, /const \[newVaultMode, setNewVaultMode\] = useStateS\('general'\)/);
+  assert.match(settings, /onboardingMode: newVaultMode/);
+  assert.match(settings, /value: 'daily', label: 'Daily'/);
+  assert.match(settings, /value: 'researcher', label: 'Research'/);
+  assert.match(settings, /value: 'writer', label: 'Writer'/);
+  assert.match(store, /explicitOnboardingMode/);
+  assert.match(store, /buildOnboardingModeSeed/);
+  assert.match(seed, /const ONBOARDING_MODES = \[/);
+  assert.match(seed, /function buildOnboardingModeSeed/);
   assert.match(app, /onDeleteVault=\{deleteVault\}/);
   assert.match(settings, /label="Create vault"/);
   assert.match(settings, /label="Delete current vault"/);

@@ -974,7 +974,7 @@ function SectionData({
   onExportBackup, onImportBackup, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
 }) {
   const [newVaultName, setNewVaultName] = useStateS('');
-  const [newVaultType, setNewVaultType] = useStateS('notes');
+  const [newVaultMode, setNewVaultMode] = useStateS('general');
   const [confirmingDelete, setConfirmingDelete] = useStateS(false);
   const [confirmText, setConfirmText] = useStateS('');
   const [busy, setBusy] = useStateS(false);
@@ -1021,9 +1021,12 @@ function SectionData({
     setError('');
     setBusy(true);
     try {
-      await onCreateVault(name, { type: newVaultType });
+      await onCreateVault(name, {
+        type: newVaultMode === 'writer' ? 'novelist' : 'notes',
+        onboardingMode: newVaultMode,
+      });
       setNewVaultName('');
-      setNewVaultType('notes');
+      setNewVaultMode('general');
       setConfirmingDelete(false);
       setConfirmText('');
     } finally {
@@ -1060,8 +1063,13 @@ function SectionData({
         </Row>
         <Row T={T} label="Create vault" sub="Start a separate local workspace with its own notes and tags.">
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <Segmented T={T} value={newVaultType} onChange={setNewVaultType}
-              options={[{ value: 'notes', label: 'Notes' }, { value: 'novelist', label: 'Novelist' }]} />
+            <Segmented T={T} value={newVaultMode} onChange={setNewVaultMode}
+              options={[
+                { value: 'general', label: 'General' },
+                { value: 'daily', label: 'Daily' },
+                { value: 'researcher', label: 'Research' },
+                { value: 'writer', label: 'Writer' },
+              ]} />
             <input
               value={newVaultName}
               onChange={e => setNewVaultName(e.target.value)}

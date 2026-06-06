@@ -11,6 +11,7 @@ const appNovelist = require('../src/app/appNovelist.js');
 const appMutations = require('../src/app/appMutations.js');
 const appCanvasActions = require('../src/app/appCanvasActions.js');
 const themes = require('../lib/themes.js');
+const seed = require('../lib/seed.js');
 const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
@@ -67,6 +68,40 @@ test('First-run seed creates one notes vault and one novelist vault', async () =
     assert.match(novel.notes.find(note => note.title === 'Chapter 1').body, /act:: \[\[Act 1\]\]/);
     assert.match(novel.notes.find(note => note.title === 'Scene 1').body, /::: plot-points/);
   });
+});
+
+test('Onboarding mode helpers produce deterministic starter modes', () => {
+  const choices = seed.onboardingModeChoices();
+  assert.deepEqual(choices.map(mode => mode.id), ['general', 'daily', 'researcher', 'writer']);
+  assert.equal(seed.normalizeOnboardingMode('Daily'), 'daily');
+  assert.equal(seed.normalizeOnboardingMode('bad'), '');
+
+  for (const mode of choices) {
+    const setup = seed.buildOnboardingModeSeed(mode.id, {
+      vaultName: 'Mode Vault',
+      date: '2026-06-07',
+      now: '2026-06-07T08:00:00.000Z',
+    });
+    assert.equal(setup.id, mode.id);
+    assert.ok(setup.tags.length >= 3, mode.id);
+    assert.ok(setup.notes.length >= 3, mode.id);
+    assert.ok(setup.notes.some(note => /^2026-06-07/.test(note.title) || note.title.includes('2026-06-07')), mode.id);
+    assert.ok(setup.commands.length >= 3, mode.id);
+    assert.equal(typeof setup.suggestedSidebarFocus, 'string');
+  }
+
+  const daily = seed.buildOnboardingModeSeed('daily', { date: '2026-06-07' });
+  assert.equal(daily.layoutHints.startupView, 'today');
+  assert.ok(daily.notes.some(note => note.title === 'Daily reflection template'));
+
+  const researcher = seed.buildOnboardingModeSeed('researcher', { date: '2026-06-07' });
+  assert.ok(researcher.notes.some(note => note.title === 'Research question template'));
+  assert.ok(researcher.tags.some(tag => tag.name === 'source'));
+
+  const writer = seed.buildOnboardingModeSeed('writer', { date: '2026-06-07' });
+  assert.equal(writer.novelistMode, true);
+  assert.ok(writer.notes.some(note => note.title === 'Scene 1'));
+  assert.ok(writer.tags.some(tag => tag.name === 'novel-scene'));
 });
 
 test('New vault creation never reuses stale vault folders', async () => {
@@ -126,6 +161,44 @@ test('Vault registry creates one fallback vault if every folder is externally de
     assert.equal(fs.existsSync(path.join(store.ROOT, repaired[0].slug)), true);
     const loaded = await store.loadVault(repaired[0].id);
     assert.equal(loaded.notes.length, 1);
+  });
+});
+
+test('Explicit onboarding modes seed new vaults without changing default vault creation', async () => {
+  await withIsolatedStore(async (store) => {
+    const plain = await store.createVault('Plain Vault');
+    const plainLoaded = await store.loadVault(plain.id);
+    assert.equal(plainLoaded.notes.length, 1);
+    assert.equal(plainLoaded.notes[0].title, 'Welcome to Plain Vault');
+    assert.equal(plainLoaded.novelistMode, false);
+
+    const daily = await store.createVault('Daily Vault', {
+      onboardingMode: 'daily',
+      now: '2026-06-07T08:00:00.000Z',
+    });
+    const dailyLoaded = await store.loadVault(daily.id);
+    assert.equal(dailyLoaded.novelistMode, false);
+    assert.ok(dailyLoaded.notes.some(note => note.title === '2026-06-07'));
+    assert.ok(dailyLoaded.notes.some(note => note.title === 'Daily reflection template'));
+    assert.ok(dailyLoaded.tags.some(tag => tag.name === 'daily'));
+
+    const researcher = await store.createVault('Research Vault', {
+      onboardingMode: 'researcher',
+      now: '2026-06-07T08:00:00.000Z',
+    });
+    const researcherLoaded = await store.loadVault(researcher.id);
+    assert.ok(researcherLoaded.notes.some(note => note.title === 'Research question template'));
+    assert.ok(researcherLoaded.tags.some(tag => tag.name === 'research'));
+
+    const writer = await store.createVault('Writer Vault', {
+      onboardingMode: 'writer',
+      now: '2026-06-07T08:00:00.000Z',
+    });
+    const writerLoaded = await store.loadVault(writer.id);
+    assert.equal(writerLoaded.novelistMode, true);
+    assert.ok(writerLoaded.notes.some(note => note.title === 'Writer workspace welcome'));
+    assert.ok(writerLoaded.notes.some(note => note.title === 'Scene 1'));
+    assert.ok(writerLoaded.tags.some(tag => tag.name === 'novel-scene'));
   });
 });
 

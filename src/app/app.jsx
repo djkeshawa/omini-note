@@ -344,6 +344,11 @@ function mnNormalizeStartupView(value) {
   return value === 'today' ? 'today' : 'notes';
 }
 
+function mnNormalizeOnboardingMode(value) {
+  const clean = String(value || '').trim().toLowerCase();
+  return ['general', 'daily', 'researcher', 'writer'].includes(clean) ? clean : '';
+}
+
 function mnBuildDefaultSmartViewDefinitions() {
   const helpers = window.MN_APP_HELPERS || {};
   const today = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
@@ -1253,7 +1258,8 @@ function MnApp() {
 
   const createVault = useCallbackA(async (name, options = {}) => {
     const activationSeq = ++vaultActivationSeq.current;
-    const vaultType = options.type === 'novelist' ? 'novelist' : 'notes';
+    const onboardingMode = mnNormalizeOnboardingMode(options.onboardingMode || options.mode);
+    const vaultType = options.type === 'novelist' || onboardingMode === 'writer' ? 'novelist' : 'notes';
     const pendingForCurrentVault = [...dirtyNotes.values()].filter(entry => entry.vaultId === activeVaultId);
     await saveDirtyNotesNow(pendingForCurrentVault, notes, vaults);
     await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
@@ -1263,14 +1269,22 @@ function MnApp() {
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const firstNoteId = 'n_' + Date.now();
       const isNovelistVault = vaultType === 'novelist';
+      const fallbackTitle = onboardingMode === 'daily'
+        ? 'Daily planner welcome'
+        : onboardingMode === 'researcher'
+          ? 'Research workspace welcome'
+          : 'Welcome to ' + name;
+      const fallbackBody = onboardingMode
+        ? `# ${fallbackTitle}\n\n- This vault was created with ${onboardingMode} onboarding\n- Create notes with ⌘N`
+        : `- This is your new vault\n- Create notes with ⌘N`;
       const newNotes = isNovelistVault ? mnBuildNovelistStarterNotes([], mnMdToBlocks, id).slice(0, 3) : [{
         id: firstNoteId,
-        title: 'Welcome to ' + name,
+        title: fallbackTitle,
         date: new Date().toISOString(),
-        tags: [],
+        tags: onboardingMode === 'daily' ? ['daily'] : onboardingMode === 'researcher' ? ['research'] : [],
         pinned: false,
-        body: `- This is your new vault\n- Create notes with ⌘N`,
-        blocks: mnMdToBlocks(`- This is your new vault\n- Create notes with ⌘N`),
+        body: fallbackBody,
+        blocks: mnMdToBlocks(fallbackBody),
       }];
       const setup = vaultType === 'novelist'
         ? await persistNovelistSetup(id, newNotes, [], null, { includeStarterNotes: false })
@@ -1290,7 +1304,11 @@ function MnApp() {
       return;
     }
     try {
-      const res = await MN_VAULTS_SERVICE.createVault(window.mn, name, { type: vaultType, workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null });
+      const res = await MN_VAULTS_SERVICE.createVault(window.mn, name, {
+        type: vaultType,
+        onboardingMode: onboardingMode || null,
+        workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null,
+      });
       if (!res.ok) throw new Error(res.error);
       const v = res.value;
 
