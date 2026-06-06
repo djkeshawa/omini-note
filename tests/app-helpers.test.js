@@ -256,6 +256,47 @@ test('Smart View saved definitions reject invalid input and round-trip text', ()
   assert.equal(JSON.stringify(existing), before);
 });
 
+test('Smart View embed blocks parse saved and inline definitions without mutating raw markdown', () => {
+  const saved = appHelpers.smartViewValidateSavedDefinition({
+    format: appHelpers.SMART_VIEW_FORMAT,
+    id: 'open_tasks',
+    title: 'Open Tasks',
+    type: 'tasks',
+    filters: { actionStatus: 'open' },
+    sort: { field: 'reminder', direction: 'asc' },
+    limit: 10,
+  });
+
+  const fromSaved = appHelpers.smartViewParseEmbedBlock('{{smart-view open_tasks}}', [saved]);
+  assert.equal(fromSaved.ok, true);
+  assert.equal(fromSaved.mode, 'saved');
+  assert.equal(fromSaved.definition.id, 'open_tasks');
+
+  const inlineYaml = `{{smart-view
+id: inline_tasks
+title: Inline Tasks
+type: tasks
+filters:
+  actionStatus: open
+sort:
+  field: reminder
+  direction: asc
+limit: 5
+}}`;
+  const fromInline = appHelpers.smartViewParseEmbedBlock(inlineYaml, []);
+  assert.equal(fromInline.ok, true);
+  assert.equal(fromInline.mode, 'inline');
+  assert.equal(fromInline.definition.id, 'inline_tasks');
+  assert.deepEqual(fromInline.definition.filters.actionStatuses, ['open']);
+
+  const missing = appHelpers.smartViewParseEmbedBlock('{{smart-view missing_view}}', [saved]);
+  assert.equal(missing.ok, false);
+  assert.equal(missing.raw, '{{smart-view missing_view}}');
+  assert.match(missing.error, /Unknown saved Smart View/);
+
+  assert.equal(appHelpers.smartViewParseEmbedBlock('{{embed [[Open Tasks]]}}', [saved]), null);
+});
+
 test('Novel import helper creates structure support notes and preserves existing drafts', () => {
   const now = '2026-05-16T00:00:00.000Z';
   const existing = [

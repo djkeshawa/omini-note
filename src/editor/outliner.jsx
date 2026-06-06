@@ -30,6 +30,7 @@ const {
   mergeBlockContent: mnMergeBlockContent,
 } = window.MN_EDITOR_OPS;
 const MN_MARKDOWN_INPUT_RULES = window.MN_MARKDOWN_INPUT_RULES || {};
+const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
 const {
   clipboardEventToMarkdownTable: mnClipboardEventToMarkdownTable,
   markdownTableToRows: mnMarkdownTableToRows,
@@ -1670,6 +1671,12 @@ function MnBlockRow({
                 if (canvasEmbed) {
                   return <MnCanvasEmbed canvasId={canvasEmbed[1]} canvases={allCanvases} T={T} onOpenCanvas={onOpenCanvas} />;
                 }
+                const smartViewEmbed = !markdownDisplayProjection && MN_APP_HELPERS.smartViewParseEmbedBlock
+                  ? MN_APP_HELPERS.smartViewParseEmbedBlock(content, MN_APP_HELPERS.currentSmartViewDefinitions || [])
+                  : null;
+                if (smartViewEmbed) {
+                  return <MnSmartViewEmbed embed={smartViewEmbed} allNotes={allNotes} T={T} onOpen={onOpen} />;
+                }
                 if (block.kind === 'table') {
                   return <MnMarkdownTable markdown={content} T={T} />;
                 }
@@ -2035,6 +2042,161 @@ function MnInlineAiButton({ block, T, onAiAction }) {
       }}>
       <MnAiIcon size={12} />
     </button>
+  );
+}
+
+function mnSmartViewEmbedSource(result = {}) {
+  return result.sourceNoteTitle || result.noteTitle || result.source?.noteTitle || '';
+}
+
+function mnSmartViewEmbedPreview(result = {}) {
+  if (result.type === 'note') {
+    return String(result.note?.body || '')
+      .split('\n')
+      .map(line => line.replace(/^#{1,4}\s+/, '').replace(/^\s*-\s+\[[ xX]\]\s*/, '').trim())
+      .filter(Boolean)
+      .slice(0, 1)
+      .join(' ');
+  }
+  return result.label || result.text || '';
+}
+
+function MnSmartViewEmbedFallback({ raw, error, T }) {
+  return (
+    <div style={{
+      margin: '6px 0',
+      padding: '8px 10px',
+      border: `1px dashed ${T.warn || T.line}`,
+      borderRadius: 6,
+      background: T.bgSub,
+      color: T.inkMed,
+      fontFamily: 'var(--mn-mono)',
+      fontSize: 11,
+      whiteSpace: 'pre-wrap',
+    }}>
+      <div>{raw}</div>
+      {error && (
+        <div style={{ marginTop: 5, color: T.warn || T.inkDim }}>
+          Smart View embed not rendered: {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MnSmartViewEmbed({ embed, allNotes = [], T, onOpen }) {
+  const helpers = window.MN_APP_HELPERS || MN_APP_HELPERS;
+  if (!embed?.ok || !embed.definition || !helpers.smartViewQuery) {
+    return <MnSmartViewEmbedFallback raw={embed?.raw || ''} error={embed?.error || 'Smart Views are unavailable.'} T={T} />;
+  }
+  let results = [];
+  try {
+    results = helpers.smartViewQuery(allNotes, embed.definition, { parser: window.MN_REMIND, walk: window.mnWalk, allNotes });
+  } catch (error) {
+    return <MnSmartViewEmbedFallback raw={embed.raw} error={error?.message || 'Smart View query failed.'} T={T} />;
+  }
+  const visible = results.slice(0, 6);
+  return (
+    <div
+      data-mn-smart-view-embed="rendered"
+      style={{
+        margin: '6px 0',
+        padding: '9px 11px',
+        background: T.bgSub,
+        border: `1px solid ${T.line}`,
+        borderLeft: `3px solid ${T.focus || T.accent}`,
+        borderRadius: 6,
+        fontFamily: 'var(--mn-ui)',
+      }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+        marginBottom: 7,
+      }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 760, color: T.ink }}>
+            {embed.definition.title || 'Smart View'}
+          </div>
+          <div style={{ marginTop: 2, fontSize: 10.5, color: T.inkDim }}>
+            Smart View - {results.length} result{results.length === 1 ? '' : 's'}
+          </div>
+        </div>
+        <span style={{
+          flexShrink: 0,
+          fontFamily: 'var(--mn-mono)',
+          fontSize: 10,
+          color: T.inkDim,
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 4,
+          padding: '2px 5px',
+          background: T.bg,
+        }}>{embed.mode || 'inline'}</span>
+      </div>
+      {!visible.length ? (
+        <div style={{ fontSize: 12, color: T.inkDim }}>No results</div>
+      ) : visible.map(result => {
+        const noteId = result.noteId || result.source?.noteId || '';
+        const source = mnSmartViewEmbedSource(result);
+        return (
+          <div key={result.key || result.id || `${noteId}:${result.label || result.title}`} style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) auto',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 0',
+            borderTop: `1px solid ${T.lineSub}`,
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: 12.5,
+                fontWeight: 650,
+                color: T.ink,
+              }}>{result.title || result.label || 'Untitled'}</div>
+              <div style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                marginTop: 2,
+                fontSize: 11,
+                color: T.inkDim,
+              }}>{source || mnSmartViewEmbedPreview(result)}</div>
+            </div>
+            {noteId && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen?.(null, noteId);
+                }}
+                style={{
+                  border: `1px solid ${T.line}`,
+                  borderRadius: 5,
+                  background: T.bg,
+                  color: T.ink,
+                  padding: '4px 7px',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Open
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {results.length > visible.length && (
+        <div style={{ marginTop: 4, fontSize: 10.5, color: T.inkDim }}>
+          + {results.length - visible.length} more
+        </div>
+      )}
+    </div>
   );
 }
 

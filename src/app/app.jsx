@@ -1744,6 +1744,13 @@ function MnApp() {
     savedSmartViews.length ? savedSmartViews : mnBuildDefaultSmartViewDefinitions()
   ), [savedSmartViews]);
 
+  useEffectA(() => {
+    MN_APP_HELPERS.currentSmartViewDefinitions = smartViewDefinitions;
+    return () => {
+      if (MN_APP_HELPERS.currentSmartViewDefinitions === smartViewDefinitions) delete MN_APP_HELPERS.currentSmartViewDefinitions;
+    };
+  }, [smartViewDefinitions]);
+
   const todayDailyNote = useMemoA(() => (
     MN_APP_HELPERS.rollupFindDailyNote
       ? MN_APP_HELPERS.rollupFindDailyNote(notesWithBody)

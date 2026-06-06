@@ -857,6 +857,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function smartViewValidateSavedDefinition/);
   assert.match(appHelpers, /function smartViewSerializeDefinition/);
   assert.match(appHelpers, /function smartViewParseDefinitionText/);
+  assert.match(appHelpers, /function smartViewParseEmbedBlock/);
   assert.match(appHelpers, /function smartViewUpsertSavedDefinition/);
   assert.match(appHelpers, /^    SMART_VIEW_FORMAT,$/m);
   assert.match(appHelpers, /^    smartViewNormalizeDefinition,$/m);
@@ -867,6 +868,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /^    smartViewValidateSavedDefinition,$/m);
   assert.match(appHelpers, /^    smartViewSerializeDefinition,$/m);
   assert.match(appHelpers, /^    smartViewParseDefinitionText,$/m);
+  assert.match(appHelpers, /^    smartViewParseEmbedBlock,$/m);
   assert.match(appHelpers, /^    smartViewUpsertSavedDefinition,$/m);
   assert.match(appHelpers, /function agendaActionStatus/);
   assert.match(appHelpers, /function agendaActionDetail/);
@@ -899,6 +901,7 @@ test('Smart Views panel renders shared result presentations', () => {
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
   const smartViewsPanel = fs.readFileSync(path.join(__dirname, '../src/panels/smartViewsPanel.jsx'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
 
@@ -936,6 +939,7 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(app, /window\.mn\.setPrefs\(\{ smartViews: nextSmartViews \}\)/);
   assert.match(app, /const openSmartView = useCallbackA/);
   assert.match(app, /const smartViewDefinitions = useMemoA/);
+  assert.match(app, /MN_APP_HELPERS\.currentSmartViewDefinitions = smartViewDefinitions/);
   assert.match(app, /id: 'recent_notes'/);
   assert.match(app, /id: 'open_tasks'/);
   assert.match(app, /id: 'deferred_tasks'/);
@@ -957,6 +961,11 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(sidebar, /const iconSmartViews =/);
   assert.match(sidebar, /!smartViewsActive/);
   assert.match(sidebar, /label="Smart Views" count=\{smartViewCount\}/);
+  assert.match(outliner, /const MN_APP_HELPERS = window\.MN_APP_HELPERS \|\| \{\}/);
+  assert.match(outliner, /function MnSmartViewEmbed/);
+  assert.match(outliner, /function MnSmartViewEmbedFallback/);
+  assert.match(outliner, /data-mn-smart-view-embed="rendered"/);
+  assert.match(outliner, /smartViewParseEmbedBlock\(content, MN_APP_HELPERS\.currentSmartViewDefinitions \|\| \[\]\)/);
   assert.match(main, /PREF_TOP_LEVEL_KEYS = new Set\(\['activeVaultId', 'tweaks', 'aiConfig', 'smartViews'\]\)/);
   assert.match(main, /function sanitizeSmartViewsForPrefs/);
   assert.match(main, /clean\.smartViews = sanitizeSmartViewsForPrefs\(value\)/);

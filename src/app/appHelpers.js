@@ -981,6 +981,36 @@
     return smartViewValidateSavedDefinition(raw);
   }
 
+  function smartViewParseEmbedBlock(text = '', savedViews = []) {
+    const raw = String(text || '');
+    const match = raw.trim().match(/^\{\{\s*smart-view(?:\s+([\s\S]*?))?\s*\}\}$/i);
+    if (!match) return null;
+    const body = String(match[1] || '').trim();
+    const base = { raw, marker: 'smart-view' };
+    if (!body) return { ...base, ok: false, error: 'Missing Smart View definition.' };
+
+    const saved = (Array.isArray(savedViews) ? savedViews : [])
+      .map(definition => {
+        try { return smartViewValidateSavedDefinition(definition); } catch { return null; }
+      })
+      .filter(Boolean)
+      .find(definition => definition.id === body || definition.title.toLowerCase() === body.toLowerCase());
+    if (saved) {
+      return { ...base, ok: true, mode: 'saved', id: saved.id, definition: saved };
+    }
+
+    if (/^[A-Za-z][A-Za-z0-9_-]{1,63}$/.test(body)) {
+      return { ...base, ok: false, mode: 'saved', id: body, error: `Unknown saved Smart View: ${body}` };
+    }
+
+    try {
+      const definition = smartViewParseDefinitionText(body, body.startsWith('{') ? 'smart-view-embed.json' : 'smart-view-embed.yaml');
+      return { ...base, ok: true, mode: 'inline', id: definition.id, definition };
+    } catch (error) {
+      return { ...base, ok: false, mode: 'inline', error: error?.message || 'Invalid Smart View embed.' };
+    }
+  }
+
   function smartViewUpsertSavedDefinition(savedViews = [], definition = {}) {
     const saved = smartViewValidateSavedDefinition(definition);
     const current = Array.isArray(savedViews) ? savedViews : [];
@@ -2162,6 +2192,7 @@
     smartViewValidateSavedDefinition,
     smartViewSerializeDefinition,
     smartViewParseDefinitionText,
+    smartViewParseEmbedBlock,
     smartViewUpsertSavedDefinition,
     rollupGroupNotes,
     rollupNotePreview,
