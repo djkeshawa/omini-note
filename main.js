@@ -784,6 +784,17 @@ async function setPrefsFromIpc(patch) {
   return await store.setPrefs(cleanPatch);
 }
 
+async function importThemeFileFromIpc() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Install VispNote theme',
+    properties: ['openFile'],
+    filters: [{ name: 'VispNote Theme', extensions: ['json', 'yaml', 'yml'] }],
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  const installed = await store.importThemeFile(result.filePaths[0]);
+  return { ...installed, canceled: false };
+}
+
 async function sanitizeAiAskArgs(vaultId, query) {
   const cleanVaultId = String(vaultId || '').trim();
   if (!IPC_ID_RE.test(cleanVaultId)) throw new Error('Invalid vault id');
@@ -1124,6 +1135,7 @@ ipcMain.handle('mn:getPrefs',       wrap(async () => {
   };
 }));
 ipcMain.handle('mn:setPrefs',       wrap(setPrefsFromIpc));
+ipcMain.handle('mn:importThemeFile', wrap(importThemeFileFromIpc));
 ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
 
 // Search / backlinks / tags (SQLite-backed)

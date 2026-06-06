@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('mn', {
   // Prefs
   getPrefs: () => ipcRenderer.invoke('mn:getPrefs'),
   setPrefs: (patch) => ipcRenderer.invoke('mn:setPrefs', patch),
+  importThemeFile: () => ipcRenderer.invoke('mn:importThemeFile'),
   spellcheck: (words) => ipcRenderer.invoke('mn:spellcheck', words),
 
   // Search / backlinks / tags (SQLite-backed)

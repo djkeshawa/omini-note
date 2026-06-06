@@ -313,6 +313,23 @@ function MnNovelImportPreviewDialog({ dialog, T, onApply, onClose }) {
   );
 }
 
+function mnNormalizeCustomThemesForApp(themes = []) {
+  if (!Array.isArray(themes)) return [];
+  return themes
+    .filter(theme => theme && typeof theme.id === 'string' && typeof theme.name === 'string' && theme.tokens && typeof theme.tokens === 'object')
+    .map(theme => ({ id: theme.id, name: theme.name, tokens: theme.tokens }));
+}
+
+function mnThemeOptionsForApp(baseThemes, customThemes) {
+  const builtInLabels = { light: 'Light', dark: 'Dark', pastel: 'Pastel' };
+  const builtIns = Object.entries(builtInLabels)
+    .filter(([id]) => !!baseThemes[id])
+    .map(([value, label]) => ({ value, label }));
+  const custom = mnNormalizeCustomThemesForApp(customThemes)
+    .map(theme => ({ value: theme.id, label: theme.name }));
+  return [...builtIns, ...custom];
+}
+
 function MnApp() {
   const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
@@ -326,6 +343,7 @@ function MnApp() {
   const [bootError, setBootError] = useStateA(null);
 
   const [tweaks, setTweaks] = useStateA(MN_TWEAK_DEFAULTS);
+  const [customThemes, setCustomThemes] = useStateA([]);
   const [settingsOpen, setSettingsOpen] = useStateA(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useStateA(false);
   const [vaultHealthOpen, setVaultHealthOpen] = useStateA(false);
@@ -657,6 +675,7 @@ function MnApp() {
         const prefsRes = await window.mn.getPrefs();
         if (!prefsRes.ok) throw new Error(prefsRes.error);
         const prefs = prefsRes.value;
+        setCustomThemes(mnNormalizeCustomThemesForApp(prefs.customThemes));
         if (prefs.tweaks) {
           const mergedTweaks = { ...MN_TWEAK_DEFAULTS, ...prefs.tweaks };
           window.MN_LOGSEQ?.setWorkflowStates?.(mnNormalizeWorkflowStatesForApp(mergedTweaks.workflowStates));
@@ -939,8 +958,37 @@ function MnApp() {
     });
   };
 
+  const importThemeFile = useCallbackA(async () => {
+    if (!window.mn?.importThemeFile) {
+      const error = 'This build does not expose theme import.';
+      showAppNotice('Theme import unavailable', error, 'warn');
+      return { ok: false, error };
+    }
+    try {
+      const res = await window.mn.importThemeFile();
+      if (!res?.ok) throw new Error(res?.error || 'Could not install theme.');
+      const value = res.value || {};
+      if (value.canceled) return { ok: true, canceled: true };
+      const nextThemes = mnNormalizeCustomThemesForApp(value.customThemes);
+      setCustomThemes(nextThemes);
+      if (value.theme?.id) setTweak('theme', value.theme.id);
+      showAppNotice('Theme installed', `${value.theme?.name || 'Theme'} is ready.`, 'info');
+      return { ok: true, canceled: false, theme: value.theme };
+    } catch (e) {
+      const error = e.message || String(e);
+      showAppNotice('Could not install theme', error);
+      return { ok: false, error };
+    }
+  }, [showAppNotice]);
+
   const theme = tweaks.theme;
-  const themeMap = window.MN_THEMES || {};
+  const baseThemeMap = window.MN_THEMES || {};
+  const themeMap = useMemoA(() => {
+    const next = { ...baseThemeMap };
+    for (const item of customThemes) next[item.id] = item.tokens;
+    return next;
+  }, [customThemes]);
+  const themeOptions = useMemoA(() => mnThemeOptionsForApp(baseThemeMap, customThemes), [customThemes]);
   const fontMap = window.MN_FONTS || {};
   const T = themeMap[theme] || themeMap.light || {};
   const fonts = fontMap[tweaks.fontChoice] || fontMap['Editorial (Newsreader + Inter)'] || { ui: 'sans-serif', body: 'serif', mono: 'monospace' };
@@ -3794,6 +3842,7 @@ function MnApp() {
 
         {settingsOpen && (
           <MnSettingsModal tweaks={tweaks} setTweak={setTweak} T={T}
+            themeOptions={themeOptions}
             stats={appStats}
             vaults={vaultsForSidebar}
             activeVaultId={activeVaultId}
@@ -3806,6 +3855,7 @@ function MnApp() {
             onPurgeDeletedNote={purgeDeletedNote}
             onExportBackup={exportBackup}
             onImportBackup={importBackup}
+            onImportThemeFile={importThemeFile}
             onImportNovelFiles={importNovelFiles}
             onOpenVaultHealth={() => setVaultHealthOpen(true)}
             onRebuildIndex={rebuildIndex}

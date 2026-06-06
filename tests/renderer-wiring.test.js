@@ -750,6 +750,9 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
 test('Pastel theme is selectable and keeps existing theme contracts', () => {
   const themeSource = fs.readFileSync(path.join(__dirname, '../src/shared/theme.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const sandbox = { window: {} };
   vm.runInNewContext(themeSource, sandbox);
   const hueOf = (value) => {
@@ -793,10 +796,23 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
     .sort();
   assert.deepEqual(greenTokens, ['success', 'successSoft']);
 
-  assert.match(settings, /Light, dark, or pastel color scheme\./);
+  assert.match(settings, /Built-in and installed community themes\./);
+  assert.match(settings, /<select value=\{tweaks\.theme \|\| 'light'\}/);
+  assert.doesNotMatch(settings, /<Segmented T=\{T\} value=\{tweaks\.theme\}/);
+  assert.match(settings, /Install a shared JSON or YAML theme file\./);
+  assert.match(settings, /onImportThemeFile/);
   assert.match(settings, /value: 'light', label: 'Light'/);
   assert.match(settings, /value: 'dark', label: 'Dark'/);
   assert.match(settings, /value: 'pastel', label: 'Pastel'/);
+  assert.match(app, /const \[customThemes, setCustomThemes\] = useStateA\(\[\]\)/);
+  assert.match(app, /setCustomThemes\(mnNormalizeCustomThemesForApp\(prefs\.customThemes\)\)/);
+  assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
+  assert.match(app, /for \(const item of customThemes\) next\[item\.id\] = item\.tokens/);
+  assert.match(app, /window\.mn\.importThemeFile\(\)/);
+  assert.match(preload, /importThemeFile: \(\) => ipcRenderer\.invoke\('mn:importThemeFile'\)/);
+  assert.match(main, /async function importThemeFileFromIpc\(\)/);
+  assert.match(main, /filters: \[\{ name: 'VispNote Theme', extensions: \['json', 'yaml', 'yml'\] \}\]/);
+  assert.match(main, /ipcMain\.handle\('mn:importThemeFile', wrap\(importThemeFileFromIpc\)\)/);
   assert.doesNotMatch(settings, /ipcRenderer|require\('electron'\)|package\.json/);
 });
 
@@ -1271,7 +1287,8 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(main, /flushRendererDirtyNotes/);
   assert.match(preload, /onFlushDirtyNotes/);
   assert.match(app, /onNew=\{\(\) => createNote\(\)\}/);
-  assert.match(app, /const themeMap = window\.MN_THEMES \|\| \{\}/);
+  assert.match(app, /const baseThemeMap = window\.MN_THEMES \|\| \{\}/);
+  assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
   assert.match(panels, /initialAiConfig = null/);
   assert.match(panels, /onAiConfigChange && onAiConfigChange\(next\)/);
   assert.match(appNovelistSource, /function mnReplaceWikiLinkTitle/);
