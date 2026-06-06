@@ -1,3 +1,5 @@
+import './smartViewsPanel.jsx';
+
 // Overlay panels: Todos aggregator, Today view, Quick-capture, Reminder toast, Tweaks
 
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;

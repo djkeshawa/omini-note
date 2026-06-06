@@ -70,6 +70,7 @@ const {
 } = window.MN_APP_RUNTIME || {};
 
 const MN_APP_SHELL = window.MN_APP_SHELL || {};
+const MN_PANEL_COMPONENTS = window.MN_PANEL_COMPONENTS || {};
 const MN_NOTES_VAULTS_SERVICE = window.MN_NOTES_VAULTS_SERVICE || {};
 const MN_VAULTS_SERVICE = window.MN_VAULTS_SERVICE || {};
 const MN_NOTES_VAULTS_STATE = window.MN_NOTES_VAULTS_STATE || {};
@@ -85,6 +86,9 @@ const {
   MnCommandPalette,
   MnVaultHealthDialog,
 } = MN_APP_SHELL;
+const {
+  MnSmartViewsPanel,
+} = MN_PANEL_COMPONENTS;
 const {
   MnSidebar,
   MnPanelGrip,
@@ -1660,6 +1664,44 @@ function MnApp() {
       : calendarTaskItems,
     [calendarTaskItems, notesWithBody]
   );
+
+  const smartViewDefinitions = useMemoA(() => {
+    const today = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
+    return [
+      {
+        id: 'recent_notes',
+        title: 'Recent notes',
+        type: 'notes',
+        filters: {},
+        sort: { field: 'modified', direction: 'desc' },
+        limit: 60,
+      },
+      {
+        id: 'open_tasks',
+        title: 'Open tasks',
+        type: 'tasks',
+        filters: { actionStatus: 'open' },
+        sort: { field: 'reminder', direction: 'asc' },
+        limit: 80,
+      },
+      {
+        id: 'deferred_tasks',
+        title: 'Deferred tasks',
+        type: 'tasks',
+        filters: { actionStatus: 'deferred' },
+        sort: { field: 'reminder', direction: 'asc' },
+        limit: 80,
+      },
+      {
+        id: 'due_reminders',
+        title: 'Due reminders',
+        type: 'reminders',
+        filters: { reminderFrom: '1970-01-01', reminderTo: today },
+        sort: { field: 'reminder', direction: 'asc' },
+        limit: 80,
+      },
+    ];
+  }, []);
 
   const todayDailyNote = useMemoA(() => (
     MN_APP_HELPERS.rollupFindDailyNote
@@ -3846,6 +3888,17 @@ function MnApp() {
               onUpdateItem={updateTaskItemSource}
               onToggleCheck={toggleCheckFromAggregate}
               onSnoozeItem={snoozeCalendarTaskItem}
+              T={T}
+              theme={theme}
+            />
+          )}
+          {view === 'smart-views' && (
+            <MnSmartViewsPanel
+              notes={notesWithBody}
+              tags={tags}
+              definitions={smartViewDefinitions}
+              onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onOpenAllNotes={() => { setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); navigateView('notes'); }}
               T={T}
               theme={theme}
             />

@@ -894,6 +894,43 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(store, /path\.relative\(dir, file\)/);
 });
 
+test('Smart Views panel renders shared result presentations', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
+  const smartViewsPanel = fs.readFileSync(path.join(__dirname, '../src/panels/smartViewsPanel.jsx'), 'utf8');
+
+  assert.match(panels, /import '\.\/smartViewsPanel\.jsx';/);
+  assert.match(smartViewsPanel, /function MnSmartViewsPanel/);
+  assert.match(smartViewsPanel, /MN_SMART_VIEW_PRESENTATIONS = \['list', 'table', 'cards', 'timeline'\]/);
+  assert.match(smartViewsPanel, /helpers\.smartViewQuery/);
+  assert.match(smartViewsPanel, /helpers\.smartViewQuery\(notes, activeDefinition/);
+  assert.match(smartViewsPanel, /viewMode === 'table'/);
+  assert.match(smartViewsPanel, /viewMode === 'cards'/);
+  assert.match(smartViewsPanel, /viewMode === 'timeline'/);
+  assert.match(smartViewsPanel, /function mnSmartViewList/);
+  assert.match(smartViewsPanel, /function mnSmartViewTable/);
+  assert.match(smartViewsPanel, /function mnSmartViewCards/);
+  assert.match(smartViewsPanel, /function mnSmartViewTimeline/);
+  assert.match(smartViewsPanel, /No Smart View results/);
+  assert.match(smartViewsPanel, /onOpenAllNotes/);
+  assert.match(smartViewsPanel, /Open Notes/);
+  assert.match(smartViewsPanel, /function MnSmartViewActionButton/);
+  assert.match(smartViewsPanel, /source\?\.noteId/);
+  assert.match(smartViewsPanel, /window\.MN_PANEL_COMPONENTS = \{/);
+  assert.match(smartViewsPanel, /MnSmartViewsPanel,/);
+  assert.match(app, /const MN_PANEL_COMPONENTS = window\.MN_PANEL_COMPONENTS \|\| \{\}/);
+  assert.match(app, /MnSmartViewsPanel/);
+  assert.match(app, /const smartViewDefinitions = useMemoA/);
+  assert.match(app, /id: 'recent_notes'/);
+  assert.match(app, /id: 'open_tasks'/);
+  assert.match(app, /id: 'deferred_tasks'/);
+  assert.match(app, /id: 'due_reminders'/);
+  assert.match(app, /view === 'smart-views'/);
+  assert.match(app, /<MnSmartViewsPanel/);
+  assert.match(app, /definitions=\{smartViewDefinitions\}/);
+  assert.match(app, /onOpenAllNotes=\{\(\) => \{ setSelectedTag\(null\); setSelectedWorkflow\(null\); setQuery\(''\); navigateView\('notes'\); \}\}/);
+});
+
 test('Pastel theme is selectable and keeps existing theme contracts', () => {
   const themeSource = fs.readFileSync(path.join(__dirname, '../src/shared/theme.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
