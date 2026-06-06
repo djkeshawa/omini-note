@@ -586,6 +586,7 @@ async function runEmptyNestedEnterScenario(win, { id, title, body, expectedKind 
       && rows[1].depth === 0
       && rows[1].kind === expectedKind
       && rows[1].editing
+      && rows[1].active
   ));
   await pressAccelerator(win, 'Tab');
   await waitForEditorLayout(win, `${title} indents empty sibling`, rows => (
@@ -594,6 +595,7 @@ async function runEmptyNestedEnterScenario(win, { id, title, body, expectedKind 
       && rows[1].depth === 1
       && rows[1].kind === expectedKind
       && rows[1].editing
+      && rows[1].active
   ));
   await pressAccelerator(win, 'Enter');
   await waitForEditorLayout(win, `${title} Enter outdents empty child`, rows => (
@@ -602,6 +604,7 @@ async function runEmptyNestedEnterScenario(win, { id, title, body, expectedKind 
       && rows[1].depth === 0
       && rows[1].kind === expectedKind
       && rows[1].editing
+      && rows[1].active
   ));
 }
 
@@ -614,11 +617,11 @@ async function runShiftTabOutdentScenario(win) {
   await focusEditorRow(win, 0);
   await pressAccelerator(win, 'End');
   await pressAccelerator(win, 'Enter');
-  await waitForEditorLayout(win, 'Shift+Tab creates sibling', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing);
+  await waitForEditorLayout(win, 'Shift+Tab creates sibling', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing && rows[1].active);
   await pressAccelerator(win, 'Tab');
-  await waitForEditorLayout(win, 'Shift+Tab indents empty paragraph', rows => rows.length === 2 && rows[1].depth === 1 && rows[1].editing);
+  await waitForEditorLayout(win, 'Shift+Tab indents empty paragraph', rows => rows.length === 2 && rows[1].depth === 1 && rows[1].editing && rows[1].active);
   await pressAccelerator(win, 'Tab', ['shift']);
-  await waitForEditorLayout(win, 'Shift+Tab returns empty paragraph to parent level', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing);
+  await waitForEditorLayout(win, 'Shift+Tab returns empty paragraph to parent level', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing && rows[1].active);
 }
 
 async function runMarkdownTypingScenario(win) {
