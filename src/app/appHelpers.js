@@ -10,6 +10,9 @@
     { id: 'reading', title: 'Reading Note', noteTitle: 'Reading note', tags: ['reading'], body: '# Reading note\n\nAuthor:: \nSource:: \n\n## Summary\n\n## Highlights\n- \n\n## Follow-up\n- [ ] \n' },
     { id: 'novel-scene', title: 'Novel Scene', noteTitle: 'Scene', tags: ['novel-scene'], body: 'status:: DRAFT\npov:: \nsetting:: \npurpose:: \n\n::: plot-points\n- Opening beat\n:::\n\nDraft the scene here.\n' },
   ];
+  const SMART_VIEW_FORMAT = 'vispnote.smartView.v1';
+  const SMART_VIEW_TYPES = ['notes', 'tasks', 'reminders', 'actions'];
+  const SMART_VIEW_SORT_FIELDS = ['title', 'created', 'modified', 'reminder'];
 
   function todayIsoDate(now = new Date()) {
     return new Date(now).toISOString().slice(0, 10);
@@ -426,6 +429,23 @@
       .slice(0, 18);
   }
 
+  function smartViewNormalizeType(value = 'notes') {
+    return SMART_VIEW_TYPES.includes(value) ? value : 'notes';
+  }
+
+  function smartViewNormalizeActionStatus(value = '') {
+    const clean = smartViewCleanText(value).toLowerCase().replace(/_/g, '-');
+    if (clean === 'done' || clean === 'complete') return 'completed';
+    return ['open', 'completed', 'deferred', 'reminder'].includes(clean) ? clean : '';
+  }
+
+  function smartViewNormalizeActionType(value = '') {
+    const clean = smartViewCleanText(value).toLowerCase().replace(/_/g, '-');
+    if (clean === 'todo' || clean === 'todos' || clean === 'task' || clean === 'tasks') return 'task';
+    if (clean === 'reminder' || clean === 'reminders') return 'reminder';
+    return '';
+  }
+
   function smartViewNormalizePropertyFilters(filters = {}) {
     const out = [];
     const add = (key, value) => {
@@ -464,11 +484,19 @@
         .map(smartViewWorkflowKey)
         .filter(Boolean),
       linkedNotes: smartViewCleanList(source.linkedNotes || source.linkedNote),
+      actionStatuses: smartViewCleanList(source.actionStatuses || source.actionStatus || source.taskStatus)
+        .map(smartViewNormalizeActionStatus)
+        .filter(Boolean),
+      actionTypes: smartViewCleanList(source.actionTypes || source.actionType)
+        .map(smartViewNormalizeActionType)
+        .filter(Boolean),
+      reminderFrom: smartViewDateKey(source.reminderFrom || source.remindFrom || source.dueFrom),
+      reminderTo: smartViewDateKey(source.reminderTo || source.remindTo || source.dueTo),
     };
   }
 
   function smartViewNormalizeSort(sort = {}) {
-    const field = ['title', 'created', 'modified'].includes(sort?.field) ? sort.field : 'modified';
+    const field = SMART_VIEW_SORT_FIELDS.includes(sort?.field) ? sort.field : 'modified';
     return {
       field,
       direction: sort?.direction === 'asc' ? 'asc' : 'desc',
@@ -486,7 +514,7 @@
     return {
       id: smartViewCleanText(source.id),
       title: smartViewCleanText(source.title) || 'Smart view',
-      type: 'notes',
+      type: smartViewNormalizeType(source.type || 'notes'),
       filters: smartViewNormalizeFilters(source.filters || source.query || {}),
       sort: smartViewNormalizeSort(source.sort || {}),
       limit: smartViewNormalizeLimit(source.limit),
@@ -640,6 +668,326 @@
       .sort((a, b) => smartViewCompareNotes(a.note, b.note, normalized.sort, a.index, b.index))
       .slice(0, normalized.limit)
       .map(item => smartViewNoteResult(item.note));
+  }
+
+  const smartViewDefaultReminderParser = {
+    parse(text) {
+      const match = String(text || '').match(/@remind\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?/);
+      if (!match) return null;
+      const date = match[1];
+      const time = match[2] || '';
+      const at = new Date(`${date}T${time || '00:00'}:00`);
+      if (Number.isNaN(at.getTime())) return null;
+      return { date, time, at, raw: match[0], index: match.index || 0 };
+    },
+    strip(text) {
+      return String(text || '').replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g, '').trim();
+    },
+  };
+
+  function smartViewActionStatus(item = {}, now = new Date()) {
+    if (item.isReminderOnly || item.type === 'reminder') return 'reminder';
+    if (item.checked) return 'completed';
+    if (agendaIsDeferred(item, now)) return 'deferred';
+    return 'open';
+  }
+
+  function smartViewActionResult(item = {}, note = null, options = {}) {
+    const type = item.isReminderOnly || item.type === 'reminder' ? 'reminder' : 'task';
+    const status = smartViewActionStatus(item, options.now || new Date());
+    const label = item.label || agendaCleanActionText(item.text || '') || 'Untitled action';
+    return {
+      type,
+      id: item.key || taskItemKey(item),
+      key: item.key || taskItemKey(item),
+      noteId: item.noteId || '',
+      noteTitle: item.noteTitle || note?.title || 'Untitled',
+      sourceNoteTitle: item.noteTitle || note?.title || 'Untitled',
+      noteTags: Array.isArray(item.noteTags) ? [...item.noteTags] : [],
+      label,
+      title: label,
+      text: item.text || '',
+      checked: !!item.checked,
+      completed: status === 'completed',
+      deferred: status === 'deferred',
+      status,
+      remindAt: item.remindAt || null,
+      reminderDate: item.remindAt?.date || '',
+      deferUntil: item.deferUntil || '',
+      noteDate: item.noteDate || note?.date || '',
+      noteModifiedAt: note?.modifiedAt || note?.date || '',
+      source: {
+        noteId: item.noteId || '',
+        noteTitle: item.noteTitle || note?.title || 'Untitled',
+        blockId: item.blockId || '',
+        line: item.line ?? null,
+        key: item.key || taskItemKey(item),
+        text: item.text || '',
+      },
+      sourceNote: note || null,
+    };
+  }
+
+  function smartViewMatchesActionFilters(result = {}, definition = {}) {
+    const filters = definition.filters || {};
+    if (definition.type === 'tasks' && result.type !== 'task') return false;
+    if (definition.type === 'reminders' && result.type !== 'reminder') return false;
+    if (filters.actionTypes.length && !filters.actionTypes.includes(result.type)) return false;
+    if (filters.actionStatuses.length && !filters.actionStatuses.includes(result.status)) return false;
+    if ((filters.reminderFrom || filters.reminderTo) && !smartViewDateInRange(result.reminderDate, filters.reminderFrom, filters.reminderTo)) return false;
+    return true;
+  }
+
+  function smartViewDateInRange(key = '', from = '', to = '') {
+    if (!from && !to) return true;
+    if (!rollupIsValidIsoDateKey(key)) return false;
+    if (from && key < from) return false;
+    if (to && key > to) return false;
+    return true;
+  }
+
+  function smartViewActionSortValue(result = {}, field = 'modified') {
+    if (field === 'title') return String(result.label || result.title || '').toLowerCase();
+    if (field === 'reminder') {
+      const time = result.remindAt?.at ? new Date(result.remindAt.at).getTime() : new Date(`${result.reminderDate || '1970-01-01'}T00:00:00`).getTime();
+      return Number.isNaN(time) ? 0 : time;
+    }
+    const source = field === 'created' ? result.noteDate : result.noteModifiedAt;
+    const time = new Date(source || 0).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  }
+
+  function smartViewCompareActionResults(a, b, sort = {}) {
+    const av = smartViewActionSortValue(a, sort.field);
+    const bv = smartViewActionSortValue(b, sort.field);
+    const primary = typeof av === 'string'
+      ? av.localeCompare(String(bv || ''), undefined, { sensitivity: 'base' })
+      : av - bv;
+    const ordered = sort.direction === 'desc' ? -primary : primary;
+    if (ordered) return ordered;
+    const byNote = String(a.noteTitle || '').localeCompare(String(b.noteTitle || ''), undefined, { sensitivity: 'base' });
+    if (byNote) return byNote;
+    return String(a.key || '').localeCompare(String(b.key || ''));
+  }
+
+  function smartViewQueryActions(notes = [], definition = {}, options = {}) {
+    const normalized = smartViewNormalizeDefinition(definition);
+    const parser = options.parser || options.reminderParser || smartViewDefaultReminderParser;
+    const noteLookup = new Map((notes || []).map(note => [note.id, note]));
+    const matchOptions = {
+      ...options,
+      allNotes: options.allNotes || notes || [],
+      smartViewNoteLookup: smartViewNoteLookup({ ...options, allNotes: options.allNotes || notes || [] }),
+    };
+    const matchingNotes = (notes || []).filter(note => smartViewMatchesNormalizedNote(note, normalized, matchOptions));
+    const seen = new Set();
+    return collectTaskItems(matchingNotes, parser, options.walk)
+      .map(item => smartViewActionResult(item, noteLookup.get(item.noteId), options))
+      .filter(result => {
+        const sourceSlot = result.source.blockId || (result.source.line ?? '');
+        const key = `${result.type}|${result.source.noteId}|${sourceSlot}|${result.label}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return smartViewMatchesActionFilters(result, normalized);
+      })
+      .sort((a, b) => smartViewCompareActionResults(a, b, normalized.sort))
+      .slice(0, normalized.limit);
+  }
+
+  function smartViewQuery(notes = [], definition = {}, options = {}) {
+    const normalized = smartViewNormalizeDefinition(definition);
+    if (normalized.type === 'notes') return smartViewQueryNotes(notes, normalized, options);
+    return smartViewQueryActions(notes, normalized, options);
+  }
+
+  function smartViewIsPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function smartViewAssertAllowedKeys(value = {}, allowed = [], label = 'Smart View object') {
+    Object.keys(value || {}).forEach(key => {
+      if (!allowed.includes(key)) throw new Error(`${label} contains unsupported key: ${key}`);
+    });
+  }
+
+  function smartViewValidateDateFilters(filters = {}) {
+    [
+      'createdFrom',
+      'createdTo',
+      'createdAfter',
+      'createdBefore',
+      'modifiedFrom',
+      'modifiedTo',
+      'modifiedAfter',
+      'modifiedBefore',
+      'reminderFrom',
+      'reminderTo',
+      'remindFrom',
+      'remindTo',
+      'dueFrom',
+      'dueTo',
+    ].forEach(key => {
+      if (filters[key] == null || filters[key] === '') return;
+      if (!smartViewDateKey(filters[key])) throw new Error(`Invalid Smart View date filter: ${key}`);
+    });
+  }
+
+  function smartViewValidateActionFilters(filters = {}) {
+    smartViewCleanList(filters.actionStatuses || filters.actionStatus || filters.taskStatus).forEach(status => {
+      if (!smartViewNormalizeActionStatus(status)) throw new Error('Invalid Smart View action status');
+    });
+    smartViewCleanList(filters.actionTypes || filters.actionType).forEach(type => {
+      if (!smartViewNormalizeActionType(type)) throw new Error('Invalid Smart View action type');
+    });
+  }
+
+  function smartViewValidateSavedDefinition(definition = {}) {
+    if (!smartViewIsPlainObject(definition)) throw new Error('Smart View definition must be an object');
+    smartViewAssertAllowedKeys(definition, ['format', 'id', 'title', 'type', 'filters', 'sort', 'limit'], 'Smart View definition');
+    if (definition.format && definition.format !== SMART_VIEW_FORMAT) throw new Error('Unsupported Smart View format');
+    const id = smartViewCleanText(definition.id);
+    if (!/^[A-Za-z][A-Za-z0-9_-]{1,63}$/.test(id)) throw new Error('Invalid Smart View id');
+    const title = smartViewCleanText(definition.title);
+    if (!title) throw new Error('Smart View title is required');
+    if (definition.type && !SMART_VIEW_TYPES.includes(definition.type)) throw new Error('Invalid Smart View type');
+    const filters = definition.filters == null ? {} : definition.filters;
+    if (!smartViewIsPlainObject(filters)) throw new Error('Smart View filters must be an object');
+    smartViewAssertAllowedKeys(filters, [
+      'title',
+      'titleContains',
+      'tag',
+      'tags',
+      'createdFrom',
+      'createdTo',
+      'createdAfter',
+      'createdBefore',
+      'modifiedFrom',
+      'modifiedTo',
+      'modifiedAfter',
+      'modifiedBefore',
+      'property',
+      'properties',
+      'propertyKey',
+      'propertyValue',
+      'workflowStatus',
+      'workflowStatuses',
+      'linkedNote',
+      'linkedNotes',
+      'actionStatus',
+      'actionStatuses',
+      'taskStatus',
+      'actionType',
+      'actionTypes',
+      'reminderFrom',
+      'reminderTo',
+      'remindFrom',
+      'remindTo',
+      'dueFrom',
+      'dueTo',
+    ], 'Smart View filters');
+    smartViewValidateDateFilters(filters);
+    smartViewValidateActionFilters(filters);
+
+    const sort = definition.sort == null ? {} : definition.sort;
+    if (!smartViewIsPlainObject(sort)) throw new Error('Smart View sort must be an object');
+    smartViewAssertAllowedKeys(sort, ['field', 'direction'], 'Smart View sort');
+    if (sort.field && !SMART_VIEW_SORT_FIELDS.includes(sort.field)) throw new Error('Invalid Smart View sort field');
+    if (sort.direction && !['asc', 'desc'].includes(sort.direction)) throw new Error('Invalid Smart View sort direction');
+    if (definition.limit != null && (!Number.isFinite(Number(definition.limit)) || Number(definition.limit) < 1 || Number(definition.limit) > 500)) throw new Error('Invalid Smart View limit');
+
+    return {
+      format: SMART_VIEW_FORMAT,
+      ...smartViewNormalizeDefinition({ id, title, type: definition.type || 'notes', filters, sort, limit: definition.limit }),
+    };
+  }
+
+  function smartViewYamlScalar(value) {
+    if (Array.isArray(value) || smartViewIsPlainObject(value)) return JSON.stringify(value);
+    const text = String(value ?? '');
+    if (!text || /[:#\n\r]/.test(text) || /^\s|\s$/.test(text)) return JSON.stringify(text);
+    return text;
+  }
+
+  function smartViewParseYamlScalar(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
+      return JSON.parse(text);
+    }
+    if (text.startsWith("'") && text.endsWith("'")) return text.slice(1, -1).replace(/''/g, "'");
+    return text;
+  }
+
+  function smartViewParseDefinitionYaml(text = '') {
+    const root = {};
+    let activeMapKey = null;
+    for (const rawLine of String(text || '').split(/\r?\n/)) {
+      if (!rawLine.trim() || rawLine.trimStart().startsWith('#')) continue;
+      if (/^\t/.test(rawLine)) throw new Error('Smart View YAML cannot use tabs for indentation');
+      const indent = rawLine.match(/^ */)[0].length;
+      const line = rawLine.trim();
+      const match = line.match(/^([A-Za-z][A-Za-z0-9_-]*):(?:\s*(.*))?$/);
+      if (!match) throw new Error(`Unsupported Smart View YAML line: ${line.slice(0, 80)}`);
+      const key = match[1];
+      const value = match[2] || '';
+      if (indent === 0) {
+        if (value === '') {
+          root[key] = {};
+          activeMapKey = key;
+        } else {
+          root[key] = smartViewParseYamlScalar(value);
+          activeMapKey = null;
+        }
+        continue;
+      }
+      if (indent < 2 || !activeMapKey || !smartViewIsPlainObject(root[activeMapKey])) {
+        throw new Error(`Unsupported Smart View YAML indentation near ${key}`);
+      }
+      root[activeMapKey][key] = smartViewParseYamlScalar(value);
+    }
+    return root;
+  }
+
+  function smartViewSerializeDefinition(definition = {}, options = {}) {
+    const format = typeof options === 'string' ? options : options.format || 'json';
+    const saved = smartViewValidateSavedDefinition(definition);
+    if (format === 'yaml' || format === 'yml') {
+      const lines = [
+        `format: ${smartViewYamlScalar(saved.format)}`,
+        `id: ${smartViewYamlScalar(saved.id)}`,
+        `title: ${smartViewYamlScalar(saved.title)}`,
+        `type: ${smartViewYamlScalar(saved.type)}`,
+        'filters:',
+      ];
+      Object.entries(saved.filters).forEach(([key, value]) => {
+        if (value === '' || (Array.isArray(value) && !value.length)) return;
+        lines.push(`  ${key}: ${smartViewYamlScalar(value)}`);
+      });
+      lines.push('sort:');
+      lines.push(`  field: ${smartViewYamlScalar(saved.sort.field)}`);
+      lines.push(`  direction: ${smartViewYamlScalar(saved.sort.direction)}`);
+      lines.push(`limit: ${saved.limit}`);
+      return `${lines.join('\n')}\n`;
+    }
+    return JSON.stringify(saved, null, 2);
+  }
+
+  function smartViewParseDefinitionText(text = '', fileName = 'smart-view.json') {
+    const clean = String(text || '').trim();
+    const name = String(fileName || '').toLowerCase();
+    const raw = name.endsWith('.yaml') || name.endsWith('.yml') || (!clean.startsWith('{') && !clean.startsWith('['))
+      ? smartViewParseDefinitionYaml(clean)
+      : JSON.parse(clean);
+    return smartViewValidateSavedDefinition(raw);
+  }
+
+  function smartViewUpsertSavedDefinition(savedViews = [], definition = {}) {
+    const saved = smartViewValidateSavedDefinition(definition);
+    const current = Array.isArray(savedViews) ? savedViews : [];
+    return [
+      ...current.filter(item => item?.id !== saved.id),
+      saved,
+    ];
   }
 
   function rollupIsOlderGroup(dateKey, now = new Date()) {
@@ -1785,6 +2133,7 @@
 
   return {
     NOTE_TEMPLATES,
+    SMART_VIEW_FORMAT,
     todayIsoDate,
     expandTemplate,
     templateById,
@@ -1808,6 +2157,12 @@
     smartViewNormalizeDefinition,
     smartViewMatchesNote,
     smartViewQueryNotes,
+    smartViewQueryActions,
+    smartViewQuery,
+    smartViewValidateSavedDefinition,
+    smartViewSerializeDefinition,
+    smartViewParseDefinitionText,
+    smartViewUpsertSavedDefinition,
     rollupGroupNotes,
     rollupNotePreview,
     rollupFilterTaskItems,

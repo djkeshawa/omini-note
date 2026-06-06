@@ -95,6 +95,10 @@ test('Smart View helpers normalize definitions and query notes without mutation'
       properties: [{ key: 'priority', values: ['high'] }],
       workflowStatuses: ['DOING'],
       linkedNotes: ['Research AI'],
+      actionStatuses: [],
+      actionTypes: [],
+      reminderFrom: '',
+      reminderTo: '',
     },
     sort: { field: 'created', direction: 'asc' },
     limit: 2,
@@ -128,6 +132,128 @@ test('Smart View helpers normalize definitions and query notes without mutation'
     ['research']
   );
   assert.equal(JSON.stringify(notes), before);
+});
+
+test('Smart View action filters query tasks and reminders with source details', () => {
+  const now = new Date('2026-06-06T12:00:00.000Z');
+  const parser = {
+    parse(text) {
+      const match = String(text || '').match(/@remind\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?/);
+      if (!match) return null;
+      return { raw: match[0], date: match[1], time: match[2] || '', at: new Date(`${match[1]}T${match[2] || '09:00'}:00.000Z`) };
+    },
+    strip(text) {
+      return String(text || '').replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/, '').trim();
+    },
+  };
+  const notes = [
+    {
+      id: 'actions',
+      title: 'Action note',
+      tags: ['project'],
+      date: '2026-06-01T10:00:00.000Z',
+      modifiedAt: '2026-06-06T10:00:00.000Z',
+      body: [
+        '- [ ] Open task @remind 2026-06-06',
+        '- [x] Completed task @remind 2026-06-05',
+        '- [ ] Deferred task @defer 2026-06-10',
+        'Reminder only @remind 2026-06-07',
+      ].join('\n'),
+    },
+    {
+      id: 'blocks',
+      title: 'Block note',
+      tags: ['project'],
+      date: '2026-06-02T10:00:00.000Z',
+      modifiedAt: '2026-06-06T11:00:00.000Z',
+      blocks: [
+        { id: 'b1', kind: 'todo', checked: false, content: 'Block open @remind 2026-06-06' },
+      ],
+    },
+  ];
+  const walk = (blocks, visit) => blocks.forEach(block => {
+    visit(block);
+    visit(block);
+  });
+
+  const open = appHelpers.smartViewQuery(notes, {
+    type: 'tasks',
+    filters: { tags: 'project', actionStatus: 'open' },
+    sort: { field: 'title', direction: 'asc' },
+    limit: 10,
+  }, { parser, walk, now });
+  assert.deepEqual(open.map(item => item.label), ['Block open', 'Open task']);
+  assert.equal(open.filter(item => item.source.blockId === 'b1').length, 1);
+  assert.equal(open[0].source.noteTitle, 'Block note');
+  assert.equal(open[0].source.noteId, 'blocks');
+  assert.equal(open[0].status, 'open');
+
+  assert.deepEqual(
+    appHelpers.smartViewQuery(notes, { type: 'tasks', filters: { actionStatus: 'completed' }, limit: 10 }, { parser, walk, now }).map(item => item.label),
+    ['Completed task']
+  );
+  const deferred = appHelpers.smartViewQuery(notes, { type: 'tasks', filters: { actionStatus: 'deferred' }, limit: 10 }, { parser, walk, now });
+  assert.deepEqual(deferred.map(item => item.label), ['Deferred task']);
+  assert.equal(deferred[0].deferUntil, '2026-06-10');
+  assert.equal(deferred[0].deferred, true);
+
+  const reminders = appHelpers.smartViewQuery(notes, {
+    type: 'reminders',
+    filters: { reminderFrom: '2026-06-07', reminderTo: '2026-06-07' },
+    sort: { field: 'reminder', direction: 'asc' },
+    limit: 10,
+  }, { parser, walk, now });
+  assert.deepEqual(reminders.map(item => item.label), ['Reminder only']);
+  assert.equal(reminders[0].reminderDate, '2026-06-07');
+  assert.equal(reminders[0].source.line, 3);
+  assert.equal(reminders[0].sourceNoteTitle, 'Action note');
+});
+
+test('Smart View saved definitions reject invalid input and round-trip text', () => {
+  const existing = [{ id: 'existing_view', title: 'Existing view' }];
+  const before = JSON.stringify(existing);
+  const raw = {
+    format: appHelpers.SMART_VIEW_FORMAT,
+    id: 'open_tasks',
+    title: 'Open Tasks',
+    type: 'tasks',
+    filters: {
+      tags: ['project'],
+      actionStatus: 'open',
+      reminderFrom: '2026-06-06',
+    },
+    sort: { field: 'reminder', direction: 'asc' },
+    limit: 25,
+  };
+
+  assert.throws(
+    () => appHelpers.smartViewUpsertSavedDefinition(existing, { ...raw, id: 'bad id' }),
+    /Invalid Smart View id/
+  );
+  assert.equal(JSON.stringify(existing), before);
+  assert.throws(
+    () => appHelpers.smartViewValidateSavedDefinition({ ...raw, filters: { actionStatus: 'later' } }),
+    /Invalid Smart View action status/
+  );
+  assert.throws(
+    () => appHelpers.smartViewValidateSavedDefinition({ ...raw, unexpected: true }),
+    /unsupported key/
+  );
+
+  const saved = appHelpers.smartViewValidateSavedDefinition(raw);
+  assert.equal(saved.format, appHelpers.SMART_VIEW_FORMAT);
+  assert.deepEqual(saved.filters.tags, ['project']);
+  assert.deepEqual(saved.filters.actionStatuses, ['open']);
+
+  const json = appHelpers.smartViewSerializeDefinition(saved, 'json');
+  const yaml = appHelpers.smartViewSerializeDefinition(saved, { format: 'yaml' });
+  assert.deepEqual(appHelpers.smartViewParseDefinitionText(json, 'open-tasks.json'), saved);
+  assert.deepEqual(appHelpers.smartViewParseDefinitionText(yaml, 'open-tasks.yaml'), saved);
+
+  const next = appHelpers.smartViewUpsertSavedDefinition(existing, saved);
+  assert.equal(next.length, 2);
+  assert.equal(next[1].id, 'open_tasks');
+  assert.equal(JSON.stringify(existing), before);
 });
 
 test('Novel import helper creates structure support notes and preserves existing drafts', () => {
