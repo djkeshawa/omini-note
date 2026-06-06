@@ -36,6 +36,100 @@ test('App helpers expand templates, rank commands, and decorate search results',
   assert.deepEqual(decorated[1].__matchedFields, ['body']);
 });
 
+test('Smart View helpers normalize definitions and query notes without mutation', () => {
+  const notes = [
+    {
+      id: 'project',
+      title: 'Project Alpha',
+      tags: ['Project', 'AI'],
+      date: '2026-06-01T10:00:00.000Z',
+      modifiedAt: '2026-06-05T12:00:00.000Z',
+      body: 'status:: DOING\npriority:: high\nSee [[Research AI]]\n- [ ] Ship prototype',
+    },
+    {
+      id: 'research',
+      title: 'Research AI',
+      tags: ['research', 'ai'],
+      date: '2026-05-20T09:00:00.000Z',
+      modifiedAt: '2026-06-04T12:00:00.000Z',
+      body: 'status:: TODO\npriority:: low\nReference notes',
+    },
+    {
+      id: 'daily',
+      title: '2026-06-06',
+      tags: ['daily'],
+      date: '2026-06-06T08:00:00.000Z',
+      modifiedAt: '2026-06-06T09:00:00.000Z',
+      body: 'Daily note',
+    },
+  ];
+  const before = JSON.stringify(notes);
+  const normalized = appHelpers.smartViewNormalizeDefinition({
+    id: ' project-ai ',
+    title: ' Project AI ',
+    filters: {
+      tag: ' AI ',
+      titleContains: ' project ',
+      createdFrom: '2026-06-01T00:00:00.000Z',
+      createdTo: '2026-06-06',
+      propertyKey: 'priority',
+      propertyValue: ' high ',
+      workflowStatus: 'doing',
+      linkedNote: 'Research AI',
+    },
+    sort: { field: 'created', direction: 'asc' },
+    limit: 2,
+  });
+
+  assert.deepEqual(normalized, {
+    id: 'project-ai',
+    title: 'Project AI',
+    type: 'notes',
+    filters: {
+      titleContains: 'project',
+      tags: ['ai'],
+      createdFrom: '2026-06-01',
+      createdTo: '2026-06-06',
+      modifiedFrom: '',
+      modifiedTo: '',
+      properties: [{ key: 'priority', values: ['high'] }],
+      workflowStatuses: ['DOING'],
+      linkedNotes: ['Research AI'],
+    },
+    sort: { field: 'created', direction: 'asc' },
+    limit: 2,
+  });
+
+  const combined = appHelpers.smartViewQueryNotes(notes, normalized, { allNotes: notes });
+  assert.deepEqual(combined.map(item => item.noteId), ['project']);
+  assert.equal(combined[0].createdDate, '2026-06-01');
+  assert.deepEqual(combined[0].tags, ['Project', 'AI']);
+
+  assert.equal(appHelpers.smartViewMatchesNote(notes[0], { filters: { workflowStatus: 'doing' } }), true);
+  assert.equal(appHelpers.smartViewMatchesNote(notes[1], { filters: { workflowStatus: 'doing' } }), false);
+  assert.deepEqual(
+    appHelpers.smartViewQueryNotes(notes, { filters: { linkedNote: 'research' }, limit: 10 }, { allNotes: notes }).map(item => item.noteId),
+    ['project']
+  );
+  assert.deepEqual(
+    appHelpers.smartViewQueryNotes(notes, { filters: { createdFrom: '2026-06-01', createdTo: '2026-06-06' }, sort: { field: 'created', direction: 'asc' }, limit: 10 }).map(item => item.noteId),
+    ['project', 'daily']
+  );
+  assert.deepEqual(
+    appHelpers.smartViewQueryNotes(notes, { filters: { modifiedFrom: '2026-06-05' }, sort: { field: 'title', direction: 'asc' }, limit: 10 }).map(item => item.noteId),
+    ['daily', 'project']
+  );
+  assert.deepEqual(
+    appHelpers.smartViewQueryNotes(notes, { filters: { propertyKey: 'priority' }, sort: { field: 'modified', direction: 'desc' }, limit: 10 }).map(item => item.noteId),
+    ['project', 'research']
+  );
+  assert.deepEqual(
+    appHelpers.smartViewQueryNotes(notes, { filters: { tags: 'ai' }, sort: { field: 'created', direction: 'asc' }, limit: 1 }).map(item => item.noteId),
+    ['research']
+  );
+  assert.equal(JSON.stringify(notes), before);
+});
+
 test('Novel import helper creates structure support notes and preserves existing drafts', () => {
   const now = '2026-05-16T00:00:00.000Z';
   const existing = [

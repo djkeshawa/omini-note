@@ -849,6 +849,12 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function rollupAppendReflection/);
   assert.match(appHelpers, /function rollupBuildEndDayRecap/);
   assert.match(appHelpers, /function rollupAppendEndDayRecap/);
+  assert.match(appHelpers, /function smartViewNormalizeDefinition/);
+  assert.match(appHelpers, /function smartViewMatchesNote/);
+  assert.match(appHelpers, /function smartViewQueryNotes/);
+  assert.match(appHelpers, /^    smartViewNormalizeDefinition,$/m);
+  assert.match(appHelpers, /^    smartViewMatchesNote,$/m);
+  assert.match(appHelpers, /^    smartViewQueryNotes,$/m);
   assert.match(appHelpers, /function agendaActionStatus/);
   assert.match(appHelpers, /function agendaActionDetail/);
   assert.match(appHelpers, /function agendaFilterActionItems/);

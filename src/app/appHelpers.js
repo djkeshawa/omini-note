@@ -397,6 +397,251 @@
     return Number.isNaN(time) ? 0 : time;
   }
 
+  function smartViewCleanText(value = '') {
+    return String(value ?? '').trim();
+  }
+
+  function smartViewCleanList(value = []) {
+    const raw = Array.isArray(value)
+      ? value
+      : String(value || '').split(',');
+    return raw
+      .map(item => smartViewCleanText(item))
+      .filter(Boolean)
+      .filter((item, index, arr) => arr.indexOf(item) === index);
+  }
+
+  function smartViewDateKey(value = '') {
+    const clean = smartViewCleanText(value);
+    if (!clean) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return rollupIsValidIsoDateKey(clean) ? clean : '';
+    return rollupDateKey(clean);
+  }
+
+  function smartViewWorkflowKey(value = '') {
+    return smartViewCleanText(value)
+      .toUpperCase()
+      .replace(/[^A-Z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 18);
+  }
+
+  function smartViewNormalizePropertyFilters(filters = {}) {
+    const out = [];
+    const add = (key, value) => {
+      const cleanKey = smartViewCleanText(key);
+      if (!cleanKey) return;
+      const values = smartViewCleanList(value);
+      out.push({ key: cleanKey, values });
+    };
+
+    if (filters.property && typeof filters.property === 'object' && !Array.isArray(filters.property)) {
+      add(filters.property.key, filters.property.value);
+    }
+    if (Array.isArray(filters.properties)) {
+      filters.properties.forEach(item => {
+        if (item && typeof item === 'object') add(item.key, item.value);
+      });
+    } else if (filters.properties && typeof filters.properties === 'object') {
+      Object.entries(filters.properties).forEach(([key, value]) => add(key, value));
+    }
+    add(filters.propertyKey, filters.propertyValue);
+
+    return out;
+  }
+
+  function smartViewNormalizeFilters(filters = {}) {
+    const source = filters && typeof filters === 'object' ? filters : {};
+    return {
+      titleContains: smartViewCleanText(source.titleContains || source.title),
+      tags: smartViewCleanList(source.tags || source.tag).map(normalizeTagName).filter(Boolean),
+      createdFrom: smartViewDateKey(source.createdFrom || source.createdAfter),
+      createdTo: smartViewDateKey(source.createdTo || source.createdBefore),
+      modifiedFrom: smartViewDateKey(source.modifiedFrom || source.modifiedAfter),
+      modifiedTo: smartViewDateKey(source.modifiedTo || source.modifiedBefore),
+      properties: smartViewNormalizePropertyFilters(source),
+      workflowStatuses: smartViewCleanList(source.workflowStatuses || source.workflowStatus)
+        .map(smartViewWorkflowKey)
+        .filter(Boolean),
+      linkedNotes: smartViewCleanList(source.linkedNotes || source.linkedNote),
+    };
+  }
+
+  function smartViewNormalizeSort(sort = {}) {
+    const field = ['title', 'created', 'modified'].includes(sort?.field) ? sort.field : 'modified';
+    return {
+      field,
+      direction: sort?.direction === 'asc' ? 'asc' : 'desc',
+    };
+  }
+
+  function smartViewNormalizeLimit(value = 100) {
+    const parsed = Number(value == null || value === '' ? 100 : value);
+    if (!Number.isFinite(parsed)) return 100;
+    return Math.max(1, Math.min(500, Math.floor(parsed)));
+  }
+
+  function smartViewNormalizeDefinition(definition = {}) {
+    const source = definition && typeof definition === 'object' ? definition : {};
+    return {
+      id: smartViewCleanText(source.id),
+      title: smartViewCleanText(source.title) || 'Smart view',
+      type: 'notes',
+      filters: smartViewNormalizeFilters(source.filters || source.query || {}),
+      sort: smartViewNormalizeSort(source.sort || {}),
+      limit: smartViewNormalizeLimit(source.limit),
+    };
+  }
+
+  function smartViewBodyHasProperty(body = '', key = '') {
+    if (!key) return false;
+    return bodyPropertyLineRe(key).test(String(body || ''));
+  }
+
+  function smartViewMatchesProperties(note, propertyFilters = []) {
+    return (propertyFilters || []).every(filter => {
+      if (!smartViewBodyHasProperty(note?.body || '', filter.key)) return false;
+      if (!filter.values.length) return true;
+      const actual = bodyPropertyValue(note?.body || '', filter.key).toLowerCase();
+      return filter.values.some(value => value.toLowerCase() === actual);
+    });
+  }
+
+  function smartViewNoteWorkflowStatus(note, options = {}) {
+    const raw = bodyPropertyValue(note?.body || '', 'status');
+    const states = options.workflowStates || options.states || [];
+    return normalizeWorkflowStatus(raw, states, options.normalizeId) || smartViewWorkflowKey(raw);
+  }
+
+  function smartViewNoteLookup(options = {}) {
+    const out = new Map();
+    const add = (note) => {
+      if (!note) return;
+      const id = smartViewCleanText(note.id);
+      const titleKey = novelTitleKey(note.title || '');
+      if (id) out.set(id, note);
+      if (titleKey) out.set(titleKey, note);
+    };
+    const explicit = options.notesById;
+    if (explicit instanceof Map) {
+      explicit.forEach(note => add(note));
+    } else if (explicit && typeof explicit === 'object') {
+      Object.values(explicit).forEach(note => add(note));
+    }
+    (options.allNotes || options.notes || []).forEach(add);
+    return out;
+  }
+
+  function smartViewLinkedTargetKeys(target = '', options = {}) {
+    const out = new Set();
+    const clean = smartViewCleanText(target);
+    const directKey = novelTitleKey(clean);
+    if (directKey) out.add(directKey);
+    const lookup = options.smartViewNoteLookup || smartViewNoteLookup(options);
+    const linkedNote = lookup.get(clean) || lookup.get(directKey);
+    if (linkedNote) {
+      const titleKey = novelTitleKey(linkedNote.title || '');
+      if (titleKey) out.add(titleKey);
+    }
+    return out;
+  }
+
+  function smartViewMatchesLinkedNotes(note, linkedNotes = [], options = {}) {
+    if (!linkedNotes.length) return true;
+    const noteLinks = new Set(novelWikiTitles(note?.body || '').map(novelTitleKey).filter(Boolean));
+    return linkedNotes.every(target => {
+      const targetKeys = smartViewLinkedTargetKeys(target, options);
+      return [...targetKeys].some(key => noteLinks.has(key));
+    });
+  }
+
+  function smartViewNoteDateInRange(note, field, from = '', to = '') {
+    if (!from && !to) return true;
+    const source = field === 'modified' ? (note?.modifiedAt || note?.date) : note?.date;
+    const key = rollupDateKey(source);
+    if (!key) return false;
+    if (from && key < from) return false;
+    if (to && key > to) return false;
+    return true;
+  }
+
+  function smartViewMatchesNormalizedNote(note, definition = {}, options = {}) {
+    const filters = definition.filters || {};
+    if (!note) return false;
+    if (filters.titleContains && !String(note.title || '').toLowerCase().includes(filters.titleContains.toLowerCase())) return false;
+
+    if (filters.tags.length) {
+      const noteTags = new Set((note.tags || []).map(normalizeTagName).filter(Boolean));
+      if (!filters.tags.every(tag => noteTags.has(tag))) return false;
+    }
+
+    if (!smartViewNoteDateInRange(note, 'created', filters.createdFrom, filters.createdTo)) return false;
+    if (!smartViewNoteDateInRange(note, 'modified', filters.modifiedFrom, filters.modifiedTo)) return false;
+    if (!smartViewMatchesProperties(note, filters.properties)) return false;
+
+    if (filters.workflowStatuses.length) {
+      const workflow = smartViewNoteWorkflowStatus(note, options);
+      if (!filters.workflowStatuses.includes(workflow)) return false;
+    }
+
+    return smartViewMatchesLinkedNotes(note, filters.linkedNotes, options);
+  }
+
+  function smartViewMatchesNote(note, definition = {}, options = {}) {
+    return smartViewMatchesNormalizedNote(note, smartViewNormalizeDefinition(definition), options);
+  }
+
+  function smartViewSortValue(note, field = 'modified') {
+    if (field === 'title') return String(note?.title || '').toLowerCase();
+    const source = field === 'created' ? note?.date : (note?.modifiedAt || note?.date);
+    const time = new Date(source || 0).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  }
+
+  function smartViewCompareNotes(a, b, sort = {}, ai = 0, bi = 0) {
+    const av = smartViewSortValue(a, sort.field);
+    const bv = smartViewSortValue(b, sort.field);
+    const primary = typeof av === 'string'
+      ? av.localeCompare(String(bv || ''), undefined, { sensitivity: 'base' })
+      : av - bv;
+    const ordered = sort.direction === 'desc' ? -primary : primary;
+    if (ordered) return ordered;
+    const byTitle = String(a?.title || '').localeCompare(String(b?.title || ''), undefined, { sensitivity: 'base' });
+    if (byTitle) return byTitle;
+    const byId = String(a?.id || '').localeCompare(String(b?.id || ''));
+    return byId || ai - bi;
+  }
+
+  function smartViewNoteResult(note) {
+    return {
+      type: 'note',
+      id: note?.id || '',
+      noteId: note?.id || '',
+      title: note?.title || 'Untitled',
+      note,
+      tags: Array.isArray(note?.tags) ? [...note.tags] : [],
+      createdAt: note?.date || '',
+      modifiedAt: note?.modifiedAt || note?.date || '',
+      createdDate: rollupDateKey(note?.date),
+      modifiedDate: rollupDateKey(note?.modifiedAt || note?.date),
+    };
+  }
+
+  function smartViewQueryNotes(notes = [], definition = {}, options = {}) {
+    const normalized = smartViewNormalizeDefinition(definition);
+    const matchOptions = {
+      ...options,
+      allNotes: options.allNotes || notes || [],
+      smartViewNoteLookup: smartViewNoteLookup({ ...options, allNotes: options.allNotes || notes || [] }),
+    };
+    return (notes || [])
+      .map((note, index) => ({ note, index }))
+      .filter(item => smartViewMatchesNormalizedNote(item.note, normalized, matchOptions))
+      .sort((a, b) => smartViewCompareNotes(a.note, b.note, normalized.sort, a.index, b.index))
+      .slice(0, normalized.limit)
+      .map(item => smartViewNoteResult(item.note));
+  }
+
   function rollupIsOlderGroup(dateKey, now = new Date()) {
     const yesterday = rollupDateRangeBounds('yesterday', now).start;
     return rollupIsValidIsoDateKey(dateKey) && dateKey < yesterday;
@@ -1560,6 +1805,9 @@
     rollupTitleDateKey,
     rollupNoteDateKey,
     rollupIsOlderGroup,
+    smartViewNormalizeDefinition,
+    smartViewMatchesNote,
+    smartViewQueryNotes,
     rollupGroupNotes,
     rollupNotePreview,
     rollupFilterTaskItems,
