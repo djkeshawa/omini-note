@@ -448,6 +448,9 @@ function MnApp() {
   const [activeAskAiSessionId, setActiveAskAiSessionId] = useStateA('');
   const activeAskAiSessionIdRef = useRefA('');
   const [aiNotice, setAiNotice] = useStateA(null);
+  const [todayAiRecap, setTodayAiRecap] = useStateA(null);
+  const [todayAiRecapBusy, setTodayAiRecapBusy] = useStateA(false);
+  const [todayAiRecapError, setTodayAiRecapError] = useStateA('');
   const [captureOpen, setCaptureOpen] = useStateA(false);
   const [deleteTargetId, setDeleteTargetId] = useStateA(null);
   const [appNotice, setAppNotice] = useStateA(null);
@@ -1765,6 +1768,69 @@ function MnApp() {
       .sort((a, b) => String(a.remindAt?.time || '').localeCompare(String(b.remindAt?.time || '')) || String(a.label || a.text || '').localeCompare(String(b.label || b.text || '')))
       .slice(0, 5);
   }, [calendarTaskItems]);
+
+  const todayAiContext = useMemoA(() => (
+    MN_APP_HELPERS.contextualAiBuildTodayRecapContext
+      ? MN_APP_HELPERS.contextualAiBuildTodayRecapContext({
+        notes: notesWithBody,
+        tasks: calendarTaskItems,
+        reminders: reminderCenterItems,
+        agendaItems: todayAgendaItems,
+        weekStart: tweaks.weekStart || 'monday',
+      })
+      : null
+  ), [notesWithBody, calendarTaskItems, reminderCenterItems, todayAgendaItems, tweaks.weekStart]);
+
+  const generateTodayAiRecap = useCallbackA(async () => {
+    if (!todayAiContext || !MN_APP_HELPERS.contextualAiBuildTodayRecapPrompt || !MN_APP_HELPERS.contextualAiBuildTodayRecapResult) {
+      setTodayAiRecapError('Today AI recap is unavailable in this build.');
+      return null;
+    }
+    if (!window.mn?.ai?.chat) {
+      setTodayAiRecapError('AI chat is unavailable in this build.');
+      return null;
+    }
+    setTodayAiRecapBusy(true);
+    setTodayAiRecapError('');
+    try {
+      let status = null;
+      try {
+        const statusResult = await window.mn.ai.status?.();
+        if (statusResult?.ok) status = statusResult.value;
+      } catch (e) {
+        status = null;
+      }
+      const prompt = MN_APP_HELPERS.contextualAiBuildTodayRecapPrompt(todayAiContext);
+      const response = await window.mn.ai.chat({
+        messages: [
+          {
+            role: 'system',
+            content: 'You create concise source-linked daily recaps. Keep facts separate from suggestions. Do not claim facts that are not in the supplied context.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        timeoutMs: 60000,
+        maxTokens: 900,
+      });
+      if (!response?.ok) throw new Error(response?.error || 'AI recap failed.');
+      if (response.value && response.value.ok === false) throw new Error(response.value.error || 'AI recap failed.');
+      const aiText = String(response.value?.answer || response.answer || '').trim();
+      const result = MN_APP_HELPERS.contextualAiBuildTodayRecapResult({
+        aiText,
+        context: todayAiContext,
+        status,
+        createdAt: new Date().toISOString(),
+      });
+      setTodayAiRecap(result);
+      return result;
+    } catch (e) {
+      const message = e?.message || String(e) || 'AI recap failed.';
+      setTodayAiRecapError(message);
+      return null;
+    } finally {
+      setTodayAiRecapBusy(false);
+    }
+  }, [todayAiContext]);
 
   const nextStoryOrder = useCallbackA((kind, parentId = null) => {
     const noteById = new Map(notesWithBody.map(note => [note.id, note]));
@@ -4019,6 +4085,10 @@ function MnApp() {
               onAddQuickTask={addQuickTodayTask}
               onAddReflection={addTodayReflection}
               onEndDayRecap={addTodayEndDayRecap}
+              todayAiRecap={todayAiRecap}
+              todayAiRecapBusy={todayAiRecapBusy}
+              todayAiRecapError={todayAiRecapError}
+              onGenerateAiRecap={generateTodayAiRecap}
               onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onPlanItem={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               rollupFormat={tweaks.rollupFormat || 'long'}

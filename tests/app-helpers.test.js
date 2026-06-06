@@ -748,6 +748,32 @@ test('App helpers collect reminders and workflow notes without renderer state', 
     appHelpers.rollupAppendEndDayRecap('Body', { notes: rollupNotes, tasks: rollupTasks, reminders: rollupReminders, now }),
     /Body\n\n## End-day recap - 2026-06-06/
   );
+  const todayContext = appHelpers.contextualAiBuildTodayRecapContext({
+    notes: rollupNotes,
+    tasks: rollupTasks,
+    reminders: rollupReminders,
+    agendaItems: rollupReminders,
+    now,
+  });
+  assert.equal(todayContext.today, '2026-06-06');
+  assert.deepEqual(todayContext.notes.map(note => note.id).sort(), ['invalid-title', 'today', 'yesterday']);
+  assert.equal(todayContext.tasks.length, 1);
+  assert.ok(todayContext.reminders.some(item => item.rollupStatus === 'overdue'));
+  assert.ok(todayContext.sources.some(source => source.title === 'Today note'));
+  const prompt = appHelpers.contextualAiBuildTodayRecapPrompt(todayContext);
+  assert.match(prompt, /Changed today, Open loops, Tomorrow planning suggestions/);
+  assert.match(prompt, /Source notes:/);
+  const todayAiResult = appHelpers.contextualAiBuildTodayRecapResult({
+    aiText: '## Changed today\nToday note moved.\n## Open loops\nCall remains open.\n## Tomorrow planning suggestions\nPlan the call.',
+    context: todayContext,
+    status: { config: { provider: 'ollama', chatModel: 'gemma3' } },
+    createdAt: '2026-06-06T10:00:00.000Z',
+  });
+  assert.equal(todayAiResult.outputKind, 'today-recap');
+  assert.equal(todayAiResult.providerModelLabel, 'Ollama - gemma3');
+  assert.deepEqual(todayAiResult.sections.map(section => section.title), ['Changed today', 'Open loops', 'Tomorrow planning suggestions']);
+  assert.deepEqual(todayAiResult.sections.map(section => section.kind), ['fact', 'fact', 'suggestion']);
+  assert.ok(todayAiResult.sources.some(source => source.title === 'Today note'));
 
   const workflow = appHelpers.collectWorkflowNotes([
     { id: 'n1', title: 'Draft', tags: ['project'], body: 'status:: DRAFT\n# Draft\n- Body', modifiedAt: '2026-05-06T00:00:00.000Z' },

@@ -1503,6 +1503,116 @@
     };
   }
 
+  function contextualAiActionLabel(item = {}) {
+    return contextualAiCleanText(item.label || item.text || item.title || 'Untitled action', 220);
+  }
+
+  function contextualAiBuildTodayRecapContext({ notes = [], tasks = [], reminders = [], agendaItems = [], now = new Date(), weekStart = 'monday', limit = 6 } = {}) {
+    const today = todayIsoDate(now);
+    const maxItems = Math.max(1, Math.min(Number(limit) || 6, 12));
+    const noteById = new Map((notes || []).map(note => [note.id, note]));
+    const todayNotes = (notes || [])
+      .filter(note => {
+        const titleDate = rollupTitleDateKey(note);
+        return titleDate === today || rollupDateKey(note?.date) === today || rollupDateKey(note?.modifiedAt) === today;
+      })
+      .sort((a, b) => rollupNoteSortTime(b, 'modified') - rollupNoteSortTime(a, 'modified'))
+      .slice(0, maxItems);
+    const openTasks = rollupFilterTaskItems(tasks, notes, { range: 'today', now, weekStart }).slice(0, maxItems);
+    const dueReminders = rollupFilterReminderItems(reminders, notes, { range: 'today', now, weekStart }).slice(0, maxItems);
+    const todayAgenda = (agendaItems || []).slice(0, maxItems);
+    const sourceIds = new Set();
+    todayNotes.forEach(note => note?.id && sourceIds.add(note.id));
+    [...openTasks, ...dueReminders, ...todayAgenda].forEach(item => item?.noteId && sourceIds.add(item.noteId));
+    const sourceNotes = [...sourceIds].map(id => noteById.get(id)).filter(Boolean);
+    const sources = contextualAiSourcesFromNotes(sourceNotes.length ? sourceNotes : todayNotes, { limit: maxItems * 2 });
+    return {
+      today,
+      notes: todayNotes,
+      tasks: openTasks,
+      reminders: dueReminders,
+      agendaItems: todayAgenda,
+      sources,
+    };
+  }
+
+  function contextualAiBuildTodayRecapPrompt(context = {}) {
+    const sourceLine = source => `- ${source.title}${source.snippet ? `: ${source.snippet}` : ''}`;
+    const actionLine = item => `- ${contextualAiActionLabel(item)} (${item.noteTitle || item.noteId || 'source note'})`;
+    return [
+      `Create a concise daily recap for ${context.today || todayIsoDate()}.`,
+      'Use only the source notes and action items below.',
+      'Return exactly these Markdown headings: Changed today, Open loops, Tomorrow planning suggestions.',
+      'Keep facts separate from suggestions and cite source note titles in the text when useful.',
+      '',
+      'Source notes:',
+      ...(context.sources?.length ? context.sources.map(sourceLine) : ['- No source notes today.']),
+      '',
+      'Open tasks:',
+      ...(context.tasks?.length ? context.tasks.map(actionLine) : ['- None.']),
+      '',
+      'Reminders:',
+      ...(context.reminders?.length ? context.reminders.map(actionLine) : ['- None.']),
+      '',
+      'Agenda today:',
+      ...(context.agendaItems?.length ? context.agendaItems.map(actionLine) : ['- None.']),
+    ].join('\n');
+  }
+
+  function contextualAiExtractMarkdownSection(text = '', labels = []) {
+    const wanted = (labels || []).map(label => contextualAiCleanText(label).toLowerCase()).filter(Boolean);
+    if (!wanted.length) return '';
+    const lines = String(text || '').split(/\r?\n/);
+    let collecting = false;
+    const out = [];
+    for (const line of lines) {
+      const heading = line.replace(/^#{1,6}\s+/, '').replace(/[:*]+$/g, '').trim().toLowerCase();
+      const isHeading = /^#{1,6}\s+/.test(line) || wanted.includes(heading);
+      if (isHeading && wanted.includes(heading)) {
+        collecting = true;
+        continue;
+      }
+      if (collecting && /^#{1,6}\s+/.test(line)) break;
+      if (collecting) out.push(line);
+    }
+    return out.join('\n').trim();
+  }
+
+  function contextualAiBuildTodayRecapResult({ aiText = '', context = {}, status = null, createdAt = null } = {}) {
+    const sourceIds = (context.sources || []).map(source => source.id).filter(Boolean);
+    const changedFallback = context.sources?.length
+      ? context.sources.map(source => `${source.title}${source.snippet ? `: ${source.snippet}` : ''}`).join('\n')
+      : 'No source notes were captured today.';
+    const loops = [
+      ...(context.tasks || []).map(contextualAiActionLabel),
+      ...(context.reminders || []).map(contextualAiActionLabel),
+      ...(context.agendaItems || []).map(contextualAiActionLabel),
+    ].filter(Boolean);
+    const loopsFallback = loops.length ? loops.map(item => `- ${item}`).join('\n') : 'No open loops found for today.';
+    const tomorrowFallback = loops.length
+      ? loops.slice(0, 4).map(item => `- Plan ${item}`).join('\n')
+      : '- Review today and choose one next action.';
+    const changed = contextualAiExtractMarkdownSection(aiText, ['Changed today', 'What changed today'])
+      || contextualAiCleanText(aiText, 1200)
+      || changedFallback;
+    const openLoops = contextualAiExtractMarkdownSection(aiText, ['Open loops', 'What remains open'])
+      || loopsFallback;
+    const tomorrow = contextualAiExtractMarkdownSection(aiText, ['Tomorrow planning suggestions', 'Tomorrow planning', 'What should I plan tomorrow'])
+      || tomorrowFallback;
+    return contextualAiResult({
+      status,
+      title: `Today AI recap - ${context.today || todayIsoDate()}`,
+      outputKind: 'today-recap',
+      sources: context.sources || [],
+      sections: [
+        { kind: 'fact', title: 'Changed today', content: changed, sourceIds },
+        { kind: 'fact', title: 'Open loops', content: openLoops, sourceIds },
+        { kind: 'suggestion', title: 'Tomorrow planning suggestions', content: tomorrow, sourceIds },
+      ],
+      createdAt,
+    });
+  }
+
   function rollupBuildEndDayRecap({ notes = [], tasks = [], reminders = [], now = new Date(), limit = 5 } = {}) {
     const today = todayIsoDate(now);
     const todayNotes = (notes || [])
@@ -2374,6 +2484,9 @@
     contextualAiResult,
     contextualAiMarkdownMarkers,
     contextualAiCompareMarkdownMarkers,
+    contextualAiBuildTodayRecapContext,
+    contextualAiBuildTodayRecapPrompt,
+    contextualAiBuildTodayRecapResult,
     reminderDisplayDate,
     reminderStatusLabel,
     novelistNoteId,

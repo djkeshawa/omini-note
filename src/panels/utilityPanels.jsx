@@ -7,6 +7,7 @@ function MnTodayPanel({
   onOpen, onOpenOrCreateDailyNote, onAddQuickTask, onAddReflection, onEndDayRecap, onOpenAgenda, onPlanItem, T, theme, rollupFormat = 'long',
   rollupDefaultRange = 'today', rollupGroupBy = 'created', rollupShowPreviews = true,
   rollupShowTasks = true, rollupShowReminders = true, rollupCollapseOlder = true,
+  todayAiRecap = null, todayAiRecapBusy = false, todayAiRecapError = '', onGenerateAiRecap,
   weekStart = 'monday',
 }) {
   const helpers = window.MN_APP_HELPERS || {};
@@ -143,6 +144,24 @@ function MnTodayPanel({
   const agendaLabel = item => item.label || item.text || 'Agenda item';
   const agendaWhen = item => item.remindAt?.time || item.remindAt?.date || '';
   const reminderWhen = item => [item.remindAt?.date || item.rollupDateKey, item.remindAt?.time || ''].filter(Boolean).join(' ');
+  const recapSections = Array.isArray(todayAiRecap?.sections) ? todayAiRecap.sections : [];
+  const recapSources = Array.isArray(todayAiRecap?.sources) ? todayAiRecap.sources : [];
+  const sourceButton = (source, index) => (
+    <button key={source.id || `${source.title}-${index}`} type="button" onClick={() => source.id && onOpen?.(source.id)} style={{
+      border: `1px solid ${T.lineSub}`,
+      borderRadius: 999,
+      background: T.bg,
+      color: T.inkMed,
+      padding: '4px 8px',
+      cursor: source.id ? 'pointer' : 'default',
+      fontFamily: 'var(--mn-ui)',
+      fontSize: 11.5,
+      maxWidth: 180,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    }}>{source.title || source.id || 'Source'}</button>
+  );
 
   return (
     <div style={{
@@ -189,6 +208,15 @@ function MnTodayPanel({
             <button type="button" onClick={onEndDayRecap} style={panelButton(false)}>
               End-day recap
             </button>
+            {!!onGenerateAiRecap && (
+              <button type="button" onClick={onGenerateAiRecap} disabled={todayAiRecapBusy} style={{
+                ...panelButton(false),
+                opacity: todayAiRecapBusy ? 0.65 : 1,
+                cursor: todayAiRecapBusy ? 'default' : 'pointer',
+              }}>
+                {todayAiRecapBusy ? 'Generating...' : 'AI recap'}
+              </button>
+            )}
           </div>
           <form onSubmit={runQuickTask} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <input
@@ -214,6 +242,68 @@ function MnTodayPanel({
             }}>Add task</button>
           </form>
         </div>
+
+        {(todayAiRecap || todayAiRecapBusy || todayAiRecapError) && (
+          <div style={{
+            border: `1px solid ${T.lineSub}`,
+            borderRadius: 8,
+            background: T.bgSub,
+            padding: 12,
+            marginBottom: 16,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 9 }}>
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720, color: T.ink }}>AI daily recap</div>
+              {todayAiRecap?.providerModelLabel && (
+                <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{todayAiRecap.providerModelLabel}</div>
+              )}
+              <div style={{ flex: 1 }} />
+              {!!onGenerateAiRecap && (
+                <button type="button" onClick={onGenerateAiRecap} disabled={todayAiRecapBusy} style={panelButton(false)}>
+                  {todayAiRecapBusy ? 'Generating...' : 'Refresh'}
+                </button>
+              )}
+            </div>
+            {todayAiRecapError && (
+              <div style={{
+                border: `1px solid color-mix(in oklab, ${T.warn || T.danger || T.ink} 35%, ${T.lineSub})`,
+                borderRadius: 7,
+                background: T.bg,
+                color: T.warn || T.danger || T.ink,
+                padding: '8px 10px',
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 12.5,
+              }}>{todayAiRecapError}</div>
+            )}
+            {todayAiRecapBusy && !todayAiRecap && !todayAiRecapError && (
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim }}>Generating recap...</div>
+            )}
+            {recapSections.length > 0 && (
+              <div style={{ display: 'grid', gap: 9 }}>
+                {recapSections.map(section => (
+                  <div key={`${section.kind}:${section.title}`} style={{
+                    border: `1px solid ${T.lineSub}`,
+                    borderRadius: 7,
+                    background: T.bg,
+                    padding: '9px 10px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 4 }}>
+                      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 720, color: T.ink }}>{section.title}</div>
+                      <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: section.kind === 'suggestion' ? T.accent : T.inkDim, textTransform: 'uppercase' }}>{section.kind}</div>
+                    </div>
+                    <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.8, lineHeight: 1.45, color: T.inkMed, whiteSpace: 'pre-wrap' }}>
+                      {section.content}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {recapSources.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                {recapSources.map(sourceButton)}
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{
           border: `1px solid ${T.lineSub}`,

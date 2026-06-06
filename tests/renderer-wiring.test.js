@@ -718,6 +718,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /patch, 'deferUntil'/);
   assert.match(app, /todayDailyNote/);
   assert.match(app, /todayAgendaItems/);
+  assert.match(app, /todayAiContext/);
+  assert.match(app, /generateTodayAiRecap/);
+  assert.match(app, /contextualAiBuildTodayRecapPrompt\(todayAiContext\)/);
+  assert.match(app, /window\.mn\.ai\.chat/);
   assert.match(app, /addQuickTodayTask/);
   assert.match(app, /addTodayReflection/);
   assert.match(app, /addTodayEndDayRecap/);
@@ -725,6 +729,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /agendaItems=\{todayAgendaItems\}/);
   assert.match(app, /onAddReflection=\{addTodayReflection\}/);
   assert.match(app, /onEndDayRecap=\{addTodayEndDayRecap\}/);
+  assert.match(app, /todayAiRecap=\{todayAiRecap\}/);
+  assert.match(app, /todayAiRecapBusy=\{todayAiRecapBusy\}/);
+  assert.match(app, /todayAiRecapError=\{todayAiRecapError\}/);
+  assert.match(app, /onGenerateAiRecap=\{generateTodayAiRecap\}/);
   assert.match(app, /onOpenAgenda=\{\(\) => \{ navigateView\('calendar'\)/);
   assert.match(app, /view === 'today' \? 'Today'/);
   assert.match(app, /function mnNormalizeStartupView\(value\)/);
@@ -791,6 +799,11 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(utilityPanels, /Quick task/);
   assert.match(utilityPanels, /Add reflection/);
   assert.match(utilityPanels, /End-day recap/);
+  assert.match(utilityPanels, /AI recap/);
+  assert.match(utilityPanels, /AI daily recap/);
+  assert.match(utilityPanels, /providerModelLabel/);
+  assert.match(utilityPanels, /sourceButton/);
+  assert.match(utilityPanels, /recapSections/);
   assert.match(utilityPanels, /Agenda today/);
   assert.match(utilityPanels, /Open Agenda/);
   assert.match(utilityPanels, /No agenda items today/);
@@ -849,6 +862,9 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function rollupAppendReflection/);
   assert.match(appHelpers, /function rollupBuildEndDayRecap/);
   assert.match(appHelpers, /function rollupAppendEndDayRecap/);
+  assert.match(appHelpers, /function contextualAiBuildTodayRecapContext/);
+  assert.match(appHelpers, /function contextualAiBuildTodayRecapPrompt/);
+  assert.match(appHelpers, /function contextualAiBuildTodayRecapResult/);
   assert.match(appHelpers, /function smartViewNormalizeDefinition/);
   assert.match(appHelpers, /function smartViewMatchesNote/);
   assert.match(appHelpers, /function smartViewQueryNotes/);
