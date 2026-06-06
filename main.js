@@ -59,7 +59,7 @@ const COMMON_SPELL_WORDS = [
   'syntax', 'text', 'their', 'there', 'these', 'this', 'typing', 'with',
   'word', 'words', 'working',
 ];
-const PREF_TOP_LEVEL_KEYS = new Set(['activeVaultId', 'tweaks', 'aiConfig']);
+const PREF_TOP_LEVEL_KEYS = new Set(['activeVaultId', 'tweaks', 'aiConfig', 'smartViews']);
 const PREF_TWEAK_DEFAULTS = {
   theme: 'light',
   density: 'comfortable',
@@ -112,6 +112,60 @@ const NOVEL_IMPORT_FILE_BYTES_LIMIT = 750 * 1024;
 const NOVEL_IMPORT_TOTAL_TEXT_BYTES_LIMIT = 2 * 1024 * 1024;
 const IPC_ID_RE = /^[A-Za-z0-9_-]+$/;
 const AI_TOOL_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const SMART_VIEW_FORMAT = 'vispnote.smartView.v1';
+const SMART_VIEW_ID_RE = /^[A-Za-z][A-Za-z0-9_-]{1,63}$/;
+const SMART_VIEW_TYPES = new Set(['notes', 'tasks', 'reminders', 'actions']);
+const SMART_VIEW_FILTER_KEYS = new Set([
+  'title',
+  'titleContains',
+  'tag',
+  'tags',
+  'createdFrom',
+  'createdTo',
+  'createdAfter',
+  'createdBefore',
+  'modifiedFrom',
+  'modifiedTo',
+  'modifiedAfter',
+  'modifiedBefore',
+  'property',
+  'properties',
+  'propertyKey',
+  'propertyValue',
+  'workflowStatus',
+  'workflowStatuses',
+  'linkedNote',
+  'linkedNotes',
+  'actionStatus',
+  'actionStatuses',
+  'taskStatus',
+  'actionType',
+  'actionTypes',
+  'reminderFrom',
+  'reminderTo',
+  'remindFrom',
+  'remindTo',
+  'dueFrom',
+  'dueTo',
+]);
+const SMART_VIEW_DATE_FILTER_KEYS = new Set([
+  'createdFrom',
+  'createdTo',
+  'createdAfter',
+  'createdBefore',
+  'modifiedFrom',
+  'modifiedTo',
+  'modifiedAfter',
+  'modifiedBefore',
+  'reminderFrom',
+  'reminderTo',
+  'remindFrom',
+  'remindTo',
+  'dueFrom',
+  'dueTo',
+]);
+const SMART_VIEW_SORT_FIELDS = new Set(['title', 'created', 'modified', 'reminder']);
+const SMART_VIEW_SORT_DIRECTIONS = new Set(['asc', 'desc']);
 
 function normalizeSpellWord(word) {
   return String(word || '').toLowerCase().replace(/^[^a-z']+|[^a-z']+$/g, '');
@@ -216,6 +270,93 @@ function sanitizeAiConfigForPrefs(aiConfig) {
   return clean;
 }
 
+function sanitizeSmartViewJsonValue(value, field, depth = 0) {
+  if (depth > 3) throw new Error(`${field} is too deeply nested`);
+  if (typeof value === 'string') return capString(value, field, 500);
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`Invalid ${field}`);
+    return value;
+  }
+  if (typeof value === 'boolean' || value == null) return value;
+  if (Array.isArray(value)) {
+    if (value.length > 40) throw new Error(`${field} has too many items`);
+    return value.map((item, index) => sanitizeSmartViewJsonValue(item, `${field}[${index}]`, depth + 1));
+  }
+  if (!isPlainObject(value)) throw new Error(`Invalid ${field}`);
+  const clean = {};
+  const entries = Object.entries(value);
+  if (entries.length > 40) throw new Error(`${field} has too many fields`);
+  for (const [key, item] of entries) {
+    if (isUnsafePatchKey(key)) throw new Error(`Unsupported ${field} field: ${key}`);
+    const cleanKey = capString(key, `${field} key`, 80);
+    clean[cleanKey] = sanitizeSmartViewJsonValue(item, `${field}.${cleanKey}`, depth + 1);
+  }
+  return clean;
+}
+
+function sanitizeSmartViewFiltersForPrefs(filters, index) {
+  if (filters == null) return {};
+  if (!isPlainObject(filters)) throw new Error(`Invalid Smart View filters at ${index}`);
+  const clean = {};
+  for (const [key, value] of Object.entries(filters)) {
+    if (isUnsafePatchKey(key)) throw new Error('Unsupported Smart View filter field: ' + key);
+    if (!SMART_VIEW_FILTER_KEYS.has(key)) throw new Error('Unsupported Smart View filter field: ' + key);
+    const next = sanitizeSmartViewJsonValue(value, `smartViews[${index}].filters.${key}`);
+    if (SMART_VIEW_DATE_FILTER_KEYS.has(key) && next && !/^\d{4}-\d{2}-\d{2}$/.test(String(next))) {
+      throw new Error('Invalid Smart View date filter: ' + key);
+    }
+    clean[key] = next;
+  }
+  return clean;
+}
+
+function sanitizeSmartViewSortForPrefs(sort, index) {
+  if (sort == null) return {};
+  if (!isPlainObject(sort)) throw new Error(`Invalid Smart View sort at ${index}`);
+  const clean = {};
+  for (const [key, value] of Object.entries(sort)) {
+    if (isUnsafePatchKey(key)) throw new Error('Unsupported Smart View sort field: ' + key);
+    if (!['field', 'direction'].includes(key)) throw new Error('Unsupported Smart View sort field: ' + key);
+    clean[key] = capString(value, `smartViews[${index}].sort.${key}`, 40);
+  }
+  if (clean.field && !SMART_VIEW_SORT_FIELDS.has(clean.field)) throw new Error('Invalid Smart View sort field');
+  if (clean.direction && !SMART_VIEW_SORT_DIRECTIONS.has(clean.direction)) throw new Error('Invalid Smart View sort direction');
+  return clean;
+}
+
+function sanitizeSmartViewsForPrefs(value) {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > 24) throw new Error('Invalid Smart Views preference');
+  const seen = new Set();
+  return value.map((definition, index) => {
+    if (!isPlainObject(definition)) throw new Error(`Invalid Smart View definition at ${index}`);
+    Object.keys(definition).forEach(key => {
+      if (isUnsafePatchKey(key)) throw new Error('Unsupported Smart View field: ' + key);
+      if (!['format', 'id', 'title', 'type', 'filters', 'sort', 'limit'].includes(key)) throw new Error('Unsupported Smart View field: ' + key);
+    });
+    if (definition.format && definition.format !== SMART_VIEW_FORMAT) throw new Error('Unsupported Smart View format');
+    const id = capString(definition.id, `smartViews[${index}].id`, 64);
+    if (!SMART_VIEW_ID_RE.test(id)) throw new Error('Invalid Smart View id');
+    if (seen.has(id)) throw new Error('Duplicate Smart View id');
+    seen.add(id);
+    const title = capString(definition.title, `smartViews[${index}].title`, 120);
+    if (!title) throw new Error('Smart View title is required');
+    const type = definition.type == null ? 'notes' : capString(definition.type, `smartViews[${index}].type`, 20);
+    if (!SMART_VIEW_TYPES.has(type)) throw new Error('Invalid Smart View type');
+    const limit = definition.limit == null ? undefined : Number(definition.limit);
+    if (limit != null && (!Number.isFinite(limit) || limit < 1 || limit > 500)) throw new Error('Invalid Smart View limit');
+    return {
+      format: SMART_VIEW_FORMAT,
+      id,
+      title,
+      type,
+      filters: sanitizeSmartViewFiltersForPrefs(definition.filters, index),
+      sort: sanitizeSmartViewSortForPrefs(definition.sort, index),
+      limit,
+    };
+  });
+}
+
 function sanitizePrefsPatchFromIpc(patch) {
   if (!isPlainObject(patch)) throw new Error('Invalid preferences patch');
   const clean = {};
@@ -225,6 +366,7 @@ function sanitizePrefsPatchFromIpc(patch) {
     if (key === 'activeVaultId') clean.activeVaultId = capString(value, 'activeVaultId', 120);
     if (key === 'tweaks') clean.tweaks = sanitizeTweaksForPrefs(value);
     if (key === 'aiConfig') clean.aiConfig = sanitizeAiConfigForPrefs(value);
+    if (key === 'smartViews') clean.smartViews = sanitizeSmartViewsForPrefs(value);
   }
   return clean;
 }

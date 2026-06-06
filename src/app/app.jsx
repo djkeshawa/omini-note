@@ -344,6 +344,65 @@ function mnNormalizeStartupView(value) {
   return value === 'today' ? 'today' : 'notes';
 }
 
+function mnBuildDefaultSmartViewDefinitions() {
+  const helpers = window.MN_APP_HELPERS || {};
+  const today = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
+  const format = helpers.SMART_VIEW_FORMAT || 'vispnote.smartView.v1';
+  return [
+    {
+      format,
+      id: 'recent_notes',
+      title: 'Recent notes',
+      type: 'notes',
+      filters: {},
+      sort: { field: 'modified', direction: 'desc' },
+      limit: 60,
+    },
+    {
+      format,
+      id: 'open_tasks',
+      title: 'Open tasks',
+      type: 'tasks',
+      filters: { actionStatus: 'open' },
+      sort: { field: 'reminder', direction: 'asc' },
+      limit: 80,
+    },
+    {
+      format,
+      id: 'deferred_tasks',
+      title: 'Deferred tasks',
+      type: 'tasks',
+      filters: { actionStatus: 'deferred' },
+      sort: { field: 'reminder', direction: 'asc' },
+      limit: 80,
+    },
+    {
+      format,
+      id: 'due_reminders',
+      title: 'Due reminders',
+      type: 'reminders',
+      filters: { reminderFrom: '1970-01-01', reminderTo: today },
+      sort: { field: 'reminder', direction: 'asc' },
+      limit: 80,
+    },
+  ];
+}
+
+function mnNormalizeSmartViewsForApp(value) {
+  const helpers = window.MN_APP_HELPERS || {};
+  const defaults = mnBuildDefaultSmartViewDefinitions();
+  if (!Array.isArray(value)) return defaults;
+  const validate = helpers.smartViewValidateSavedDefinition;
+  const clean = [];
+  for (const definition of value.slice(0, 24)) {
+    try {
+      const next = validate ? validate(definition) : definition;
+      if (next?.id && next?.title) clean.push(next);
+    } catch {}
+  }
+  return clean.length ? clean : defaults;
+}
+
 function MnApp() {
   const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
@@ -377,6 +436,8 @@ function MnApp() {
   const [selectedTag, setSelectedTag] = useStateA(null);
   const [selectedWorkflow, setSelectedWorkflow] = useStateA(null);
   const [view, setView] = useStateA('notes');
+  const [savedSmartViews, setSavedSmartViews] = useStateA(() => mnBuildDefaultSmartViewDefinitions());
+  const [activeSmartViewId, setActiveSmartViewId] = useStateA('');
   const [graphFilter, setGraphFilter] = useStateA('all-novelist');
   const lastViewRef = useRefA('notes');
   const titleUpdateTimerRef = useRefA(null);
@@ -445,6 +506,15 @@ function MnApp() {
       return nextView;
     });
   }, []);
+
+  const openSmartView = useCallbackA((definitionId = '') => {
+    setSelectedTag(null);
+    setSelectedWorkflow(null);
+    setQuery('');
+    setActiveSmartViewId(String(definitionId || ''));
+    navigateView('smart-views');
+    return { message: 'Opened Smart Views.' };
+  }, [navigateView]);
 
   const goBackView = useCallbackA(() => {
     const target = lastViewRef.current || 'notes';
@@ -695,6 +765,11 @@ function MnApp() {
         if (!prefsRes.ok) throw new Error(prefsRes.error);
         const prefs = prefsRes.value;
         setCustomThemes(mnNormalizeCustomThemesForApp(prefs.customThemes));
+        const nextSmartViews = mnNormalizeSmartViewsForApp(prefs.smartViews);
+        setSavedSmartViews(nextSmartViews);
+        if (!Array.isArray(prefs.smartViews) && window.mn?.setPrefs) {
+          window.mn.setPrefs({ smartViews: nextSmartViews }).catch(e => console.warn('Could not initialize Smart Views preferences', e));
+        }
         let startupView = 'notes';
         if (prefs.tweaks) {
           const mergedTweaks = { ...MN_TWEAK_DEFAULTS, ...prefs.tweaks };
@@ -1665,43 +1740,9 @@ function MnApp() {
     [calendarTaskItems, notesWithBody]
   );
 
-  const smartViewDefinitions = useMemoA(() => {
-    const today = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
-    return [
-      {
-        id: 'recent_notes',
-        title: 'Recent notes',
-        type: 'notes',
-        filters: {},
-        sort: { field: 'modified', direction: 'desc' },
-        limit: 60,
-      },
-      {
-        id: 'open_tasks',
-        title: 'Open tasks',
-        type: 'tasks',
-        filters: { actionStatus: 'open' },
-        sort: { field: 'reminder', direction: 'asc' },
-        limit: 80,
-      },
-      {
-        id: 'deferred_tasks',
-        title: 'Deferred tasks',
-        type: 'tasks',
-        filters: { actionStatus: 'deferred' },
-        sort: { field: 'reminder', direction: 'asc' },
-        limit: 80,
-      },
-      {
-        id: 'due_reminders',
-        title: 'Due reminders',
-        type: 'reminders',
-        filters: { reminderFrom: '1970-01-01', reminderTo: today },
-        sort: { field: 'reminder', direction: 'asc' },
-        limit: 80,
-      },
-    ];
-  }, []);
+  const smartViewDefinitions = useMemoA(() => (
+    savedSmartViews.length ? savedSmartViews : mnBuildDefaultSmartViewDefinitions()
+  ), [savedSmartViews]);
 
   const todayDailyNote = useMemoA(() => (
     MN_APP_HELPERS.rollupFindDailyNote
@@ -2886,8 +2927,18 @@ function MnApp() {
       { id: 'graph', label: 'Open graph', description: 'Show the note graph.', section: 'Navigate', shortcut: 'Ctrl+G', inputSchema: objectSchema(), run: () => openView('graph') },
       { id: 'calendar', label: 'Open Agenda', description: 'Show scheduled todos and reminders.', section: 'Navigate', keywords: 'calendar schedule agenda reminder date', inputSchema: objectSchema(), run: () => openView('calendar') },
       { id: 'today', label: 'Open Today', description: 'Show the Today dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
+      { id: 'smart-views', label: 'Open Smart Views', description: 'Show saved Smart View dashboards.', section: 'Navigate', keywords: 'saved smart views dashboard query tasks reminders', inputSchema: objectSchema(), run: () => openSmartView() },
       { id: 'todos', label: 'Open Agenda', description: 'Open the calendar planner for tasks and reminders.', section: 'Navigate', keywords: 'tasks checklist todos agenda calendar', hidden: true, aiHidden: true, inputSchema: objectSchema(), run: () => openView('calendar') },
       { id: 'canvas', label: 'Open canvas dashboard', description: 'Open the canvas dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => { openCanvasDashboard(); return { message: 'Opened canvas dashboard.' }; } },
+      ...smartViewDefinitions.map(definition => ({
+        id: `smart-view-${definition.id}`,
+        label: `Open ${definition.title}`,
+        description: 'Open a saved Smart View.',
+        section: 'Smart Views',
+        keywords: `smart view saved dashboard ${definition.type || ''}`,
+        inputSchema: objectSchema(),
+        run: () => openSmartView(definition.id),
+      })),
       {
         id: 'vault-health',
         label: 'Open vault health',
@@ -3418,7 +3469,7 @@ function MnApp() {
       })),
     ];
     return makeRegistry(actions);
-  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, plugins, rebuildIndex, restoreDeletedNote, runPlugin, selectVault, selectedNote, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openSmartView, plugins, rebuildIndex, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
 
   useEffectA(() => {
     window.MN_APP_ACTIONS = appActionRegistry;
@@ -3630,6 +3681,7 @@ function MnApp() {
               onOpenNovelist={() => { navigateView('novelist'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
               onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenToday={() => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onOpenSmartViews={() => openSmartView()}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenCanvas={openCanvasDashboard}
               onOpenTrash={() => { navigateView('trash'); setSelectedTag(null); setSelectedWorkflow(null); }}
@@ -3637,6 +3689,8 @@ function MnApp() {
               todayActive={view === 'today'}
               agendaActive={view === 'calendar'}
               graphActive={view === 'graph'}
+              smartViewsActive={view === 'smart-views'}
+              smartViewCount={smartViewDefinitions.length}
               workflowActive={view === 'workflow'}
               novelistActive={view === 'novelist'}
               novelistEnabled={!!activeVault?.novelistMode}
@@ -3897,6 +3951,8 @@ function MnApp() {
               notes={notesWithBody}
               tags={tags}
               definitions={smartViewDefinitions}
+              activeDefinitionId={activeSmartViewId}
+              onActiveDefinitionChange={setActiveSmartViewId}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               onOpenAllNotes={() => { setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); navigateView('notes'); }}
               T={T}

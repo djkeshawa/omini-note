@@ -1,6 +1,6 @@
 // Smart Views dashboard presentations.
 
-const { useMemo: useMemoSV, useState: useStateSV } = React;
+const { useEffect: useEffectSV, useMemo: useMemoSV, useState: useStateSV } = React;
 
 const MN_SMART_VIEW_PRESENTATIONS = ['list', 'table', 'cards', 'timeline'];
 
@@ -235,6 +235,8 @@ function MnSmartViewsPanel({
   notes = [],
   tags = [],
   definitions = [],
+  activeDefinitionId = '',
+  onActiveDefinitionChange,
   onOpen,
   onOpenAllNotes,
   T,
@@ -251,6 +253,11 @@ function MnSmartViewsPanel({
   const [activeId, setActiveId] = useStateSV(() => safeDefinitions[0]?.id || '');
   const [viewMode, setViewMode] = useStateSV('list');
   const activeDefinition = safeDefinitions.find(item => item.id === activeId) || safeDefinitions[0];
+  useEffectSV(() => {
+    if (!activeDefinitionId) return;
+    if (!safeDefinitions.some(item => item.id === activeDefinitionId)) return;
+    setActiveId(activeDefinitionId);
+  }, [activeDefinitionId, safeDefinitions]);
   const results = useMemoSV(() => (
     helpers.smartViewQuery
       ? helpers.smartViewQuery(notes, activeDefinition, { parser: window.MN_REMIND, walk: window.mnWalk, allNotes: notes })
@@ -292,7 +299,11 @@ function MnSmartViewsPanel({
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <select value={activeDefinition?.id || ''} onChange={(event) => setActiveId(event.target.value)} style={{
+          <select value={activeDefinition?.id || ''} onChange={(event) => {
+            const nextId = event.target.value;
+            setActiveId(nextId);
+            onActiveDefinitionChange?.(nextId);
+          }} style={{
             height: 32,
             border: `1px solid ${T.line}`,
             borderRadius: 7,
