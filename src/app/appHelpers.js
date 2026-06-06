@@ -226,6 +226,209 @@
     return out;
   }
 
+  function rollupNormalizeRange(range = 'today') {
+    return ['today', 'yesterday', 'week', 'month'].includes(range) ? range : 'today';
+  }
+
+  function rollupNormalizeGroupBy(groupBy = 'created') {
+    return ['created', 'modified', 'title-date'].includes(groupBy) ? groupBy : 'created';
+  }
+
+  function rollupDateKey(value) {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toISOString().slice(0, 10);
+  }
+
+  function rollupIsValidIsoDateKey(value = '') {
+    const key = String(value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return false;
+    return rollupDateKey(`${key}T00:00:00.000Z`) === key;
+  }
+
+  function rollupShiftDateKey(key, days) {
+    if (!rollupIsValidIsoDateKey(key)) return '';
+    const date = new Date(`${key}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return rollupDateKey(date);
+  }
+
+  function rollupDateRangeBounds(range = 'today', now = new Date(), weekStart = 'monday') {
+    const today = rollupDateKey(now) || todayIsoDate();
+    const start = new Date(`${today}T00:00:00.000Z`);
+    const end = new Date(start);
+    const normalized = rollupNormalizeRange(range);
+    if (normalized === 'yesterday') {
+      start.setUTCDate(start.getUTCDate() - 1);
+      end.setUTCDate(end.getUTCDate() - 1);
+    } else if (normalized === 'week') {
+      const day = start.getUTCDay();
+      const offset = weekStart === 'sunday' ? day : (day + 6) % 7;
+      start.setUTCDate(start.getUTCDate() - offset);
+    } else if (normalized === 'month') {
+      start.setUTCDate(1);
+    }
+    return {
+      start: rollupDateKey(start),
+      end: rollupDateKey(end),
+      today,
+    };
+  }
+
+  function rollupDateKeyInRange(key, range = 'today', now = new Date(), weekStart = 'monday') {
+    if (!rollupIsValidIsoDateKey(key)) return false;
+    const bounds = rollupDateRangeBounds(range, now, weekStart);
+    return key >= bounds.start && key <= bounds.end;
+  }
+
+  function rollupTitleDateKey(note) {
+    const match = String(note?.title || '').trim().match(/^(\d{4}-\d{2}-\d{2})(?:\b|$)/);
+    return match && rollupIsValidIsoDateKey(match[1]) ? match[1] : '';
+  }
+
+  function rollupNoteDateKey(note, groupBy = 'created') {
+    const normalized = rollupNormalizeGroupBy(groupBy);
+    if (normalized === 'title-date') return rollupTitleDateKey(note) || rollupDateKey(note?.date);
+    if (normalized === 'modified') return rollupDateKey(note?.modifiedAt || note?.date);
+    return rollupDateKey(note?.date);
+  }
+
+  function rollupNoteSortTime(note, groupBy = 'created') {
+    const normalized = rollupNormalizeGroupBy(groupBy);
+    const source = normalized === 'modified'
+      ? (note?.modifiedAt || note?.date)
+      : normalized === 'title-date'
+        ? (rollupTitleDateKey(note) ? `${rollupTitleDateKey(note)}T00:00:00.000Z` : note?.date)
+        : note?.date;
+    const time = new Date(source || 0).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  }
+
+  function rollupIsOlderGroup(dateKey, now = new Date()) {
+    const yesterday = rollupDateRangeBounds('yesterday', now).start;
+    return rollupIsValidIsoDateKey(dateKey) && dateKey < yesterday;
+  }
+
+  function rollupGroupNotes(notes = [], options = {}) {
+    const range = rollupNormalizeRange(options.range);
+    const groupBy = rollupNormalizeGroupBy(options.groupBy);
+    const now = options.now || new Date();
+    const weekStart = options.weekStart || 'monday';
+    const groups = new Map();
+    (notes || []).forEach(note => {
+      const key = rollupNoteDateKey(note, groupBy);
+      if (!rollupDateKeyInRange(key, range, now, weekStart)) return;
+      if (!groups.has(key)) {
+        groups.set(key, { key, date: new Date(`${key}T00:00:00.000Z`), notes: [] });
+      }
+      groups.get(key).notes.push(note);
+    });
+    return Array.from(groups.values())
+      .map(group => ({
+        ...group,
+        isOlder: rollupIsOlderGroup(group.key, now),
+        notes: group.notes.sort((a, b) => rollupNoteSortTime(b, groupBy) - rollupNoteSortTime(a, groupBy)),
+      }))
+      .sort((a, b) => String(b.key).localeCompare(String(a.key)));
+  }
+
+  function rollupPreviewLine(line = '') {
+    return String(line || '')
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '')
+      .replace(/^\s*[-*]\s+/, '')
+      .replace(/\[\[([^\]]+)\]\]/g, '$1')
+      .replace(/[`*_>]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function rollupNotePreview(note, maxLines = 2) {
+    return String(note?.body || '')
+      .split('\n')
+      .map(rollupPreviewLine)
+      .filter(Boolean)
+      .slice(0, Math.max(1, Number(maxLines) || 2))
+      .join(' · ');
+  }
+
+  function rollupFilterTaskItems(items = [], notes = [], options = {}) {
+    const noteById = new Map((notes || []).map(note => [note.id, note]));
+    const range = rollupNormalizeRange(options.range);
+    const groupBy = rollupNormalizeGroupBy(options.groupBy);
+    const now = options.now || new Date();
+    const weekStart = options.weekStart || 'monday';
+    return (items || [])
+      .filter(item => {
+        if (!item || item.checked || item.isReminderOnly || item.type === 'reminder') return false;
+        const note = noteById.get(item.noteId) || { date: item.noteDate, title: item.noteTitle };
+        const key = rollupNoteDateKey(note, groupBy) || rollupDateKey(item.noteDate);
+        return rollupDateKeyInRange(key, range, now, weekStart);
+      })
+      .sort((a, b) => String(a.noteTitle || '').localeCompare(String(b.noteTitle || '')) || String(a.label || a.text || '').localeCompare(String(b.label || b.text || '')));
+  }
+
+  function rollupReminderDateKey(item) {
+    return rollupIsValidIsoDateKey(item?.remindAt?.date)
+      ? item.remindAt.date
+      : rollupDateKey(item?.remindAt?.at);
+  }
+
+  function rollupFilterReminderItems(items = [], _notes = [], options = {}) {
+    const range = rollupNormalizeRange(options.range);
+    const now = options.now || new Date();
+    const weekStart = options.weekStart || 'monday';
+    const today = rollupDateRangeBounds('today', now, weekStart).today;
+    return (items || [])
+      .map(item => {
+        const key = rollupReminderDateKey(item);
+        const status = key < today ? 'overdue' : key === today ? 'due-today' : 'upcoming';
+        return { ...item, rollupDateKey: key, rollupStatus: status };
+      })
+      .filter(item => {
+        if (!rollupIsValidIsoDateKey(item.rollupDateKey)) return false;
+        return item.rollupDateKey < today || rollupDateKeyInRange(item.rollupDateKey, range, now, weekStart);
+      })
+      .sort((a, b) => String(a.rollupDateKey).localeCompare(String(b.rollupDateKey)) || ((a.remindAt?.at || 0) - (b.remindAt?.at || 0)));
+  }
+
+  function rollupFindDailyNote(notes = [], now = new Date()) {
+    const key = todayIsoDate(now);
+    return (notes || []).find(note => String(note?.title || '').trim() === key) || null;
+  }
+
+  function rollupQuickTaskLine(text = '') {
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    return clean ? `- [ ] ${clean}` : '';
+  }
+
+  function rollupAppendQuickTask(body = '', text = '') {
+    const taskLine = rollupQuickTaskLine(text);
+    const source = String(body || '');
+    if (!taskLine) return source;
+    const lines = source.replace(/\r\n/g, '\n').split('\n');
+    const headingIndex = lines.findIndex(line => /^#{2,6}\s+Tasks\s*$/i.test(String(line || '').trim()));
+    if (headingIndex >= 0) {
+      for (let i = headingIndex + 1; i < lines.length; i += 1) {
+        if (/^\s*-\s+\[\s\]\s*$/.test(lines[i])) {
+          lines[i] = taskLine;
+          return `${lines.join('\n').replace(/\s+$/g, '')}\n`;
+        }
+        if (/^#{1,6}\s+\S/.test(String(lines[i] || '').trim())) break;
+      }
+      let insertAt = headingIndex + 1;
+      while (insertAt < lines.length && !/^#{1,6}\s+\S/.test(String(lines[insertAt] || '').trim())) {
+        insertAt += 1;
+      }
+      if (insertAt > headingIndex + 1 && String(lines[insertAt - 1] || '').trim() === '') insertAt -= 1;
+      lines.splice(insertAt, 0, taskLine);
+      return `${lines.join('\n').replace(/\s+$/g, '')}\n`;
+    }
+    const trimmed = source.replace(/\s+$/g, '');
+    return `${trimmed}${trimmed ? '\n' : ''}${taskLine}\n`;
+  }
+
   function reminderDisplayDate(item) {
     const at = item?.remindAt?.at;
     if (!at) return '';
@@ -1006,6 +1209,20 @@
     taskItemKey,
     collectTaskItems,
     collectReminderItems,
+    rollupNormalizeRange,
+    rollupNormalizeGroupBy,
+    rollupDateKey,
+    rollupDateRangeBounds,
+    rollupDateKeyInRange,
+    rollupTitleDateKey,
+    rollupNoteDateKey,
+    rollupIsOlderGroup,
+    rollupGroupNotes,
+    rollupNotePreview,
+    rollupFilterTaskItems,
+    rollupFilterReminderItems,
+    rollupFindDailyNote,
+    rollupAppendQuickTask,
     reminderDisplayDate,
     reminderStatusLabel,
     novelistNoteId,

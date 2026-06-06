@@ -1582,6 +1582,12 @@ function MnApp() {
     [notesWithBody]
   );
 
+  const todayDailyNote = useMemoA(() => (
+    MN_APP_HELPERS.rollupFindDailyNote
+      ? MN_APP_HELPERS.rollupFindDailyNote(notesWithBody)
+      : notesWithBody.find(note => String(note.title || '').trim() === (MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10))) || null
+  ), [notesWithBody]);
+
   const nextStoryOrder = useCallbackA((kind, parentId = null) => {
     const noteById = new Map(notesWithBody.map(note => [note.id, note]));
     const values = (items, step, base) => {
@@ -1737,6 +1743,32 @@ function MnApp() {
     }));
     markDirty(id);
   }, [markDirty, mnMdToBlocks, mnBlocksToMd]);
+
+  const addQuickTodayTask = useCallbackA((text) => {
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return false;
+    const date = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
+    const existing = notesWithBody.find(note => String(note.title || '').trim() === date);
+    const appendTask = body => (
+      MN_APP_HELPERS.rollupAppendQuickTask
+        ? MN_APP_HELPERS.rollupAppendQuickTask(body, clean)
+        : `${String(body || '').replace(/\s+$/g, '')}\n- [ ] ${clean}\n`
+    );
+    if (existing) {
+      updateNoteBody(existing.id, appendTask);
+      return true;
+    }
+    const template = MN_APP_HELPERS.templateById ? MN_APP_HELPERS.templateById('daily') : (MN_NOTE_TEMPLATES.find(item => item.id === 'daily') || MN_NOTE_TEMPLATES[0]);
+    const expanded = MN_APP_HELPERS.expandTemplate
+      ? MN_APP_HELPERS.expandTemplate(template)
+      : { noteTitle: date, body: `# ${date}\n\n## Tasks\n`, tags: ['daily'] };
+    createNote({
+      title: uniqueNoteTitle(expanded.noteTitle || date),
+      body: appendTask(expanded.body || ''),
+      tags: expanded.tags || ['daily'],
+    }, { open: false });
+    return true;
+  }, [notesWithBody, updateNoteBody, createNote, uniqueNoteTitle]);
 
   const updateNoteBodies = useCallbackA((updates = []) => {
     const existingIds = new Set(notesWithBody.map(note => note.id));
@@ -3368,7 +3400,7 @@ function MnApp() {
     ? `#${selectedTag}`
     : selectedWorkflow
     ? selectedWorkflow
-    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Daily rollup' : 'All notes');
+    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Today dashboard' : 'All notes');
   const noteListSubtitle = query.trim()
     ? `${filteredNotes.length} match${filteredNotes.length === 1 ? '' : 'es'}`
     : view === 'workflow'
@@ -3723,9 +3755,22 @@ function MnApp() {
           )}
           {view === 'today' && (
             <MnTodayPanel
-              notes={notesWithBody} tags={tags}
+              notes={notesWithBody}
+              tags={tags}
+              tasks={calendarTaskItems}
+              reminders={reminderCenterItems}
+              todayNote={todayDailyNote}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onOpenOrCreateDailyNote={createDailyNote}
+              onAddQuickTask={addQuickTodayTask}
               rollupFormat={tweaks.rollupFormat || 'long'}
+              rollupDefaultRange={tweaks.rollupDefaultRange || 'today'}
+              rollupGroupBy={tweaks.rollupGroupBy || 'created'}
+              rollupShowPreviews={tweaks.rollupShowPreviews !== false}
+              rollupShowTasks={tweaks.rollupShowTasks !== false}
+              rollupShowReminders={tweaks.rollupShowReminders !== false}
+              rollupCollapseOlder={tweaks.rollupCollapseOlder !== false}
+              weekStart={tweaks.weekStart || 'monday'}
               T={T} theme={theme}
             />
           )}

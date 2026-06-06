@@ -262,6 +262,49 @@ test('App helpers collect reminders and workflow notes without renderer state', 
   assert.equal(tasks.find(item => item.blockId === 'b2').label, 'Ship');
   assert.match(tasks[0].key, /^todo\|n1\|0\|2026-05-06\|10:30\|/);
 
+  const now = new Date('2026-06-06T12:00:00.000Z');
+  const rollupNotes = [
+    { id: 'today', title: 'Today note', date: '2026-06-06T09:00:00.000Z', body: '# Today\n- [ ] Call [[Project]]' },
+    { id: 'yesterday', title: 'Yesterday note', date: '2026-06-05T09:00:00.000Z', modifiedAt: '2026-06-06T08:00:00.000Z', body: 'Yesterday body' },
+    { id: 'title', title: '2026-06-01 Archive', date: '2026-05-30T09:00:00.000Z', body: 'Archived' },
+    { id: 'invalid-title', title: '2026-02-30 Bad date', date: '2026-06-06T10:00:00.000Z', body: 'Fallback' },
+  ];
+  assert.deepEqual(appHelpers.rollupDateRangeBounds('week', now), {
+    start: '2026-06-01',
+    end: '2026-06-06',
+    today: '2026-06-06',
+  });
+  assert.equal(appHelpers.rollupDateRangeBounds('yesterday', now).start, '2026-06-05');
+  assert.deepEqual(appHelpers.rollupGroupNotes(rollupNotes, { range: 'today', groupBy: 'created', now }).map(group => group.key), ['2026-06-06']);
+  assert.deepEqual(appHelpers.rollupGroupNotes(rollupNotes, { range: 'today', groupBy: 'modified', now }).flatMap(group => group.notes.map(note => note.id)).sort(), ['invalid-title', 'today', 'yesterday']);
+  assert.equal(appHelpers.rollupNoteDateKey(rollupNotes[2], 'title-date'), '2026-06-01');
+  assert.equal(appHelpers.rollupNoteDateKey(rollupNotes[3], 'title-date'), '2026-06-06');
+  assert.equal(appHelpers.rollupNotePreview(rollupNotes[0]), 'Today · Call Project');
+
+  const rollupTasks = [
+    { type: 'todo', noteId: 'today', noteTitle: 'Today note', label: 'Call', checked: false, noteDate: '2026-06-06T09:00:00.000Z' },
+    { type: 'todo', noteId: 'today', noteTitle: 'Today note', label: 'Done', checked: true, noteDate: '2026-06-06T09:00:00.000Z' },
+    { type: 'reminder', noteId: 'today', noteTitle: 'Today note', label: 'Reminder only', isReminderOnly: true, noteDate: '2026-06-06T09:00:00.000Z' },
+    { type: 'todo', noteId: 'yesterday', noteTitle: 'Yesterday note', label: 'Review', checked: false, noteDate: '2026-06-05T09:00:00.000Z' },
+  ];
+  assert.deepEqual(appHelpers.rollupFilterTaskItems(rollupTasks, rollupNotes, { range: 'today', groupBy: 'created', now }).map(item => item.label), ['Call']);
+  assert.deepEqual(appHelpers.rollupFilterTaskItems(rollupTasks, rollupNotes, { range: 'yesterday', groupBy: 'created', now }).map(item => item.label), ['Review']);
+
+  const rollupReminders = [
+    { noteId: 'old', noteTitle: 'Old', text: 'Past', remindAt: { date: '2026-06-04', at: new Date('2026-06-04T09:00:00.000Z') } },
+    { noteId: 'today', noteTitle: 'Today', text: 'Today', remindAt: { date: '2026-06-06', at: new Date('2026-06-06T09:00:00.000Z') } },
+    { noteId: 'future', noteTitle: 'Future', text: 'Future', remindAt: { date: '2026-06-10', at: new Date('2026-06-10T09:00:00.000Z') } },
+  ];
+  const todayReminders = appHelpers.rollupFilterReminderItems(rollupReminders, rollupNotes, { range: 'today', now });
+  assert.deepEqual(todayReminders.map(item => item.text), ['Past', 'Today']);
+  assert.deepEqual(todayReminders.map(item => item.rollupStatus), ['overdue', 'due-today']);
+
+  assert.match(
+    appHelpers.rollupAppendQuickTask('# 2026-06-06\n\n## Tasks\n- [ ] \n\n## Notes\n- note\n', 'Buy milk'),
+    /## Tasks\n- \[ \] Buy milk\n\n## Notes/
+  );
+  assert.equal(appHelpers.rollupAppendQuickTask('Body', 'Buy milk'), 'Body\n- [ ] Buy milk\n');
+
   const workflow = appHelpers.collectWorkflowNotes([
     { id: 'n1', title: 'Draft', tags: ['project'], body: 'status:: DRAFT\n# Draft\n- Body', modifiedAt: '2026-05-06T00:00:00.000Z' },
     { id: 'n2', title: 'Archived', tags: [], body: 'status:: DONE\nClosed', workflowArchived: true },

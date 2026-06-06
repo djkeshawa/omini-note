@@ -2,83 +2,419 @@
 
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
 
-function MnTodayPanel({ notes, tags, onOpen, T, theme, rollupFormat = 'long' }) {
+function MnTodayPanel({
+  notes = [], tags = [], tasks = [], reminders = [], todayNote = null,
+  onOpen, onOpenOrCreateDailyNote, onAddQuickTask, T, theme, rollupFormat = 'long',
+  rollupDefaultRange = 'today', rollupGroupBy = 'created', rollupShowPreviews = true,
+  rollupShowTasks = true, rollupShowReminders = true, rollupCollapseOlder = true,
+  weekStart = 'monday',
+}) {
+  const helpers = window.MN_APP_HELPERS || {};
+  const normalizeRange = helpers.rollupNormalizeRange || (value => value || 'today');
+  const normalizeGroupBy = helpers.rollupNormalizeGroupBy || (value => value || 'created');
+  const [range, setRange] = useStateP(normalizeRange(rollupDefaultRange));
+  const [groupBy, setGroupBy] = useStateP(normalizeGroupBy(rollupGroupBy));
+  const [quickTask, setQuickTask] = useStateP('');
+  const [collapsedGroups, setCollapsedGroups] = useStateP({});
+
+  useEffectP(() => {
+    setRange(normalizeRange(rollupDefaultRange));
+  }, [rollupDefaultRange]);
+
+  useEffectP(() => {
+    setGroupBy(normalizeGroupBy(rollupGroupBy));
+  }, [rollupGroupBy]);
+
   const tagHue = useMemoP(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
-  // Group notes by day
-  const groups = useMemoP(() => {
-    const g = {};
-    [...notes].sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(n => {
-      const d = new Date(n.date);
-      const key = d.toDateString();
-      if (!g[key]) g[key] = { date: d, notes: [] };
-      g[key].notes.push(n);
-    });
-    return Object.values(g);
-  }, [notes]);
+
+  const noteGroups = useMemoP(() => (
+    helpers.rollupGroupNotes
+      ? helpers.rollupGroupNotes(notes, { range, groupBy, weekStart })
+      : []
+  ), [notes, range, groupBy, weekStart]);
+
+  const todayGroups = useMemoP(() => (
+    helpers.rollupGroupNotes
+      ? helpers.rollupGroupNotes(notes, { range: 'today', groupBy, weekStart })
+      : []
+  ), [notes, groupBy, weekStart]);
+
+  const visibleTasks = useMemoP(() => (
+    rollupShowTasks && helpers.rollupFilterTaskItems
+      ? helpers.rollupFilterTaskItems(tasks, notes, { range, groupBy, weekStart })
+      : []
+  ), [rollupShowTasks, tasks, notes, range, groupBy, weekStart]);
+
+  const todayTasks = useMemoP(() => (
+    helpers.rollupFilterTaskItems
+      ? helpers.rollupFilterTaskItems(tasks, notes, { range: 'today', groupBy, weekStart })
+      : []
+  ), [tasks, notes, groupBy, weekStart]);
+
+  const visibleReminders = useMemoP(() => (
+    rollupShowReminders && helpers.rollupFilterReminderItems
+      ? helpers.rollupFilterReminderItems(reminders, notes, { range, groupBy, weekStart })
+      : []
+  ), [rollupShowReminders, reminders, notes, range, groupBy, weekStart]);
+
+  const todayReminders = useMemoP(() => (
+    helpers.rollupFilterReminderItems
+      ? helpers.rollupFilterReminderItems(reminders, notes, { range: 'today', groupBy, weekStart })
+      : []
+  ), [reminders, notes, groupBy, weekStart]);
+
+  const todayNoteCount = todayGroups.reduce((sum, group) => sum + group.notes.length, 0);
+  const rangeNoteCount = noteGroups.reduce((sum, group) => sum + group.notes.length, 0);
+  const todayKey = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
+  const dailyNote = todayNote || (notes || []).find(note => String(note.title || '').trim() === todayKey) || null;
+
+  const rangeOptions = [
+    { value: 'today', label: 'Today' },
+    { value: 'yesterday', label: 'Yesterday' },
+    { value: 'week', label: 'This week' },
+    { value: 'month', label: 'This month' },
+  ];
+  const groupOptions = [
+    { value: 'created', label: 'Created' },
+    { value: 'modified', label: 'Modified' },
+    { value: 'title-date', label: 'Title date' },
+  ];
+
+  const panelButton = (active = false) => ({
+    border: `1px solid ${active ? T.accent : T.lineSub}`,
+    background: active ? `color-mix(in oklab, ${T.accent} 13%, ${T.bg})` : T.bg,
+    color: active ? T.accent : T.inkMed,
+    borderRadius: 6,
+    padding: '7px 10px',
+    cursor: 'pointer',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 12,
+    fontWeight: 650,
+    letterSpacing: 0,
+  });
+
+  const sectionShell = {
+    borderTop: `1px solid ${T.lineSub}`,
+    paddingTop: 18,
+    marginTop: 20,
+  };
+
+  const headingDate = (group) => (
+    group.date.toLocaleDateString([], rollupFormat === 'short'
+      ? { weekday: 'short', month: 'short', day: 'numeric' }
+      : { weekday: 'long', month: 'long', day: 'numeric' })
+  );
+
+  const setGroupCollapsed = (key, value) => {
+    setCollapsedGroups(current => ({ ...current, [key]: value }));
+  };
+
+  const runQuickTask = (event) => {
+    event.preventDefault();
+    const text = quickTask.trim();
+    if (!text) return;
+    if (onAddQuickTask?.(text) !== false) setQuickTask('');
+  };
+
+  const stat = (label, value) => (
+    <div style={{
+      minWidth: 92,
+      border: `1px solid ${T.lineSub}`,
+      borderRadius: 7,
+      background: T.bgSub,
+      padding: '9px 10px',
+    }}>
+      <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{label}</div>
+      <div style={{ marginTop: 3, fontFamily: 'var(--mn-ui)', fontSize: 20, fontWeight: 760, color: T.ink }}>{value}</div>
+    </div>
+  );
+
+  const taskLabel = item => item.label || item.text || 'Untitled task';
+  const reminderLabel = item => item.text || item.label || 'Reminder';
+  const reminderWhen = item => [item.remindAt?.date || item.rollupDateKey, item.remindAt?.time || ''].filter(Boolean).join(' ');
 
   return (
     <div style={{
       flex: 1, height: '100%', background: T.bg,
-      padding: '40px 28px 28px', overflow: 'auto',
+      padding: '32px 24px 28px', overflow: 'auto',
     }}>
-      <div style={{ maxWidth: 760, margin: '0 auto' }}>
+      <div style={{ maxWidth: 920, margin: '0 auto' }}>
         <div style={{
-          fontFamily: 'var(--mn-ui)', fontSize: 26, fontWeight: 600,
+          fontFamily: 'var(--mn-ui)', fontSize: 26, fontWeight: 700,
           color: T.ink, marginBottom: 3, letterSpacing: 0,
-        }}>Daily rollup</div>
+        }}>Today</div>
         <div style={{
           fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-          letterSpacing: '0.06em', marginBottom: 28,
-        }}>notes grouped by the day they were written</div>
+          letterSpacing: '0.06em', marginBottom: 18,
+        }}>daily note, notes, tasks, and reminders</div>
 
-        {groups.map(g => (
-          <div key={g.date.toISOString().slice(0, 10)} style={{ marginBottom: 28 }}>
+        <div style={{
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 8,
+          background: T.bgSub,
+          padding: 14,
+          marginBottom: 16,
+        }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 220, flex: 1 }}>
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 720, color: T.ink }}>
+                {dailyNote ? dailyNote.title : todayKey}
+              </div>
+              <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+                {dailyNote ? 'daily note ready' : 'daily note not created'}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {stat('notes', todayNoteCount)}
+              {stat('tasks', todayTasks.length)}
+              {stat('reminders', todayReminders.length)}
+            </div>
+            <button type="button" onClick={onOpenOrCreateDailyNote} style={panelButton(true)}>
+              {dailyNote ? 'Open daily note' : 'Create daily note'}
+            </button>
+          </div>
+          <form onSubmit={runQuickTask} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            <input
+              value={quickTask}
+              onChange={(event) => setQuickTask(event.target.value)}
+              placeholder="Quick task"
+              style={{
+                flex: '1 1 220px',
+                minWidth: 0,
+                border: `1px solid ${T.lineSub}`,
+                borderRadius: 6,
+                background: T.bg,
+                color: T.ink,
+                padding: '8px 10px',
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 13,
+              }}
+            />
+            <button type="submit" disabled={!quickTask.trim()} style={{
+              ...panelButton(true),
+              opacity: quickTask.trim() ? 1 : 0.55,
+              cursor: quickTask.trim() ? 'pointer' : 'default',
+            }}>Add task</button>
+          </form>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
+          {rangeOptions.map(option => (
+            <button key={option.value} type="button" onClick={() => setRange(option.value)} style={panelButton(range === option.value)}>
+              {option.label}
+            </button>
+          ))}
+          <div style={{ flex: 1 }} />
+          <select value={groupBy} onChange={(event) => setGroupBy(event.target.value)} style={{
+            border: `1px solid ${T.lineSub}`,
+            borderRadius: 6,
+            background: T.bg,
+            color: T.inkMed,
+            padding: '7px 9px',
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 12,
+            fontWeight: 650,
+          }} aria-label="Group Daily rollup by date source">
+            {groupOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </div>
+
+        {noteGroups.length === 0 && (
+          <div style={{
+            border: `1px dashed ${T.lineSub}`,
+            borderRadius: 8,
+            background: T.bgSub,
+            padding: 18,
+            marginBottom: 18,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 700, color: T.ink }}>
+                {range === 'today' ? 'No notes today' : 'No notes in this range'}
+              </div>
+              <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+                {rangeNoteCount} notes
+              </div>
+            </div>
+            {range === 'today' && (
+              <button type="button" onClick={onOpenOrCreateDailyNote} style={panelButton(true)}>
+                Create daily note
+              </button>
+            )}
+          </div>
+        )}
+
+        {noteGroups.map(g => {
+          const defaultCollapsed = rollupCollapseOlder && g.isOlder;
+          const collapsed = Object.prototype.hasOwnProperty.call(collapsedGroups, g.key)
+            ? collapsedGroups[g.key]
+            : defaultCollapsed;
+          return (
+          <div key={g.key} style={{ marginBottom: 22 }}>
             <div style={{
-              display: 'flex', alignItems: 'baseline', gap: 12,
+              display: 'flex', alignItems: 'center', gap: 10,
               marginBottom: 10,
             }}>
+              <button type="button" onClick={() => setGroupCollapsed(g.key, !collapsed)} style={{
+                width: 24,
+                height: 24,
+                borderRadius: 6,
+                border: `1px solid ${T.lineSub}`,
+                background: T.bg,
+                color: T.inkDim,
+                cursor: 'pointer',
+                fontFamily: 'var(--mn-mono)',
+                fontSize: 13,
+                lineHeight: 1,
+              }} aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${headingDate(g)}`}>
+                {collapsed ? '+' : '-'}
+              </button>
               <div style={{
                 fontFamily: 'var(--mn-body)', fontSize: 16, fontWeight: 600,
                 color: T.ink, letterSpacing: 0,
-              }}>{g.date.toLocaleDateString([], rollupFormat === 'short'
-                ? { weekday: 'short', month: 'short', day: 'numeric' }
-                : { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+              }}>{headingDate(g)}</div>
               <div style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
               }}>{g.notes.length} note{g.notes.length > 1 ? 's' : ''}</div>
               <div style={{ flex: 1, borderTop: `1px solid ${T.lineSub}` }} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {!collapsed && <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               {g.notes.map(n => (
-                <div key={n.id} onClick={() => onOpen(n.id)} style={{
-                  padding: '8px 12px', borderRadius: 6, cursor: 'pointer',
-                  display: 'flex', alignItems: 'baseline', gap: 10,
+                <button key={n.id} type="button" onClick={() => onOpen(n.id)} style={{
+                  padding: '9px 11px',
+                  borderRadius: 7,
+                  cursor: 'pointer',
+                  display: 'grid',
+                  gridTemplateColumns: '52px minmax(0, 1fr)',
+                  gap: 10,
+                  textAlign: 'left',
+                  border: `1px solid transparent`,
+                  background: 'transparent',
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <div style={{
                     fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-                    width: 46, flexShrink: 0,
+                    paddingTop: 1,
                   }}>{new Date(n.date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
-                  <div style={{
-                    fontFamily: 'var(--mn-ui)', fontSize: 14, color: T.ink, flex: 1,
-                  }}>{n.title}</div>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {n.tags.map(t => (
-                      <span key={t} style={{
-                        width: 6, height: 6, borderRadius: '50%',
-                        background: mnGetTagColor(tagHue[t] ?? 240, theme),
-                        display: 'inline-block',
-                      }} />
-                    ))}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 650, color: T.ink,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{n.title}</div>
+                    {rollupShowPreviews && helpers.rollupNotePreview?.(n) && (
+                      <div style={{
+                        marginTop: 3,
+                        fontFamily: 'var(--mn-ui)',
+                        fontSize: 12.5,
+                        color: T.inkMed,
+                        lineHeight: 1.35,
+                        overflow: 'hidden',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                      }}>{helpers.rollupNotePreview(n)}</div>
+                    )}
+                    {!!(n.tags || []).length && (
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
+                        {(n.tags || []).map(t => (
+                          <span key={t} style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            border: `1px solid ${T.lineSub}`,
+                            borderRadius: 999,
+                            background: T.bg,
+                            color: T.inkMed,
+                            padding: '2px 6px',
+                            fontFamily: 'var(--mn-mono)',
+                            fontSize: 10,
+                          }}>
+                            <span style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: '50%',
+                              background: mnGetTagColor(tagHue[t] ?? 240, theme),
+                              display: 'inline-block',
+                            }} />
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
+                </button>
+              ))}
+            </div>}
+          </div>
+        );})}
+
+        {rollupShowTasks && (
+          <div style={sectionShell}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 9 }}>
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 720, color: T.ink }}>Open tasks</div>
+              <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{visibleTasks.length}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {visibleTasks.length === 0 && (
+                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '6px 0' }}>No open tasks</div>
+              )}
+              {visibleTasks.map(item => (
+                <button key={item.key || `${item.noteId}:${item.line || item.blockId || taskLabel(item)}`} type="button" onClick={() => onOpen(item.noteId)} style={{
+                  border: `1px solid ${T.lineSub}`,
+                  borderRadius: 7,
+                  background: T.bgSub,
+                  padding: '9px 11px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}>
+                  <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 650, color: T.ink }}>{taskLabel(item)}</div>
+                  <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{item.noteTitle || 'Untitled'}</div>
+                </button>
               ))}
             </div>
           </div>
-        ))}
+        )}
+
+        {rollupShowReminders && (
+          <div style={sectionShell}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 9 }}>
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 720, color: T.ink }}>Reminders</div>
+              <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{visibleReminders.length}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {visibleReminders.length === 0 && (
+                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '6px 0' }}>No due reminders</div>
+              )}
+              {visibleReminders.map(item => {
+                const statusColor = item.rollupStatus === 'overdue' ? T.danger : item.rollupStatus === 'due-today' ? T.warn : T.inkDim;
+                return (
+                  <button key={item.key || `${item.noteId}:${reminderWhen(item)}:${reminderLabel(item)}`} type="button" onClick={() => onOpen(item.noteId)} style={{
+                    border: `1px solid ${T.lineSub}`,
+                    borderLeft: `3px solid ${statusColor}`,
+                    borderRadius: 7,
+                    background: T.bgSub,
+                    padding: '9px 11px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}>
+                    <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 650, color: T.ink }}>{reminderLabel(item)}</div>
+                    <div style={{ marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'var(--mn-mono)', fontSize: 10.5 }}>
+                      <span style={{ color: statusColor }}>{item.rollupStatus === 'overdue' ? 'Overdue' : item.rollupStatus === 'due-today' ? 'Today' : 'Upcoming'}</span>
+                      <span style={{ color: T.inkDim }}>{reminderWhen(item)}</span>
+                      <span style={{ color: T.inkDim }}>{item.noteTitle || 'Untitled'}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

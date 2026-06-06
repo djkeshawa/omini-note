@@ -678,6 +678,8 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
 
 test('Review fixes wire settings, rollup, reminders, and safe note paths', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appHelpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
+  const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
@@ -699,6 +701,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /item\.blockId/);
   assert.match(app, /mnCollectReminderItems\(notesWithBody\)/);
   assert.match(app, /mnCollectTaskItems\(notesWithBody\)/);
+  assert.match(app, /todayDailyNote/);
+  assert.match(app, /addQuickTodayTask/);
+  assert.match(app, /onAddQuickTask=\{addQuickTodayTask\}/);
+  assert.match(app, /view === 'today' \? 'Today dashboard'/);
   assert.match(app, /view === 'calendar'/);
   assert.match(app, /id: 'calendar'/);
   assert.match(app, /id: 'calendar'[\s\S]*label: 'Open Agenda'[\s\S]*openView\('calendar'\)/);
@@ -731,6 +737,11 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(editor, /title="Agenda"/);
   assert.match(utilityPanels, /onSnooze \|\| onDismiss/);
   assert.match(utilityPanels, /rollupFormat === 'short'/);
+  assert.match(utilityPanels, /tasks = \[\], reminders = \[\], todayNote = null/);
+  assert.match(utilityPanels, /Quick task/);
+  assert.match(utilityPanels, /rollupFilterTaskItems/);
+  assert.match(utilityPanels, /rollupFilterReminderItems/);
+  assert.match(utilityPanels, /Title date/);
   assert.match(sidebar, /label="Daily rollup"/);
   assert.match(sidebar, /label="Agenda"/);
   assert.match(sidebar, /onOpenAgenda/);
@@ -741,7 +752,18 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(settings, /<StaticValue T=\{T\}>Always on<\/StaticValue>/);
   assert.doesNotMatch(settings, /Todo layout/);
   assert.doesNotMatch(settings, /setTweak\('todoVariant'/);
+  assert.match(settings, /setTweak\('rollupDefaultRange', v\)/);
+  assert.match(settings, /setTweak\('rollupGroupBy', v\)/);
+  assert.match(settings, /setTweak\('rollupShowPreviews', v\)/);
+  assert.match(settings, /setTweak\('rollupShowTasks', v\)/);
+  assert.match(settings, /setTweak\('rollupShowReminders', v\)/);
+  assert.match(settings, /setTweak\('rollupCollapseOlder', v\)/);
   assert.match(settings, /setTweak\('weekStart', v\)/);
+  assert.match(appHelpers, /function rollupGroupNotes/);
+  assert.match(appHelpers, /function rollupAppendQuickTask/);
+  assert.match(appRuntime, /"rollupDefaultRange": "today"/);
+  assert.match(store, /'rollupDefaultRange'/);
+  assert.match(store, /'rollupShowReminders'/);
   assert.match(store, /function validateNoteId/);
   assert.match(store, /\^\[A-Za-z0-9_-\]\+\$/);
   assert.match(store, /path\.relative\(dir, file\)/);

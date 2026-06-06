@@ -375,6 +375,28 @@ function SectionNotes({ tweaks, setTweak, T, stats }) {
             onChange={v => setTweak('rollupFormat', v)}
             options={[{ value: 'long', label: 'Long' }, { value: 'short', label: 'Short' }]} />
         </Row>
+        <Row T={T} label="Today dashboard default range" sub="Initial range used when opening Daily rollup.">
+          <Segmented T={T} value={tweaks.rollupDefaultRange || 'today'}
+            onChange={v => setTweak('rollupDefaultRange', v)}
+            options={[{ value: 'today', label: 'Today' }, { value: 'yesterday', label: 'Yesterday' }, { value: 'week', label: 'This week' }, { value: 'month', label: 'This month' }]} />
+        </Row>
+        <Row T={T} label="Today dashboard grouping" sub="Date source used for day groups.">
+          <Segmented T={T} value={tweaks.rollupGroupBy || 'created'}
+            onChange={v => setTweak('rollupGroupBy', v)}
+            options={[{ value: 'created', label: 'Created' }, { value: 'modified', label: 'Modified' }, { value: 'title-date', label: 'Title date' }]} />
+        </Row>
+        <Row T={T} label="Show rollup previews" sub="Show a short note excerpt in Daily rollup.">
+          <Toggle T={T} checked={tweaks.rollupShowPreviews !== false} onChange={v => setTweak('rollupShowPreviews', v)} />
+        </Row>
+        <Row T={T} label="Show rollup tasks" sub="Show open checklist items in Daily rollup.">
+          <Toggle T={T} checked={tweaks.rollupShowTasks !== false} onChange={v => setTweak('rollupShowTasks', v)} />
+        </Row>
+        <Row T={T} label="Show rollup reminders" sub="Show overdue and due reminders in Daily rollup.">
+          <Toggle T={T} checked={tweaks.rollupShowReminders !== false} onChange={v => setTweak('rollupShowReminders', v)} />
+        </Row>
+        <Row T={T} label="Collapse older rollup days" sub="Keep older day groups compact by default.">
+          <Toggle T={T} checked={tweaks.rollupCollapseOlder !== false} onChange={v => setTweak('rollupCollapseOlder', v)} />
+        </Row>
         <Row T={T} label="Graph style" sub="How connection overlay is drawn." last>
           <Segmented T={T} value={tweaks.graphStyle} onChange={v => setTweak('graphStyle', v)}
             options={[{ value: 'force', label: 'Force' }, { value: 'timeline', label: 'Timeline' }, { value: 'cluster', label: 'Cluster' }]} />
