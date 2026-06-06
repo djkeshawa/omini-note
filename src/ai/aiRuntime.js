@@ -10,6 +10,15 @@
   const MAX_TOOL_CALLS = 5;
   const MAX_REPAIR_ROUNDS = 1;
   const TRACE_LIMIT = 40;
+  const CONTEXTUAL_AI_SECTION_KINDS = ['fact', 'suggestion', 'preview'];
+  const CONTEXTUAL_AI_PROVIDER_LABELS = {
+    ollama: 'Ollama',
+    openai: 'OpenAI',
+    openrouter: 'OpenRouter',
+    anthropic: 'Anthropic',
+    gemini: 'Gemini',
+    custom: 'Custom provider',
+  };
   const recentTraces = [];
 
   function nowIso() {
@@ -488,6 +497,100 @@
     };
   }
 
+  function cleanContextText(value = '', max = 4000) {
+    const clean = String(value || '').replace(/\s+/g, ' ').trim();
+    const capped = Number(max);
+    if (!Number.isFinite(capped) || capped <= 0) return clean;
+    return clean.length > capped ? `${clean.slice(0, capped).trimEnd()}...` : clean;
+  }
+
+  function contextualAiProviderMeta(input = {}) {
+    const source = input?.config && typeof input.config === 'object' ? input.config : input;
+    const provider = String(source?.provider || input?.provider || 'ollama').trim().toLowerCase() || 'ollama';
+    const model = cleanContextText(source?.chatModel || source?.model || input?.model || '', 160);
+    const providerLabel = CONTEXTUAL_AI_PROVIDER_LABELS[provider] || 'AI provider';
+    return {
+      provider,
+      providerLabel,
+      model,
+      providerModelLabel: model ? `${providerLabel} - ${model}` : providerLabel,
+      hosted: provider !== 'ollama',
+      piiReduction: source?.piiReduction !== false,
+    };
+  }
+
+  function contextualAiSourceFromNote(note = {}, options = {}) {
+    if (!note || typeof note !== 'object') return null;
+    const id = cleanContextText(note.id || note.noteId || '', 180);
+    if (!id && options.requireId !== false) return null;
+    const title = cleanContextText(note.title || note.noteTitle || 'Untitled', 180) || 'Untitled';
+    const snippetLimit = Math.max(0, Math.min(Number(options.snippetLimit) || 220, 1000));
+    return {
+      type: note.type || 'note',
+      id,
+      noteId: id,
+      title,
+      snippet: cleanContextText(note.snippet || note.__searchSnippet || notePreview(note, snippetLimit), snippetLimit),
+      modifiedAt: note.modifiedAt || note.date || '',
+    };
+  }
+
+  function contextualAiSourcesFromNotes(notes = [], options = {}) {
+    const limit = Math.max(1, Math.min(Number(options.limit) || 12, 40));
+    const seen = new Set();
+    const out = [];
+    (notes || []).forEach(note => {
+      const source = contextualAiSourceFromNote(note, options);
+      if (!source) return;
+      const key = source.id || source.title.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(source);
+    });
+    return out.slice(0, limit);
+  }
+
+  function normalizeContextualAiSection(section = {}) {
+    const kind = CONTEXTUAL_AI_SECTION_KINDS.includes(section.kind) ? section.kind : 'fact';
+    const title = cleanContextText(section.title || (kind === 'fact' ? 'Facts' : kind === 'suggestion' ? 'Suggestions' : 'Preview'), 120);
+    const content = cleanContextText(section.content || section.text || '', 8000);
+    const sourceIds = Array.isArray(section.sourceIds)
+      ? section.sourceIds.map(id => cleanContextText(id, 180)).filter(Boolean)
+      : [];
+    return { kind, title, content, sourceIds };
+  }
+
+  function normalizeContextualAiSections(sections = []) {
+    const list = Array.isArray(sections)
+      ? sections
+      : [
+        ...(Array.isArray(sections.facts) ? sections.facts.map(item => ({ ...item, kind: 'fact' })) : []),
+        ...(Array.isArray(sections.suggestions) ? sections.suggestions.map(item => ({ ...item, kind: 'suggestion' })) : []),
+        ...(Array.isArray(sections.previews) ? sections.previews.map(item => ({ ...item, kind: 'preview' })) : []),
+      ];
+    return list
+      .map(normalizeContextualAiSection)
+      .filter(section => section.title || section.content);
+  }
+
+  function makeContextualAiResult(input = {}) {
+    const meta = contextualAiProviderMeta(input.status || input.config || input);
+    return {
+      type: 'contextual-ai-result',
+      outputKind: cleanContextText(input.outputKind || input.kind || 'contextual', 80) || 'contextual',
+      title: cleanContextText(input.title || 'Contextual AI result', 180),
+      provider: meta.provider,
+      providerLabel: meta.providerLabel,
+      model: meta.model,
+      providerModelLabel: meta.providerModelLabel,
+      hosted: meta.hosted,
+      piiReduction: meta.piiReduction,
+      sources: contextualAiSourcesFromNotes(input.sources || [], { requireId: false }),
+      sections: normalizeContextualAiSections(input.sections || []),
+      createdAt: input.createdAt || nowIso(),
+    };
+  }
+
   function getRecentTraces() {
     return recentTraces.slice();
   }
@@ -517,6 +620,12 @@
     lowConfidenceMessage,
     makeReview,
     buildFastVaultSummary,
+    contextualAiProviderMeta,
+    contextualAiSourceFromNote,
+    contextualAiSourcesFromNotes,
+    normalizeContextualAiSection,
+    normalizeContextualAiSections,
+    makeContextualAiResult,
     getRecentTraces,
   };
 });

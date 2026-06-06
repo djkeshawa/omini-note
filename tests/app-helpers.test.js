@@ -36,6 +36,79 @@ test('App helpers expand templates, rank commands, and decorate search results',
   assert.deepEqual(decorated[1].__matchedFields, ['body']);
 });
 
+test('Contextual AI helpers preserve source, provider, and markdown markers', () => {
+  const notes = [
+    {
+      id: 'n1',
+      title: 'Project AI',
+      tags: ['work'],
+      body: 'status:: DOING\n# Project AI\nSee [[Research AI]]\n- [ ] Follow up #todo',
+      modifiedAt: '2026-06-06T10:00:00.000Z',
+    },
+    {
+      id: 'n1',
+      title: 'Project AI duplicate',
+      body: 'Duplicate should be ignored',
+    },
+  ];
+
+  const sources = appHelpers.contextualAiSourcesFromNotes(notes);
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].id, 'n1');
+  assert.equal(sources[0].title, 'Project AI');
+  assert.match(sources[0].snippet, /Project AI/);
+
+  const meta = appHelpers.contextualAiProviderMeta({
+    config: { provider: 'openai', chatModel: 'gpt-4o-mini', piiReduction: true },
+  });
+  assert.deepEqual({
+    provider: meta.provider,
+    model: meta.model,
+    providerModelLabel: meta.providerModelLabel,
+    hosted: meta.hosted,
+    piiReduction: meta.piiReduction,
+  }, {
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    providerModelLabel: 'OpenAI - gpt-4o-mini',
+    hosted: true,
+    piiReduction: true,
+  });
+
+  const result = appHelpers.contextualAiResult({
+    status: { config: { provider: 'ollama', chatModel: 'gemma3' } },
+    title: 'Today recap',
+    outputKind: 'today-recap',
+    sources,
+    sections: {
+      facts: [{ title: 'Changed today', content: 'Project AI changed.', sourceIds: ['n1'] }],
+      suggestions: [{ title: 'Tomorrow', content: 'Plan follow-up.', sourceIds: ['n1'] }],
+      previews: [{ title: 'Daily note append', content: '## AI recap' }],
+    },
+    createdAt: '2026-06-06T10:30:00.000Z',
+  });
+  assert.equal(result.type, 'contextual-ai-result');
+  assert.equal(result.providerModelLabel, 'Ollama - gemma3');
+  assert.equal(result.sources[0].title, 'Project AI');
+  assert.deepEqual(result.sections.map(section => section.kind), ['fact', 'suggestion', 'preview']);
+
+  const preserved = appHelpers.contextualAiCompareMarkdownMarkers(
+    'status:: DOING\nSee [[Research AI]]\n- [ ] Follow up #todo',
+    'status:: DOING\nSee [[Research AI]]\n- [ ] Follow up #todo\nMore detail'
+  );
+  assert.equal(preserved.ok, true);
+
+  const missing = appHelpers.contextualAiCompareMarkdownMarkers(
+    'status:: DOING\nSee [[Research AI]]\n- [ ] Follow up #todo',
+    'See research\nFollow up'
+  );
+  assert.equal(missing.ok, false);
+  assert.deepEqual(missing.missingWikiLinks, ['Research AI']);
+  assert.deepEqual(missing.missingTags, ['todo']);
+  assert.deepEqual(missing.missingProperties, ['status']);
+  assert.equal(missing.taskCountReduced, true);
+});
+
 test('Smart View helpers normalize definitions and query notes without mutation', () => {
   const notes = [
     {

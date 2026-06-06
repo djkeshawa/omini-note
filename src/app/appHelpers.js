@@ -13,6 +13,15 @@
   const SMART_VIEW_FORMAT = 'vispnote.smartView.v1';
   const SMART_VIEW_TYPES = ['notes', 'tasks', 'reminders', 'actions'];
   const SMART_VIEW_SORT_FIELDS = ['title', 'created', 'modified', 'reminder'];
+  const CONTEXTUAL_AI_SECTION_KINDS = ['fact', 'suggestion', 'preview'];
+  const CONTEXTUAL_AI_PROVIDER_LABELS = {
+    ollama: 'Ollama',
+    openai: 'OpenAI',
+    openrouter: 'OpenRouter',
+    anthropic: 'Anthropic',
+    gemini: 'Gemini',
+    custom: 'Custom provider',
+  };
 
   function todayIsoDate(now = new Date()) {
     return new Date(now).toISOString().slice(0, 10);
@@ -1356,6 +1365,144 @@
     return [`- Review notes from ${today} for decisions to keep.`];
   }
 
+  function contextualAiCleanText(value = '', max = 4000) {
+    const clean = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!Number.isFinite(Number(max)) || Number(max) <= 0) return clean;
+    return clean.length > Number(max) ? `${clean.slice(0, Number(max)).trimEnd()}...` : clean;
+  }
+
+  function contextualAiProviderMeta(input = {}) {
+    const source = input?.config && typeof input.config === 'object' ? input.config : input;
+    const provider = String(source?.provider || input?.provider || 'ollama').trim().toLowerCase() || 'ollama';
+    const model = contextualAiCleanText(source?.chatModel || source?.model || input?.model || '', 160);
+    const providerLabel = CONTEXTUAL_AI_PROVIDER_LABELS[provider] || 'AI provider';
+    return {
+      provider,
+      providerLabel,
+      model,
+      providerModelLabel: model ? `${providerLabel} - ${model}` : providerLabel,
+      hosted: provider !== 'ollama',
+      piiReduction: source?.piiReduction !== false,
+    };
+  }
+
+  function contextualAiSourceFromNote(note = {}, options = {}) {
+    if (!note || typeof note !== 'object') return null;
+    const id = contextualAiCleanText(note.id || note.noteId || '', 180);
+    if (!id && options.requireId !== false) return null;
+    const title = contextualAiCleanText(note.title || note.noteTitle || 'Untitled', 180) || 'Untitled';
+    const snippetLimit = Math.max(0, Math.min(Number(options.snippetLimit) || 220, 1000));
+    const snippet = contextualAiCleanText(
+      options.snippet || note.snippet || note.__searchSnippet || rollupNotePreview(note, 2) || note.body || '',
+      snippetLimit
+    );
+    return {
+      type: 'note',
+      id,
+      noteId: id,
+      title,
+      snippet,
+      modifiedAt: note.modifiedAt || note.date || '',
+    };
+  }
+
+  function contextualAiSourcesFromNotes(notes = [], options = {}) {
+    const limit = Math.max(1, Math.min(Number(options.limit) || 12, 40));
+    const seen = new Set();
+    const out = [];
+    (notes || []).forEach(note => {
+      const source = contextualAiSourceFromNote(note, options);
+      if (!source) return;
+      const key = source.id || source.title.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(source);
+    });
+    return out.slice(0, limit);
+  }
+
+  function contextualAiNormalizeSection(section = {}) {
+    const kind = CONTEXTUAL_AI_SECTION_KINDS.includes(section.kind) ? section.kind : 'fact';
+    const title = contextualAiCleanText(section.title || (kind === 'fact' ? 'Facts' : kind === 'suggestion' ? 'Suggestions' : 'Preview'), 120);
+    const content = contextualAiCleanText(section.content || section.text || '', 8000);
+    const sourceIds = Array.isArray(section.sourceIds)
+      ? section.sourceIds.map(id => contextualAiCleanText(id, 180)).filter(Boolean)
+      : [];
+    return { kind, title, content, sourceIds };
+  }
+
+  function contextualAiNormalizeSections(sections = []) {
+    const list = Array.isArray(sections)
+      ? sections
+      : [
+        ...(Array.isArray(sections.facts) ? sections.facts.map(item => ({ ...item, kind: 'fact' })) : []),
+        ...(Array.isArray(sections.suggestions) ? sections.suggestions.map(item => ({ ...item, kind: 'suggestion' })) : []),
+        ...(Array.isArray(sections.previews) ? sections.previews.map(item => ({ ...item, kind: 'preview' })) : []),
+      ];
+    return list
+      .map(contextualAiNormalizeSection)
+      .filter(section => section.title || section.content);
+  }
+
+  function contextualAiResult(input = {}) {
+    const meta = contextualAiProviderMeta(input.status || input.config || input);
+    return {
+      type: 'contextual-ai-result',
+      outputKind: contextualAiCleanText(input.outputKind || input.kind || 'contextual', 80) || 'contextual',
+      title: contextualAiCleanText(input.title || 'Contextual AI result', 180),
+      provider: meta.provider,
+      providerLabel: meta.providerLabel,
+      model: meta.model,
+      providerModelLabel: meta.providerModelLabel,
+      hosted: meta.hosted,
+      piiReduction: meta.piiReduction,
+      sources: Array.isArray(input.sources) ? contextualAiSourcesFromNotes(input.sources, { requireId: false }) : [],
+      sections: contextualAiNormalizeSections(input.sections || []),
+      createdAt: input.createdAt || new Date().toISOString(),
+    };
+  }
+
+  function contextualAiMarkdownMarkers(text = '') {
+    const body = String(text || '');
+    const collect = (re, map = value => value) => {
+      const seen = new Set();
+      const out = [];
+      let match;
+      while ((match = re.exec(body))) {
+        const value = contextualAiCleanText(map(match), 180);
+        if (!value || seen.has(value.toLowerCase())) continue;
+        seen.add(value.toLowerCase());
+        out.push(value);
+      }
+      return out;
+    };
+    return {
+      wikiLinks: collect(/\[\[([^\]]+)\]\]/g, match => match[1]),
+      tags: collect(/(^|[\s(])#([A-Za-z0-9_-]+)/g, match => match[2]),
+      properties: collect(/^\s*-?\s*([A-Za-z_][A-Za-z0-9_-]*)::\s.*$/gm, match => match[1]),
+      taskCount: (body.match(/^\s*[-*]\s+\[[ xX]\]\s+/gm) || []).length,
+    };
+  }
+
+  function contextualAiCompareMarkdownMarkers(before = '', after = '') {
+    const left = contextualAiMarkdownMarkers(before);
+    const right = contextualAiMarkdownMarkers(after);
+    const missing = (from, to) => from.filter(value => !to.some(item => item.toLowerCase() === value.toLowerCase()));
+    const missingWikiLinks = missing(left.wikiLinks, right.wikiLinks);
+    const missingTags = missing(left.tags, right.tags);
+    const missingProperties = missing(left.properties, right.properties);
+    const taskCountReduced = right.taskCount < left.taskCount;
+    return {
+      ok: !missingWikiLinks.length && !missingTags.length && !missingProperties.length && !taskCountReduced,
+      before: left,
+      after: right,
+      missingWikiLinks,
+      missingTags,
+      missingProperties,
+      taskCountReduced,
+    };
+  }
+
   function rollupBuildEndDayRecap({ notes = [], tasks = [], reminders = [], now = new Date(), limit = 5 } = {}) {
     const today = todayIsoDate(now);
     const todayNotes = (notes || [])
@@ -2219,6 +2366,14 @@
     rollupAppendReflection,
     rollupBuildEndDayRecap,
     rollupAppendEndDayRecap,
+    contextualAiProviderMeta,
+    contextualAiSourceFromNote,
+    contextualAiSourcesFromNotes,
+    contextualAiNormalizeSection,
+    contextualAiNormalizeSections,
+    contextualAiResult,
+    contextualAiMarkdownMarkers,
+    contextualAiCompareMarkdownMarkers,
     reminderDisplayDate,
     reminderStatusLabel,
     novelistNoteId,
