@@ -15,12 +15,35 @@ const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
 function buildTestThemeTokens(hue = 260) {
-  return Object.fromEntries(themes.THEME_TOKEN_KEYS.map((key, index) => [
-    key,
-    key.startsWith('shadow')
-      ? 'color-mix(in oklab, black 12%, transparent)'
-      : `oklch(0.${index % 6 + 4}0 0.04 ${hue})`,
-  ]));
+  return {
+    bgOuter: `oklch(0.97 0.02 ${hue})`,
+    bg: `oklch(0.96 0.02 ${hue})`,
+    bgSub: `oklch(0.92 0.02 ${hue})`,
+    bgElevated: `oklch(0.99 0.01 ${hue})`,
+    bgInput: `oklch(0.98 0.01 ${hue})`,
+    bgHover: `oklch(0.90 0.03 ${hue})`,
+    bgActive: `oklch(0.86 0.04 ${hue})`,
+    line: `oklch(0.72 0.04 ${hue})`,
+    lineSub: `oklch(0.82 0.03 ${hue})`,
+    lineStrong: `oklch(0.58 0.06 ${hue})`,
+    ink: `oklch(0.18 0.03 ${hue})`,
+    inkMed: `oklch(0.34 0.03 ${hue})`,
+    inkDim: `oklch(0.48 0.03 ${hue})`,
+    accent: `oklch(0.42 0.12 ${hue})`,
+    accentSoft: `oklch(0.88 0.05 ${hue})`,
+    danger: 'oklch(0.44 0.12 24)',
+    dangerSoft: 'oklch(0.91 0.05 24)',
+    success: 'oklch(0.40 0.10 145)',
+    successSoft: 'oklch(0.90 0.04 145)',
+    warn: 'oklch(0.44 0.10 84)',
+    warnSoft: 'oklch(0.90 0.04 84)',
+    selBg: `oklch(0.86 0.06 ${hue})`,
+    selLine: `oklch(0.55 0.10 ${hue})`,
+    focus: `oklch(0.40 0.14 ${hue})`,
+    overlay: 'color-mix(in oklab, black 32%, transparent)',
+    shadowSoft: 'color-mix(in oklab, black 12%, transparent)',
+    shadowElevated: 'color-mix(in oklab, black 20%, transparent)',
+  };
 }
 
 test('First-run seed creates one notes vault and one novelist vault', async () => {
@@ -163,11 +186,20 @@ test('Theme files parse JSON and simple YAML with strict schema validation', () 
     format: themes.THEME_FORMAT,
     id: 'community_lavender',
     name: 'Community Lavender',
+    author: 'Visp Community',
+    source: 'https://example.test/themes/lavender',
     tokens,
   }), 'community-lavender.json');
   assert.equal(jsonTheme.id, 'community_lavender');
   assert.equal(jsonTheme.name, 'Community Lavender');
   assert.deepEqual(Object.keys(jsonTheme.tokens).sort(), themes.THEME_TOKEN_KEYS.slice().sort());
+  assert.equal(jsonTheme.preview.id, 'community_lavender');
+  assert.equal(jsonTheme.preview.author, 'Visp Community');
+  assert.equal(jsonTheme.preview.source, 'https://example.test/themes/lavender');
+  assert.equal(jsonTheme.preview.coverage.complete, true);
+  assert.equal(jsonTheme.preview.coverage.required, themes.THEME_TOKEN_KEYS.length);
+  assert.equal(jsonTheme.preview.swatches.accent, tokens.accent);
+  assert.equal(jsonTheme.preview.contrast.passed, true);
 
   const yaml = [
     `format: ${themes.THEME_FORMAT}`,
@@ -195,6 +227,10 @@ test('Theme files parse JSON and simple YAML with strict schema validation', () 
     /Unsafe theme token value/
   );
   assert.throws(
+    () => themes.parseThemeText(JSON.stringify({ format: themes.THEME_FORMAT, id: 'low_contrast', name: 'Bad', tokens: { ...tokens, ink: tokens.bg } }), 'bad.json'),
+    /Theme contrast is too low/
+  );
+  assert.throws(
     () => themes.parseThemeText(JSON.stringify({ format: themes.THEME_FORMAT, id: 'wrong_ext', name: 'Bad', tokens }), 'bad.txt'),
     /Unsupported theme file type/
   );
@@ -213,6 +249,7 @@ test('Custom theme imports persist and reject unsafe files without mutation', as
 
     const installed = await store.importThemeFile(themePath);
     assert.equal(installed.theme.id, 'community_lavender');
+    assert.equal(installed.theme.preview.coverage.complete, true);
     assert.equal(installed.customThemes.length, 1);
 
     const prefs = await store.getPrefs();
@@ -228,6 +265,26 @@ test('Custom theme imports persist and reject unsafe files without mutation', as
       tokens,
     }), 'utf8');
     await assert.rejects(() => store.importThemeFile(reservedPath), /reserved/);
+    assert.deepEqual((await store.getPrefs()).customThemes, prefs.customThemes);
+
+    const duplicatePath = path.join(store.ROOT, 'duplicate-theme.json');
+    fs.writeFileSync(duplicatePath, JSON.stringify({
+      format: themes.THEME_FORMAT,
+      id: 'community_lavender',
+      name: 'Duplicate Lavender',
+      tokens,
+    }), 'utf8');
+    await assert.rejects(() => store.importThemeFile(duplicatePath), /already installed/);
+    assert.deepEqual((await store.getPrefs()).customThemes, prefs.customThemes);
+
+    const lowContrastPath = path.join(store.ROOT, 'low-contrast.json');
+    fs.writeFileSync(lowContrastPath, JSON.stringify({
+      format: themes.THEME_FORMAT,
+      id: 'low_contrast',
+      name: 'Low Contrast',
+      tokens: { ...tokens, ink: tokens.bg },
+    }), 'utf8');
+    await assert.rejects(() => store.importThemeFile(lowContrastPath), /Theme contrast is too low/);
     assert.deepEqual((await store.getPrefs()).customThemes, prefs.customThemes);
 
     const unsupportedPath = path.join(store.ROOT, 'theme.txt');

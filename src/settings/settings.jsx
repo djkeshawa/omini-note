@@ -250,6 +250,7 @@ const {
 
 function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThemeFile }) {
   const [themeImporting, setThemeImporting] = useStateS(false);
+  const [themeImportPreview, setThemeImportPreview] = useStateS(null);
   const options = themeOptions.length ? themeOptions : [
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
@@ -259,7 +260,8 @@ function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThe
     if (!onImportThemeFile || themeImporting) return;
     setThemeImporting(true);
     try {
-      await onImportThemeFile();
+      const result = await onImportThemeFile();
+      if (result?.theme?.preview) setThemeImportPreview(result.theme.preview);
     } finally {
       setThemeImporting(false);
     }
@@ -285,19 +287,51 @@ function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThe
           </select>
         </Row>
         <Row T={T} label="Community themes" sub="Install a shared JSON or YAML theme file.">
-          <button onClick={installTheme} disabled={!onImportThemeFile || themeImporting} style={{
-            border: `1px solid ${T.lineSub}`,
-            background: T.bgSub,
-            color: themeImporting ? T.inkDim : T.ink,
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontFamily: 'var(--mn-ui)',
-            fontSize: 12.5,
-            cursor: !onImportThemeFile || themeImporting ? 'default' : 'pointer',
-            minWidth: 112,
-          }}>
-            {themeImporting ? 'Installing...' : 'Install theme'}
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+            <button onClick={installTheme} disabled={!onImportThemeFile || themeImporting} style={{
+              border: `1px solid ${T.lineSub}`,
+              background: T.bgSub,
+              color: themeImporting ? T.inkDim : T.ink,
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 12.5,
+              cursor: !onImportThemeFile || themeImporting ? 'default' : 'pointer',
+              minWidth: 112,
+            }}>
+              {themeImporting ? 'Installing...' : 'Install theme'}
+            </button>
+            {themeImportPreview && (
+              <div style={{
+                border: `1px solid ${T.lineSub}`,
+                background: T.bgSub,
+                borderRadius: 7,
+                padding: 8,
+                minWidth: 220,
+                maxWidth: 320,
+              }}>
+                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 650, color: T.ink }}>
+                  {themeImportPreview.name || themeImportPreview.id}
+                </div>
+                <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, marginTop: 3 }}>
+                  {themeImportPreview.author ? `by ${themeImportPreview.author} - ` : ''}
+                  {themeImportPreview.coverage?.present || 0}/{themeImportPreview.coverage?.required || 0} tokens
+                </div>
+                <div aria-label="Theme preview swatches" style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
+                  {Object.entries(themeImportPreview.swatches || {}).slice(0, 8).map(([name, value]) => (
+                    <span key={name} title={name} style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 4,
+                      border: `1px solid ${T.line}`,
+                      background: value,
+                      display: 'inline-block',
+                    }} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </Row>
         <Row T={T} label="Interface density" sub="Tighter rows fit more on screen.">
           <Segmented T={T} value={tweaks.density} onChange={v => setTweak('density', v)}

@@ -1050,6 +1050,7 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const themeLib = fs.readFileSync(path.join(__dirname, '../lib/themes.js'), 'utf8');
   const sandbox = { window: {} };
   vm.runInNewContext(themeSource, sandbox);
   const hueOf = (value) => {
@@ -1097,6 +1098,9 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
   assert.match(settings, /<select value=\{tweaks\.theme \|\| 'light'\}/);
   assert.doesNotMatch(settings, /<Segmented T=\{T\} value=\{tweaks\.theme\}/);
   assert.match(settings, /Install a shared JSON or YAML theme file\./);
+  assert.match(settings, /const \[themeImportPreview, setThemeImportPreview\] = useStateS\(null\)/);
+  assert.match(settings, /setThemeImportPreview\(result\.theme\.preview\)/);
+  assert.match(settings, /Theme preview swatches/);
   assert.match(settings, /onImportThemeFile/);
   assert.match(settings, /value: 'light', label: 'Light'/);
   assert.match(settings, /value: 'dark', label: 'Dark'/);
@@ -1110,6 +1114,11 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
   assert.match(main, /async function importThemeFileFromIpc\(\)/);
   assert.match(main, /filters: \[\{ name: 'VispNote Theme', extensions: \['json', 'yaml', 'yml'\] \}\]/);
   assert.match(main, /ipcMain\.handle\('mn:importThemeFile', wrap\(importThemeFileFromIpc\)\)/);
+  assert.match(themeLib, /function themeTokenCoverage/);
+  assert.match(themeLib, /function themeContrastReport/);
+  assert.match(themeLib, /function themePreview/);
+  assert.match(themeLib, /Theme contrast is too low/);
+  assert.match(themeLib, /already installed/);
   assert.doesNotMatch(settings, /ipcRenderer|require\('electron'\)|package\.json/);
 });
 
