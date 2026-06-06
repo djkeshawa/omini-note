@@ -398,6 +398,30 @@
     return (notes || []).find(note => String(note?.title || '').trim() === key) || null;
   }
 
+  function rollupTaskReasonLabel(item = {}, note = null, now = new Date()) {
+    const today = todayIsoDate(now);
+    const noteTitle = String(note?.title || item.noteTitle || '').trim();
+    const noteDate = rollupDateKey(note?.date || item.noteDate);
+    const noteModified = rollupDateKey(note?.modifiedAt);
+    if (noteTitle === today && !item.remindAt) return 'unscheduled daily task';
+    if (noteTitle === today) return "from today's daily note";
+    if (noteDate === today) return 'captured today';
+    if (noteModified === today) return 'modified today';
+    if (!note) return 'source note';
+    return 'from note';
+  }
+
+  function rollupReminderReasonLabel(item = {}) {
+    if (item.rollupStatus === 'overdue') return 'overdue';
+    if (item.rollupStatus === 'due-today') return 'due today';
+    if (item.rollupStatus === 'upcoming') return 'upcoming';
+    const key = rollupReminderDateKey(item);
+    const today = todayIsoDate();
+    if (key && key < today) return 'overdue';
+    if (key === today) return 'due today';
+    return 'upcoming';
+  }
+
   function rollupQuickTaskLine(text = '') {
     const clean = String(text || '').replace(/\s+/g, ' ').trim();
     return clean ? `- [ ] ${clean}` : '';
@@ -1222,6 +1246,8 @@
     rollupFilterTaskItems,
     rollupFilterReminderItems,
     rollupFindDailyNote,
+    rollupTaskReasonLabel,
+    rollupReminderReasonLabel,
     rollupAppendQuickTask,
     reminderDisplayDate,
     reminderStatusLabel,

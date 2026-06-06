@@ -3400,7 +3400,7 @@ function MnApp() {
     ? `#${selectedTag}`
     : selectedWorkflow
     ? selectedWorkflow
-    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Today dashboard' : 'All notes');
+    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Today' : 'All notes');
   const noteListSubtitle = query.trim()
     ? `${filteredNotes.length} match${filteredNotes.length === 1 ? '' : 'es'}`
     : view === 'workflow'
@@ -3763,6 +3763,7 @@ function MnApp() {
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               onOpenOrCreateDailyNote={createDailyNote}
               onAddQuickTask={addQuickTodayTask}
+              onPlanItem={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               rollupFormat={tweaks.rollupFormat || 'long'}
               rollupDefaultRange={tweaks.rollupDefaultRange || 'today'}
               rollupGroupBy={tweaks.rollupGroupBy || 'created'}

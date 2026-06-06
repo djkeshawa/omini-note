@@ -53,6 +53,7 @@ qa-docs/
 # Local review artifacts
 CODE_REVIEW.md
 docs/web-app-architecture.md
+docs/product-roadmap.md
 results.tsv
 programe.md
 .visp/

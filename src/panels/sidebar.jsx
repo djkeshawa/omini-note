@@ -545,7 +545,7 @@ function MnSidebar({
           <Row icon={iconInbox} label="All notes" count={notes.length}
                active={!selectedTag && !selectedWorkflow && !todayActive && !agendaActive && !graphActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
                onClick={() => onSelectTag(null)} />
-          <Row icon={iconToday} label="Daily rollup" count={rollupCount}
+          <Row icon={iconToday} label="Today" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
           <Row icon={iconAgenda} label="Agenda" count={agendaCount}
                active={agendaActive || calendarActive}

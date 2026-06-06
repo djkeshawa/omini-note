@@ -4,7 +4,7 @@ const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: u
 
 function MnTodayPanel({
   notes = [], tags = [], tasks = [], reminders = [], todayNote = null,
-  onOpen, onOpenOrCreateDailyNote, onAddQuickTask, T, theme, rollupFormat = 'long',
+  onOpen, onOpenOrCreateDailyNote, onAddQuickTask, onPlanItem, T, theme, rollupFormat = 'long',
   rollupDefaultRange = 'today', rollupGroupBy = 'created', rollupShowPreviews = true,
   rollupShowTasks = true, rollupShowReminders = true, rollupCollapseOlder = true,
   weekStart = 'monday',
@@ -69,6 +69,7 @@ function MnTodayPanel({
   const rangeNoteCount = noteGroups.reduce((sum, group) => sum + group.notes.length, 0);
   const todayKey = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
   const dailyNote = todayNote || (notes || []).find(note => String(note.title || '').trim() === todayKey) || null;
+  const noteById = useMemoP(() => new Map((notes || []).map(note => [note.id, note])), [notes]);
 
   const rangeOptions = [
     { value: 'today', label: 'Today' },
@@ -148,7 +149,7 @@ function MnTodayPanel({
         <div style={{
           fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
           letterSpacing: '0.06em', marginBottom: 18,
-        }}>daily note, notes, tasks, and reminders</div>
+        }}>daily note, notes, open loops, and reminders</div>
 
         <div style={{
           border: `1px solid ${T.lineSub}`,
@@ -216,7 +217,7 @@ function MnTodayPanel({
             fontFamily: 'var(--mn-ui)',
             fontSize: 12,
             fontWeight: 650,
-          }} aria-label="Group Daily rollup by date source">
+          }} aria-label="Group Today by date source">
             {groupOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </div>
@@ -357,7 +358,7 @@ function MnTodayPanel({
         {rollupShowTasks && (
           <div style={sectionShell}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 9 }}>
-              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 720, color: T.ink }}>Open tasks</div>
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 720, color: T.ink }}>Open loops</div>
               <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{visibleTasks.length}</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -365,17 +366,31 @@ function MnTodayPanel({
                 <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '6px 0' }}>No open tasks</div>
               )}
               {visibleTasks.map(item => (
-                <button key={item.key || `${item.noteId}:${item.line || item.blockId || taskLabel(item)}`} type="button" onClick={() => onOpen(item.noteId)} style={{
+                <div key={item.key || `${item.noteId}:${item.line || item.blockId || taskLabel(item)}`} style={{
                   border: `1px solid ${T.lineSub}`,
                   borderRadius: 7,
                   background: T.bgSub,
                   padding: '9px 11px',
-                  cursor: 'pointer',
-                  textAlign: 'left',
                 }}>
-                  <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 650, color: T.ink }}>{taskLabel(item)}</div>
-                  <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{item.noteTitle || 'Untitled'}</div>
-                </button>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button type="button" onClick={() => onOpen(item.noteId)} style={{
+                      flex: 1,
+                      minWidth: 0,
+                      border: 0,
+                      background: 'transparent',
+                      padding: 0,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}>
+                      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 650, color: T.ink }}>{taskLabel(item)}</div>
+                      <div style={{ marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'var(--mn-mono)', fontSize: 10.5 }}>
+                        <span style={{ color: T.accent }}>{helpers.rollupTaskReasonLabel?.(item, noteById.get(item.noteId)) || 'from note'}</span>
+                        <span style={{ color: T.inkDim }}>{item.noteTitle || 'Untitled'}</span>
+                      </div>
+                    </button>
+                    <button type="button" onClick={() => onPlanItem?.(item)} aria-label={`Plan ${taskLabel(item)}`} style={panelButton(false)}>Plan</button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -394,22 +409,33 @@ function MnTodayPanel({
               {visibleReminders.map(item => {
                 const statusColor = item.rollupStatus === 'overdue' ? T.danger : item.rollupStatus === 'due-today' ? T.warn : T.inkDim;
                 return (
-                  <button key={item.key || `${item.noteId}:${reminderWhen(item)}:${reminderLabel(item)}`} type="button" onClick={() => onOpen(item.noteId)} style={{
+                  <div key={item.key || `${item.noteId}:${reminderWhen(item)}:${reminderLabel(item)}`} style={{
                     border: `1px solid ${T.lineSub}`,
                     borderLeft: `3px solid ${statusColor}`,
                     borderRadius: 7,
                     background: T.bgSub,
                     padding: '9px 11px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
                   }}>
-                    <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 650, color: T.ink }}>{reminderLabel(item)}</div>
-                    <div style={{ marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'var(--mn-mono)', fontSize: 10.5 }}>
-                      <span style={{ color: statusColor }}>{item.rollupStatus === 'overdue' ? 'Overdue' : item.rollupStatus === 'due-today' ? 'Today' : 'Upcoming'}</span>
-                      <span style={{ color: T.inkDim }}>{reminderWhen(item)}</span>
-                      <span style={{ color: T.inkDim }}>{item.noteTitle || 'Untitled'}</span>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <button type="button" onClick={() => onOpen(item.noteId)} style={{
+                        flex: 1,
+                        minWidth: 0,
+                        border: 0,
+                        background: 'transparent',
+                        padding: 0,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}>
+                        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 650, color: T.ink }}>{reminderLabel(item)}</div>
+                        <div style={{ marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'var(--mn-mono)', fontSize: 10.5 }}>
+                          <span style={{ color: statusColor }}>{helpers.rollupReminderReasonLabel?.(item) || (item.rollupStatus === 'overdue' ? 'overdue' : item.rollupStatus === 'due-today' ? 'due today' : 'upcoming')}</span>
+                          <span style={{ color: T.inkDim }}>{reminderWhen(item)}</span>
+                          <span style={{ color: T.inkDim }}>{item.noteTitle || 'Untitled'}</span>
+                        </div>
+                      </button>
+                      <button type="button" onClick={() => onPlanItem?.(item)} aria-label={`Plan ${reminderLabel(item)}`} style={panelButton(false)}>Plan</button>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

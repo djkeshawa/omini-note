@@ -298,6 +298,13 @@ test('App helpers collect reminders and workflow notes without renderer state', 
   const todayReminders = appHelpers.rollupFilterReminderItems(rollupReminders, rollupNotes, { range: 'today', now });
   assert.deepEqual(todayReminders.map(item => item.text), ['Past', 'Today']);
   assert.deepEqual(todayReminders.map(item => item.rollupStatus), ['overdue', 'due-today']);
+  assert.equal(appHelpers.rollupTaskReasonLabel(rollupTasks[0], rollupNotes[0], now), 'captured today');
+  assert.equal(appHelpers.rollupTaskReasonLabel({ ...rollupTasks[0], remindAt: null }, { ...rollupNotes[0], title: '2026-06-06' }, now), 'unscheduled daily task');
+  assert.equal(appHelpers.rollupTaskReasonLabel(rollupTasks[3], rollupNotes[1], now), 'modified today');
+  assert.equal(appHelpers.rollupTaskReasonLabel({ noteTitle: 'Missing' }, null, now), 'source note');
+  assert.equal(appHelpers.rollupReminderReasonLabel(todayReminders[0]), 'overdue');
+  assert.equal(appHelpers.rollupReminderReasonLabel(todayReminders[1]), 'due today');
+  assert.equal(appHelpers.rollupReminderReasonLabel({ rollupStatus: 'upcoming' }), 'upcoming');
 
   assert.match(
     appHelpers.rollupAppendQuickTask('# 2026-06-06\n\n## Tasks\n- [ ] \n\n## Notes\n- note\n', 'Buy milk'),
