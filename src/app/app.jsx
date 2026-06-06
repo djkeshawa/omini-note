@@ -541,6 +541,7 @@ function MnApp() {
   // different vaults cannot overwrite each other's pending saves.
   const [dirtyNotes, setDirtyNotes] = useStateA(() => new Map());
   const dirtyNotesRef = useRefA(dirtyNotes);
+  const noteDiskStampRef = useRefA(new Map());
   const dirtyRevisionRef = useRefA(0);
   const dirtyMissingWarnedRef = useRefA(new Set());
   const vaultActivationSeq = useRefA(0);
@@ -733,6 +734,21 @@ function MnApp() {
   }, [activeVaultId, notes, vaults]);
 
   useEffectA(() => {
+    const stamps = new Map();
+    const remember = (vaultId, noteList) => {
+      if (!vaultId || !Array.isArray(noteList)) return;
+      noteList.forEach(note => {
+        if (note?.id && note.diskModifiedAt) {
+          stamps.set(mnDirtyNoteKey(vaultId, note.id), note.diskModifiedAt);
+        }
+      });
+    };
+    vaults.forEach(vault => remember(vault.id, vault.notes));
+    remember(activeVaultId, notes);
+    noteDiskStampRef.current = stamps;
+  }, [activeVaultId, notes, vaults]);
+
+  useEffectA(() => {
     dirtyNotesRef.current = dirtyNotes;
   }, [dirtyNotes]);
 
@@ -755,12 +771,15 @@ function MnApp() {
         continue;
       }
       dirtyMissingWarnedRef.current.delete(dirtyKey);
+      const saveOptions = { expectedModifiedAt: n.diskModifiedAt || null };
+      saveOptions.expectedModifiedAt = noteDiskStampRef.current.get(dirtyKey) || saveOptions.expectedModifiedAt;
+      const expectedModifiedAt = saveOptions.expectedModifiedAt;
       try {
         const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
           window.mn,
           vaultId,
           noteForDisk(n, mnBlocksToMd),
-          { expectedModifiedAt: n.diskModifiedAt || null }
+          saveOptions
         );
         if (res && res.ok === false) {
           if (res.code === 'NOTE_CONFLICT') {
@@ -769,7 +788,7 @@ function MnApp() {
               noteId: id,
               title: n.title || 'Untitled',
               currentModifiedAt: res.currentModifiedAt || null,
-              expectedModifiedAt: res.expectedModifiedAt || n.diskModifiedAt || null,
+              expectedModifiedAt: res.expectedModifiedAt || expectedModifiedAt,
             });
             continue;
           }
@@ -778,6 +797,7 @@ function MnApp() {
         const saved = res?.value;
         if (saved?.diskModifiedAt || saved?.modifiedAt) {
           const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
+          noteDiskStampRef.current.set(dirtyKey, diskModifiedAt);
           const updateDiskStamp = notesList => MN_NOTES_VAULTS_STATE.updateNoteDiskStamp(notesList, id, diskModifiedAt);
           if (vaultId === activeVaultId) setNotes(updateDiskStamp);
           setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
@@ -1596,6 +1616,14 @@ function MnApp() {
       : notesWithBody.find(note => String(note.title || '').trim() === (MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10))) || null
   ), [notesWithBody]);
 
+  const todayAgendaItems = useMemoA(() => {
+    const today = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
+    return (calendarTaskItems || [])
+      .filter(item => item?.remindAt?.date === today)
+      .sort((a, b) => String(a.remindAt?.time || '').localeCompare(String(b.remindAt?.time || '')) || String(a.label || a.text || '').localeCompare(String(b.label || b.text || '')))
+      .slice(0, 5);
+  }, [calendarTaskItems]);
+
   const nextStoryOrder = useCallbackA((kind, parentId = null) => {
     const noteById = new Map(notesWithBody.map(note => [note.id, note]));
     const values = (items, step, base) => {
@@ -1777,6 +1805,48 @@ function MnApp() {
     }, { open: false });
     return true;
   }, [notesWithBody, updateNoteBody, createNote, uniqueNoteTitle]);
+
+  const appendToTodayDailyNote = useCallbackA((appendBody, options = {}) => {
+    if (typeof appendBody !== 'function') return false;
+    const date = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
+    const existing = notesWithBody.find(note => String(note.title || '').trim() === date);
+    if (existing) {
+      updateNoteBody(existing.id, appendBody);
+      setSelectedId(existing.id);
+      navigateView('notes');
+      return true;
+    }
+    const template = MN_APP_HELPERS.templateById ? MN_APP_HELPERS.templateById('daily') : (MN_NOTE_TEMPLATES.find(item => item.id === 'daily') || MN_NOTE_TEMPLATES[0]);
+    const expanded = MN_APP_HELPERS.expandTemplate
+      ? MN_APP_HELPERS.expandTemplate(template)
+      : { noteTitle: date, body: `# ${date}\n\n## Tasks\n`, tags: ['daily'] };
+    createNote({
+      title: uniqueNoteTitle(expanded.noteTitle || date),
+      body: appendBody(expanded.body || ''),
+      tags: expanded.tags || ['daily'],
+    }, { open: true, view: options.view || 'notes' });
+    return true;
+  }, [notesWithBody, updateNoteBody, createNote, uniqueNoteTitle, navigateView]);
+
+  const addTodayReflection = useCallbackA(() => (
+    appendToTodayDailyNote(body => (
+      MN_APP_HELPERS.rollupAppendReflection
+        ? MN_APP_HELPERS.rollupAppendReflection(body)
+        : `${String(body || '').replace(/\s+$/g, '')}\n\n## Reflection\n- What stood out:\n`
+    ))
+  ), [appendToTodayDailyNote]);
+
+  const addTodayEndDayRecap = useCallbackA(() => (
+    appendToTodayDailyNote(body => (
+      MN_APP_HELPERS.rollupAppendEndDayRecap
+        ? MN_APP_HELPERS.rollupAppendEndDayRecap(body, {
+          notes: notesWithBody,
+          tasks: calendarTaskItems,
+          reminders: reminderCenterItems,
+        })
+        : `${String(body || '').replace(/\s+$/g, '')}\n\n## End-day recap\n### Highlights\n- \n### Decisions\n- \n### Open loops\n- \n### Tomorrow candidates\n- \n`
+    ))
+  ), [appendToTodayDailyNote, notesWithBody, calendarTaskItems, reminderCenterItems]);
 
   const updateNoteBodies = useCallbackA((updates = []) => {
     const existingIds = new Set(notesWithBody.map(note => note.id));
@@ -3768,9 +3838,13 @@ function MnApp() {
               tasks={calendarTaskItems}
               reminders={reminderCenterItems}
               todayNote={todayDailyNote}
+              agendaItems={todayAgendaItems}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               onOpenOrCreateDailyNote={createDailyNote}
               onAddQuickTask={addQuickTodayTask}
+              onAddReflection={addTodayReflection}
+              onEndDayRecap={addTodayEndDayRecap}
+              onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onPlanItem={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               rollupFormat={tweaks.rollupFormat || 'long'}
               rollupDefaultRange={tweaks.rollupDefaultRange || 'today'}

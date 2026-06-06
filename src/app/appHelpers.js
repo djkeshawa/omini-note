@@ -453,6 +453,94 @@
     return `${trimmed}${trimmed ? '\n' : ''}${taskLine}\n`;
   }
 
+  function rollupAppendMarkdownSection(body = '', section = '') {
+    const cleanSection = String(section || '').replace(/\s+$/g, '');
+    if (!cleanSection) return String(body || '');
+    const trimmed = String(body || '').replace(/\s+$/g, '');
+    return `${trimmed}${trimmed ? '\n\n' : ''}${cleanSection}\n`;
+  }
+
+  function rollupAppendReflection(body = '', options = {}) {
+    const date = todayIsoDate(options.now || new Date());
+    return rollupAppendMarkdownSection(body, [
+      `## Reflection - ${date}`,
+      '',
+      '- What stood out:',
+      '- What I learned:',
+      '- What to improve:',
+    ].join('\n'));
+  }
+
+  function rollupItemLabel(item = {}) {
+    return String(item.label || item.text || item.noteTitle || 'Untitled').replace(/\s+/g, ' ').trim();
+  }
+
+  function rollupSourceLine(item = {}) {
+    const title = String(item.noteTitle || 'Untitled').replace(/\s+/g, ' ').trim();
+    const label = rollupItemLabel(item);
+    return label ? `- [ ] ${label} (${title})` : `- [ ] ${title}`;
+  }
+
+  function rollupNoteLine(note = {}) {
+    const title = String(note.title || 'Untitled').replace(/\s+/g, ' ').trim();
+    const preview = rollupNotePreview(note, 1);
+    return preview ? `- [[${title}]]: ${preview}` : `- [[${title}]]`;
+  }
+
+  function rollupDecisionLines(notes = [], now = new Date(), limit = 5) {
+    const today = todayIsoDate(now);
+    const lines = [];
+    (notes || []).forEach(note => {
+      const noteTitle = String(note?.title || 'Untitled').replace(/\s+/g, ' ').trim();
+      String(note?.body || '').split('\n').forEach(line => {
+        const clean = rollupPreviewLine(line);
+        if (!clean || !/\bdecision\b/i.test(clean)) return;
+        lines.push(`- [[${noteTitle}]]: ${clean}`);
+      });
+    });
+    if (lines.length) return lines.slice(0, limit);
+    return [`- Review notes from ${today} for decisions to keep.`];
+  }
+
+  function rollupBuildEndDayRecap({ notes = [], tasks = [], reminders = [], now = new Date(), limit = 5 } = {}) {
+    const today = todayIsoDate(now);
+    const todayNotes = (notes || [])
+      .filter(note => {
+        const titleDate = rollupTitleDateKey(note);
+        return titleDate === today || rollupDateKey(note?.date) === today || rollupDateKey(note?.modifiedAt) === today;
+      })
+      .slice(0, limit);
+    const openTasks = (tasks || [])
+      .filter(item => item && !item.checked && !item.isReminderOnly && item.type !== 'reminder')
+      .slice(0, limit);
+    const visibleReminders = rollupFilterReminderItems(reminders, notes, { range: 'today', now }).slice(0, limit);
+    const tomorrowCandidates = [
+      ...openTasks.slice(0, Math.ceil(limit / 2)),
+      ...visibleReminders.filter(item => item.rollupStatus === 'upcoming').slice(0, Math.floor(limit / 2)),
+    ].slice(0, limit);
+    const list = (items, mapItem, empty) => (items.length ? items.map(mapItem) : [`- ${empty}`]);
+
+    return [
+      `## End-day recap - ${today}`,
+      '',
+      '### Highlights',
+      ...list(todayNotes, rollupNoteLine, 'No notes captured today.'),
+      '',
+      '### Decisions',
+      ...rollupDecisionLines(todayNotes.length ? todayNotes : notes, now, limit),
+      '',
+      '### Open loops',
+      ...list(openTasks, rollupSourceLine, 'No open loops captured.'),
+      '',
+      '### Tomorrow candidates',
+      ...list(tomorrowCandidates, rollupSourceLine, 'No tomorrow candidates yet.'),
+    ].join('\n');
+  }
+
+  function rollupAppendEndDayRecap(body = '', context = {}) {
+    return rollupAppendMarkdownSection(body, rollupBuildEndDayRecap(context));
+  }
+
   function reminderDisplayDate(item) {
     const at = item?.remindAt?.at;
     if (!at) return '';
@@ -1249,6 +1337,9 @@
     rollupTaskReasonLabel,
     rollupReminderReasonLabel,
     rollupAppendQuickTask,
+    rollupAppendReflection,
+    rollupBuildEndDayRecap,
+    rollupAppendEndDayRecap,
     reminderDisplayDate,
     reminderStatusLabel,
     novelistNoteId,

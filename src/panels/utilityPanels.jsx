@@ -3,8 +3,8 @@
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
 
 function MnTodayPanel({
-  notes = [], tags = [], tasks = [], reminders = [], todayNote = null,
-  onOpen, onOpenOrCreateDailyNote, onAddQuickTask, onPlanItem, T, theme, rollupFormat = 'long',
+  notes = [], tags = [], tasks = [], reminders = [], todayNote = null, agendaItems = [],
+  onOpen, onOpenOrCreateDailyNote, onAddQuickTask, onAddReflection, onEndDayRecap, onOpenAgenda, onPlanItem, T, theme, rollupFormat = 'long',
   rollupDefaultRange = 'today', rollupGroupBy = 'created', rollupShowPreviews = true,
   rollupShowTasks = true, rollupShowReminders = true, rollupCollapseOlder = true,
   weekStart = 'monday',
@@ -70,6 +70,12 @@ function MnTodayPanel({
   const todayKey = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
   const dailyNote = todayNote || (notes || []).find(note => String(note.title || '').trim() === todayKey) || null;
   const noteById = useMemoP(() => new Map((notes || []).map(note => [note.id, note])), [notes]);
+  const visibleAgendaItems = useMemoP(() => (agendaItems || []).slice(0, 5), [agendaItems]);
+  const reminderGroups = useMemoP(() => ([
+    { key: 'overdue', label: 'Overdue', items: visibleReminders.filter(item => item.rollupStatus === 'overdue') },
+    { key: 'due-today', label: 'Due today', items: visibleReminders.filter(item => item.rollupStatus === 'due-today') },
+    { key: 'upcoming', label: 'Upcoming', items: visibleReminders.filter(item => item.rollupStatus === 'upcoming') },
+  ]), [visibleReminders]);
 
   const rangeOptions = [
     { value: 'today', label: 'Today' },
@@ -134,6 +140,8 @@ function MnTodayPanel({
 
   const taskLabel = item => item.label || item.text || 'Untitled task';
   const reminderLabel = item => item.text || item.label || 'Reminder';
+  const agendaLabel = item => item.label || item.text || 'Agenda item';
+  const agendaWhen = item => item.remindAt?.time || item.remindAt?.date || '';
   const reminderWhen = item => [item.remindAt?.date || item.rollupDateKey, item.remindAt?.time || ''].filter(Boolean).join(' ');
 
   return (
@@ -175,6 +183,12 @@ function MnTodayPanel({
             <button type="button" onClick={onOpenOrCreateDailyNote} style={panelButton(true)}>
               {dailyNote ? 'Open daily note' : 'Create daily note'}
             </button>
+            <button type="button" onClick={onAddReflection} style={panelButton(false)}>
+              Add reflection
+            </button>
+            <button type="button" onClick={onEndDayRecap} style={panelButton(false)}>
+              End-day recap
+            </button>
           </div>
           <form onSubmit={runQuickTask} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <input
@@ -199,6 +213,45 @@ function MnTodayPanel({
               cursor: quickTask.trim() ? 'pointer' : 'default',
             }}>Add task</button>
           </form>
+        </div>
+
+        <div style={{
+          border: `1px solid ${T.lineSub}`,
+          borderRadius: 8,
+          background: T.bgSub,
+          padding: 12,
+          marginBottom: 16,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720, color: T.ink }}>Agenda today</div>
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{visibleAgendaItems.length}</div>
+            <div style={{ flex: 1 }} />
+            <button type="button" onClick={onOpenAgenda || onPlanItem} style={panelButton(false)}>Open Agenda</button>
+          </div>
+          {visibleAgendaItems.length === 0 && (
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '3px 0' }}>No agenda items today</div>
+          )}
+          {visibleAgendaItems.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {visibleAgendaItems.map(item => (
+                <button key={item.key || `${item.noteId}:${agendaWhen(item)}:${agendaLabel(item)}`} type="button" onClick={() => onPlanItem?.(item)} style={{
+                  border: `1px solid ${T.lineSub}`,
+                  borderRadius: 7,
+                  background: T.bg,
+                  color: T.ink,
+                  padding: '8px 10px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', minWidth: 0 }}>
+                    <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.accent, minWidth: 44 }}>{agendaWhen(item) || 'Today'}</span>
+                    <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 650, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agendaLabel(item)}</span>
+                  </div>
+                  <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{item.noteTitle || 'Untitled'}</div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
@@ -406,38 +459,50 @@ function MnTodayPanel({
               {visibleReminders.length === 0 && (
                 <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '6px 0' }}>No reminders due in this range</div>
               )}
-              {visibleReminders.map(item => {
-                const statusColor = item.rollupStatus === 'overdue' ? T.danger : item.rollupStatus === 'due-today' ? T.warn : T.inkDim;
-                return (
-                  <div key={item.key || `${item.noteId}:${reminderWhen(item)}:${reminderLabel(item)}`} style={{
-                    border: `1px solid ${T.lineSub}`,
-                    borderLeft: `3px solid ${statusColor}`,
-                    borderRadius: 7,
-                    background: T.bgSub,
-                    padding: '9px 11px',
-                  }}>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <button type="button" onClick={() => onOpen(item.noteId)} style={{
-                        flex: 1,
-                        minWidth: 0,
-                        border: 0,
-                        background: 'transparent',
-                        padding: 0,
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                      }}>
-                        <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 650, color: T.ink }}>{reminderLabel(item)}</div>
-                        <div style={{ marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'var(--mn-mono)', fontSize: 10.5 }}>
-                          <span style={{ color: statusColor }}>{helpers.rollupReminderReasonLabel?.(item) || (item.rollupStatus === 'overdue' ? 'overdue' : item.rollupStatus === 'due-today' ? 'due today' : 'upcoming')}</span>
-                          <span style={{ color: T.inkDim }}>{reminderWhen(item)}</span>
-                          <span style={{ color: T.inkDim }}>{item.noteTitle || 'Untitled'}</span>
-                        </div>
-                      </button>
-                      <button type="button" onClick={() => onPlanItem?.(item)} aria-label={`Plan ${reminderLabel(item)}`} style={panelButton(false)}>Plan</button>
-                    </div>
+              {reminderGroups.map(group => (
+                <div key={group.key} style={{ marginBottom: 8 }}>
+                  <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, margin: '2px 0 5px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    {group.label}
                   </div>
-                );
-              })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {group.items.length === 0 && (
+                      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkDim, padding: '2px 0 5px' }}>No {group.label.toLowerCase()} reminders</div>
+                    )}
+                    {group.items.map(item => {
+                      const statusColor = item.rollupStatus === 'overdue' ? T.danger : item.rollupStatus === 'due-today' ? T.warn : T.inkDim;
+                      return (
+                        <div key={item.key || `${item.noteId}:${reminderWhen(item)}:${reminderLabel(item)}`} style={{
+                          border: `1px solid ${T.lineSub}`,
+                          borderLeft: `3px solid ${statusColor}`,
+                          borderRadius: 7,
+                          background: T.bgSub,
+                          padding: '9px 11px',
+                        }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <button type="button" onClick={() => onOpen(item.noteId)} style={{
+                              flex: 1,
+                              minWidth: 0,
+                              border: 0,
+                              background: 'transparent',
+                              padding: 0,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}>
+                              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 650, color: T.ink }}>{reminderLabel(item)}</div>
+                              <div style={{ marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', fontFamily: 'var(--mn-mono)', fontSize: 10.5 }}>
+                                <span style={{ color: statusColor }}>{helpers.rollupReminderReasonLabel?.(item) || (item.rollupStatus === 'overdue' ? 'overdue' : item.rollupStatus === 'due-today' ? 'due today' : 'upcoming')}</span>
+                                <span style={{ color: T.inkDim }}>{reminderWhen(item)}</span>
+                                <span style={{ color: T.inkDim }}>{item.noteTitle || 'Untitled'}</span>
+                              </div>
+                            </button>
+                            <button type="button" onClick={() => onPlanItem?.(item)} aria-label={`Plan ${reminderLabel(item)}`} style={panelButton(false)}>Plan</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

@@ -311,6 +311,26 @@ test('App helpers collect reminders and workflow notes without renderer state', 
     /## Tasks\n- \[ \] Buy milk\n\n## Notes/
   );
   assert.equal(appHelpers.rollupAppendQuickTask('Body', 'Buy milk'), 'Body\n- [ ] Buy milk\n');
+  assert.match(
+    appHelpers.rollupAppendReflection('Body', { now }),
+    /Body\n\n## Reflection - 2026-06-06\n\n- What stood out:\n- What I learned:\n- What to improve:\n$/
+  );
+  const recap = appHelpers.rollupBuildEndDayRecap({
+    notes: rollupNotes,
+    tasks: rollupTasks,
+    reminders: rollupReminders,
+    now,
+  });
+  assert.match(recap, /## End-day recap - 2026-06-06/);
+  assert.match(recap, /### Highlights\n- \[\[Today note\]\]/);
+  assert.match(recap, /### Decisions\n- Review notes from 2026-06-06 for decisions to keep\./);
+  assert.match(recap, /### Open loops\n- \[ \] Call \(Today note\)/);
+  assert.match(recap, /### Tomorrow candidates/);
+  assert.doesNotMatch(recap, /AI/i);
+  assert.match(
+    appHelpers.rollupAppendEndDayRecap('Body', { notes: rollupNotes, tasks: rollupTasks, reminders: rollupReminders, now }),
+    /Body\n\n## End-day recap - 2026-06-06/
+  );
 
   const workflow = appHelpers.collectWorkflowNotes([
     { id: 'n1', title: 'Draft', tags: ['project'], body: 'status:: DRAFT\n# Draft\n- Body', modifiedAt: '2026-05-06T00:00:00.000Z' },

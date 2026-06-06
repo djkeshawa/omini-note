@@ -496,6 +496,9 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /const activationSeq = \+\+vaultActivationSeq\.current/);
   assert.match(app, /if \(activationSeq !== vaultActivationSeq\.current\) return/);
   assert.match(app, /const dirtyRevisionRef = useRefA\(0\)/);
+  assert.match(app, /const noteDiskStampRef = useRefA\(new Map\(\)\)/);
+  assert.match(app, /noteDiskStampRef\.current\.get\(dirtyKey\) \|\| saveOptions\.expectedModifiedAt/);
+  assert.match(app, /noteDiskStampRef\.current\.set\(dirtyKey, diskModifiedAt\)/);
   assert.match(app, /revision: \+\+dirtyRevisionRef\.current/);
   assert.match(app, /current\.revision !== revision/);
   assert.match(app, /window\.mn\.onFlushDirtyNotes/);
@@ -703,8 +706,15 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /mnCollectReminderItems\(notesWithBody\)/);
   assert.match(app, /mnCollectTaskItems\(notesWithBody\)/);
   assert.match(app, /todayDailyNote/);
+  assert.match(app, /todayAgendaItems/);
   assert.match(app, /addQuickTodayTask/);
+  assert.match(app, /addTodayReflection/);
+  assert.match(app, /addTodayEndDayRecap/);
   assert.match(app, /onAddQuickTask=\{addQuickTodayTask\}/);
+  assert.match(app, /agendaItems=\{todayAgendaItems\}/);
+  assert.match(app, /onAddReflection=\{addTodayReflection\}/);
+  assert.match(app, /onEndDayRecap=\{addTodayEndDayRecap\}/);
+  assert.match(app, /onOpenAgenda=\{\(\) => \{ navigateView\('calendar'\)/);
   assert.match(app, /view === 'today' \? 'Today'/);
   assert.match(app, /function mnNormalizeStartupView\(value\)/);
   assert.match(app, /return value === 'today' \? 'today' : 'notes'/);
@@ -720,6 +730,8 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /id: 'todos'[\s\S]*hidden: true[\s\S]*aiHidden: true[\s\S]*openView\('calendar'\)/);
   assert.match(app, /mnCalendarTaskContent\(text, date, type === 'reminder' \? time : ''\)/);
   assert.match(app, /mnWriteSnoozedReminder/);
+  assert.match(app, /rollupAppendReflection/);
+  assert.match(app, /rollupAppendEndDayRecap/);
 
   assert.match(outliner, /spellCheck=\{block\.kind === 'code' \? false : spellCheck\}/);
   assert.match(outliner, /indentGuides && Array\.from/);
@@ -746,8 +758,13 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(editor, /title="Agenda"/);
   assert.match(utilityPanels, /onSnooze \|\| onDismiss/);
   assert.match(utilityPanels, /rollupFormat === 'short'/);
-  assert.match(utilityPanels, /tasks = \[\], reminders = \[\], todayNote = null/);
+  assert.match(utilityPanels, /tasks = \[\], reminders = \[\], todayNote = null, agendaItems = \[\]/);
   assert.match(utilityPanels, /Quick task/);
+  assert.match(utilityPanels, /Add reflection/);
+  assert.match(utilityPanels, /End-day recap/);
+  assert.match(utilityPanels, /Agenda today/);
+  assert.match(utilityPanels, /Open Agenda/);
+  assert.match(utilityPanels, /No agenda items today/);
   assert.match(utilityPanels, /rollupFilterTaskItems/);
   assert.match(utilityPanels, /rollupFilterReminderItems/);
   assert.match(utilityPanels, /rollupTaskReasonLabel/);
@@ -758,6 +775,9 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(utilityPanels, />Open loops<\/div>/);
   assert.match(utilityPanels, /No open loops for this range/);
   assert.match(utilityPanels, /No reminders due in this range/);
+  assert.match(utilityPanels, /label: 'Overdue'/);
+  assert.match(utilityPanels, /label: 'Due today'/);
+  assert.match(utilityPanels, /label: 'Upcoming'/);
   assert.match(utilityPanels, />Plan<\/button>/);
   assert.match(utilityPanels, /aria-label=\{`Plan \$\{taskLabel\(item\)\}`\}/);
   assert.match(utilityPanels, /aria-label=\{`Plan \$\{reminderLabel\(item\)\}`\}/);
@@ -797,6 +817,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(settings, /setTweak\('weekStart', v\)/);
   assert.match(appHelpers, /function rollupGroupNotes/);
   assert.match(appHelpers, /function rollupAppendQuickTask/);
+  assert.match(appHelpers, /function rollupAppendReflection/);
+  assert.match(appHelpers, /function rollupBuildEndDayRecap/);
+  assert.match(appHelpers, /function rollupAppendEndDayRecap/);
+  assert.match(appHelpers, /Review notes from \$\{today\} for decisions to keep\./);
   assert.match(appRuntime, /"startupView": "notes"/);
   assert.match(appRuntime, /"rollupDefaultRange": "today"/);
   assert.match(store, /'startupView'/);
