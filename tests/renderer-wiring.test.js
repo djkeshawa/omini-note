@@ -747,6 +747,75 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(store, /path\.relative\(dir, file\)/);
 });
 
+test('Pastel theme is selectable and keeps existing theme contracts', () => {
+  const themeSource = fs.readFileSync(path.join(__dirname, '../src/shared/theme.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const sandbox = { window: {} };
+  vm.runInNewContext(themeSource, sandbox);
+  const hueOf = (value) => {
+    const match = String(value || '').match(/oklch\(\s*[\d.]+\s+[\d.]+\s+(-?[\d.]+)/);
+    return match ? Number(match[1]) : null;
+  };
+  const assertHueBetween = (token, min, max) => {
+    const hue = hueOf(themes.pastel[token]);
+    assert.ok(hue >= min && hue <= max, `${token} hue ${hue} expected in ${min}-${max}`);
+  };
+
+  const themes = sandbox.window.MN_THEMES;
+  assert.ok(themes.light);
+  assert.ok(themes.dark);
+  assert.ok(themes.pastel);
+  assert.notEqual(themes.pastel, themes.light);
+
+  const requiredKeys = Object.keys(themes.light).sort();
+  assert.deepEqual(Object.keys(themes.dark).sort(), requiredKeys);
+  assert.deepEqual(Object.keys(themes.pastel).sort(), requiredKeys);
+  for (const token of ['bg', 'ink', 'line', 'accent', 'focus', 'danger', 'success', 'warn']) {
+    assert.match(themes.pastel[token], /^oklch\(/, token);
+  }
+  assert.notEqual(themes.pastel.bg, themes.light.bg);
+  assert.notEqual(themes.pastel.accent, themes.light.accent);
+  assert.notEqual(themes.pastel.accent, themes.dark.accent);
+  assertHueBetween('bgOuter', 220, 260);
+  assertHueBetween('bgSub', 280, 305);
+  assertHueBetween('bgInput', 315, 340);
+  assertHueBetween('danger', 5, 30);
+  assertHueBetween('warn', 45, 65);
+  assertHueBetween('accent', 275, 300);
+  assertHueBetween('focus', 275, 300);
+  assertHueBetween('selBg', 315, 340);
+  const greenTokens = Object.entries(themes.pastel)
+    .filter(([, value]) => {
+      const hue = hueOf(value);
+      return hue != null && hue >= 120 && hue <= 185;
+    })
+    .map(([key]) => key)
+    .sort();
+  assert.deepEqual(greenTokens, ['success', 'successSoft']);
+
+  assert.match(settings, /Built-in and installed community themes\./);
+  assert.match(settings, /<select value=\{tweaks\.theme \|\| 'light'\}/);
+  assert.doesNotMatch(settings, /<Segmented T=\{T\} value=\{tweaks\.theme\}/);
+  assert.match(settings, /Install a shared JSON or YAML theme file\./);
+  assert.match(settings, /onImportThemeFile/);
+  assert.match(settings, /value: 'light', label: 'Light'/);
+  assert.match(settings, /value: 'dark', label: 'Dark'/);
+  assert.match(settings, /value: 'pastel', label: 'Pastel'/);
+  assert.match(app, /const \[customThemes, setCustomThemes\] = useStateA\(\[\]\)/);
+  assert.match(app, /setCustomThemes\(mnNormalizeCustomThemesForApp\(prefs\.customThemes\)\)/);
+  assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
+  assert.match(app, /for \(const item of customThemes\) next\[item\.id\] = item\.tokens/);
+  assert.match(app, /window\.mn\.importThemeFile\(\)/);
+  assert.match(preload, /importThemeFile: \(\) => ipcRenderer\.invoke\('mn:importThemeFile'\)/);
+  assert.match(main, /async function importThemeFileFromIpc\(\)/);
+  assert.match(main, /filters: \[\{ name: 'VispNote Theme', extensions: \['json', 'yaml', 'yml'\] \}\]/);
+  assert.match(main, /ipcMain\.handle\('mn:importThemeFile', wrap\(importThemeFileFromIpc\)\)/);
+  assert.doesNotMatch(settings, /ipcRenderer|require\('electron'\)|package\.json/);
+});
+
 test('Electron installs native edit context menu for right-click copy paste cut', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
@@ -1218,9 +1287,94 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(main, /flushRendererDirtyNotes/);
   assert.match(preload, /onFlushDirtyNotes/);
   assert.match(app, /onNew=\{\(\) => createNote\(\)\}/);
-  assert.match(app, /const themeMap = window\.MN_THEMES \|\| \{\}/);
+  assert.match(app, /const baseThemeMap = window\.MN_THEMES \|\| \{\}/);
+  assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
   assert.match(panels, /initialAiConfig = null/);
   assert.match(panels, /onAiConfigChange && onAiConfigChange\(next\)/);
   assert.match(appNovelistSource, /function mnReplaceWikiLinkTitle/);
   assert.match(app, /window\.mnWriteNovelistAiConfig\?\.\(activeVault\.novelistAiConfig, activeVaultId\)/);
+});
+
+test('Markdown input rules load before outliner modules and stay renderer-scoped', () => {
+  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const renderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
+  const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
+  const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
+
+  const entryIndex = source => rendererEntry.indexOf(`import './${source}';`);
+  assert.ok(entryIndex('editor/markdownInputRules.js') > entryIndex('editor/editorOps.js'));
+  assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') > entryIndex('editor/markdownInputRules.js'));
+  assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') < entryIndex('editor/outlinerRenderers.jsx'));
+  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/outlinerRenderers.jsx'));
+  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/outliner.jsx'));
+
+  assert.match(helper, /MN_MARKDOWN_INPUT_RULES/);
+  assert.match(inlineRenderers, /window\.MN_MARKDOWN_INLINE_RENDERERS/);
+  assert.match(inlineRenderers, /function mnRenderMarkdownInlineText/);
+  assert.match(inlineRenderers, /MN_MARKDOWN_INPUT_RULES\.parseInlineMarkdown/);
+  assert.match(inlineRenderers, /window\.mn\?\.openExternal\?\.\(segment\.url\)/);
+  assert.match(outliner, /MN_MARKDOWN_INPUT_RULES\.findBlockStarterConversion/);
+  assert.match(outliner, /inputType: e\.nativeEvent\?\.inputType/);
+  assert.match(outliner, /onChangeKind\(block\.id, blockStarter\.patch\)/);
+  assert.match(outliner, /pendingCaretRef\.current = blockStarter\.caret/);
+  assert.doesNotMatch(outliner, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
+  assert.match(renderers, /window\.MN_MARKDOWN_INLINE_RENDERERS/);
+  assert.doesNotMatch(inlineRenderers, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
+  assert.doesNotMatch(renderers, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
+});
+
+test('Markdown input rules preserve paste, slash menu, and selection formatting hooks', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const handlePasteIndex = outliner.indexOf('const handlePaste = (e) =>');
+  const inputRuleIndex = outliner.indexOf('MN_MARKDOWN_INPUT_RULES.findBlockStarterConversion');
+  const slashIndex = outliner.indexOf('const sm = mnFindSlashCommandTrigger(v, pos)');
+  const selectionIndex = outliner.indexOf('const applyAnnotation = (kind) =>');
+
+  assert.ok(inputRuleIndex > 0);
+  assert.ok(handlePasteIndex > inputRuleIndex);
+  assert.match(outliner, /const markdown = mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable\(e\)/);
+  assert.match(outliner, /parseClipboardBlocks\?\.\(e\.clipboardData, \{ allowSingle: false \}\)/);
+  assert.match(outliner, /const sm = mnFindSlashCommandTrigger\(v, pos\)/);
+  assert.ok(slashIndex > inputRuleIndex);
+  assert.match(outliner, /if \(slashQ != null\)/);
+  assert.match(outliner, /mnApplyAnnotationRange/);
+  assert.ok(selectionIndex > 0);
+  assert.doesNotMatch(outliner.slice(inputRuleIndex, handlePasteIndex), /parseInlineMarkdown|mnBlocksToMd|mnMdToBlocks/);
+});
+
+test('Markdown inline rendering is preserved when spellcheck issues are present', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
+
+  assert.match(inlineRenderers, /function mnRenderMarkdownInlineText\(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0\)/);
+  assert.match(inlineRenderers, /renderPlainText\(segment\.text, textOffset\)/);
+  assert.match(inlineRenderers, /mnRenderMarkdownInlineText\(sub, T, onOpen, onTagClick, allNotes, renderPlainText, seg\.s\)/);
+  assert.match(outliner, /function mnRenderSpellCheckedText\(text, issues, T, onOpenMenu, offset = 0\)/);
+  assert.match(outliner, /start: baseOffset \+ start/);
+  assert.match(outliner, /const renderSpellText = spellCheck && Object\.keys\(spellIssues \|\| \{\}\)\.length/);
+  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText\)/);
+  assert.doesNotMatch(outliner, /return mnRenderSpellCheckedText\(content, spellIssues, T, setSpellMenu\)/);
+});
+
+test('Structural markdown blocks edit with markdown source prefixes', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
+  const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
+
+  assert.match(helper, /function editableMarkdownForBlock/);
+  assert.match(helper, /function parseEditableMarkdownBlock/);
+  assert.match(helper, /function displayProjectionForMarkdownSourceBlock/);
+  assert.ok(helper.includes('value.match(/^(#{1,6})\\s(.*)$/s)'));
+  assert.ok(helper.includes('value.match(/^(#{1,6})\\s+(.*)$/s)'));
+  assert.ok(outline.includes('const h = line.match(/^(#{1,6})\\s+(.*)$/);'));
+  assert.match(outliner, /const editorValue = MN_MARKDOWN_INPUT_RULES\.editableMarkdownForBlock\?\.\(block\) \?\? block\.content/);
+  assert.match(outliner, /const markdownDisplayProjection = MN_MARKDOWN_INPUT_RULES\.displayProjectionForMarkdownSourceBlock\?\.\(block\)/);
+  assert.match(outliner, /const displayBlock = markdownDisplayProjection\?\.block \|\| block/);
+  assert.match(outliner, /value=\{editorValue\}/);
+  assert.match(outliner, /MN_MARKDOWN_INPUT_RULES\.parseEditableMarkdownBlock\?\.\(\{ block, text: v \}\)/);
+  assert.match(outliner, /contentOffsetToEditorOffset\?\.\(block, contentCaret\)/);
+  assert.match(outliner, /editorOffsetToContentOffset\?\.\(block, ta\?\.selectionStart/);
+  assert.match(outliner, /displaySourceOffset \+ contentCaret/);
+  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText\)/);
 });

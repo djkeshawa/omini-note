@@ -358,3 +358,29 @@ test('Block clipboard preserves multi-block formatting for copy cut paste', () =
   assert.match(blockFeatures, /label="Cut block"/);
   assert.match(blockFeatures, /label="Paste after"/);
 });
+
+test('Markdown input rules do not replace paste or clipboard markdown behavior', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+
+  assert.match(outliner, /const handlePaste = \(e\) =>/);
+  assert.match(outliner, /mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable\(e\)/);
+  assert.match(outliner, /onChangeKind\(block\.id, \{\s*kind: 'table'[\s\S]*content: markdown/);
+  assert.match(outliner, /const tableBlock = mkBlock\(\{ kind: 'table', content: markdown \}\)/);
+  assert.match(outliner, /parseClipboardBlocks\?\.\(e\.clipboardData, \{ allowSingle: false \}\)/);
+  assert.doesNotMatch(outliner, /findBlockStarterConversion[\s\S]*const handlePaste = \(e\)[\s\S]*findBlockStarterConversion/);
+});
+
+test('Markdown block conversion remains one undoable kind change and leaves text editing hooks intact', () => {
+  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+
+  assert.match(outliner, /const parsed = MN_MARKDOWN_INPUT_RULES\.parseEditableMarkdownBlock\?\.\(\{ block, text: v \}\)/);
+  assert.match(outliner, /if \(parsed\?\.patch\) onChangeKind\(block\.id, parsed\.patch\)/);
+  assert.match(outliner, /const blockStarter = MN_MARKDOWN_INPUT_RULES\.findBlockStarterConversion/);
+  assert.match(outliner, /onChangeKind\(block\.id, blockStarter\.patch\)/);
+  assert.match(outliner, /else \{\s*onChange\(block\.id, v\);\s*\}/);
+  assert.match(outliner, /const grouped = contentEditHistoryRef\.current\.blockId === id/);
+  assert.match(outliner, /const pushHistory = !grouped \|\| contentEditHistoryRef\.current\.armed/);
+  assert.match(outliner, /if \(grouped\) contentEditHistoryRef\.current\.armed = false/);
+  assert.match(outliner, /if \(e\.key === 'Backspace'/);
+  assert.match(outliner, /onMergePrev\(block\.id\)/);
+});

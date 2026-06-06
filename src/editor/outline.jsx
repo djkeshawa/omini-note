@@ -2,7 +2,7 @@
 //
 // Each block has a `kind`:
 //   - 'paragraph'  — plain text, Enter creates next paragraph
-//   - 'heading'    — H1/H2/H3 (level 1-3), Enter creates next paragraph
+//   - 'heading'    — H1-H6 (level 1-6), Enter creates next paragraph
 //   - 'bullet'     — list item, Enter creates next bullet, empty Enter exits to paragraph
 //   - 'todo'       — checkbox + text, Enter creates next todo, empty Enter exits
 //   - 'quote'      — blockquote, Enter creates next paragraph
@@ -11,7 +11,7 @@
 //   - 'divider'    — horizontal rule, no content
 //
 // Blocks can have children (nested only for bullet/todo, not paragraph/heading).
-// `level` 1-3 only meaningful when kind === 'heading'.
+// `level` 1-6 only meaningful when kind === 'heading'.
 // `checked` (true|false) only meaningful when kind === 'todo'.
 // `collapsed` hides children. `annotations` is an array of {start, end, kind} where
 // kind ∈ 'bold','italic','code','strike','hi-yellow','hi-green','hi-pink','hi-blue','color-red','color-blue','color-purple'.
@@ -186,7 +186,7 @@ function mnMdToBlocks(md) {
       currentParentList().push(mkBlock({ kind: 'code', content: buf.join('\n'), language }));
       continue;
     }
-    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
       flushPara(); bulletStack = [];
       const level = h[1].length;
@@ -293,7 +293,8 @@ function mnBlocksToMd(blocks, depth = 0) {
   };
   for (const b of blocks) {
     if (b.kind === 'heading') {
-      pushBlock(b, '#'.repeat(b.level || 1) + ' ' + labelPrefix(b) + wfPrefix(b) + b.content);
+      const level = Math.max(1, Math.min(6, Number(b.level) || 1));
+      pushBlock(b, '#'.repeat(level) + ' ' + labelPrefix(b) + wfPrefix(b) + b.content);
       if (b.children.length) out.push(mnBlocksToMd(b.children, depth + 1));
     } else if (b.kind === 'quote') {
       pushBlock(b, '> ' + labelPrefix(b) + wfPrefix(b) + b.content);

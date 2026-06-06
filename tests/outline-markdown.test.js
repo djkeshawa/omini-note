@@ -64,3 +64,81 @@ test('Markdown table import preserves literal backslashes in cells', () => {
     ['C:\\temp\\notes', 'keep'],
   ]);
 });
+
+test('Markdown headings support levels one through six on import and save', () => {
+  const outlineApi = loadOutlineForTest();
+  const blocks = outlineApi.mnMdToBlocks('# One\n#### Four\n##### Five\n###### Six');
+
+  assert.equal(blocks[0].kind, 'heading');
+  assert.equal(blocks[0].level, 1);
+  assert.equal(blocks[0].children[0].kind, 'heading');
+  assert.equal(blocks[0].children[0].level, 4);
+  assert.equal(blocks[0].children[0].children[0].kind, 'heading');
+  assert.equal(blocks[0].children[0].children[0].level, 5);
+  assert.equal(blocks[0].children[0].children[0].children[0].kind, 'heading');
+  assert.equal(blocks[0].children[0].children[0].children[0].level, 6);
+  assert.equal(outlineApi.mnBlocksToMd(blocks), '# One\n#### Four\n##### Five\n###### Six');
+});
+
+test('Existing markdown bodies round-trip without storage-format changes', () => {
+  const outlineApi = loadOutlineForTest();
+  const markdown = [
+    '# Heading',
+    '',
+    'Paragraph with **bold**, *italic*, `code`, ~~strike~~, [[Wiki Page]], #tag, and @remind 2026-06-01 09:00.',
+    '',
+    '- [ ] Open task',
+    '- [x] Done task',
+    '  - Nested bullet',
+    '',
+    '> Quoted text',
+    '',
+    '---',
+  ].join('\n');
+
+  const blocks = outlineApi.mnMdToBlocks(markdown);
+  const roundTrip = outlineApi.mnBlocksToMd(blocks);
+
+  assert.match(roundTrip, /^# Heading/m);
+  assert.match(roundTrip, /Paragraph with \*\*bold\*\*, \*italic\*, `code`, ~~strike~~, \[\[Wiki Page\]\], #tag, and @remind 2026-06-01 09:00\./);
+  assert.match(roundTrip, /- \[ \] Open task/);
+  assert.match(roundTrip, /- \[x\] Done task/);
+  assert.match(roundTrip, /  - Nested bullet/);
+  assert.match(roundTrip, /^> Quoted text/m);
+  assert.match(roundTrip, /^---$/m);
+});
+
+test('Specialized markdown blocks keep current parse and serialization behavior', () => {
+  const outlineApi = loadOutlineForTest();
+  const markdown = [
+    'Parent',
+    '',
+    'status:: open',
+    '',
+    '| Name | Notes |',
+    '| --- | --- |',
+    '| Ada | Pipes \\| stay |',
+    '',
+    '```js',
+    'const answer = 42;',
+    '```',
+    '',
+    '::: plot-points',
+    '- Find the key',
+    '  - context:: [[Alice]]',
+    ':::',
+  ].join('\n');
+
+  const blocks = outlineApi.mnMdToBlocks(markdown);
+
+  assert.equal(blocks.some(block => block.kind === 'table'), true);
+  assert.equal(blocks.some(block => block.kind === 'code' && block.language === 'javascript'), true);
+  assert.equal(blocks.some(block => block.kind === 'plot-points'), true);
+  assert.equal(blocks.some(block => block.content === 'status:: open'), true);
+
+  const roundTrip = outlineApi.mnBlocksToMd(blocks);
+  assert.match(roundTrip, /status:: open/);
+  assert.match(roundTrip, /\| Ada \| Pipes \\\| stay \|/);
+  assert.match(roundTrip, /```javascript\nconst answer = 42;\n```/);
+  assert.match(roundTrip, /::: plot-points\n- Find the key\n  - context:: \[\[Alice\]\]\n:::/);
+});

@@ -4,9 +4,10 @@ const MN_SETTINGS_PLUGINS = window.MN_PLUGINS || {};
 
 function MnSettingsModal({
   tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault,
+  themeOptions,
   onCreateVault, onDeleteVault, onSetVaultNovelistMode,
   onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
-  onExportBackup, onImportBackup, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
+  onExportBackup, onImportBackup, onImportThemeFile, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
 }) {
   const [section, setSection] = useStateS('appearance');
   const [updateState, setUpdateState] = useStateS(null);
@@ -187,7 +188,7 @@ function MnSettingsModal({
             padding: '24px 32px',
             background: `linear-gradient(180deg, ${T.bg}, color-mix(in oklab, ${T.bgSub} 38%, ${T.bg}))`,
           }}>
-            {section === 'appearance' && <SectionAppearance tweaks={tweaks} setTweak={setTweak} T={T} />}
+            {section === 'appearance' && <SectionAppearance tweaks={tweaks} setTweak={setTweak} T={T} themeOptions={themeOptions} onImportThemeFile={onImportThemeFile} />}
             {section === 'editor' && <SectionEditor tweaks={tweaks} setTweak={setTweak} T={T} />}
             {section === 'notes' && <SectionNotes tweaks={tweaks} setTweak={setTweak} T={T} stats={stats} />}
             {section === 'reminders' && <SectionReminders tweaks={tweaks} setTweak={setTweak} T={T} />}
@@ -247,14 +248,56 @@ const {
   } = {},
 } = window.MN_SETTINGS_CONTROLS || {};
 
-function SectionAppearance({ tweaks, setTweak, T }) {
+function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThemeFile }) {
+  const [themeImporting, setThemeImporting] = useStateS(false);
+  const options = themeOptions.length ? themeOptions : [
+    { value: 'light', label: 'Light' },
+    { value: 'dark', label: 'Dark' },
+    { value: 'pastel', label: 'Pastel' },
+  ];
+  const installTheme = async () => {
+    if (!onImportThemeFile || themeImporting) return;
+    setThemeImporting(true);
+    try {
+      await onImportThemeFile();
+    } finally {
+      setThemeImporting(false);
+    }
+  };
   return (
     <div>
       <H T={T} label="Appearance" sub="Make VispNote look the way you think." />
       <SettingsCard T={T}>
-        <Row T={T} label="Theme" sub="Light or dark color scheme.">
-          <Segmented T={T} value={tweaks.theme} onChange={v => setTweak('theme', v)}
-            options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
+        <Row T={T} label="Theme" sub="Built-in and installed community themes.">
+          <select value={tweaks.theme || 'light'} onChange={(e) => setTweak('theme', e.target.value)} style={{
+            padding: '6px 10px',
+            borderRadius: 6,
+            border: `1px solid ${T.line}`,
+            background: T.bg,
+            color: T.ink,
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 12.5,
+            cursor: 'pointer',
+            minWidth: 190,
+            outline: 'none',
+          }}>
+            {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </Row>
+        <Row T={T} label="Community themes" sub="Install a shared JSON or YAML theme file.">
+          <button onClick={installTheme} disabled={!onImportThemeFile || themeImporting} style={{
+            border: `1px solid ${T.lineSub}`,
+            background: T.bgSub,
+            color: themeImporting ? T.inkDim : T.ink,
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontFamily: 'var(--mn-ui)',
+            fontSize: 12.5,
+            cursor: !onImportThemeFile || themeImporting ? 'default' : 'pointer',
+            minWidth: 112,
+          }}>
+            {themeImporting ? 'Installing...' : 'Install theme'}
+          </button>
         </Row>
         <Row T={T} label="Interface density" sub="Tighter rows fit more on screen.">
           <Segmented T={T} value={tweaks.density} onChange={v => setTweak('density', v)}

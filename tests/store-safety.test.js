@@ -10,8 +10,18 @@ const appHelpers = require('../src/app/appHelpers.js');
 const appNovelist = require('../src/app/appNovelist.js');
 const appMutations = require('../src/app/appMutations.js');
 const appCanvasActions = require('../src/app/appCanvasActions.js');
+const themes = require('../lib/themes.js');
 const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
+
+function buildTestThemeTokens(hue = 260) {
+  return Object.fromEntries(themes.THEME_TOKEN_KEYS.map((key, index) => [
+    key,
+    key.startsWith('shadow')
+      ? 'color-mix(in oklab, black 12%, transparent)'
+      : `oklch(0.${index % 6 + 4}0 0.04 ${hue})`,
+  ]));
+}
 
 test('First-run seed creates one notes vault and one novelist vault', async () => {
   await withIsolatedStore(async (store) => {
@@ -144,6 +154,96 @@ test('Global config is private and cached between writes', async () => {
     const third = await store.loadConfig();
     assert.equal(third.tweaks.density, 'comfortable');
     if (process.platform !== 'win32') assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+  });
+});
+
+test('Theme files parse JSON and simple YAML with strict schema validation', () => {
+  const tokens = buildTestThemeTokens(286);
+  const jsonTheme = themes.parseThemeText(JSON.stringify({
+    format: themes.THEME_FORMAT,
+    id: 'community_lavender',
+    name: 'Community Lavender',
+    tokens,
+  }), 'community-lavender.json');
+  assert.equal(jsonTheme.id, 'community_lavender');
+  assert.equal(jsonTheme.name, 'Community Lavender');
+  assert.deepEqual(Object.keys(jsonTheme.tokens).sort(), themes.THEME_TOKEN_KEYS.slice().sort());
+
+  const yaml = [
+    `format: ${themes.THEME_FORMAT}`,
+    'id: community_rose',
+    'name: Community Rose',
+    'tokens:',
+    ...themes.THEME_TOKEN_KEYS.map(key => `  ${key}: ${tokens[key]}`),
+  ].join('\n');
+  const yamlTheme = themes.parseThemeText(yaml, 'community-rose.yaml');
+  assert.equal(yamlTheme.id, 'community_rose');
+  assert.equal(yamlTheme.tokens.accent, tokens.accent);
+
+  assert.throws(
+    () => themes.parseThemeText(JSON.stringify({ format: themes.THEME_FORMAT, id: 'light', name: 'Bad', tokens }), 'bad.json'),
+    /reserved/
+  );
+  const missingToken = { ...tokens };
+  delete missingToken.focus;
+  assert.throws(
+    () => themes.parseThemeText(JSON.stringify({ format: themes.THEME_FORMAT, id: 'missing_focus', name: 'Bad', tokens: missingToken }), 'bad.json'),
+    /Missing theme token: focus/
+  );
+  assert.throws(
+    () => themes.parseThemeText(JSON.stringify({ format: themes.THEME_FORMAT, id: 'unsafe_theme', name: 'Bad', tokens: { ...tokens, bg: 'url(https://example.test/x)' } }), 'bad.json'),
+    /Unsafe theme token value/
+  );
+  assert.throws(
+    () => themes.parseThemeText(JSON.stringify({ format: themes.THEME_FORMAT, id: 'wrong_ext', name: 'Bad', tokens }), 'bad.txt'),
+    /Unsupported theme file type/
+  );
+});
+
+test('Custom theme imports persist and reject unsafe files without mutation', async () => {
+  await withIsolatedStore(async (store) => {
+    const tokens = buildTestThemeTokens(300);
+    const themePath = path.join(store.ROOT, 'community-lavender.json');
+    fs.writeFileSync(themePath, JSON.stringify({
+      format: themes.THEME_FORMAT,
+      id: 'community_lavender',
+      name: 'Community Lavender',
+      tokens,
+    }), 'utf8');
+
+    const installed = await store.importThemeFile(themePath);
+    assert.equal(installed.theme.id, 'community_lavender');
+    assert.equal(installed.customThemes.length, 1);
+
+    const prefs = await store.getPrefs();
+    assert.equal(prefs.customThemes.length, 1);
+    assert.equal(prefs.customThemes[0].name, 'Community Lavender');
+    assert.equal(prefs.customThemes[0].tokens.focus, tokens.focus);
+
+    const reservedPath = path.join(store.ROOT, 'reserved.json');
+    fs.writeFileSync(reservedPath, JSON.stringify({
+      format: themes.THEME_FORMAT,
+      id: 'dark',
+      name: 'Reserved',
+      tokens,
+    }), 'utf8');
+    await assert.rejects(() => store.importThemeFile(reservedPath), /reserved/);
+    assert.deepEqual((await store.getPrefs()).customThemes, prefs.customThemes);
+
+    const unsupportedPath = path.join(store.ROOT, 'theme.txt');
+    fs.writeFileSync(unsupportedPath, JSON.stringify({
+      format: themes.THEME_FORMAT,
+      id: 'bad_extension',
+      name: 'Bad Extension',
+      tokens,
+    }), 'utf8');
+    await assert.rejects(() => store.importThemeFile(unsupportedPath), /Unsupported theme file type/);
+
+    if (process.platform !== 'win32') {
+      const linkPath = path.join(store.ROOT, 'theme-link.json');
+      fs.symlinkSync(themePath, linkPath);
+      await assert.rejects(() => store.importThemeFile(linkPath), /Theme file cannot be a symlink/);
+    }
   });
 });
 
@@ -503,6 +603,8 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const outlinerRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
+  const markdownInlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
+  const markdownInputRules = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
@@ -590,6 +692,9 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(outlinerRenderers, /sandbox=""/);
   assert.match(outlinerRenderers, /function mnMermaidSvgHeight/);
   assert.match(outlinerRenderers, /pointerEvents: 'none'/);
+  assert.match(markdownInlineRenderers, /window\.mn\?\.openExternal\?\.\(segment\.url\)/);
+  assert.doesNotMatch(markdownInputRules, /mnMdToBlocks|mnBlocksToMd|dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
+  assert.doesNotMatch(markdownInlineRenderers, /dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
   assert.doesNotMatch(aiSource, /env:\s*\{\s*\.\.\.process\.env/);
 
   assert.match(storeSource, /function sanitizeVaultMetaPatch/);

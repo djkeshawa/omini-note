@@ -29,6 +29,7 @@ const {
   splitAnnotations: mnSplitAnnotations,
   mergeBlockContent: mnMergeBlockContent,
 } = window.MN_EDITOR_OPS;
+const MN_MARKDOWN_INPUT_RULES = window.MN_MARKDOWN_INPUT_RULES || {};
 const {
   clipboardEventToMarkdownTable: mnClipboardEventToMarkdownTable,
   markdownTableToRows: mnMarkdownTableToRows,
@@ -59,9 +60,10 @@ function mnSpellWords(text) {
     .slice(0, 120);
 }
 
-function mnRenderSpellCheckedText(text, issues, T, onOpenMenu) {
+function mnRenderSpellCheckedText(text, issues, T, onOpenMenu, offset = 0) {
   const value = String(text || '');
   const issueMap = issues || {};
+  const baseOffset = Math.max(0, Number(offset) || 0);
   const out = [];
   const re = /[A-Za-z][A-Za-z']{2,}/g;
   let last = 0, match, key = 0;
@@ -82,8 +84,8 @@ function mnRenderSpellCheckedText(text, issues, T, onOpenMenu) {
             onOpenMenu && onOpenMenu({
               word,
               normalized,
-              start,
-              end,
+              start: baseOffset + start,
+              end: baseOffset + end,
               suggestions: issueMap[normalized] || [],
               x: e.clientX,
               y: e.clientY,
@@ -746,13 +748,14 @@ function MnBlockRow({
       e.preventDefault();
       const ta = inputRef.current;
       if (!ta) return;
-      const pos = ta.selectionStart;
-      const v = ta.value;
+      const pos = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionStart) ?? ta.selectionStart;
+      const v = String(block.content || '');
       const next = v.slice(0, pos) + '\n' + v.slice(pos);
       onChange(block.id, next);
       setTimeout(() => {
         if (inputRef.current) {
-          inputRef.current.setSelectionRange(pos + 1, pos + 1);
+          const nextEditorPos = MN_MARKDOWN_INPUT_RULES.contentOffsetToEditorOffset?.(block, pos + 1) ?? (pos + 1);
+          inputRef.current.setSelectionRange(nextEditorPos, nextEditorPos);
         }
       }, 0);
       return;
@@ -794,7 +797,8 @@ function MnBlockRow({
 
   const handleEnter = () => {
     const ta = inputRef.current;
-    const pos = ta?.selectionStart ?? block.content.length;
+    const pos = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta?.selectionStart ?? block.content.length)
+      ?? (ta?.selectionStart ?? block.content.length);
     const isEmptyBlock = block.content.trim() === '';
     // Empty nested blocks leave the current parent before creating more empty
     // children. At root, formatted empty blocks exit to paragraph.
@@ -820,12 +824,41 @@ function MnBlockRow({
   };
 
   // ── input handlers ───────────────────────────────────────────────
+  const applyEditorValue = (value, caret = null) => {
+    const parsed = MN_MARKDOWN_INPUT_RULES.parseEditableMarkdownBlock?.({ block, text: value });
+    if (parsed?.patch) onChangeKind(block.id, parsed.patch);
+    else onChange(block.id, value);
+    if (caret != null) {
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.setSelectionRange(caret, caret);
+        }
+      }, 0);
+    }
+  };
+
   const handleInput = (e) => {
     const v = e.target.value;
-    onChange(block.id, v);
+    const pos = e.target.selectionStart;
+    const parsed = MN_MARKDOWN_INPUT_RULES.parseEditableMarkdownBlock?.({ block, text: v });
+    if (parsed?.patch) onChangeKind(block.id, parsed.patch);
+    else {
+      const blockStarter = MN_MARKDOWN_INPUT_RULES.findBlockStarterConversion?.({
+        block,
+        text: v,
+        cursor: pos,
+        inputType: e.nativeEvent?.inputType,
+      });
+      if (blockStarter) {
+        onChangeKind(block.id, blockStarter.patch);
+        pendingCaretRef.current = blockStarter.caret;
+      } else {
+        onChange(block.id, v);
+      }
+    }
     e.target.style.height = 'auto';
     e.target.style.height = e.target.scrollHeight + 'px';
-    const pos = e.target.selectionStart;
     const before = v.slice(0, pos);
     // Wiki autocomplete
     const wm = autoLink ? before.match(/\[\[([^\]\n]*)$/) : null;
@@ -847,8 +880,8 @@ function MnBlockRow({
     const markdown = mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable(e);
     const ta = inputRef.current;
     if (!ta) return;
-    const start = ta.selectionStart ?? 0;
-    const end = ta.selectionEnd ?? start;
+    const start = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionStart ?? 0) ?? (ta.selectionStart ?? 0);
+    const end = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionEnd ?? ta.selectionStart ?? 0) ?? (ta.selectionEnd ?? start);
     const fullSelection = start === 0 && end === String(block.content || '').length;
     if (markdown) {
       e.preventDefault();
@@ -917,8 +950,8 @@ function MnBlockRow({
 
   const handleSelect = (e) => {
     const ta = e.target;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
+    const start = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionStart) ?? ta.selectionStart;
+    const end = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionEnd) ?? ta.selectionEnd;
     if (start !== end && onSelectionChange) {
       // Use the textarea's bounding rect + caret position to estimate
       const rect = ta.getBoundingClientRect();
@@ -951,7 +984,7 @@ function MnBlockRow({
     if (!m) return;
     const newBefore = before.slice(0, m.index) + `[[${title}]]`;
     const newVal = newBefore + ta.value.slice(pos);
-    onChange(block.id, newVal);
+    applyEditorValue(newVal);
     setAutoQ(null);
     setTimeout(() => {
       ta.focus();
@@ -1078,6 +1111,22 @@ function MnBlockRow({
     }, 10);
   };
 
+  // ── visual params per kind ──────────────────────────────────────
+  const markdownDisplayProjection = MN_MARKDOWN_INPUT_RULES.displayProjectionForMarkdownSourceBlock?.(block);
+  const displayBlock = markdownDisplayProjection?.block || block;
+  const displaySourceOffset = markdownDisplayProjection?.sourceOffset || 0;
+  const displayAnnotations = displaySourceOffset
+    ? (block.annotations || [])
+        .map(annotation => ({
+          ...annotation,
+          start: Math.max(0, Number(annotation.start) - displaySourceOffset),
+          end: Math.max(0, Number(annotation.end) - displaySourceOffset),
+        }))
+        .filter(annotation => annotation.end > annotation.start)
+    : block.annotations;
+  const fontStyle = mnGetFontStyle(displayBlock, T, editorFontSize);
+  const editorValue = MN_MARKDOWN_INPUT_RULES.editableMarkdownForBlock?.(block) ?? block.content;
+
   const textOffsetFromPoint = (container, clientX, clientY, fallback) => {
     if (!container || !block.content) return fallback;
     const caret = document.caretPositionFromPoint
@@ -1100,25 +1149,25 @@ function MnBlockRow({
   };
 
   const startEdit = (e) => {
-    const fallback = block.content.length;
-    pendingCaretRef.current = e
+    const fallback = displayBlock.content.length;
+    const contentCaret = e
       ? textOffsetFromPoint(displayTextRef.current, e.clientX, e.clientY, fallback)
       : fallback;
+    pendingCaretRef.current = displaySourceOffset
+      ? displaySourceOffset + contentCaret
+      : (MN_MARKDOWN_INPUT_RULES.contentOffsetToEditorOffset?.(block, contentCaret) ?? contentCaret);
     onBeginContentEdit && onBeginContentEdit(block.id);
     setFocusId && setFocusId(block.id);
     setEditing(true);
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.focus();
-        const pos = pendingCaretRef.current ?? fallback;
+        const pos = pendingCaretRef.current ?? (displaySourceOffset ? block.content.length : fallback);
         pendingCaretRef.current = null;
         inputRef.current.setSelectionRange(pos, pos);
       }
     }, 0);
   };
-
-  // ── visual params per kind ──────────────────────────────────────
-  const fontStyle = mnGetFontStyle(block, T, editorFontSize);
 
   if (block.kind === 'plot-points') {
     return (
@@ -1139,10 +1188,18 @@ function MnBlockRow({
   // ── special render: divider ────────────────────────────────────
   if (block.kind === 'divider') {
     return (
-      <div style={{
-        marginLeft: indentPx, padding: '14px 0',
-        position: 'relative',
-      }}>
+      <div
+        className="mn-block-row"
+        data-block-id={block.id}
+        data-block-kind="divider"
+        data-block-depth={depth}
+        onMouseDown={(e) => onBlockMouseDown && onBlockMouseDown(block.id, e)}
+        onMouseEnter={() => onBlockMouseEnter && onBlockMouseEnter(block.id)}
+        style={{
+          marginLeft: indentPx,
+          padding: '14px 0',
+          position: 'relative',
+        }}>
         <div style={{ height: 1, background: T.line, width: '100%' }} />
       </div>
     );
@@ -1180,8 +1237,8 @@ function MnBlockRow({
       style={{
         display: 'flex', alignItems: 'flex-start',
         paddingLeft: indentPx,
-        marginTop: block.kind === 'heading'
-          ? (block.level === 1 ? 22 : block.level === 2 ? 16 : 10)
+        marginTop: displayBlock.kind === 'heading'
+          ? (displayBlock.level === 1 ? 22 : displayBlock.level === 2 ? 16 : 10)
           : (block.kind === 'paragraph' && depth === 0 ? 4 : 1),
         position: 'relative',
         ...(dropPos === 'before' ? { boxShadow: `inset 0 2px 0 0 ${T.accent}` } : {}),
@@ -1233,7 +1290,7 @@ function MnBlockRow({
         style={{
           flexShrink: 0,
           display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-          paddingTop: mnAffordancePadTop(block),
+          paddingTop: mnAffordancePadTop(displayBlock),
           marginRight: 8,
           minWidth: 18,
           cursor: 'grab',
@@ -1277,7 +1334,7 @@ function MnBlockRow({
           <span className="mn-grip" style={{
             width: 14, height: 14, borderRadius: 3,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginTop: mnGripPadTop(block),
+            marginTop: mnGripPadTop(displayBlock),
             opacity: 0,
             transition: 'opacity 100ms, background 100ms',
             color: T.inkDim,
@@ -1477,7 +1534,7 @@ function MnBlockRow({
             <textarea
               data-mn-block-content="editor"
               ref={inputRef}
-              value={block.content}
+              value={editorValue}
               onChange={handleInput}
               onPaste={handlePaste}
               onCopy={handleCopy}
@@ -1594,22 +1651,22 @@ function MnBlockRow({
             )}
             <span ref={displayTextRef}>
               {(() => {
-                const content = block.content || '';
+                const content = displayBlock.content || '';
                 // Page-property line: key:: value
-                if (window.MN_LOGSEQ.mnIsPropertyLine(content)) {
+                if (!markdownDisplayProjection && window.MN_LOGSEQ.mnIsPropertyLine(content)) {
                   const prop = window.MN_LOGSEQ.mnParseProperty(content);
                   if (prop) return <MnPropertyRow property={prop} T={T} />;
                 }
                 // Block-level embed: {{embed [[Page]]}} or {{embed ((id))}}
-                const pageEmbed = content.match(/^\{\{embed\s+\[\[(.+?)\]\]\}\}$/);
+                const pageEmbed = !markdownDisplayProjection && content.match(/^\{\{embed\s+\[\[(.+?)\]\]\}\}$/);
                 if (pageEmbed) {
                   return <MnPageEmbed title={pageEmbed[1]} allNotes={allNotes} T={T} onOpenNote={(id) => onOpen && onOpen(null, id)} />;
                 }
-                const blockEmbed = content.match(/^\{\{embed\s+\(\(([^)]+)\)\)\}\}$/);
+                const blockEmbed = !markdownDisplayProjection && content.match(/^\{\{embed\s+\(\(([^)]+)\)\)\}\}$/);
                 if (blockEmbed) {
                   return <MnBlockEmbed refId={blockEmbed[1]} allNotes={allNotes} T={T} onOpenBlock={(noteId, blockId) => onOpen && onOpen(null, noteId, blockId)} />;
                 }
-                const canvasEmbed = content.match(/^\{\{canvas\s+([A-Za-z0-9_-]+)\}\}$/);
+                const canvasEmbed = !markdownDisplayProjection && content.match(/^\{\{canvas\s+([A-Za-z0-9_-]+)\}\}$/);
                 if (canvasEmbed) {
                   return <MnCanvasEmbed canvasId={canvasEmbed[1]} canvases={allCanvases} T={T} onOpenCanvas={onOpenCanvas} />;
                 }
@@ -1625,13 +1682,13 @@ function MnBlockRow({
                   if (lang === 'mermaid') return <MnMermaidBlock source={content} T={T} />;
                   return mnRenderCode(content, block.language, T);
                 }
-                if (spellCheck && Object.keys(spellIssues || {}).length) {
-                  return mnRenderSpellCheckedText(content, spellIssues, T, setSpellMenu);
-                }
                 if (content) {
-                  return mnRenderAnnotated(content, block.annotations, T, onOpen, onTagClick, allNotes);
+                  const renderSpellText = spellCheck && Object.keys(spellIssues || {}).length
+                    ? (text, offset) => mnRenderSpellCheckedText(text, spellIssues, T, setSpellMenu, displaySourceOffset + offset)
+                    : null;
+                  return mnRenderAnnotated(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText);
                 }
-                return <span style={{ color: T.inkDim, fontStyle: 'italic' }}>{mnPlaceholder(block)}</span>;
+                return <span style={{ color: T.inkDim, fontStyle: 'italic' }}>{mnPlaceholder(displayBlock)}</span>;
               })()}
             </span>
             <MnSpellSuggestionMenu
@@ -2052,7 +2109,7 @@ function mnEditorFontScale(size) {
 function mnGetFontStyle(block, T, editorFontSize) {
   const scale = mnEditorFontScale(editorFontSize);
   if (block.kind === 'heading') {
-    const sizes = { 1: 26, 2: 20, 3: 17 };
+    const sizes = { 1: 26, 2: 20, 3: 17, 4: 15.5, 5: 14.5, 6: 14.5 };
     return {
       fontFamily: 'var(--mn-body)', fontSize: (sizes[block.level] || 17) * scale,
       fontWeight: 600, color: T.ink, letterSpacing: 0, lineHeight: 1.25,

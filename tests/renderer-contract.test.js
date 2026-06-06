@@ -57,6 +57,7 @@ test('renderer globals are explicitly allowlisted until ESM migration removes th
     'MN_DATA',
     'MN_FONTS',
     'MN_LOGSEQ',
+    'MN_MARKDOWN_INLINE_RENDERERS',
     'MN_OUTLINE',
     'MN_OUTLINER_RENDERERS',
     'MN_OUTLINER_HISTORY',
