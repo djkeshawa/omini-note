@@ -1233,9 +1233,17 @@ test('Zotero reader is wired as a read-only AI app action', () => {
   assert.match(app, /const zoteroReaderEnabled = plugins\.some/);
   assert.match(app, /id: 'zotero-search'/);
   assert.match(app, /id: 'zotero-read'/);
+  assert.match(app, /id: 'zotero-source-note'/);
+  assert.match(app, /label: 'Create Zotero source note'/);
+  assert.match(app, /idempotent: true/);
   assert.match(app, /readOnly: true/);
   assert.match(app, /window\.mn\.zotero\.search/);
   assert.match(app, /window\.mn\.zotero\.read/);
+  assert.match(app, /window\.mn\.zotero\.status/);
+  assert.match(app, /zoteroFindSourceNote\(notesWithBody, itemKey\)/);
+  assert.match(app, /zoteroBuildSourceNotePlan/);
+  assert.match(app, /Created Zotero source note/);
+  assert.match(app, /uniqueNoteTitle\(plan\.createNote\.title/);
   assert.match(ai, /runZoteroDocumentRequest/);
   assert.match(ai, /const cleanedQueries = \[/);
   assert.match(ai, /Zotero responded: Local API is not enabled/);

@@ -116,6 +116,64 @@ test('Capture save plans describe append and create behavior without mutation', 
   assert.equal(fallbackPlan.createNote.title, 'Reflection - 2026-06-06');
 });
 
+test('Zotero source-note helpers build deterministic drafts and idempotent plans', () => {
+  const readResult = {
+    item: {
+      key: 'ABCD1234',
+      itemType: 'journalArticle',
+      title: 'Attention Is All You Need',
+      creators: 'Ashish Vaswani, Noam Shazeer',
+      date: '2017-06-12',
+      publicationTitle: 'NIPS',
+      url: 'https://example.test/attention',
+      doi: '10.5555/3295222.3295349',
+      abstractNote: 'Transformer abstract',
+    },
+    attachments: [
+      { key: 'ATTACH1', title: 'PDF', filename: 'attention.pdf', contentType: 'application/pdf' },
+    ],
+    fullText: 'Indexed PDF text with enough detail for an excerpt.',
+    fullTextItemKey: 'ATTACH1',
+    fullTextTruncated: true,
+  };
+
+  const draft = appHelpers.zoteroBuildSourceNoteDraft(readResult);
+  assert.equal(draft.itemKey, 'ABCD1234');
+  assert.equal(draft.title, 'Attention Is All You Need');
+  assert.deepEqual(draft.tags, ['research', 'source', 'zotero']);
+  assert.match(draft.body, /zoteroKey:: ABCD1234/);
+  assert.match(draft.body, /creators:: Ashish Vaswani, Noam Shazeer/);
+  assert.match(draft.body, /year:: 2017/);
+  assert.match(draft.body, /doi:: 10\.5555\/3295222\.3295349/);
+  assert.match(draft.body, /url:: https:\/\/example\.test\/attention/);
+  assert.match(draft.body, /## Abstract\nTransformer abstract/);
+  assert.match(draft.body, /## Attachments\n- PDF - attention\.pdf - application\/pdf - ATTACH1/);
+  assert.match(draft.body, /## Full text excerpt\nIndexed PDF text/);
+  assert.match(draft.body, /Excerpt truncated by VispNote/);
+  assert.match(draft.body, /- \[ \] Extract key claims/);
+
+  const createPlan = appHelpers.zoteroBuildSourceNotePlan({ readResult, notes: [] });
+  assert.equal(createPlan.action, 'create');
+  assert.equal(createPlan.createNote.title, 'Attention Is All You Need');
+  assert.match(createPlan.createNote.body, /zoteroKey:: ABCD1234/);
+
+  const existingPlan = appHelpers.zoteroBuildSourceNotePlan({
+    itemKey: 'ABCD1234',
+    readResult,
+    notes: [{ id: 'n1', title: 'Existing source', body: '# Existing\n\nzoteroKey:: ABCD1234\n' }],
+  });
+  assert.equal(existingPlan.action, 'open');
+  assert.equal(existingPlan.noteId, 'n1');
+  assert.equal(existingPlan.createNote, null);
+
+  const unavailable = appHelpers.zoteroBuildSourceNotePlan({
+    readResult: { item: { key: '../bad', title: 'Unsafe' } },
+    notes: [],
+  });
+  assert.equal(unavailable.action, 'unavailable');
+  assert.match(unavailable.error, /valid Zotero item key/);
+});
+
 test('Contextual AI helpers preserve source, provider, and markdown markers', () => {
   const notes = [
     {

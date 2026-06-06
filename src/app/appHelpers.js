@@ -57,6 +57,8 @@
   const SMART_VIEW_TYPES = ['notes', 'tasks', 'reminders', 'actions'];
   const SMART_VIEW_SORT_FIELDS = ['title', 'created', 'modified', 'reminder'];
   const CONTEXTUAL_AI_SECTION_KINDS = ['fact', 'suggestion', 'preview'];
+  const ZOTERO_ITEM_KEY_RE = /^[A-Za-z0-9_-]{1,80}$/;
+  const ZOTERO_SOURCE_TAGS = ['research', 'source', 'zotero'];
   const CONTEXTUAL_AI_PROVIDER_LABELS = {
     ollama: 'Ollama',
     openai: 'OpenAI',
@@ -258,6 +260,188 @@
       createNote: action === 'create'
         ? { title: createTitle, tags, body }
         : null,
+    };
+  }
+
+  function zoteroCleanItemKey(value = '') {
+    const key = String(value || '').trim();
+    return ZOTERO_ITEM_KEY_RE.test(key) ? key : '';
+  }
+
+  function zoteroCleanOneLine(value = '', max = 300) {
+    return captureCleanText(value, max).replace(/\s+/g, ' ').trim();
+  }
+
+  function zoteroYear(value = '') {
+    const match = String(value || '').match(/\b(1[5-9]\d{2}|20\d{2}|21\d{2})\b/);
+    return match ? match[1] : '';
+  }
+
+  function zoteroCreatorsText(value = '') {
+    if (Array.isArray(value)) {
+      return value
+        .map(creator => [creator.firstName, creator.lastName].filter(Boolean).join(' ').trim() || String(creator.name || '').trim())
+        .filter(Boolean)
+        .slice(0, 8)
+        .join(', ');
+    }
+    return zoteroCleanOneLine(value, 500);
+  }
+
+  function zoteroNormalizeAttachment(attachment = {}) {
+    return {
+      key: zoteroCleanItemKey(attachment.key),
+      title: zoteroCleanOneLine(attachment.title || attachment.filename || 'Attachment', 180),
+      contentType: zoteroCleanOneLine(attachment.contentType, 120),
+      filename: zoteroCleanOneLine(attachment.filename, 180),
+    };
+  }
+
+  function zoteroNormalizeSource(readResult = {}) {
+    const item = readResult.item || readResult;
+    const itemKey = zoteroCleanItemKey(item.key || readResult.itemKey || readResult.key);
+    const title = zoteroCleanOneLine(item.title || (itemKey ? `Zotero source ${itemKey}` : 'Zotero source'), 180);
+    const date = zoteroCleanOneLine(item.date || item.year, 120);
+    const fullText = captureCleanText(readResult.fullText || '', 1800).trim();
+    return {
+      itemKey,
+      title,
+      itemType: zoteroCleanOneLine(item.itemType, 80),
+      creators: zoteroCreatorsText(item.creators),
+      date,
+      year: zoteroYear(date),
+      publicationTitle: zoteroCleanOneLine(item.publicationTitle || item.bookTitle || item.proceedingsTitle, 180),
+      url: zoteroCleanOneLine(item.url, 500),
+      doi: zoteroCleanOneLine(item.doi || item.DOI, 180),
+      abstractNote: captureCleanText(item.abstractNote, 2400).trim(),
+      attachments: (Array.isArray(readResult.attachments) ? readResult.attachments : [])
+        .map(zoteroNormalizeAttachment)
+        .filter(attachment => attachment.key || attachment.title),
+      fullTextExcerpt: fullText,
+      fullTextItemKey: zoteroCleanItemKey(readResult.fullTextItemKey),
+      fullTextTruncated: !!readResult.fullTextTruncated,
+      fullTextError: zoteroCleanOneLine(readResult.fullTextError, 240),
+    };
+  }
+
+  function zoteroFormatAttachment(attachment = {}) {
+    const parts = [
+      attachment.title || 'Attachment',
+      attachment.filename && attachment.filename !== attachment.title ? attachment.filename : '',
+      attachment.contentType,
+      attachment.key,
+    ].filter(Boolean);
+    return `- ${parts.join(' - ')}`;
+  }
+
+  function zoteroSourceNoteProperties(source = {}) {
+    return [
+      ['type', 'source'],
+      ['source', 'zotero'],
+      ['zoteroKey', source.itemKey],
+      ['itemType', source.itemType],
+      ['creators', source.creators],
+      ['year', source.year],
+      ['publication', source.publicationTitle],
+      ['doi', source.doi],
+      ['url', source.url],
+    ]
+      .filter(([, value]) => String(value || '').trim())
+      .map(([key, value]) => `${key}:: ${value}`)
+      .join('\n');
+  }
+
+  function zoteroBuildSourceNoteBody(source = {}) {
+    const sections = [
+      `# ${source.title || 'Zotero source'}`,
+      zoteroSourceNoteProperties(source),
+    ];
+    if (source.abstractNote) sections.push(`## Abstract\n${source.abstractNote}`);
+    if (source.attachments?.length) sections.push(`## Attachments\n${source.attachments.map(zoteroFormatAttachment).join('\n')}`);
+    if (source.fullTextExcerpt) {
+      const excerpt = `## Full text excerpt\n${source.fullTextExcerpt}`;
+      sections.push(source.fullTextTruncated ? `${excerpt}\n\nExcerpt truncated by VispNote.` : excerpt);
+    }
+    sections.push('## Reading tasks\n- [ ] Read source and confirm metadata\n- [ ] Extract key claims\n- [ ] Capture useful quotes\n- [ ] Link related VispNote notes');
+    return `${sections.filter(Boolean).join('\n\n')}\n`;
+  }
+
+  function zoteroBuildSourceNoteDraft(readResult = {}, options = {}) {
+    const source = zoteroNormalizeSource(readResult);
+    const title = captureCleanText(options.title || source.title || 'Zotero source', 180).trim() || 'Zotero source';
+    return {
+      type: 'zotero-source-note-draft',
+      itemKey: source.itemKey,
+      title,
+      source,
+      tags: captureUniqueTags(options.tags || [], ZOTERO_SOURCE_TAGS),
+      body: zoteroBuildSourceNoteBody({ ...source, title }),
+    };
+  }
+
+  function zoteroFindSourceNote(notes = [], itemKey = '') {
+    const key = zoteroCleanItemKey(itemKey).toLowerCase();
+    if (!key) return null;
+    return (notes || []).find(note => zoteroCleanItemKey(bodyPropertyValue(note?.body || '', 'zoteroKey')).toLowerCase() === key) || null;
+  }
+
+  function zoteroBuildSourceNotePlan(options = {}) {
+    const notes = Array.isArray(options.notes) ? options.notes : [];
+    const requestedKey = zoteroCleanItemKey(options.itemKey || options.readResult?.item?.key || options.readResult?.key);
+    const existing = zoteroFindSourceNote(notes, requestedKey);
+    if (existing) {
+      return {
+        type: 'zotero-source-note-plan',
+        action: 'open',
+        mode: 'open',
+        itemKey: requestedKey,
+        noteId: existing.id || null,
+        noteTitle: existing.title || requestedKey,
+        existingNote: existing,
+        draft: null,
+        createNote: null,
+      };
+    }
+    const draft = zoteroBuildSourceNoteDraft(options.readResult || {}, options);
+    if (!draft.itemKey) {
+      return {
+        type: 'zotero-source-note-plan',
+        action: 'unavailable',
+        mode: 'unavailable',
+        itemKey: requestedKey,
+        error: 'A valid Zotero item key is required.',
+        existingNote: null,
+        draft: null,
+        createNote: null,
+      };
+    }
+    const existingFromDraft = zoteroFindSourceNote(notes, draft.itemKey);
+    if (existingFromDraft) {
+      return {
+        type: 'zotero-source-note-plan',
+        action: 'open',
+        mode: 'open',
+        itemKey: draft.itemKey,
+        noteId: existingFromDraft.id || null,
+        noteTitle: existingFromDraft.title || draft.itemKey,
+        existingNote: existingFromDraft,
+        draft: null,
+        createNote: null,
+      };
+    }
+    return {
+      type: 'zotero-source-note-plan',
+      action: 'create',
+      mode: 'create',
+      itemKey: draft.itemKey,
+      source: draft.source,
+      existingNote: null,
+      draft,
+      createNote: {
+        title: draft.title,
+        body: draft.body,
+        tags: draft.tags,
+      },
     };
   }
 
@@ -2650,6 +2834,11 @@
     captureDestinationById,
     captureBuildAppendMarkdown,
     captureBuildSavePlan,
+    zoteroCleanItemKey,
+    zoteroNormalizeSource,
+    zoteroBuildSourceNoteDraft,
+    zoteroFindSourceNote,
+    zoteroBuildSourceNotePlan,
     filterCommands,
     decorateNotesWithSearchDetails,
     normalizeWorkflowStatus,

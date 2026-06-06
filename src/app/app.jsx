@@ -3591,6 +3591,80 @@ function MnApp() {
             };
           },
         },
+        {
+          id: 'zotero-source-note',
+          label: 'Create Zotero source note',
+          description: 'Create or open a VispNote source note linked to a Zotero item key.',
+          section: 'Zotero',
+          keywords: 'zotero source note paper document reference bibliography create open',
+          risk: 'safe',
+          idempotent: true,
+          inputSchema: objectSchema({ itemKey: stringArg(80), includeFullText: { type: 'boolean', default: true } }, ['itemKey']),
+          outputSchema: { type: 'object', additionalProperties: true },
+          run: async (args) => {
+            const itemKey = MN_APP_HELPERS.zoteroCleanItemKey
+              ? MN_APP_HELPERS.zoteroCleanItemKey(args.itemKey)
+              : String(args.itemKey || '').trim();
+            if (!itemKey) return { ok: false, message: 'A valid Zotero item key is required.' };
+            const existing = MN_APP_HELPERS.zoteroFindSourceNote
+              ? MN_APP_HELPERS.zoteroFindSourceNote(notesWithBody, itemKey)
+              : null;
+            if (existing) {
+              setSelectedId(existing.id);
+              navigateView('notes');
+              return {
+                message: `Opened existing Zotero source note "${existing.title || itemKey}".`,
+                itemKey,
+                noteId: existing.id,
+                mode: 'open',
+                affected: noteAffected(existing),
+              };
+            }
+            if (!window.mn?.zotero?.status || !window.mn?.zotero?.read) {
+              return { ok: false, message: 'Zotero integration is unavailable.' };
+            }
+            const status = await window.mn.zotero.status();
+            if (!status.ok) return { ok: false, message: status.error || 'Could not check Zotero.' };
+            if (!status.value?.reachable) {
+              return { ok: false, message: status.value?.error || 'Zotero Desktop is not reachable.' };
+            }
+            const res = await window.mn.zotero.read({ itemKey, includeFullText: args.includeFullText !== false });
+            if (!res.ok) return { ok: false, message: res.error || 'Could not read Zotero item.' };
+            const plan = MN_APP_HELPERS.zoteroBuildSourceNotePlan
+              ? MN_APP_HELPERS.zoteroBuildSourceNotePlan({ readResult: res.value, itemKey, notes: notesWithBody })
+              : null;
+            if (!plan || plan.action === 'unavailable') {
+              return { ok: false, message: plan?.error || 'Could not build Zotero source note.' };
+            }
+            if (plan.action === 'open' && plan.noteId) {
+              setSelectedId(plan.noteId);
+              navigateView('notes');
+              return {
+                message: `Opened existing Zotero source note "${plan.noteTitle || itemKey}".`,
+                itemKey: plan.itemKey || itemKey,
+                noteId: plan.noteId,
+                mode: 'open',
+                affected: noteAffected(plan.existingNote),
+              };
+            }
+            const title = uniqueNoteTitle(plan.createNote.title || plan.source?.title || itemKey);
+            const id = createNote({
+              title,
+              body: plan.createNote.body || '',
+              tags: plan.createNote.tags || [],
+            });
+            return {
+              message: `Created Zotero source note "${title}".`,
+              itemKey: plan.itemKey || itemKey,
+              noteId: id,
+              mode: 'create',
+              affected: [
+                { type: 'note', id, title },
+                { type: 'zotero', id: plan.itemKey || itemKey, title: plan.source?.title || itemKey },
+              ],
+            };
+          },
+        },
       ] : []),
       ...plugins.filter(plugin => plugin.enabled !== false).map(plugin => ({
         id: `plugin-${plugin.id}`,
@@ -3652,7 +3726,7 @@ function MnApp() {
       })),
     ];
     return makeRegistry(actions);
-  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openSmartView, plugins, rebuildIndex, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openSmartView, plugins, rebuildIndex, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
 
   useEffectA(() => {
     window.MN_APP_ACTIONS = appActionRegistry;
