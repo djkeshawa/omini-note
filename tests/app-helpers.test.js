@@ -36,6 +36,86 @@ test('App helpers expand templates, rank commands, and decorate search results',
   assert.deepEqual(decorated[1].__matchedFields, ['body']);
 });
 
+test('Capture helpers expose deterministic destinations and templates', () => {
+  const now = new Date('2026-06-06T10:00:00.000Z');
+  const notes = [
+    { id: 'today', title: '2026-06-06', body: '# 2026-06-06', date: now.toISOString() },
+    { id: 'inbox', title: 'Inbox', body: '# Inbox' },
+  ];
+  const choices = appHelpers.captureDestinationChoices({
+    notes,
+    currentNote: { id: 'project', title: 'Project Alpha' },
+    now,
+  });
+
+  assert.deepEqual(choices.map(item => item.id), ['today', 'inbox', 'current', 'new']);
+  assert.equal(choices.find(item => item.id === 'today').noteId, 'today');
+  assert.equal(choices.find(item => item.id === 'today').noteTitle, '2026-06-06');
+  assert.equal(choices.find(item => item.id === 'inbox').noteId, 'inbox');
+  assert.equal(choices.find(item => item.id === 'current').noteTitle, 'Project Alpha');
+  assert.equal(appHelpers.captureDestinationChoices({ notes, now }).find(item => item.id === 'current').disabled, true);
+  assert.equal(appHelpers.captureDestinationChoices({ notes, now }).find(item => item.id === 'current').fallbackDestinationId, 'new');
+
+  const templateIds = appHelpers.captureTemplateChoices().map(item => item.id);
+  assert.deepEqual(templateIds, ['meeting', 'research', 'book-paper', 'daily-reflection', 'task']);
+
+  const meeting = appHelpers.expandCaptureTemplate('meeting', { date: '2026-06-06', text: 'Discuss launch' });
+  assert.equal(meeting.noteTitle, 'Meeting - 2026-06-06');
+  assert.deepEqual(meeting.tags, ['meeting']);
+  assert.match(meeting.body, /type:: meeting/);
+  assert.match(meeting.body, /Discuss launch/);
+
+  const task = appHelpers.expandCaptureTemplate('task', { date: '2026-06-06', text: 'Email Sam' });
+  assert.equal(task.noteTitle, 'Task - 2026-06-06');
+  assert.match(task.body, /- \[ \] Email Sam/);
+});
+
+test('Capture save plans describe append and create behavior without mutation', () => {
+  const now = new Date('2026-06-06T10:00:00.000Z');
+  const notes = [
+    { id: 'today', title: '2026-06-06', body: '# 2026-06-06', date: now.toISOString() },
+  ];
+
+  const todayPlan = appHelpers.captureBuildSavePlan({
+    destinationId: 'today',
+    templateId: 'task',
+    text: 'Buy milk',
+    notes,
+    now,
+  });
+  assert.equal(todayPlan.action, 'append');
+  assert.equal(todayPlan.noteId, 'today');
+  assert.equal(todayPlan.destinationTitle, '2026-06-06');
+  assert.deepEqual(todayPlan.tags, ['daily', 'task']);
+  assert.match(todayPlan.appendText, /- \[ \] Buy milk/);
+  assert.equal(todayPlan.createNote, null);
+
+  const inboxPlan = appHelpers.captureBuildSavePlan({
+    destinationId: 'inbox',
+    templateId: 'research',
+    text: 'Investigate local-first sync tradeoffs',
+    notes,
+    now,
+  });
+  assert.equal(inboxPlan.action, 'create');
+  assert.equal(inboxPlan.destinationTitle, 'Inbox');
+  assert.equal(inboxPlan.createNote.title, 'Inbox');
+  assert.deepEqual(inboxPlan.createNote.tags, ['inbox', 'research']);
+  assert.match(inboxPlan.createNote.body, /Investigate local-first sync tradeoffs/);
+
+  const fallbackPlan = appHelpers.captureBuildSavePlan({
+    destinationId: 'current',
+    templateId: 'daily-reflection',
+    text: 'Good progress',
+    notes,
+    now,
+  });
+  assert.equal(fallbackPlan.fellBack, true);
+  assert.equal(fallbackPlan.destinationId, 'new');
+  assert.equal(fallbackPlan.action, 'create');
+  assert.equal(fallbackPlan.createNote.title, 'Reflection - 2026-06-06');
+});
+
 test('Contextual AI helpers preserve source, provider, and markdown markers', () => {
   const notes = [
     {
