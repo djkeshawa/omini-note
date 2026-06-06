@@ -103,6 +103,9 @@ function MnCalendarPanel({
   const [filterStatus, setFilterStatus] = useStateC('all');
   const [filterTag, setFilterTag] = useStateC('');
   const [filterSourceId, setFilterSourceId] = useStateC('');
+  const [createWhen, setCreateWhen] = useStateC('');
+  const [draftWhen, setDraftWhen] = useStateC('');
+  const [scheduleError, setScheduleError] = useStateC('');
   const helpers = window.MN_APP_HELPERS || {};
 
   useEffectC(() => {
@@ -142,6 +145,8 @@ function MnCalendarPanel({
     setDraftText(activeItem.label || activeItem.text || '');
     setDraftDate(activeItem.remindAt?.date || '');
     setDraftTime(activeItem.remindAt?.time || '');
+    setDraftWhen('');
+    setScheduleError('');
   }, [activeItem]);
 
   const grouped = useMemoC(() => {
@@ -195,19 +200,50 @@ function MnCalendarPanel({
     setSelectedKey(todayKey);
   };
 
+  const resolveSchedulePhrase = (value, fallbackDate, fallbackTime) => {
+    const phrase = String(value || '').trim();
+    if (!phrase) return { ok: true, date: fallbackDate, time: fallbackTime };
+    const parsed = helpers.agendaParseScheduleInput?.(phrase);
+    if (!parsed?.ok) {
+      setScheduleError(parsed?.error || 'Unsupported schedule phrase.');
+      return { ok: false };
+    }
+    setScheduleError('');
+    return { ok: true, date: parsed.date, time: parsed.time || fallbackTime };
+  };
+
+  const applyCreateWhen = () => {
+    const resolved = resolveSchedulePhrase(createWhen, createDate, createTime);
+    if (!resolved.ok) return false;
+    setCreateDate(resolved.date);
+    setCreateTime(resolved.time || createTime);
+    return true;
+  };
+
+  const applyDraftWhen = () => {
+    const resolved = resolveSchedulePhrase(draftWhen, draftDate, draftTime);
+    if (!resolved.ok) return false;
+    setDraftDate(resolved.date);
+    setDraftTime(resolved.time || draftTime);
+    return true;
+  };
+
   const addItem = () => {
     const text = createText.trim();
     if (!text || !createNoteId) return;
     const isReminder = createType === 'reminder';
+    const resolved = resolveSchedulePhrase(createWhen, createDate, createTime);
+    if (!resolved.ok) return;
     const result = onCreateItem?.({
       noteId: createNoteId,
       text,
       type: createType,
-      date: createDate,
-      time: isReminder ? createTime : '',
+      date: resolved.date,
+      time: isReminder ? resolved.time : '',
     });
     if (result !== false) {
       setCreateText('');
+      setCreateWhen('');
       setCreateOpen(false);
     }
   };
@@ -223,10 +259,12 @@ function MnCalendarPanel({
 
   const saveActive = () => {
     if (!activeItem || !draftText.trim()) return;
+    const resolved = resolveSchedulePhrase(draftWhen, draftDate, draftTime);
+    if (!resolved.ok) return;
     onUpdateItem?.(activeItem, {
       text: draftText.trim(),
-      date: draftDate,
-      time: draftTime,
+      date: resolved.date,
+      time: resolved.time,
     });
   };
 
@@ -646,12 +684,17 @@ function MnCalendarPanel({
                   <select value={createNoteId} onChange={e => setCreateNoteId(e.target.value)} style={mnCalendarInput(T)}>
                     {notes.map(note => <option key={note.id} value={note.id}>{note.title || 'Untitled'}</option>)}
                   </select>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+                    <input aria-label="Schedule phrase" value={createWhen} onChange={e => setCreateWhen(e.target.value)} placeholder="When" style={mnCalendarInput(T)} />
+                    <button type="button" onClick={applyCreateWhen} disabled={!createWhen.trim()} style={pillBtn(false)}>Apply</button>
+                  </div>
                   {createType === 'reminder' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 96px', gap: 8 }}>
                       <input type="date" value={createDate} onChange={e => setCreateDate(e.target.value)} style={mnCalendarInput(T)} />
                       <input type="time" value={createTime} onChange={e => setCreateTime(e.target.value)} style={mnCalendarInput(T)} />
                     </div>
                   )}
+                  {scheduleError && <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.danger }}>{scheduleError}</div>}
                   <button onClick={addItem} disabled={!createText.trim() || !createNoteId} style={mnCalendarPrimaryButton(T, !createText.trim() || !createNoteId)}>Add</button>
                 </div>
               </div>
@@ -666,10 +709,15 @@ function MnCalendarPanel({
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Edit item</div>
                 <div style={{ display: 'grid', gap: 8 }}>
                   <input value={draftText} onChange={e => setDraftText(e.target.value)} style={mnCalendarInput(T)} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+                    <input aria-label="Edit schedule phrase" value={draftWhen} onChange={e => setDraftWhen(e.target.value)} placeholder="When" style={mnCalendarInput(T)} />
+                    <button type="button" onClick={applyDraftWhen} disabled={!draftWhen.trim()} style={pillBtn(false)}>Apply</button>
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 96px', gap: 8 }}>
                     <input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)} style={mnCalendarInput(T)} />
                     <input type="time" value={draftTime} onChange={e => setDraftTime(e.target.value)} style={mnCalendarInput(T)} />
                   </div>
+                  {scheduleError && <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.danger }}>{scheduleError}</div>}
                   <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                     <button onClick={saveActive} disabled={!draftText.trim()} style={mnCalendarPrimaryButton(T, !draftText.trim())}>Save</button>
                     <button onClick={clearActiveDate} disabled={!activeItem.remindAt} style={pillBtn(false)}>Clear date</button>

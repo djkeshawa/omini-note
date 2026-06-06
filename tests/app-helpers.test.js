@@ -324,6 +324,29 @@ test('App helpers collect reminders and workflow notes without renderer state', 
   assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { status: 'unscheduled' }, { now }).map(item => item.label), ['Call']);
   assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { tag: 'todo' }, { now }).map(item => item.label), ['Call']);
   assert.deepEqual(appHelpers.agendaFilterActionItems(agendaItems, rollupNotes, { sourceNoteId: 'title' }, { now }).map(item => item.label), ['Later']);
+  const scheduleNow = new Date(2026, 5, 6, 10, 0, 0);
+  assert.deepEqual(appHelpers.agendaParseScheduleInput('today', { now: scheduleNow }), {
+    ok: true,
+    date: '2026-06-06',
+    time: '',
+    raw: 'today',
+  });
+  assert.equal(appHelpers.agendaParseScheduleInput('tomorrow', { now: scheduleNow }).date, '2026-06-07');
+  assert.equal(appHelpers.agendaParseScheduleInput('next Monday', { now: scheduleNow }).date, '2026-06-08');
+  assert.deepEqual(appHelpers.agendaParseScheduleInput('in 2 hours', { now: scheduleNow }), {
+    ok: true,
+    date: '2026-06-06',
+    time: '12:00',
+    raw: 'in 2 hours',
+  });
+  assert.deepEqual(appHelpers.agendaParseScheduleInput('Friday 3pm', { now: scheduleNow }), {
+    ok: true,
+    date: '2026-06-12',
+    time: '15:00',
+    raw: 'Friday 3pm',
+  });
+  assert.equal(appHelpers.agendaParseScheduleInput('someday maybe', { now: scheduleNow }).ok, false);
+  assert.equal(appHelpers.agendaParseScheduleInput('Friday 25pm', { now: scheduleNow }).ok, false);
 
   assert.match(
     appHelpers.rollupAppendQuickTask('# 2026-06-06\n\n## Tasks\n- [ ] \n\n## Notes\n- note\n', 'Buy milk'),

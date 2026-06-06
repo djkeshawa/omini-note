@@ -749,8 +749,15 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(todosPanel, /isReminderOnly/);
   assert.match(calendarPanel, /function MnCalendarPanel/);
   assert.match(calendarPanel, /filterStatus/);
+  assert.match(calendarPanel, /createWhen/);
+  assert.match(calendarPanel, /draftWhen/);
+  assert.match(calendarPanel, /scheduleError/);
   assert.match(calendarPanel, /Filter Agenda by tag/);
   assert.match(calendarPanel, /Filter Agenda by source note/);
+  assert.match(calendarPanel, /aria-label="Schedule phrase"/);
+  assert.match(calendarPanel, /aria-label="Edit schedule phrase"/);
+  assert.match(calendarPanel, /agendaParseScheduleInput/);
+  assert.match(calendarPanel, /if \(!resolved\.ok\) return/);
   assert.match(calendarPanel, /\['overdue', 'Overdue'\]/);
   assert.match(calendarPanel, /\['unscheduled', 'Unscheduled'\]/);
   assert.match(calendarPanel, /Clear filters/);
@@ -837,6 +844,8 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function agendaActionStatus/);
   assert.match(appHelpers, /function agendaActionDetail/);
   assert.match(appHelpers, /function agendaFilterActionItems/);
+  assert.match(appHelpers, /function agendaParseScheduleInput/);
+  assert.match(appHelpers, /^    agendaParseScheduleInput,$/m);
   assert.match(appHelpers, /Review notes from \$\{today\} for decisions to keep\./);
   assert.match(appRuntime, /"startupView": "notes"/);
   assert.match(appRuntime, /"rollupDefaultRange": "today"/);

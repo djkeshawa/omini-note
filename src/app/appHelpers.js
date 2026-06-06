@@ -484,6 +484,78 @@
     });
   }
 
+  function agendaLocalDateKey(date = new Date()) {
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  function agendaLocalTimeKey(date = new Date()) {
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  function agendaAddDays(date, days) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  function agendaParseClock(value = '') {
+    const match = String(value || '').trim().toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+    if (!match) return '';
+    let hour = Number(match[1]);
+    const minute = match[2] == null ? 0 : Number(match[2]);
+    const suffix = match[3] || '';
+    if (!Number.isInteger(hour) || !Number.isInteger(minute) || minute < 0 || minute > 59) return '';
+    if (suffix) {
+      if (hour < 1 || hour > 12) return '';
+      if (suffix === 'pm' && hour !== 12) hour += 12;
+      if (suffix === 'am' && hour === 12) hour = 0;
+    } else if (hour > 23) return '';
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  function agendaParseScheduleInput(value = '', options = {}) {
+    const raw = String(value || '').trim();
+    if (!raw) return { ok: false, error: 'Enter a schedule phrase.' };
+    const input = raw.toLowerCase().replace(/[,.]+$/g, '').replace(/\s+/g, ' ');
+    const now = new Date(options.now || new Date());
+    if (Number.isNaN(now.getTime())) return { ok: false, error: 'Invalid reference time.' };
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const make = (date, time = '') => ({ ok: true, date: agendaLocalDateKey(date), time, raw });
+
+    if (input === 'today') return make(now);
+    if (input === 'tomorrow') return make(agendaAddDays(now, 1));
+
+    const hours = input.match(/^in\s+(\d{1,2})\s+hours?$/);
+    if (hours) {
+      const amount = Number(hours[1]);
+      if (!Number.isInteger(amount) || amount < 1) return { ok: false, error: 'Use a positive hour count.' };
+      const next = new Date(now);
+      next.setHours(next.getHours() + amount);
+      return make(next, agendaLocalTimeKey(next));
+    }
+
+    const dayMatch = input.match(/^(next\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)(?:\s+(.+))?$/);
+    if (dayMatch) {
+      const forceNext = !!dayMatch[1];
+      const targetDay = dayNames.indexOf(dayMatch[2]);
+      let offset = (targetDay - now.getDay() + 7) % 7;
+      if (forceNext || offset === 0) offset = offset || 7;
+      const date = agendaAddDays(now, offset);
+      const time = dayMatch[3] ? agendaParseClock(dayMatch[3]) : '';
+      if (dayMatch[3] && !time) return { ok: false, error: 'Use a valid time.' };
+      return make(date, time);
+    }
+
+    return { ok: false, error: 'Unsupported schedule phrase.' };
+  }
+
   function rollupQuickTaskLine(text = '') {
     const clean = String(text || '').replace(/\s+/g, ' ').trim();
     return clean ? `- [ ] ${clean}` : '';
@@ -1403,6 +1475,7 @@
     agendaActionDetail,
     agendaDecorateActionItems,
     agendaFilterActionItems,
+    agendaParseScheduleInput,
     rollupAppendQuickTask,
     rollupAppendReflection,
     rollupBuildEndDayRecap,
