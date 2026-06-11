@@ -220,6 +220,73 @@ async function typeActiveEditorText(win, text) {
   }
 }
 
+async function ensureEditorRowTypingFocus(win, index, label) {
+  const rowIndex = Number(index) || 0;
+  const result = await evaluate(win, `
+    (() => {
+      const rows = [...document.querySelectorAll('.mn-block-row[data-block-id]')];
+      const row = rows[${rowIndex}];
+      if (!row) return { ok: false, missing: true, rows: rows.length };
+      const editor = row.querySelector('[data-mn-block-content="editor"]');
+      if (editor) {
+        editor.focus();
+        const end = editor.value.length;
+        editor.setSelectionRange(end, end);
+        return { ok: true, rows: rows.length, value: editor.value };
+      }
+      const target = row.querySelector('[data-mn-block-content="display"]') || row;
+      target.click();
+      return { ok: false, clicked: true, rows: rows.length };
+    })()
+  `);
+  if (result.ok) return;
+  if (result.missing) throw new Error(`Could not find editor row ${rowIndex}: ${JSON.stringify(result)}`);
+  await waitForEditorLayout(win, label || `editor row ${rowIndex} active for typing`, rows => rows[rowIndex]?.editing && rows[rowIndex]?.active);
+  await evaluate(win, `
+    (() => {
+      const rows = [...document.querySelectorAll('.mn-block-row[data-block-id]')];
+      const editor = rows[${rowIndex}]?.querySelector('[data-mn-block-content="editor"]');
+      if (!editor) return false;
+      editor.focus();
+      const end = editor.value.length;
+      editor.setSelectionRange(end, end);
+      return true;
+    })()
+  `);
+}
+
+async function typeEditorRowText(win, index, text) {
+  const rowIndex = Number(index) || 0;
+  for (const ch of String(text || '')) {
+    await ensureEditorRowTypingFocus(win, rowIndex, `editor row ${rowIndex} active before typing`);
+    const result = await evaluate(win, `
+      (() => {
+        const ch = ${JSON.stringify(ch)};
+        const rows = [...document.querySelectorAll('.mn-block-row[data-block-id]')];
+        const row = rows[${rowIndex}];
+        const el = row?.querySelector('[data-mn-block-content="editor"]');
+        if (!el) return { ok: false, rows: rows.length };
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? start;
+        const next = el.value.slice(0, start) + ch + el.value.slice(end);
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+        if (setter) setter.call(el, next);
+        else el.value = next;
+        const pos = start + ch.length;
+        el.setSelectionRange(pos, pos);
+        const event = typeof InputEvent === 'function'
+          ? new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch })
+          : new Event('input', { bubbles: true });
+        el.dispatchEvent(event);
+        el.focus();
+        return { ok: true, value: next };
+      })()
+    `);
+    if (!result.ok) throw new Error(`Editor row ${rowIndex} textarea not found for typing`);
+    await wait(50);
+  }
+}
+
 async function clickVisibleText(win, text) {
   const result = await evaluate(win, `
     (() => {
@@ -586,6 +653,7 @@ async function runEmptyNestedEnterScenario(win, { id, title, body, expectedKind 
       && rows[1].depth === 0
       && rows[1].kind === expectedKind
       && rows[1].editing
+      && rows[1].active
   ));
   await pressAccelerator(win, 'Tab');
   await waitForEditorLayout(win, `${title} indents empty sibling`, rows => (
@@ -594,6 +662,7 @@ async function runEmptyNestedEnterScenario(win, { id, title, body, expectedKind 
       && rows[1].depth === 1
       && rows[1].kind === expectedKind
       && rows[1].editing
+      && rows[1].active
   ));
   await pressAccelerator(win, 'Enter');
   await waitForEditorLayout(win, `${title} Enter outdents empty child`, rows => (
@@ -602,6 +671,7 @@ async function runEmptyNestedEnterScenario(win, { id, title, body, expectedKind 
       && rows[1].depth === 0
       && rows[1].kind === expectedKind
       && rows[1].editing
+      && rows[1].active
   ));
 }
 
@@ -614,11 +684,11 @@ async function runShiftTabOutdentScenario(win) {
   await focusEditorRow(win, 0);
   await pressAccelerator(win, 'End');
   await pressAccelerator(win, 'Enter');
-  await waitForEditorLayout(win, 'Shift+Tab creates sibling', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing);
+  await waitForEditorLayout(win, 'Shift+Tab creates sibling', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing && rows[1].active);
   await pressAccelerator(win, 'Tab');
-  await waitForEditorLayout(win, 'Shift+Tab indents empty paragraph', rows => rows.length === 2 && rows[1].depth === 1 && rows[1].editing);
+  await waitForEditorLayout(win, 'Shift+Tab indents empty paragraph', rows => rows.length === 2 && rows[1].depth === 1 && rows[1].editing && rows[1].active);
   await pressAccelerator(win, 'Tab', ['shift']);
-  await waitForEditorLayout(win, 'Shift+Tab returns empty paragraph to parent level', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing);
+  await waitForEditorLayout(win, 'Shift+Tab returns empty paragraph to parent level', rows => rows.length === 2 && rows[1].depth === 0 && rows[1].editing && rows[1].active);
 }
 
 async function runMarkdownTypingScenario(win) {
@@ -630,27 +700,27 @@ async function runMarkdownTypingScenario(win) {
   await focusEditorRow(win, 0);
   await pressAccelerator(win, 'End');
   await pressAccelerator(win, 'Enter');
-  await waitForEditorLayout(win, 'markdown typing creates empty paragraph', rows => rows.length === 2 && rows[1].kind === 'paragraph' && rows[1].editing);
+  await waitForEditorLayout(win, 'markdown typing creates empty paragraph', rows => rows.length === 2 && rows[1].kind === 'paragraph' && rows[1].editing && rows[1].active);
 
-  await typeActiveEditorText(win, '# ');
-  await waitForEditorLayout(win, 'heading starter converts immediately', rows => rows[1]?.kind === 'heading' && rows[1]?.value === '# ' && rows[1]?.editing);
-  await typeActiveEditorText(win, 'Markdown heading');
-  await waitForEditorLayout(win, 'heading content remains editable as markdown source', rows => rows[1]?.kind === 'heading' && rows[1]?.value === '# Markdown heading');
-
-  await pressAccelerator(win, 'End');
-  await pressAccelerator(win, 'Enter');
-  await waitForEditorLayout(win, 'paragraph after heading is editable', rows => rows.length >= 3 && rows[2]?.kind === 'paragraph' && rows[2]?.editing);
-  await typeActiveEditorText(win, '- [ ] ');
-  await waitForEditorLayout(win, 'todo starter converts immediately', rows => rows[2]?.kind === 'todo' && rows[2]?.value === '- [ ] ' && rows[2]?.editing);
-  await typeActiveEditorText(win, 'Checklist item');
-  await waitForEditorLayout(win, 'todo content remains editable as markdown source', rows => rows[2]?.kind === 'todo' && rows[2]?.value === '- [ ] Checklist item');
+  await typeEditorRowText(win, 1, '# ');
+  await waitForEditorLayout(win, 'heading starter converts immediately', rows => rows[1]?.kind === 'heading' && rows[1]?.value === '# ' && rows[1]?.editing && rows[1]?.active);
+  await typeEditorRowText(win, 1, 'Markdown heading');
+  await waitForEditorLayout(win, 'heading content remains editable as markdown source', rows => rows[1]?.kind === 'heading' && rows[1]?.value === '# Markdown heading' && rows[1]?.active);
 
   await pressAccelerator(win, 'End');
   await pressAccelerator(win, 'Enter');
-  await waitForEditorLayout(win, 'paragraph after todo is editable', rows => rows.length >= 4 && rows[3]?.kind === 'todo' && rows[3]?.editing);
+  await waitForEditorLayout(win, 'paragraph after heading is editable', rows => rows.length >= 3 && rows[2]?.kind === 'paragraph' && rows[2]?.editing && rows[2]?.active);
+  await typeEditorRowText(win, 2, '- [ ] ');
+  await waitForEditorLayout(win, 'todo starter converts immediately', rows => rows[2]?.kind === 'todo' && rows[2]?.value === '- [ ] ' && rows[2]?.editing && rows[2]?.active);
+  await typeEditorRowText(win, 2, 'Checklist item');
+  await waitForEditorLayout(win, 'todo content remains editable as markdown source', rows => rows[2]?.kind === 'todo' && rows[2]?.value === '- [ ] Checklist item' && rows[2]?.active);
+
+  await pressAccelerator(win, 'End');
   await pressAccelerator(win, 'Enter');
-  await waitForEditorLayout(win, 'empty todo exits to paragraph', rows => rows.length >= 4 && rows[3]?.kind === 'paragraph' && rows[3]?.editing);
-  await typeActiveEditorText(win, 'Safe [Example](https://example.com) and literal [Bad](javascript:alert(1)) plus ~~strike~~.');
+  await waitForEditorLayout(win, 'paragraph after todo is editable', rows => rows.length >= 4 && rows[3]?.kind === 'todo' && rows[3]?.editing && rows[3]?.active);
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'empty todo exits to paragraph', rows => rows.length >= 4 && rows[3]?.kind === 'paragraph' && rows[3]?.editing && rows[3]?.active);
+  await typeEditorRowText(win, 3, 'Safe [Example](https://example.com) and literal [Bad](javascript:alert(1)) plus ~~strike~~.');
   await waitForEditorLayout(win, 'inline markdown content is preserved as source', rows => rows[3]?.value.includes('[Example](https://example.com)') && rows[3]?.value.includes('~~strike~~'));
 }
 

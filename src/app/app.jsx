@@ -70,6 +70,7 @@ const {
 } = window.MN_APP_RUNTIME || {};
 
 const MN_APP_SHELL = window.MN_APP_SHELL || {};
+const MN_PANEL_COMPONENTS = window.MN_PANEL_COMPONENTS || {};
 const MN_NOTES_VAULTS_SERVICE = window.MN_NOTES_VAULTS_SERVICE || {};
 const MN_VAULTS_SERVICE = window.MN_VAULTS_SERVICE || {};
 const MN_NOTES_VAULTS_STATE = window.MN_NOTES_VAULTS_STATE || {};
@@ -85,6 +86,9 @@ const {
   MnCommandPalette,
   MnVaultHealthDialog,
 } = MN_APP_SHELL;
+const {
+  MnSmartViewsPanel,
+} = MN_PANEL_COMPONENTS;
 const {
   MnSidebar,
   MnPanelGrip,
@@ -142,17 +146,23 @@ const MN_NOVEL_IMPORT_TOOL = {
 };
 
 function mnCalendarCleanTaskText(value = '') {
+  if (MN_APP_HELPERS?.agendaCleanActionText) return MN_APP_HELPERS.agendaCleanActionText(value);
   return String(value || '')
     .replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '')
     .replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g, '')
     .trim();
 }
 
-function mnCalendarTaskContent(text, date = '', time = '') {
+function mnCalendarTaskContent(text, date = '', time = '', deferUntil = '') {
+  if (MN_APP_HELPERS?.agendaBuildTaskContent) return MN_APP_HELPERS.agendaBuildTaskContent(text, date, time, deferUntil);
   const clean = mnCalendarCleanTaskText(text);
   const cleanDate = String(date || '').trim();
   const cleanTime = String(time || '').trim();
-  return cleanDate ? `${clean} @remind ${[cleanDate, cleanTime].filter(Boolean).join(' ')}` : clean;
+  const cleanDefer = String(deferUntil || '').trim();
+  return [
+    cleanDate ? `${clean} @remind ${[cleanDate, cleanTime].filter(Boolean).join(' ')}` : clean,
+    cleanDefer ? `@defer ${cleanDefer}` : '',
+  ].filter(Boolean).join(' ');
 }
 
 function mnCalendarReminderDateParts(date = new Date()) {
@@ -330,6 +340,92 @@ function mnThemeOptionsForApp(baseThemes, customThemes) {
   return [...builtIns, ...custom];
 }
 
+function mnNormalizeStartupView(value) {
+  return value === 'today' ? 'today' : 'notes';
+}
+
+function mnNormalizeOnboardingMode(value) {
+  const clean = String(value || '').trim().toLowerCase();
+  return ['general', 'daily', 'researcher', 'writer'].includes(clean) ? clean : '';
+}
+
+const MN_PHASE5_METRICS_STORAGE_KEY = 'mn_phase5_metrics_v1';
+
+function mnReadLocalPhase5Metrics() {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    return JSON.parse(window.localStorage.getItem(MN_PHASE5_METRICS_STORAGE_KEY) || 'null');
+  } catch (e) {
+    return null;
+  }
+}
+
+function mnWriteLocalPhase5Metrics(metrics) {
+  if (typeof window === 'undefined' || !window.localStorage || !metrics) return;
+  try {
+    window.localStorage.setItem(MN_PHASE5_METRICS_STORAGE_KEY, JSON.stringify(metrics));
+  } catch (e) {}
+}
+
+function mnBuildDefaultSmartViewDefinitions() {
+  const helpers = window.MN_APP_HELPERS || {};
+  const today = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
+  const format = helpers.SMART_VIEW_FORMAT || 'vispnote.smartView.v1';
+  return [
+    {
+      format,
+      id: 'recent_notes',
+      title: 'Recent notes',
+      type: 'notes',
+      filters: {},
+      sort: { field: 'modified', direction: 'desc' },
+      limit: 60,
+    },
+    {
+      format,
+      id: 'open_tasks',
+      title: 'Open tasks',
+      type: 'tasks',
+      filters: { actionStatus: 'open' },
+      sort: { field: 'reminder', direction: 'asc' },
+      limit: 80,
+    },
+    {
+      format,
+      id: 'deferred_tasks',
+      title: 'Deferred tasks',
+      type: 'tasks',
+      filters: { actionStatus: 'deferred' },
+      sort: { field: 'reminder', direction: 'asc' },
+      limit: 80,
+    },
+    {
+      format,
+      id: 'due_reminders',
+      title: 'Due reminders',
+      type: 'reminders',
+      filters: { reminderFrom: '1970-01-01', reminderTo: today },
+      sort: { field: 'reminder', direction: 'asc' },
+      limit: 80,
+    },
+  ];
+}
+
+function mnNormalizeSmartViewsForApp(value) {
+  const helpers = window.MN_APP_HELPERS || {};
+  const defaults = mnBuildDefaultSmartViewDefinitions();
+  if (!Array.isArray(value)) return defaults;
+  const validate = helpers.smartViewValidateSavedDefinition;
+  const clean = [];
+  for (const definition of value.slice(0, 24)) {
+    try {
+      const next = validate ? validate(definition) : definition;
+      if (next?.id && next?.title) clean.push(next);
+    } catch {}
+  }
+  return clean.length ? clean : defaults;
+}
+
 function MnApp() {
   const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
@@ -363,6 +459,8 @@ function MnApp() {
   const [selectedTag, setSelectedTag] = useStateA(null);
   const [selectedWorkflow, setSelectedWorkflow] = useStateA(null);
   const [view, setView] = useStateA('notes');
+  const [savedSmartViews, setSavedSmartViews] = useStateA(() => mnBuildDefaultSmartViewDefinitions());
+  const [activeSmartViewId, setActiveSmartViewId] = useStateA('');
   const [graphFilter, setGraphFilter] = useStateA('all-novelist');
   const lastViewRef = useRefA('notes');
   const titleUpdateTimerRef = useRefA(null);
@@ -373,6 +471,9 @@ function MnApp() {
   const [activeAskAiSessionId, setActiveAskAiSessionId] = useStateA('');
   const activeAskAiSessionIdRef = useRefA('');
   const [aiNotice, setAiNotice] = useStateA(null);
+  const [todayAiRecap, setTodayAiRecap] = useStateA(null);
+  const [todayAiRecapBusy, setTodayAiRecapBusy] = useStateA(false);
+  const [todayAiRecapError, setTodayAiRecapError] = useStateA('');
   const [captureOpen, setCaptureOpen] = useStateA(false);
   const [deleteTargetId, setDeleteTargetId] = useStateA(null);
   const [appNotice, setAppNotice] = useStateA(null);
@@ -432,6 +533,15 @@ function MnApp() {
     });
   }, []);
 
+  const openSmartView = useCallbackA((definitionId = '') => {
+    setSelectedTag(null);
+    setSelectedWorkflow(null);
+    setQuery('');
+    setActiveSmartViewId(String(definitionId || ''));
+    navigateView('smart-views');
+    return { message: 'Opened Smart Views.' };
+  }, [navigateView]);
+
   const goBackView = useCallbackA(() => {
     const target = lastViewRef.current || 'notes';
     setView(current => {
@@ -446,6 +556,21 @@ function MnApp() {
       message: message || 'The operation could not be completed.',
       tone,
     });
+  }, []);
+
+  const recordPhase5Metric = useCallbackA((key, details = {}) => {
+    if (!MN_APP_HELPERS?.phase5RecordMetric) return null;
+    try {
+      const next = MN_APP_HELPERS.phase5RecordMetric(mnReadLocalPhase5Metrics(), key, details);
+      mnWriteLocalPhase5Metrics(next);
+      if (window.mn?.recordPhase5Metric) {
+        window.mn.recordPhase5Metric(key, details).catch(e => console.warn('recordPhase5Metric failed', e));
+      }
+      return next;
+    } catch (e) {
+      console.warn('Local Phase 5 metric ignored', e);
+      return null;
+    }
   }, []);
 
   const openAskAi = useCallbackA((initialQuery = '') => {
@@ -537,10 +662,16 @@ function MnApp() {
   // different vaults cannot overwrite each other's pending saves.
   const [dirtyNotes, setDirtyNotes] = useStateA(() => new Map());
   const dirtyNotesRef = useRefA(dirtyNotes);
+  const noteDiskStampRef = useRefA(new Map());
+  const savingDirtyKeysRef = useRefA(new Set());
+  const pendingDirtyKeysRef = useRefA(new Set());
+  const notesRef = useRefA(notes);
+  const vaultsRef = useRefA(vaults);
   const dirtyRevisionRef = useRefA(0);
   const dirtyMissingWarnedRef = useRefA(new Set());
   const vaultActivationSeq = useRefA(0);
   const noteMetadataHistoryRef = useRefA({ undo: [], redo: [], activeKey: null });
+  const aiNoteBodyRestoreRef = useRefA(new Map());
   const cloneNoteForMetadataHistory = useCallbackA((note) => note ? ({
     id: note.id,
     title: note.title,
@@ -676,10 +807,21 @@ function MnApp() {
         if (!prefsRes.ok) throw new Error(prefsRes.error);
         const prefs = prefsRes.value;
         setCustomThemes(mnNormalizeCustomThemesForApp(prefs.customThemes));
+        if (prefs.phase5Metrics && MN_APP_HELPERS?.phase5SanitizeMetrics) {
+          mnWriteLocalPhase5Metrics(MN_APP_HELPERS.phase5SanitizeMetrics(prefs.phase5Metrics));
+        }
+        const nextSmartViews = mnNormalizeSmartViewsForApp(prefs.smartViews);
+        setSavedSmartViews(nextSmartViews);
+        if (!Array.isArray(prefs.smartViews) && window.mn?.setPrefs) {
+          window.mn.setPrefs({ smartViews: nextSmartViews }).catch(e => console.warn('Could not initialize Smart Views preferences', e));
+        }
+        let startupView = 'notes';
         if (prefs.tweaks) {
           const mergedTweaks = { ...MN_TWEAK_DEFAULTS, ...prefs.tweaks };
+          startupView = mnNormalizeStartupView(mergedTweaks.startupView);
+          mergedTweaks.startupView = startupView;
           window.MN_LOGSEQ?.setWorkflowStates?.(mnNormalizeWorkflowStatesForApp(mergedTweaks.workflowStates));
-          setTweaks(t => ({ ...t, ...prefs.tweaks }));
+          setTweaks(t => ({ ...t, ...prefs.tweaks, startupView }));
         }
 
         const vlistRes = await MN_NOTES_VAULTS_SERVICE.listVaults(window.mn);
@@ -701,6 +843,7 @@ function MnApp() {
         setNotes(loaded.notes);
         setCanvases(loaded.canvases);
         setSelectedId(loaded.lastSelectedId || loaded.notes[0]?.id || null);
+        if (startupView === 'today') setView('today');
         if (prefs.activeVaultId !== activeId) window.mn.setPrefs({ activeVaultId: activeId });
         setBootState('ready');
       } catch (e) {
@@ -725,71 +868,123 @@ function MnApp() {
   }, [activeVaultId, notes, vaults]);
 
   useEffectA(() => {
+    const pickNewerDiskStamp = (current, incoming) => {
+      if (!current) return incoming;
+      if (!incoming) return current;
+      const currentTime = new Date(current).getTime();
+      const incomingTime = new Date(incoming).getTime();
+      if (!Number.isFinite(currentTime)) return incoming;
+      if (!Number.isFinite(incomingTime)) return current;
+      return incomingTime >= currentTime ? incoming : current;
+    };
+    const stamps = new Map();
+    const remember = (vaultId, noteList) => {
+      if (!vaultId || !Array.isArray(noteList)) return;
+      noteList.forEach(note => {
+        if (note?.id && note.diskModifiedAt) {
+          const key = mnDirtyNoteKey(vaultId, note.id);
+          stamps.set(key, pickNewerDiskStamp(noteDiskStampRef.current.get(key), note.diskModifiedAt));
+        }
+      });
+    };
+    vaults.forEach(vault => remember(vault.id, vault.notes));
+    remember(activeVaultId, notes);
+    noteDiskStampRef.current = stamps;
+  }, [activeVaultId, notes, vaults]);
+
+  useEffectA(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffectA(() => {
+    vaultsRef.current = vaults;
+  }, [vaults]);
+
+  useEffectA(() => {
     dirtyNotesRef.current = dirtyNotes;
   }, [dirtyNotes]);
 
-  const saveDirtyNotesNow = useCallbackA(async (entries, currentNotes = notes, currentVaults = vaults) => {
+  const saveDirtyNotesNow = useCallbackA(async function saveDirtyNotesNowImpl(entries, currentNotes = notesRef.current, currentVaults = vaultsRef.current) {
     if (!HAS_DISK || !entries?.length) return;
     for (const entry of entries) {
       const id = entry?.id;
       const vaultId = entry?.vaultId;
       const revision = entry?.revision;
       if (!id || !vaultId) continue;
-      const noteList = findNotesForVault(vaultId, currentNotes, currentVaults);
-      const n = noteList.find(x => x.id === id);
       const dirtyKey = mnDirtyNoteKey(vaultId, id);
-      if (!n) {
-        if (!dirtyMissingWarnedRef.current.has(dirtyKey)) {
-          dirtyMissingWarnedRef.current.add(dirtyKey);
-          showAppNotice('Could not autosave note', 'A dirty note could not be matched to its vault. Switch back to the vault or reload before closing.', 'warn');
-        }
-        console.warn('dirty note could not be matched for autosave', { vaultId, id });
+      if (savingDirtyKeysRef.current.has(dirtyKey)) {
+        pendingDirtyKeysRef.current.add(dirtyKey);
         continue;
       }
-      dirtyMissingWarnedRef.current.delete(dirtyKey);
+      savingDirtyKeysRef.current.add(dirtyKey);
+      const noteList = findNotesForVault(vaultId, currentNotes, currentVaults);
+      const n = noteList.find(x => x.id === id);
       try {
-        const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
-          window.mn,
-          vaultId,
-          noteForDisk(n, mnBlocksToMd),
-          { expectedModifiedAt: n.diskModifiedAt || null }
-        );
-        if (res && res.ok === false) {
-          if (res.code === 'NOTE_CONFLICT') {
-            setConflictNotice({
-              vaultId,
-              noteId: id,
-              title: n.title || 'Untitled',
-              currentModifiedAt: res.currentModifiedAt || null,
-              expectedModifiedAt: res.expectedModifiedAt || n.diskModifiedAt || null,
-            });
-            continue;
+        if (!n) {
+          if (!dirtyMissingWarnedRef.current.has(dirtyKey)) {
+            dirtyMissingWarnedRef.current.add(dirtyKey);
+            showAppNotice('Could not autosave note', 'A dirty note could not be matched to its vault. Switch back to the vault or reload before closing.', 'warn');
           }
-          throw new Error(res.error || 'Save failed');
+          console.warn('dirty note could not be matched for autosave', { vaultId, id });
+          continue;
         }
-        const saved = res?.value;
-        if (saved?.diskModifiedAt || saved?.modifiedAt) {
-          const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
-          const updateDiskStamp = notesList => MN_NOTES_VAULTS_STATE.updateNoteDiskStamp(notesList, id, diskModifiedAt);
-          if (vaultId === activeVaultId) setNotes(updateDiskStamp);
-          setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
-            ? { ...v, notes: updateDiskStamp(v.notes) }
-            : v));
+        dirtyMissingWarnedRef.current.delete(dirtyKey);
+        const saveOptions = { expectedModifiedAt: n.diskModifiedAt || null };
+        saveOptions.expectedModifiedAt = noteDiskStampRef.current.get(dirtyKey) || saveOptions.expectedModifiedAt;
+        const expectedModifiedAt = saveOptions.expectedModifiedAt;
+        try {
+          const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
+            window.mn,
+            vaultId,
+            noteForDisk(n, mnBlocksToMd),
+            saveOptions
+          );
+          if (res && res.ok === false) {
+            if (res.code === 'NOTE_CONFLICT') {
+              setConflictNotice({
+                vaultId,
+                noteId: id,
+                title: n.title || 'Untitled',
+                currentModifiedAt: res.currentModifiedAt || null,
+                expectedModifiedAt: res.expectedModifiedAt || expectedModifiedAt,
+              });
+              continue;
+            }
+            throw new Error(res.error || 'Save failed');
+          }
+          const saved = res?.value;
+          if (saved?.diskModifiedAt || saved?.modifiedAt) {
+            const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
+            noteDiskStampRef.current.set(dirtyKey, diskModifiedAt);
+            const updateDiskStamp = notesList => MN_NOTES_VAULTS_STATE.updateNoteDiskStamp(notesList, id, diskModifiedAt);
+            if (vaultId === activeVaultId) setNotes(updateDiskStamp);
+            setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
+              ? { ...v, notes: updateDiskStamp(v.notes) }
+              : v));
+          }
+          setDirtyNotes(cur => {
+            const current = cur.get(dirtyKey);
+            if (!current || current.vaultId !== vaultId) return cur;
+            if (revision != null && current.revision !== revision) return cur;
+            const next = new Map(cur);
+            next.delete(dirtyKey);
+            return next;
+          });
+        } catch (e) {
+          console.error('saveNote failed', id, e);
+          showAppNotice('Could not save note', e.message || String(e));
         }
-        setDirtyNotes(cur => {
-          const current = cur.get(dirtyKey);
-          if (!current || current.vaultId !== vaultId) return cur;
-          if (revision != null && current.revision !== revision) return cur;
-          const next = new Map(cur);
-          next.delete(dirtyKey);
-          return next;
-        });
-      } catch (e) {
-        console.error('saveNote failed', id, e);
-        showAppNotice('Could not save note', e.message || String(e));
+      } finally {
+        savingDirtyKeysRef.current.delete(dirtyKey);
+        if (pendingDirtyKeysRef.current.delete(dirtyKey)) {
+          const pendingEntry = dirtyNotesRef.current.get(dirtyKey);
+          if (pendingEntry) {
+            setTimeout(() => saveDirtyNotesNowImpl([pendingEntry], notesRef.current, vaultsRef.current), 0);
+          }
+        }
       }
     }
-  }, [findNotesForVault, notes, vaults, activeVaultId, showAppNotice]);
+  }, [findNotesForVault, activeVaultId, showAppNotice]);
 
   // ── Persist dirty notes (debounced) ────────────────────────────────────
   useEffectA(() => {
@@ -972,6 +1167,7 @@ function MnApp() {
       const nextThemes = mnNormalizeCustomThemesForApp(value.customThemes);
       setCustomThemes(nextThemes);
       if (value.theme?.id) setTweak('theme', value.theme.id);
+      recordPhase5Metric('theme_installs', { themeId: value.theme?.id });
       showAppNotice('Theme installed', `${value.theme?.name || 'Theme'} is ready.`, 'info');
       return { ok: true, canceled: false, theme: value.theme };
     } catch (e) {
@@ -979,7 +1175,7 @@ function MnApp() {
       showAppNotice('Could not install theme', error);
       return { ok: false, error };
     }
-  }, [showAppNotice]);
+  }, [recordPhase5Metric, showAppNotice]);
 
   const theme = tweaks.theme;
   const baseThemeMap = window.MN_THEMES || {};
@@ -1099,7 +1295,8 @@ function MnApp() {
 
   const createVault = useCallbackA(async (name, options = {}) => {
     const activationSeq = ++vaultActivationSeq.current;
-    const vaultType = options.type === 'novelist' ? 'novelist' : 'notes';
+    const onboardingMode = mnNormalizeOnboardingMode(options.onboardingMode || options.mode);
+    const vaultType = options.type === 'novelist' || onboardingMode === 'writer' ? 'novelist' : 'notes';
     const pendingForCurrentVault = [...dirtyNotes.values()].filter(entry => entry.vaultId === activeVaultId);
     await saveDirtyNotesNow(pendingForCurrentVault, notes, vaults);
     await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
@@ -1109,14 +1306,22 @@ function MnApp() {
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const firstNoteId = 'n_' + Date.now();
       const isNovelistVault = vaultType === 'novelist';
+      const fallbackTitle = onboardingMode === 'daily'
+        ? 'Daily planner welcome'
+        : onboardingMode === 'researcher'
+          ? 'Research workspace welcome'
+          : 'Welcome to ' + name;
+      const fallbackBody = onboardingMode
+        ? `# ${fallbackTitle}\n\n- This vault was created with ${onboardingMode} onboarding\n- Create notes with ⌘N`
+        : `- This is your new vault\n- Create notes with ⌘N`;
       const newNotes = isNovelistVault ? mnBuildNovelistStarterNotes([], mnMdToBlocks, id).slice(0, 3) : [{
         id: firstNoteId,
-        title: 'Welcome to ' + name,
+        title: fallbackTitle,
         date: new Date().toISOString(),
-        tags: [],
+        tags: onboardingMode === 'daily' ? ['daily'] : onboardingMode === 'researcher' ? ['research'] : [],
         pinned: false,
-        body: `- This is your new vault\n- Create notes with ⌘N`,
-        blocks: mnMdToBlocks(`- This is your new vault\n- Create notes with ⌘N`),
+        body: fallbackBody,
+        blocks: mnMdToBlocks(fallbackBody),
       }];
       const setup = vaultType === 'novelist'
         ? await persistNovelistSetup(id, newNotes, [], null, { includeStarterNotes: false })
@@ -1133,10 +1338,15 @@ function MnApp() {
       setTrashItems([]);
       setTrashError('');
       setActiveVaultId(id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
+      if (onboardingMode) recordPhase5Metric('onboarding_mode_selections', { onboardingMode });
       return;
     }
     try {
-      const res = await MN_VAULTS_SERVICE.createVault(window.mn, name, { type: vaultType, workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null });
+      const res = await MN_VAULTS_SERVICE.createVault(window.mn, name, {
+        type: vaultType,
+        onboardingMode: onboardingMode || null,
+        workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null,
+      });
       if (!res.ok) throw new Error(res.error);
       const v = res.value;
 
@@ -1170,12 +1380,13 @@ function MnApp() {
       ]);
       const selected = await MN_VAULTS_SERVICE.selectVault(window.mn, v.id);
       if (!selected.ok) window.mn.setPrefs({ activeVaultId: v.id });
+      if (onboardingMode) recordPhase5Metric('onboarding_mode_selections', { onboardingMode });
     } catch (e) {
       console.error('createVault failed', e);
       showAppNotice('Could not create vault', e.message || String(e));
       await refreshVaultRegistry({ reloadActive: false, reason: 'createVault-failed' });
     }
-  }, [activeVaultId, notes, vaults, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks, mnBlocksToMd, showAppNotice, refreshVaultRegistry]);
+  }, [activeVaultId, notes, vaults, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks, mnBlocksToMd, recordPhase5Metric, showAppNotice, refreshVaultRegistry]);
 
   const setActiveVaultNovelistMode = useCallbackA(async (enabled) => {
     if (!activeVaultId) return { ok: false, error: 'No active vault.' };
@@ -1556,6 +1767,7 @@ function MnApp() {
     const now = Date.now();
     const snoozed = mnReadSnoozedReminders();
     return mnCollectReminderItems(notesWithBody)
+      .filter(item => !(MN_APP_HELPERS.agendaIsDeferred && MN_APP_HELPERS.agendaIsDeferred(item)))
       .map(item => {
         const dueTime = item.remindAt?.at?.getTime?.() || 0;
         const snoozedUntil = Number(snoozed[item.key]) || 0;
@@ -1581,6 +1793,102 @@ function MnApp() {
     () => mnCollectTaskItems ? mnCollectTaskItems(notesWithBody) : [],
     [notesWithBody]
   );
+
+  const calendarActionItems = useMemoA(
+    () => MN_APP_HELPERS.agendaDecorateActionItems
+      ? MN_APP_HELPERS.agendaDecorateActionItems(calendarTaskItems, notesWithBody)
+      : calendarTaskItems,
+    [calendarTaskItems, notesWithBody]
+  );
+
+  const smartViewDefinitions = useMemoA(() => (
+    savedSmartViews.length ? savedSmartViews : mnBuildDefaultSmartViewDefinitions()
+  ), [savedSmartViews]);
+
+  useEffectA(() => {
+    MN_APP_HELPERS.currentSmartViewDefinitions = smartViewDefinitions;
+    return () => {
+      if (MN_APP_HELPERS.currentSmartViewDefinitions === smartViewDefinitions) delete MN_APP_HELPERS.currentSmartViewDefinitions;
+    };
+  }, [smartViewDefinitions]);
+
+  const todayDailyNote = useMemoA(() => (
+    MN_APP_HELPERS.rollupFindDailyNote
+      ? MN_APP_HELPERS.rollupFindDailyNote(notesWithBody)
+      : notesWithBody.find(note => String(note.title || '').trim() === (MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10))) || null
+  ), [notesWithBody]);
+
+  const todayAgendaItems = useMemoA(() => {
+    const today = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
+    return (calendarTaskItems || [])
+      .filter(item => !(MN_APP_HELPERS.agendaIsDeferred && MN_APP_HELPERS.agendaIsDeferred(item)))
+      .filter(item => item?.remindAt?.date === today)
+      .sort((a, b) => String(a.remindAt?.time || '').localeCompare(String(b.remindAt?.time || '')) || String(a.label || a.text || '').localeCompare(String(b.label || b.text || '')))
+      .slice(0, 5);
+  }, [calendarTaskItems]);
+
+  const todayAiContext = useMemoA(() => (
+    MN_APP_HELPERS.contextualAiBuildTodayRecapContext
+      ? MN_APP_HELPERS.contextualAiBuildTodayRecapContext({
+        notes: notesWithBody,
+        tasks: calendarTaskItems,
+        reminders: reminderCenterItems,
+        agendaItems: todayAgendaItems,
+        weekStart: tweaks.weekStart || 'monday',
+      })
+      : null
+  ), [notesWithBody, calendarTaskItems, reminderCenterItems, todayAgendaItems, tweaks.weekStart]);
+
+  const generateTodayAiRecap = useCallbackA(async () => {
+    if (!todayAiContext || !MN_APP_HELPERS.contextualAiBuildTodayRecapPrompt || !MN_APP_HELPERS.contextualAiBuildTodayRecapResult) {
+      setTodayAiRecapError('Today AI recap is unavailable in this build.');
+      return null;
+    }
+    if (!window.mn?.ai?.chat) {
+      setTodayAiRecapError('AI chat is unavailable in this build.');
+      return null;
+    }
+    setTodayAiRecapBusy(true);
+    setTodayAiRecapError('');
+    try {
+      let status = null;
+      try {
+        const statusResult = await window.mn.ai.status?.();
+        if (statusResult?.ok) status = statusResult.value;
+      } catch (e) {
+        status = null;
+      }
+      const prompt = MN_APP_HELPERS.contextualAiBuildTodayRecapPrompt(todayAiContext);
+      const response = await window.mn.ai.chat({
+        messages: [
+          {
+            role: 'system',
+            content: 'You create concise source-linked daily recaps. Keep facts separate from suggestions. Do not claim facts that are not in the supplied context.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        timeoutMs: 60000,
+        maxTokens: 900,
+      });
+      if (!response?.ok) throw new Error(response?.error || 'AI recap failed.');
+      if (response.value && response.value.ok === false) throw new Error(response.value.error || 'AI recap failed.');
+      const aiText = String(response.value?.answer || response.answer || '').trim();
+      const result = MN_APP_HELPERS.contextualAiBuildTodayRecapResult({
+        aiText,
+        context: todayAiContext,
+        status,
+        createdAt: new Date().toISOString(),
+      });
+      setTodayAiRecap(result);
+      return result;
+    } catch (e) {
+      const message = e?.message || String(e) || 'AI recap failed.';
+      setTodayAiRecapError(message);
+      return null;
+    } finally {
+      setTodayAiRecapBusy(false);
+    }
+  }, [todayAiContext]);
 
   const nextStoryOrder = useCallbackA((kind, parentId = null) => {
     const noteById = new Map(notesWithBody.map(note => [note.id, note]));
@@ -1738,6 +2046,159 @@ function MnApp() {
     markDirty(id);
   }, [markDirty, mnMdToBlocks, mnBlocksToMd]);
 
+  const quickCaptureMergeTags = useCallbackA((...groups) => {
+    const seen = new Set();
+    const out = [];
+    groups.flat().forEach(tag => {
+      const clean = normalizeTagName(tag);
+      if (!clean || seen.has(clean)) return;
+      seen.add(clean);
+      out.push(clean);
+    });
+    return out;
+  }, []);
+
+  const quickCaptureRawMarkdown = useCallbackA(({ title = '', body = '' } = {}) => {
+    const cleanTitle = String(title || '').trim();
+    const cleanBody = String(body || '').trim();
+    if (cleanTitle && cleanBody) return `## ${cleanTitle}\n\n${cleanBody}\n`;
+    if (cleanBody) return `${cleanBody}\n`;
+    if (cleanTitle) return `## ${cleanTitle}\n`;
+    return '';
+  }, []);
+
+  const quickCaptureAppendBody = useCallbackA((existingBody = '', captureBody = '') => {
+    const left = String(existingBody || '').replace(/\s+$/g, '');
+    const right = String(captureBody || '').trim();
+    return [left, right].filter(Boolean).join('\n\n') + (right ? '\n' : '');
+  }, []);
+
+  const saveQuickCapture = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [], destinationId = 'new', templateId = '' } = {}) => {
+    const cleanTitle = String(title || '').trim() || 'Untitled';
+    const destinationOptions = { notes: notesWithBody, currentNote: selectedNote };
+    const templateSelected = !!String(templateId || '').trim();
+    if (templateSelected && MN_APP_HELPERS.captureBuildSavePlan) {
+      const text = destinationId === 'new'
+        ? (String(body || '').trim() || cleanTitle)
+        : [cleanTitle, body].map(value => String(value || '').trim()).filter(Boolean).join('\n\n');
+      const plan = MN_APP_HELPERS.captureBuildSavePlan({
+        destinationId,
+        templateId,
+        text,
+        noteTitle: cleanTitle,
+        notes: notesWithBody,
+        currentNote: selectedNote,
+      });
+      const tagsForCapture = quickCaptureMergeTags(plan.tags || [], noteTags);
+      if (plan.action === 'append' && plan.noteId) {
+        updateNoteBody(plan.noteId, previous => quickCaptureAppendBody(previous, plan.appendText || plan.body || ''));
+        setSelectedId(plan.noteId);
+        navigateView('notes');
+        recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'append' });
+        return plan.noteId;
+      }
+      const id = createNote({
+        title: uniqueNoteTitle(plan.createNote?.title || cleanTitle),
+        body: plan.createNote?.body || plan.body || '',
+        tags: tagsForCapture,
+      });
+      recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'create' });
+      return id;
+    }
+
+    const destination = MN_APP_HELPERS.captureDestinationById
+      ? MN_APP_HELPERS.captureDestinationById(destinationId, destinationOptions)
+      : { id: 'new' };
+    const activeDestination = destination?.disabled && destination.fallbackDestinationId && MN_APP_HELPERS.captureDestinationById
+      ? MN_APP_HELPERS.captureDestinationById(destination.fallbackDestinationId, destinationOptions)
+      : destination;
+    const rawBody = activeDestination?.id === 'new'
+      ? body
+      : quickCaptureRawMarkdown({ title: cleanTitle, body });
+    if (activeDestination?.noteId) {
+      updateNoteBody(activeDestination.noteId, previous => quickCaptureAppendBody(previous, rawBody));
+      setSelectedId(activeDestination.noteId);
+      navigateView('notes');
+      recordPhase5Metric('capture_saves', { destinationId: activeDestination.id, mode: 'append' });
+      return activeDestination.noteId;
+    }
+    const id = createNote({
+      title: uniqueNoteTitle(activeDestination?.id === 'new' ? cleanTitle : (activeDestination?.noteTitle || cleanTitle)),
+      body: rawBody,
+      tags: quickCaptureMergeTags(activeDestination?.tags || [], noteTags),
+    });
+    recordPhase5Metric('capture_saves', { destinationId: activeDestination?.id || 'new', mode: 'create' });
+    return id;
+  }, [createNote, navigateView, notesWithBody, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, recordPhase5Metric, selectedNote, uniqueNoteTitle, updateNoteBody]);
+
+  const addQuickTodayTask = useCallbackA((text) => {
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return false;
+    const date = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
+    const existing = notesWithBody.find(note => String(note.title || '').trim() === date);
+    const appendTask = body => (
+      MN_APP_HELPERS.rollupAppendQuickTask
+        ? MN_APP_HELPERS.rollupAppendQuickTask(body, clean)
+        : `${String(body || '').replace(/\s+$/g, '')}\n- [ ] ${clean}\n`
+    );
+    if (existing) {
+      updateNoteBody(existing.id, appendTask);
+      return true;
+    }
+    const template = MN_APP_HELPERS.templateById ? MN_APP_HELPERS.templateById('daily') : (MN_NOTE_TEMPLATES.find(item => item.id === 'daily') || MN_NOTE_TEMPLATES[0]);
+    const expanded = MN_APP_HELPERS.expandTemplate
+      ? MN_APP_HELPERS.expandTemplate(template)
+      : { noteTitle: date, body: `# ${date}\n\n## Tasks\n`, tags: ['daily'] };
+    createNote({
+      title: uniqueNoteTitle(expanded.noteTitle || date),
+      body: appendTask(expanded.body || ''),
+      tags: expanded.tags || ['daily'],
+    }, { open: false });
+    return true;
+  }, [notesWithBody, updateNoteBody, createNote, uniqueNoteTitle]);
+
+  const appendToTodayDailyNote = useCallbackA((appendBody, options = {}) => {
+    if (typeof appendBody !== 'function') return false;
+    const date = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
+    const existing = notesWithBody.find(note => String(note.title || '').trim() === date);
+    if (existing) {
+      updateNoteBody(existing.id, appendBody);
+      setSelectedId(existing.id);
+      navigateView('notes');
+      return true;
+    }
+    const template = MN_APP_HELPERS.templateById ? MN_APP_HELPERS.templateById('daily') : (MN_NOTE_TEMPLATES.find(item => item.id === 'daily') || MN_NOTE_TEMPLATES[0]);
+    const expanded = MN_APP_HELPERS.expandTemplate
+      ? MN_APP_HELPERS.expandTemplate(template)
+      : { noteTitle: date, body: `# ${date}\n\n## Tasks\n`, tags: ['daily'] };
+    createNote({
+      title: uniqueNoteTitle(expanded.noteTitle || date),
+      body: appendBody(expanded.body || ''),
+      tags: expanded.tags || ['daily'],
+    }, { open: true, view: options.view || 'notes' });
+    return true;
+  }, [notesWithBody, updateNoteBody, createNote, uniqueNoteTitle, navigateView]);
+
+  const addTodayReflection = useCallbackA(() => (
+    appendToTodayDailyNote(body => (
+      MN_APP_HELPERS.rollupAppendReflection
+        ? MN_APP_HELPERS.rollupAppendReflection(body)
+        : `${String(body || '').replace(/\s+$/g, '')}\n\n## Reflection\n- What stood out:\n`
+    ))
+  ), [appendToTodayDailyNote]);
+
+  const addTodayEndDayRecap = useCallbackA(() => (
+    appendToTodayDailyNote(body => (
+      MN_APP_HELPERS.rollupAppendEndDayRecap
+        ? MN_APP_HELPERS.rollupAppendEndDayRecap(body, {
+          notes: notesWithBody,
+          tasks: calendarTaskItems,
+          reminders: reminderCenterItems,
+        })
+        : `${String(body || '').replace(/\s+$/g, '')}\n\n## End-day recap\n### Highlights\n- \n### Decisions\n- \n### Open loops\n- \n### Tomorrow candidates\n- \n`
+    ))
+  ), [appendToTodayDailyNote, notesWithBody, calendarTaskItems, reminderCenterItems]);
+
   const updateNoteBodies = useCallbackA((updates = []) => {
     const existingIds = new Set(notesWithBody.map(note => note.id));
     const byId = new Map();
@@ -1759,6 +2220,36 @@ function MnApp() {
     return byId.size;
   }, [notesWithBody, markDirty, mnMdToBlocks, mnBlocksToMd]);
 
+  const applyAiCurrentPageBody = useCallbackA((noteId, body, options = {}) => {
+    const id = String(noteId || '');
+    const current = notesWithBody.find(note => note.id === id);
+    if (!current) return { ok: false, error: 'No current page is open to edit.' };
+    if (typeof body !== 'string') return { ok: false, error: 'AI edit body is invalid.' };
+    const previousBody = typeof options.previousBody === 'string'
+      ? options.previousBody
+      : String(current.body || '');
+    aiNoteBodyRestoreRef.current.set(id, {
+      body: previousBody,
+      title: current.title || 'Current page',
+      instruction: String(options.instruction || ''),
+      at: new Date().toISOString(),
+    });
+    const applied = updateNoteBodies([{ id, body }]);
+    return applied
+      ? { ok: true, restoreAvailable: true, noteId: id }
+      : { ok: false, error: 'Could not apply AI edit.' };
+  }, [notesWithBody, updateNoteBodies]);
+
+  const restoreAiCurrentPageBody = useCallbackA((noteId) => {
+    const id = String(noteId || '');
+    const snapshot = aiNoteBodyRestoreRef.current.get(id);
+    if (!snapshot) return { ok: false, error: 'No previous AI edit body is available.' };
+    const applied = updateNoteBodies([{ id, body: snapshot.body }]);
+    if (!applied) return { ok: false, error: 'Could not restore previous AI edit body.' };
+    aiNoteBodyRestoreRef.current.delete(id);
+    return { ok: true, noteId: id, title: snapshot.title || 'Current page' };
+  }, [updateNoteBodies]);
+
   const openNoteById = useCallbackA((id) => {
     const noteId = String(id || '');
     if (!notesWithBody.some(note => note.id === noteId)) return false;
@@ -1777,7 +2268,8 @@ function MnApp() {
     const nextText = mnCalendarTaskContent(
       patch.text ?? item.label ?? item.text,
       patch.date ?? item.remindAt?.date ?? '',
-      patch.time ?? item.remindAt?.time ?? ''
+      patch.time ?? item.remindAt?.time ?? '',
+      Object.prototype.hasOwnProperty.call(patch, 'deferUntil') ? patch.deferUntil : item.deferUntil
     );
     if (!nextText) return false;
     const nextChecked = Object.prototype.hasOwnProperty.call(patch, 'checked') ? !!patch.checked : item.checked;
@@ -1804,9 +2296,12 @@ function MnApp() {
     updateNoteBody(item.noteId, body => {
       const source = String(item.text || '').trim();
       if (!source) return body;
+      if (MN_APP_HELPERS.agendaReplaceUniqueSourceText) {
+        return MN_APP_HELPERS.agendaReplaceUniqueSourceText(body, source, nextText);
+      }
       const text = String(body || '');
       const index = text.indexOf(source);
-      if (index < 0) return body;
+      if (index < 0 || text.indexOf(source, index + source.length) >= 0) return body;
       return `${text.slice(0, index)}${nextText}${text.slice(index + source.length)}`;
     });
     return true;
@@ -1814,9 +2309,11 @@ function MnApp() {
 
   const createCalendarTaskItem = useCallbackA(({ noteId, text, type, date, time } = {}) => {
     const id = String(noteId || selectedId || '').trim();
-    if (!id || !notes.some(note => note.id === id)) return false;
+    const note = notes.find(candidate => candidate.id === id);
+    if (!id || !note) return false;
     const content = mnCalendarTaskContent(text, date, type === 'reminder' ? time : '');
     if (!content) return false;
+    if (MN_APP_HELPERS.agendaBodyHasActionText && MN_APP_HELPERS.agendaBodyHasActionText(note.body || '', content)) return false;
     updateNoteBody(id, body => {
       const source = String(body || '').replace(/\s+$/g, '');
       return `${source}${source ? '\n' : ''}- [ ] ${content}\n`;
@@ -2675,9 +3172,19 @@ function MnApp() {
       },
       { id: 'graph', label: 'Open graph', description: 'Show the note graph.', section: 'Navigate', shortcut: 'Ctrl+G', inputSchema: objectSchema(), run: () => openView('graph') },
       { id: 'calendar', label: 'Open Agenda', description: 'Show scheduled todos and reminders.', section: 'Navigate', keywords: 'calendar schedule agenda reminder date', inputSchema: objectSchema(), run: () => openView('calendar') },
-      { id: 'today', label: 'Open Today', description: 'Show today rollup.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
+      { id: 'today', label: 'Open Today', description: 'Show the Today dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
+      { id: 'smart-views', label: 'Open Smart Views', description: 'Show saved Smart View dashboards.', section: 'Navigate', keywords: 'saved smart views dashboard query tasks reminders', inputSchema: objectSchema(), run: () => openSmartView() },
       { id: 'todos', label: 'Open Agenda', description: 'Open the calendar planner for tasks and reminders.', section: 'Navigate', keywords: 'tasks checklist todos agenda calendar', hidden: true, aiHidden: true, inputSchema: objectSchema(), run: () => openView('calendar') },
       { id: 'canvas', label: 'Open canvas dashboard', description: 'Open the canvas dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => { openCanvasDashboard(); return { message: 'Opened canvas dashboard.' }; } },
+      ...smartViewDefinitions.map(definition => ({
+        id: `smart-view-${definition.id}`,
+        label: `Open ${definition.title}`,
+        description: 'Open a saved Smart View.',
+        section: 'Smart Views',
+        keywords: `smart view saved dashboard ${definition.type || ''}`,
+        inputSchema: objectSchema(),
+        run: () => openSmartView(definition.id),
+      })),
       {
         id: 'vault-health',
         label: 'Open vault health',
@@ -3147,6 +3654,81 @@ function MnApp() {
             };
           },
         },
+        {
+          id: 'zotero-source-note',
+          label: 'Create Zotero source note',
+          description: 'Create or open a VispNote source note linked to a Zotero item key.',
+          section: 'Zotero',
+          keywords: 'zotero source note paper document reference bibliography create open',
+          risk: 'safe',
+          idempotent: true,
+          inputSchema: objectSchema({ itemKey: stringArg(80), includeFullText: { type: 'boolean', default: true } }, ['itemKey']),
+          outputSchema: { type: 'object', additionalProperties: true },
+          run: async (args) => {
+            const itemKey = MN_APP_HELPERS.zoteroCleanItemKey
+              ? MN_APP_HELPERS.zoteroCleanItemKey(args.itemKey)
+              : String(args.itemKey || '').trim();
+            if (!itemKey) return { ok: false, message: 'A valid Zotero item key is required.' };
+            const existing = MN_APP_HELPERS.zoteroFindSourceNote
+              ? MN_APP_HELPERS.zoteroFindSourceNote(notesWithBody, itemKey)
+              : null;
+            if (existing) {
+              setSelectedId(existing.id);
+              navigateView('notes');
+              return {
+                message: `Opened existing Zotero source note "${existing.title || itemKey}".`,
+                itemKey,
+                noteId: existing.id,
+                mode: 'open',
+                affected: noteAffected(existing),
+              };
+            }
+            if (!window.mn?.zotero?.status || !window.mn?.zotero?.read) {
+              return { ok: false, message: 'Zotero integration is unavailable.' };
+            }
+            const status = await window.mn.zotero.status();
+            if (!status.ok) return { ok: false, message: status.error || 'Could not check Zotero.' };
+            if (!status.value?.reachable) {
+              return { ok: false, message: status.value?.error || 'Zotero Desktop is not reachable.' };
+            }
+            const res = await window.mn.zotero.read({ itemKey, includeFullText: args.includeFullText !== false });
+            if (!res.ok) return { ok: false, message: res.error || 'Could not read Zotero item.' };
+            const plan = MN_APP_HELPERS.zoteroBuildSourceNotePlan
+              ? MN_APP_HELPERS.zoteroBuildSourceNotePlan({ readResult: res.value, itemKey, notes: notesWithBody })
+              : null;
+            if (!plan || plan.action === 'unavailable') {
+              return { ok: false, message: plan?.error || 'Could not build Zotero source note.' };
+            }
+            if (plan.action === 'open' && plan.noteId) {
+              setSelectedId(plan.noteId);
+              navigateView('notes');
+              return {
+                message: `Opened existing Zotero source note "${plan.noteTitle || itemKey}".`,
+                itemKey: plan.itemKey || itemKey,
+                noteId: plan.noteId,
+                mode: 'open',
+                affected: noteAffected(plan.existingNote),
+              };
+            }
+            const title = uniqueNoteTitle(plan.createNote.title || plan.source?.title || itemKey);
+            const id = createNote({
+              title,
+              body: plan.createNote.body || '',
+              tags: plan.createNote.tags || [],
+            });
+            recordPhase5Metric('zotero_source_notes', { mode: 'create' });
+            return {
+              message: `Created Zotero source note "${title}".`,
+              itemKey: plan.itemKey || itemKey,
+              noteId: id,
+              mode: 'create',
+              affected: [
+                { type: 'note', id, title },
+                { type: 'zotero', id: plan.itemKey || itemKey, title: plan.source?.title || itemKey },
+              ],
+            };
+          },
+        },
       ] : []),
       ...plugins.filter(plugin => plugin.enabled !== false).map(plugin => ({
         id: `plugin-${plugin.id}`,
@@ -3208,7 +3790,7 @@ function MnApp() {
       })),
     ];
     return makeRegistry(actions);
-  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, plugins, rebuildIndex, restoreDeletedNote, runPlugin, selectVault, selectedNote, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openSmartView, plugins, rebuildIndex, recordPhase5Metric, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
 
   useEffectA(() => {
     window.MN_APP_ACTIONS = appActionRegistry;
@@ -3326,6 +3908,7 @@ function MnApp() {
       const today = new Date().toDateString();
       const snoozed = mnReadSnoozedReminders();
       const due = mnCollectReminderItems(notesWithBody)
+        .filter(item => !(MN_APP_HELPERS.agendaIsDeferred && MN_APP_HELPERS.agendaIsDeferred(item)))
         .filter(item => {
           const dueTime = item.remindAt?.at?.getTime?.();
           if (!dueTime || dueTime > now) return false;
@@ -3368,7 +3951,7 @@ function MnApp() {
     ? `#${selectedTag}`
     : selectedWorkflow
     ? selectedWorkflow
-    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Daily rollup' : 'All notes');
+    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Today' : 'All notes');
   const noteListSubtitle = query.trim()
     ? `${filteredNotes.length} match${filteredNotes.length === 1 ? '' : 'es'}`
     : view === 'workflow'
@@ -3419,6 +4002,7 @@ function MnApp() {
               onOpenNovelist={() => { navigateView('novelist'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
               onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenToday={() => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onOpenSmartViews={() => openSmartView()}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenCanvas={openCanvasDashboard}
               onOpenTrash={() => { navigateView('trash'); setSelectedTag(null); setSelectedWorkflow(null); }}
@@ -3426,6 +4010,8 @@ function MnApp() {
               todayActive={view === 'today'}
               agendaActive={view === 'calendar'}
               graphActive={view === 'graph'}
+              smartViewsActive={view === 'smart-views'}
+              smartViewCount={smartViewDefinitions.length}
               workflowActive={view === 'workflow'}
               novelistActive={view === 'novelist'}
               novelistEnabled={!!activeVault?.novelistMode}
@@ -3602,10 +4188,12 @@ function MnApp() {
               onOpenNote={openNoteById}
               onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] }, { open: false })}
               onTagCurrentNote={tagCurrentNoteFromAi}
-              onApplyCurrentPageBody={(body) => {
-                if (!selectedNote) return;
-                updateNoteBodies([{ id: selectedNote.id, body }]);
+              onApplyCurrentPageBody={(body, options) => {
+                if (!selectedNote) return { ok: false, error: 'No selected note.' };
+                return applyAiCurrentPageBody(selectedNote.id, body, options);
               }}
+              onRestoreCurrentPageBody={restoreAiCurrentPageBody}
+              onOpenCurrentNoteVersions={(noteId) => setVersionTargetId(noteId || selectedNote?.id || null)}
               onApplyNoteBodies={updateNoteBodies}
               session={activeAskAiSession}
               setSession={setActiveAskAiSession}
@@ -3668,7 +4256,7 @@ function MnApp() {
             <MnCalendarPanel
               notes={notesWithBody}
               tags={tags}
-              items={calendarTaskItems}
+              items={calendarActionItems}
               selectedNoteId={selectedId || ''}
               weekStart={tweaks.weekStart || 'monday'}
               snoozeMinutes={tweaks.snoozeMinutes || '15'}
@@ -3677,6 +4265,19 @@ function MnApp() {
               onUpdateItem={updateTaskItemSource}
               onToggleCheck={toggleCheckFromAggregate}
               onSnoozeItem={snoozeCalendarTaskItem}
+              T={T}
+              theme={theme}
+            />
+          )}
+          {view === 'smart-views' && (
+            <MnSmartViewsPanel
+              notes={notesWithBody}
+              tags={tags}
+              definitions={smartViewDefinitions}
+              activeDefinitionId={activeSmartViewId}
+              onActiveDefinitionChange={setActiveSmartViewId}
+              onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onOpenAllNotes={() => { setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); navigateView('notes'); }}
               T={T}
               theme={theme}
             />
@@ -3723,9 +4324,31 @@ function MnApp() {
           )}
           {view === 'today' && (
             <MnTodayPanel
-              notes={notesWithBody} tags={tags}
+              notes={notesWithBody}
+              tags={tags}
+              tasks={calendarTaskItems}
+              reminders={reminderCenterItems}
+              todayNote={todayDailyNote}
+              agendaItems={todayAgendaItems}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onOpenOrCreateDailyNote={createDailyNote}
+              onAddQuickTask={addQuickTodayTask}
+              onAddReflection={addTodayReflection}
+              onEndDayRecap={addTodayEndDayRecap}
+              todayAiRecap={todayAiRecap}
+              todayAiRecapBusy={todayAiRecapBusy}
+              todayAiRecapError={todayAiRecapError}
+              onGenerateAiRecap={generateTodayAiRecap}
+              onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onPlanItem={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               rollupFormat={tweaks.rollupFormat || 'long'}
+              rollupDefaultRange={tweaks.rollupDefaultRange || 'today'}
+              rollupGroupBy={tweaks.rollupGroupBy || 'created'}
+              rollupShowPreviews={tweaks.rollupShowPreviews !== false}
+              rollupShowTasks={tweaks.rollupShowTasks !== false}
+              rollupShowReminders={tweaks.rollupShowReminders !== false}
+              rollupCollapseOlder={tweaks.rollupCollapseOlder !== false}
+              weekStart={tweaks.weekStart || 'monday'}
               T={T} theme={theme}
             />
           )}
@@ -3773,9 +4396,13 @@ function MnApp() {
         {captureOpen && (
           <MnQuickCapture
             tags={tags}
+            destinations={MN_APP_HELPERS.captureDestinationChoices
+              ? MN_APP_HELPERS.captureDestinationChoices({ notes: notesWithBody, currentNote: selectedNote })
+              : []}
+            templates={MN_APP_HELPERS.captureTemplateChoices ? MN_APP_HELPERS.captureTemplateChoices() : []}
             onClose={() => setCaptureOpen(false)}
-            onSave={({ title, body, tags: noteTags }) => {
-              createNote({ title, body, tags: noteTags });
+            onSave={(capture) => {
+              saveQuickCapture(capture);
               setCaptureOpen(false);
             }}
             T={T} theme={theme}

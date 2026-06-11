@@ -10,6 +10,22 @@
   const MAX_TOOL_CALLS = 5;
   const MAX_REPAIR_ROUNDS = 1;
   const TRACE_LIMIT = 40;
+  const CONTEXTUAL_AI_SECTION_KINDS = ['fact', 'suggestion', 'preview'];
+  const CURRENT_NOTE_SUGGESTION_SECTIONS = [
+    { title: 'Summary', kind: 'fact', aliases: ['Summary', 'Brief summary'] },
+    { title: 'Tasks', kind: 'suggestion', aliases: ['Tasks', 'Task extraction', 'Open tasks'] },
+    { title: 'Tags', kind: 'suggestion', aliases: ['Tags', 'Tag suggestions'] },
+    { title: 'Links', kind: 'suggestion', aliases: ['Links', 'Link suggestions', 'Wiki links'] },
+    { title: 'Gaps or contradictions', kind: 'suggestion', aliases: ['Gaps or contradictions', 'Missing context', 'Contradictions'] },
+  ];
+  const CONTEXTUAL_AI_PROVIDER_LABELS = {
+    ollama: 'Ollama',
+    openai: 'OpenAI',
+    openrouter: 'OpenRouter',
+    anthropic: 'Anthropic',
+    gemini: 'Gemini',
+    custom: 'Custom provider',
+  };
   const recentTraces = [];
 
   function nowIso() {
@@ -488,6 +504,213 @@
     };
   }
 
+  function cleanContextText(value = '', max = 4000) {
+    const clean = String(value || '').replace(/\s+/g, ' ').trim();
+    const capped = Number(max);
+    if (!Number.isFinite(capped) || capped <= 0) return clean;
+    return clean.length > capped ? `${clean.slice(0, capped).trimEnd()}...` : clean;
+  }
+
+  function contextualAiProviderMeta(input = {}) {
+    const source = input?.config && typeof input.config === 'object' ? input.config : input;
+    const provider = String(source?.provider || input?.provider || 'ollama').trim().toLowerCase() || 'ollama';
+    const model = cleanContextText(source?.chatModel || source?.model || input?.model || '', 160);
+    const providerLabel = CONTEXTUAL_AI_PROVIDER_LABELS[provider] || 'AI provider';
+    return {
+      provider,
+      providerLabel,
+      model,
+      providerModelLabel: model ? `${providerLabel} - ${model}` : providerLabel,
+      hosted: provider !== 'ollama',
+      piiReduction: source?.piiReduction !== false,
+    };
+  }
+
+  function contextualAiSourceFromNote(note = {}, options = {}) {
+    if (!note || typeof note !== 'object') return null;
+    const id = cleanContextText(note.id || note.noteId || '', 180);
+    if (!id && options.requireId !== false) return null;
+    const title = cleanContextText(note.title || note.noteTitle || 'Untitled', 180) || 'Untitled';
+    const snippetLimit = Math.max(0, Math.min(Number(options.snippetLimit) || 220, 1000));
+    return {
+      type: note.type || 'note',
+      id,
+      noteId: id,
+      title,
+      snippet: cleanContextText(note.snippet || note.__searchSnippet || notePreview(note, snippetLimit), snippetLimit),
+      modifiedAt: note.modifiedAt || note.date || '',
+    };
+  }
+
+  function contextualAiSourcesFromNotes(notes = [], options = {}) {
+    const limit = Math.max(1, Math.min(Number(options.limit) || 12, 40));
+    const seen = new Set();
+    const out = [];
+    (notes || []).forEach(note => {
+      const source = contextualAiSourceFromNote(note, options);
+      if (!source) return;
+      const key = source.id || source.title.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(source);
+    });
+    return out.slice(0, limit);
+  }
+
+  function normalizeContextualAiSection(section = {}) {
+    const kind = CONTEXTUAL_AI_SECTION_KINDS.includes(section.kind) ? section.kind : 'fact';
+    const title = cleanContextText(section.title || (kind === 'fact' ? 'Facts' : kind === 'suggestion' ? 'Suggestions' : 'Preview'), 120);
+    const content = cleanContextText(section.content || section.text || '', 8000);
+    const sourceIds = Array.isArray(section.sourceIds)
+      ? section.sourceIds.map(id => cleanContextText(id, 180)).filter(Boolean)
+      : [];
+    return { kind, title, content, sourceIds };
+  }
+
+  function normalizeContextualAiSections(sections = []) {
+    const list = Array.isArray(sections)
+      ? sections
+      : [
+        ...(Array.isArray(sections.facts) ? sections.facts.map(item => ({ ...item, kind: 'fact' })) : []),
+        ...(Array.isArray(sections.suggestions) ? sections.suggestions.map(item => ({ ...item, kind: 'suggestion' })) : []),
+        ...(Array.isArray(sections.previews) ? sections.previews.map(item => ({ ...item, kind: 'preview' })) : []),
+      ];
+    return list
+      .map(normalizeContextualAiSection)
+      .filter(section => section.title || section.content);
+  }
+
+  function makeContextualAiResult(input = {}) {
+    const meta = contextualAiProviderMeta(input.status || input.config || input);
+    return {
+      type: 'contextual-ai-result',
+      outputKind: cleanContextText(input.outputKind || input.kind || 'contextual', 80) || 'contextual',
+      title: cleanContextText(input.title || 'Contextual AI result', 180),
+      provider: meta.provider,
+      providerLabel: meta.providerLabel,
+      model: meta.model,
+      providerModelLabel: meta.providerModelLabel,
+      hosted: meta.hosted,
+      piiReduction: meta.piiReduction,
+      sources: contextualAiSourcesFromNotes(input.sources || [], { requireId: false }),
+      sections: normalizeContextualAiSections(input.sections || []),
+      createdAt: input.createdAt || nowIso(),
+    };
+  }
+
+  function currentNoteRelatedNotes(note = {}, allNotes = [], options = {}) {
+    const limit = Math.max(0, Math.min(Number(options.limit) || 5, 12));
+    if (!limit || !note) return [];
+    const noteId = String(note.id || '');
+    const body = String(note.body || '');
+    const title = cleanContextText(note.title || '', 180).toLowerCase();
+    const linkedTitles = new Set();
+    let match;
+    const wikiRe = /\[\[([^\]]+)\]\]/g;
+    while ((match = wikiRe.exec(body))) {
+      const linkedTitle = cleanContextText(String(match[1] || '').split('|')[0], 180).toLowerCase();
+      if (linkedTitle) linkedTitles.add(linkedTitle);
+    }
+    const related = [];
+    for (const candidate of allNotes || []) {
+      if (!candidate || String(candidate.id || '') === noteId) continue;
+      const candidateTitle = cleanContextText(candidate.title || '', 180).toLowerCase();
+      const candidateBody = String(candidate.body || '');
+      const isLinked = candidateTitle && linkedTitles.has(candidateTitle);
+      const isBacklink = title && candidateBody.toLowerCase().includes(`[[${title}]]`);
+      if (!isLinked && !isBacklink) continue;
+      related.push(candidate);
+      if (related.length >= limit) break;
+    }
+    return related;
+  }
+
+  function currentNoteSuggestionSources(note = {}, allNotes = [], options = {}) {
+    const limit = Math.max(1, Math.min(Number(options.limit) || 8, 16));
+    return contextualAiSourcesFromNotes([
+      note,
+      ...currentNoteRelatedNotes(note, allNotes, { limit: Math.max(0, limit - 1) }),
+    ], { limit, requireId: false });
+  }
+
+  function buildCurrentNoteSuggestionPrompt({ note = {}, allNotes = [], maxBodyChars = 6000, relatedLimit = 5 } = {}) {
+    const title = cleanContextText(note.title || 'Untitled', 180) || 'Untitled';
+    const sourceId = cleanContextText(note.id || title, 180);
+    const tags = (note.tags || []).map(tag => cleanContextText(tag, 80)).filter(Boolean);
+    const body = cleanContextText(note.body || '', maxBodyChars);
+    const sources = currentNoteSuggestionSources(note, allNotes, { limit: relatedLimit + 1 });
+    const related = sources.filter(source => source.id !== sourceId && source.title !== title);
+    const relatedLines = related.length
+      ? related.map(source => `- ${source.title} [${source.id || source.title}]${source.snippet ? `: ${source.snippet}` : ''}`)
+      : ['- None.'];
+    return [
+      'Review the selected VispNote note and return note-level suggestions only.',
+      'Use only the note body, tags, and related notes supplied here. Do not invent facts.',
+      'Keep factual summary separate from suggestions. Cite source refs in brackets such as [source-id] when making a claim.',
+      'Do not return an edited note body and do not propose hidden mutations.',
+      'Return exactly these Markdown headings: Summary, Tasks, Tags, Links, Gaps or contradictions.',
+      '',
+      `Current note: ${title}`,
+      `Source ref: ${sourceId || title}`,
+      tags.length ? `Current tags: ${tags.map(tag => `#${tag}`).join(' ')}` : 'Current tags: none',
+      '',
+      'Current note body:',
+      body || '(empty note)',
+      '',
+      'Related source notes:',
+      ...relatedLines,
+    ].join('\n');
+  }
+
+  function extractMarkdownSection(text = '', labels = []) {
+    const wanted = (labels || []).map(label => cleanContextText(label, 160).toLowerCase()).filter(Boolean);
+    if (!wanted.length) return '';
+    const knownHeadings = CURRENT_NOTE_SUGGESTION_SECTIONS
+      .flatMap(def => [def.title, ...(def.aliases || [])])
+      .map(label => cleanContextText(label, 160).toLowerCase())
+      .filter(Boolean);
+    const lines = String(text || '').split(/\r?\n/);
+    let collecting = false;
+    const out = [];
+    for (const line of lines) {
+      const headingText = line.replace(/^#{1,6}\s+/, '').replace(/[:*]+$/g, '').trim().toLowerCase();
+      const isHeading = /^#{1,6}\s+/.test(line);
+      const isKnownHeading = knownHeadings.includes(headingText);
+      if ((isHeading || isKnownHeading) && wanted.includes(headingText)) {
+        collecting = true;
+        continue;
+      }
+      if (collecting && (isHeading || isKnownHeading)) break;
+      if (collecting) out.push(line);
+    }
+    return out.join('\n').trim();
+  }
+
+  function makeCurrentNoteSuggestionResult({ aiText = '', note = {}, allNotes = [], status = null, createdAt = null } = {}) {
+    const sources = currentNoteSuggestionSources(note, allNotes);
+    const sourceIds = sources.map(source => source.id || source.title).filter(Boolean);
+    const fallback = cleanContextText(aiText, 1200);
+    const sections = CURRENT_NOTE_SUGGESTION_SECTIONS.map(def => {
+      const content = extractMarkdownSection(aiText, def.aliases)
+        || (def.title === 'Summary' ? fallback : '')
+        || 'No suggestion returned.';
+      return {
+        kind: def.kind,
+        title: def.title,
+        content,
+        sourceIds,
+      };
+    });
+    return makeContextualAiResult({
+      status,
+      title: 'Current note suggestions',
+      outputKind: 'note-suggestions',
+      sources,
+      sections,
+      createdAt,
+    });
+  }
+
   function getRecentTraces() {
     return recentTraces.slice();
   }
@@ -517,6 +740,14 @@
     lowConfidenceMessage,
     makeReview,
     buildFastVaultSummary,
+    contextualAiProviderMeta,
+    contextualAiSourceFromNote,
+    contextualAiSourcesFromNotes,
+    normalizeContextualAiSection,
+    normalizeContextualAiSections,
+    makeContextualAiResult,
+    buildCurrentNoteSuggestionPrompt,
+    makeCurrentNoteSuggestionResult,
     getRecentTraces,
   };
 });

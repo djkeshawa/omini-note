@@ -372,3 +372,102 @@ test('AI runtime builds local vault summaries without model calls', () => {
   assert.match(result.answer, /Finish the app AI runtime/);
   assert.equal(result.sources.length, 2);
 });
+
+test('AI runtime builds contextual results with provider, sections, and sources', () => {
+  const result = aiRuntime.makeContextualAiResult({
+    config: { provider: 'openrouter', chatModel: 'openai/gpt-4o-mini', piiReduction: true },
+    title: 'Current note suggestions',
+    outputKind: 'note-suggestions',
+    sources: [
+      {
+        id: 'n1',
+        title: 'Project AI',
+        body: '# Project AI\n- [ ] Follow up',
+        modifiedAt: '2026-06-06T10:00:00.000Z',
+      },
+      {
+        id: 'n1',
+        title: 'Duplicate',
+        body: 'Duplicate should not produce another source.',
+      },
+    ],
+    sections: [
+      { kind: 'fact', title: 'Summary', content: 'This note is about Project AI.', sourceIds: ['n1'] },
+      { kind: 'suggestion', title: 'Tasks', content: 'Follow up on the open task.', sourceIds: ['n1'] },
+      { kind: 'preview', title: 'Preview', content: '- [ ] Follow up on Project AI' },
+    ],
+    createdAt: '2026-06-06T10:30:00.000Z',
+  });
+
+  assert.equal(result.type, 'contextual-ai-result');
+  assert.equal(result.provider, 'openrouter');
+  assert.equal(result.model, 'openai/gpt-4o-mini');
+  assert.equal(result.providerModelLabel, 'OpenRouter - openai/gpt-4o-mini');
+  assert.equal(result.hosted, true);
+  assert.equal(result.piiReduction, true);
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].id, 'n1');
+  assert.equal(result.sources[0].title, 'Project AI');
+  assert.deepEqual(result.sections.map(section => section.kind), ['fact', 'suggestion', 'preview']);
+  assert.deepEqual(result.sections[0].sourceIds, ['n1']);
+});
+
+test('AI runtime builds current note suggestion prompts and sourced results', () => {
+  const currentNote = {
+    id: 'n1',
+    title: 'Project AI',
+    tags: ['work'],
+    body: '# Project AI\n[[Launch Plan]]\n- [ ] Follow up with reviewers\nCheck whether the model contradicts the roadmap.',
+    modifiedAt: '2026-06-06T10:00:00.000Z',
+  };
+  const linkedNote = {
+    id: 'n2',
+    title: 'Launch Plan',
+    body: 'Launch Plan references rollout milestones.',
+    modifiedAt: '2026-06-05T10:00:00.000Z',
+  };
+  const prompt = aiRuntime.buildCurrentNoteSuggestionPrompt({
+    note: currentNote,
+    allNotes: [currentNote, linkedNote],
+  });
+
+  assert.match(prompt, /Current note: Project AI/);
+  assert.match(prompt, /Source ref: n1/);
+  assert.match(prompt, /Summary, Tasks, Tags, Links, Gaps or contradictions/);
+  assert.match(prompt, /Launch Plan \[n2\]/);
+  assert.match(prompt, /Do not return an edited note body/);
+
+  const result = aiRuntime.makeCurrentNoteSuggestionResult({
+    note: currentNote,
+    allNotes: [currentNote, linkedNote],
+    status: { config: { provider: 'openai', chatModel: 'gpt-4o-mini', piiReduction: true } },
+    aiText: [
+      '## Summary',
+      'Project AI needs reviewer follow-up. [n1]',
+      '',
+      '## Tasks',
+      '- Follow up with reviewers. [n1]',
+      '',
+      '## Tags',
+      '- #ai #roadmap [n1]',
+      '',
+      '## Links',
+      '- Link the rollout milestone to [[Launch Plan]]. [n2]',
+      '',
+      '## Gaps or contradictions',
+      '- Check the roadmap contradiction note. [n1]',
+    ].join('\n'),
+    createdAt: '2026-06-06T10:30:00.000Z',
+  });
+
+  assert.equal(result.outputKind, 'note-suggestions');
+  assert.equal(result.title, 'Current note suggestions');
+  assert.equal(result.providerModelLabel, 'OpenAI - gpt-4o-mini');
+  assert.equal(result.hosted, true);
+  assert.deepEqual(result.sources.map(source => source.id), ['n1', 'n2']);
+  assert.deepEqual(result.sections.map(section => section.title), ['Summary', 'Tasks', 'Tags', 'Links', 'Gaps or contradictions']);
+  assert.equal(result.sections[0].kind, 'fact');
+  assert.equal(result.sections[1].kind, 'suggestion');
+  assert.deepEqual(result.sections[0].sourceIds, ['n1', 'n2']);
+  assert.match(result.sections[3].content, /Launch Plan/);
+});

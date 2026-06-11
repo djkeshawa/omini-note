@@ -33,7 +33,7 @@ function MnSettingsModal({
   const sections = [
     { k: 'appearance', label: 'Appearance', group: 'Workspace', sub: 'Theme, density, fonts', icon: iconAppearance },
     { k: 'editor', label: 'Editor', group: 'Workspace', sub: 'Writing behavior', icon: iconEditor },
-    { k: 'notes', label: 'Notes & Tags', group: 'Workspace', sub: 'Lists and rollups', icon: iconNotes },
+    { k: 'notes', label: 'Notes & Tags', group: 'Workspace', sub: 'Lists and Today', icon: iconNotes },
     { k: 'reminders', label: 'Reminders', group: 'Automation', sub: 'Alerts and snooze', icon: iconBell },
     { k: 'ai', label: 'AI', group: 'Automation', sub: 'Models and providers', icon: iconAI },
     { k: 'plugins', label: 'Plugins', group: 'Automation', sub: 'Custom actions', icon: iconPlugin },
@@ -250,6 +250,7 @@ const {
 
 function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThemeFile }) {
   const [themeImporting, setThemeImporting] = useStateS(false);
+  const [themeImportPreview, setThemeImportPreview] = useStateS(null);
   const options = themeOptions.length ? themeOptions : [
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
@@ -259,7 +260,8 @@ function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThe
     if (!onImportThemeFile || themeImporting) return;
     setThemeImporting(true);
     try {
-      await onImportThemeFile();
+      const result = await onImportThemeFile();
+      if (result?.theme?.preview) setThemeImportPreview(result.theme.preview);
     } finally {
       setThemeImporting(false);
     }
@@ -285,23 +287,59 @@ function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThe
           </select>
         </Row>
         <Row T={T} label="Community themes" sub="Install a shared JSON or YAML theme file.">
-          <button onClick={installTheme} disabled={!onImportThemeFile || themeImporting} style={{
-            border: `1px solid ${T.lineSub}`,
-            background: T.bgSub,
-            color: themeImporting ? T.inkDim : T.ink,
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontFamily: 'var(--mn-ui)',
-            fontSize: 12.5,
-            cursor: !onImportThemeFile || themeImporting ? 'default' : 'pointer',
-            minWidth: 112,
-          }}>
-            {themeImporting ? 'Installing...' : 'Install theme'}
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+            <button onClick={installTheme} disabled={!onImportThemeFile || themeImporting} style={{
+              border: `1px solid ${T.lineSub}`,
+              background: T.bgSub,
+              color: themeImporting ? T.inkDim : T.ink,
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 12.5,
+              cursor: !onImportThemeFile || themeImporting ? 'default' : 'pointer',
+              minWidth: 112,
+            }}>
+              {themeImporting ? 'Installing...' : 'Install theme'}
+            </button>
+            {themeImportPreview && (
+              <div style={{
+                border: `1px solid ${T.lineSub}`,
+                background: T.bgSub,
+                borderRadius: 7,
+                padding: 8,
+                minWidth: 220,
+                maxWidth: 320,
+              }}>
+                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 650, color: T.ink }}>
+                  {themeImportPreview.name || themeImportPreview.id}
+                </div>
+                <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, marginTop: 3 }}>
+                  {themeImportPreview.author ? `by ${themeImportPreview.author} - ` : ''}
+                  {themeImportPreview.coverage?.present || 0}/{themeImportPreview.coverage?.required || 0} tokens
+                </div>
+                <div aria-label="Theme preview swatches" style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
+                  {Object.entries(themeImportPreview.swatches || {}).slice(0, 8).map(([name, value]) => (
+                    <span key={name} title={name} style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 4,
+                      border: `1px solid ${T.line}`,
+                      background: value,
+                      display: 'inline-block',
+                    }} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </Row>
         <Row T={T} label="Interface density" sub="Tighter rows fit more on screen.">
           <Segmented T={T} value={tweaks.density} onChange={v => setTweak('density', v)}
             options={[{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }]} />
+        </Row>
+        <Row T={T} label="Startup view" sub="Choose what opens when VispNote starts.">
+          <Segmented T={T} value={tweaks.startupView === 'today' ? 'today' : 'notes'} onChange={v => setTweak('startupView', v)}
+            options={[{ value: 'notes', label: 'Notes' }, { value: 'today', label: 'Today' }]} />
         </Row>
         <Row T={T} label="Typography" sub="Font pairing used across the app.">
           <Select T={T} value={tweaks.fontChoice} onChange={v => setTweak('fontChoice', v)}
@@ -370,10 +408,32 @@ function SectionNotes({ tweaks, setTweak, T, stats }) {
         <Row T={T} label="Show pinned notes first" sub="Pin a note from its toolbar.">
           <Toggle T={T} checked={tweaks.pinnedFirst !== false} onChange={v => setTweak('pinnedFirst', v)} />
         </Row>
-        <Row T={T} label="Daily rollup heading format" sub="How Today view groups notes.">
+        <Row T={T} label="Today heading format" sub="How Today view groups notes.">
           <Segmented T={T} value={tweaks.rollupFormat || 'long'}
             onChange={v => setTweak('rollupFormat', v)}
             options={[{ value: 'long', label: 'Long' }, { value: 'short', label: 'Short' }]} />
+        </Row>
+        <Row T={T} label="Today dashboard default range" sub="Initial range used when opening Today.">
+          <Segmented T={T} value={tweaks.rollupDefaultRange || 'today'}
+            onChange={v => setTweak('rollupDefaultRange', v)}
+            options={[{ value: 'today', label: 'Today' }, { value: 'yesterday', label: 'Yesterday' }, { value: 'week', label: 'This week' }, { value: 'month', label: 'This month' }]} />
+        </Row>
+        <Row T={T} label="Today dashboard grouping" sub="Date source used for day groups.">
+          <Segmented T={T} value={tweaks.rollupGroupBy || 'created'}
+            onChange={v => setTweak('rollupGroupBy', v)}
+            options={[{ value: 'created', label: 'Created' }, { value: 'modified', label: 'Modified' }, { value: 'title-date', label: 'Title date' }]} />
+        </Row>
+        <Row T={T} label="Show Today previews" sub="Show a short note excerpt in Today.">
+          <Toggle T={T} checked={tweaks.rollupShowPreviews !== false} onChange={v => setTweak('rollupShowPreviews', v)} />
+        </Row>
+        <Row T={T} label="Show Today open loops" sub="Show open checklist items in Today.">
+          <Toggle T={T} checked={tweaks.rollupShowTasks !== false} onChange={v => setTweak('rollupShowTasks', v)} />
+        </Row>
+        <Row T={T} label="Show Today reminders" sub="Show overdue and due reminders in Today.">
+          <Toggle T={T} checked={tweaks.rollupShowReminders !== false} onChange={v => setTweak('rollupShowReminders', v)} />
+        </Row>
+        <Row T={T} label="Collapse older Today days" sub="Keep older Today day groups compact by default.">
+          <Toggle T={T} checked={tweaks.rollupCollapseOlder !== false} onChange={v => setTweak('rollupCollapseOlder', v)} />
         </Row>
         <Row T={T} label="Graph style" sub="How connection overlay is drawn." last>
           <Segmented T={T} value={tweaks.graphStyle} onChange={v => setTweak('graphStyle', v)}
@@ -914,7 +974,7 @@ function SectionData({
   onExportBackup, onImportBackup, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
 }) {
   const [newVaultName, setNewVaultName] = useStateS('');
-  const [newVaultType, setNewVaultType] = useStateS('notes');
+  const [newVaultMode, setNewVaultMode] = useStateS('general');
   const [confirmingDelete, setConfirmingDelete] = useStateS(false);
   const [confirmText, setConfirmText] = useStateS('');
   const [busy, setBusy] = useStateS(false);
@@ -961,9 +1021,12 @@ function SectionData({
     setError('');
     setBusy(true);
     try {
-      await onCreateVault(name, { type: newVaultType });
+      await onCreateVault(name, {
+        type: newVaultMode === 'writer' ? 'novelist' : 'notes',
+        onboardingMode: newVaultMode,
+      });
       setNewVaultName('');
-      setNewVaultType('notes');
+      setNewVaultMode('general');
       setConfirmingDelete(false);
       setConfirmText('');
     } finally {
@@ -1000,8 +1063,13 @@ function SectionData({
         </Row>
         <Row T={T} label="Create vault" sub="Start a separate local workspace with its own notes and tags.">
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <Segmented T={T} value={newVaultType} onChange={setNewVaultType}
-              options={[{ value: 'notes', label: 'Notes' }, { value: 'novelist', label: 'Novelist' }]} />
+            <Segmented T={T} value={newVaultMode} onChange={setNewVaultMode}
+              options={[
+                { value: 'general', label: 'General' },
+                { value: 'daily', label: 'Daily' },
+                { value: 'researcher', label: 'Research' },
+                { value: 'writer', label: 'Writer' },
+              ]} />
             <input
               value={newVaultName}
               onChange={e => setNewVaultName(e.target.value)}

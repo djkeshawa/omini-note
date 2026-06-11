@@ -100,6 +100,13 @@ function MnCalendarPanel({
   const [createDate, setCreateDate] = useStateC(todayKey);
   const [createTime, setCreateTime] = useStateC('09:00');
   const [createNoteId, setCreateNoteId] = useStateC(selectedNoteId || notes[0]?.id || '');
+  const [filterStatus, setFilterStatus] = useStateC('all');
+  const [filterTag, setFilterTag] = useStateC('');
+  const [filterSourceId, setFilterSourceId] = useStateC('');
+  const [createWhen, setCreateWhen] = useStateC('');
+  const [draftWhen, setDraftWhen] = useStateC('');
+  const [scheduleError, setScheduleError] = useStateC('');
+  const helpers = window.MN_APP_HELPERS || {};
 
   useEffectC(() => {
     if (selectedNoteId) setCreateNoteId(selectedNoteId);
@@ -116,13 +123,30 @@ function MnCalendarPanel({
     return map;
   }, [tags]);
 
-  const activeItem = useMemoC(() => items.find(item => item.key === activeKey) || null, [items, activeKey]);
+  const filteredItems = useMemoC(() => (
+    helpers.agendaFilterActionItems
+      ? helpers.agendaFilterActionItems(items, notes, { status: filterStatus, tag: filterTag, sourceNoteId: filterSourceId })
+      : (items || [])
+  ), [helpers, items, notes, filterStatus, filterTag, filterSourceId]);
+  const sourceOptions = useMemoC(() => {
+    const ids = new Set((items || []).map(item => item.noteId).filter(Boolean));
+    return notes.filter(note => ids.has(note.id));
+  }, [items, notes]);
+  const tagOptions = useMemoC(() => {
+    const names = new Set();
+    (items || []).forEach(item => (item.actionDetail?.inheritedTags || item.noteTags || []).forEach(tag => names.add(tag)));
+    tags.forEach(tag => { if (names.has(tag.name)) names.add(tag.name); });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [items, tags]);
+  const activeItem = useMemoC(() => filteredItems.find(item => item.key === activeKey) || null, [filteredItems, activeKey]);
 
   useEffectC(() => {
     if (!activeItem) return;
     setDraftText(activeItem.label || activeItem.text || '');
     setDraftDate(activeItem.remindAt?.date || '');
     setDraftTime(activeItem.remindAt?.time || '');
+    setDraftWhen('');
+    setScheduleError('');
   }, [activeItem]);
 
   const grouped = useMemoC(() => {
@@ -131,7 +155,7 @@ function MnCalendarPanel({
     const now = new Date();
     const overdue = [];
     const upcoming = [];
-    items.forEach(item => {
+    filteredItems.forEach(item => {
       if (item.checked) return;
       const key = mnCalendarItemDateKey(item);
       if (!key) {
@@ -149,7 +173,7 @@ function MnCalendarPanel({
     overdue.sort((a, b) => (a.remindAt?.at || 0) - (b.remindAt?.at || 0));
     upcoming.sort((a, b) => (a.remindAt?.at || 0) - (b.remindAt?.at || 0));
     return { byDate, undated, overdue, upcoming };
-  }, [items]);
+  }, [filteredItems]);
 
   const days = useMemoC(() => mnCalendarMonthDays(anchor, weekStart), [anchor, weekStart]);
   const selectedItems = grouped.byDate[selectedKey] || [];
@@ -176,19 +200,50 @@ function MnCalendarPanel({
     setSelectedKey(todayKey);
   };
 
+  const resolveSchedulePhrase = (value, fallbackDate, fallbackTime) => {
+    const phrase = String(value || '').trim();
+    if (!phrase) return { ok: true, date: fallbackDate, time: fallbackTime };
+    const parsed = helpers.agendaParseScheduleInput?.(phrase);
+    if (!parsed?.ok) {
+      setScheduleError(parsed?.error || 'Unsupported schedule phrase.');
+      return { ok: false };
+    }
+    setScheduleError('');
+    return { ok: true, date: parsed.date, time: parsed.time || fallbackTime };
+  };
+
+  const applyCreateWhen = () => {
+    const resolved = resolveSchedulePhrase(createWhen, createDate, createTime);
+    if (!resolved.ok) return false;
+    setCreateDate(resolved.date);
+    setCreateTime(resolved.time || createTime);
+    return true;
+  };
+
+  const applyDraftWhen = () => {
+    const resolved = resolveSchedulePhrase(draftWhen, draftDate, draftTime);
+    if (!resolved.ok) return false;
+    setDraftDate(resolved.date);
+    setDraftTime(resolved.time || draftTime);
+    return true;
+  };
+
   const addItem = () => {
     const text = createText.trim();
     if (!text || !createNoteId) return;
     const isReminder = createType === 'reminder';
+    const resolved = resolveSchedulePhrase(createWhen, createDate, createTime);
+    if (!resolved.ok) return;
     const result = onCreateItem?.({
       noteId: createNoteId,
       text,
       type: createType,
-      date: createDate,
-      time: isReminder ? createTime : '',
+      date: resolved.date,
+      time: isReminder ? resolved.time : '',
     });
     if (result !== false) {
       setCreateText('');
+      setCreateWhen('');
       setCreateOpen(false);
     }
   };
@@ -204,10 +259,12 @@ function MnCalendarPanel({
 
   const saveActive = () => {
     if (!activeItem || !draftText.trim()) return;
+    const resolved = resolveSchedulePhrase(draftWhen, draftDate, draftTime);
+    if (!resolved.ok) return;
     onUpdateItem?.(activeItem, {
       text: draftText.trim(),
-      date: draftDate,
-      time: draftTime,
+      date: resolved.date,
+      time: resolved.time,
     });
   };
 
@@ -253,6 +310,13 @@ function MnCalendarPanel({
   const ItemCard = ({ item, compact = false }) => {
     const overdue = item.remindAt?.at && item.remindAt.at < new Date();
     const label = item.label || item.text || 'Reminder';
+    const detail = item.actionDetail || helpers.agendaActionDetail?.(item, notes) || {};
+    const detailTags = detail.inheritedTags || item.noteTags || [];
+    const dateDetails = [
+      detail.scheduledDate ? `scheduled ${detail.scheduledDate}${detail.scheduledTime ? ` ${detail.scheduledTime}` : ''}` : '',
+      detail.createdDate ? `created ${detail.createdDate}` : detail.titleDate ? `title ${detail.titleDate}` : '',
+      detail.modifiedDate ? `modified ${detail.modifiedDate}` : '',
+    ].filter(Boolean);
     return (
       <div
         onClick={() => setActiveKey(item.key)}
@@ -327,11 +391,13 @@ function MnCalendarPanel({
                 fontFamily: 'var(--mn-mono)',
                 fontSize: 10,
               }}>
-                <span style={{ color: T.inkMed }}>{item.noteTitle}</span>
+                <span style={{ color: T.inkMed }}>{detail.sourceNoteTitle || item.noteTitle}</span>
+                {detail.reason && <span style={{ color: overdue ? T.danger : T.accent }}>{detail.reason}</span>}
                 {item.remindAt && <span style={{ color: overdue ? T.danger : T.warn }}>{mnCalendarTimeText(item)}</span>}
-                {(item.noteTags || []).slice(0, 2).map(tag => (
+                {detailTags.slice(0, 3).map(tag => (
                   <span key={tag} style={{ color: mnGetTagColor(tagHue[tag] ?? 240, theme) }}>#{tag}</span>
                 ))}
+                {dateDetails.slice(0, 2).map(text => <span key={text}>{text}</span>)}
               </div>
             )}
           </div>
@@ -397,6 +463,33 @@ function MnCalendarPanel({
             <button onClick={() => setMode('month')} style={pillBtn(mode === 'month')}>Month</button>
             <button onClick={() => setMode('agenda')} style={pillBtn(mode === 'agenda')}>Agenda</button>
           </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {[
+            ['all', 'All'],
+            ['overdue', 'Overdue'],
+            ['today', 'Today'],
+            ['upcoming', 'Upcoming'],
+            ['unscheduled', 'Unscheduled'],
+          ].map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setFilterStatus(value)} style={pillBtn(filterStatus === value)}>
+              {label}
+            </button>
+          ))}
+          <select aria-label="Filter Agenda by tag" value={filterTag} onChange={event => setFilterTag(event.target.value)} style={{ ...mnCalendarInput(T), width: 170 }}>
+            <option value="">All tags</option>
+            {tagOptions.map(tag => <option key={tag} value={tag}>#{tag}</option>)}
+          </select>
+          <select aria-label="Filter Agenda by source note" value={filterSourceId} onChange={event => setFilterSourceId(event.target.value)} style={{ ...mnCalendarInput(T), width: 210 }}>
+            <option value="">All source notes</option>
+            {sourceOptions.map(note => <option key={note.id} value={note.id}>{note.title || 'Untitled'}</option>)}
+          </select>
+          {(filterStatus !== 'all' || filterTag || filterSourceId) && (
+            <button type="button" onClick={() => { setFilterStatus('all'); setFilterTag(''); setFilterSourceId(''); }} style={pillBtn(false)}>
+              Clear filters
+            </button>
+          )}
         </div>
 
         <div style={{
@@ -591,12 +684,17 @@ function MnCalendarPanel({
                   <select value={createNoteId} onChange={e => setCreateNoteId(e.target.value)} style={mnCalendarInput(T)}>
                     {notes.map(note => <option key={note.id} value={note.id}>{note.title || 'Untitled'}</option>)}
                   </select>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+                    <input aria-label="Schedule phrase" value={createWhen} onChange={e => setCreateWhen(e.target.value)} placeholder="When" style={mnCalendarInput(T)} />
+                    <button type="button" onClick={applyCreateWhen} disabled={!createWhen.trim()} style={pillBtn(false)}>Apply</button>
+                  </div>
                   {createType === 'reminder' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 96px', gap: 8 }}>
                       <input type="date" value={createDate} onChange={e => setCreateDate(e.target.value)} style={mnCalendarInput(T)} />
                       <input type="time" value={createTime} onChange={e => setCreateTime(e.target.value)} style={mnCalendarInput(T)} />
                     </div>
                   )}
+                  {scheduleError && <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.danger }}>{scheduleError}</div>}
                   <button onClick={addItem} disabled={!createText.trim() || !createNoteId} style={mnCalendarPrimaryButton(T, !createText.trim() || !createNoteId)}>Add</button>
                 </div>
               </div>
@@ -611,10 +709,15 @@ function MnCalendarPanel({
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Edit item</div>
                 <div style={{ display: 'grid', gap: 8 }}>
                   <input value={draftText} onChange={e => setDraftText(e.target.value)} style={mnCalendarInput(T)} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+                    <input aria-label="Edit schedule phrase" value={draftWhen} onChange={e => setDraftWhen(e.target.value)} placeholder="When" style={mnCalendarInput(T)} />
+                    <button type="button" onClick={applyDraftWhen} disabled={!draftWhen.trim()} style={pillBtn(false)}>Apply</button>
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 96px', gap: 8 }}>
                     <input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)} style={mnCalendarInput(T)} />
                     <input type="time" value={draftTime} onChange={e => setDraftTime(e.target.value)} style={mnCalendarInput(T)} />
                   </div>
+                  {scheduleError && <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.danger }}>{scheduleError}</div>}
                   <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                     <button onClick={saveActive} disabled={!draftText.trim()} style={mnCalendarPrimaryButton(T, !draftText.trim())}>Save</button>
                     <button onClick={clearActiveDate} disabled={!activeItem.remindAt} style={pillBtn(false)}>Clear date</button>
@@ -625,6 +728,27 @@ function MnCalendarPanel({
                   <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
                     Linked to {activeItem.noteTitle || 'Untitled'}.
                   </div>
+                  {(() => {
+                    const detail = activeItem.actionDetail || helpers.agendaActionDetail?.(activeItem, notes) || {};
+                    const rows = [
+                      ['Source', detail.sourceNoteTitle || activeItem.noteTitle || 'Untitled'],
+                      ['Reason', detail.reason || 'from note'],
+                      ['Scheduled', detail.scheduledDate ? `${detail.scheduledDate}${detail.scheduledTime ? ` ${detail.scheduledTime}` : ''}` : 'Unscheduled'],
+                      ['Created/title', detail.createdDate || detail.titleDate || 'Unknown'],
+                      ['Modified', detail.modifiedDate || 'Unknown'],
+                      ['Tags', (detail.inheritedTags || []).length ? detail.inheritedTags.map(tag => `#${tag}`).join(' ') : 'None'],
+                    ];
+                    return (
+                      <div style={{ display: 'grid', gap: 4, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+                        {rows.map(([label, value]) => (
+                          <div key={label} style={{ display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr)', gap: 8 }}>
+                            <span>{label}</span>
+                            <span style={{ color: T.inkMed, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
