@@ -119,6 +119,56 @@
     return { ...note, blocks: nextBlocks, modifiedAt: ctx.now || new Date().toISOString() };
   }
 
+  // Wraps the first plain-text occurrence of `title` in `body` with a wiki
+  // link, preserving the original casing. Skips occurrences that are inside
+  // an existing [[wiki link]] or a fenced code block, and requires word
+  // boundaries so "Plan" does not link inside "Planning".
+  function linkMentionInBody(body, title) {
+    const text = String(body || '');
+    const target = String(title || '').trim();
+    if (!target) return { body: text, linked: false };
+    const lower = text.toLowerCase();
+    const needle = target.toLowerCase();
+
+    const fenceRanges = [];
+    let fenceStart = -1;
+    let lineStart = 0;
+    for (const line of text.split('\n')) {
+      if (/^\s*```/.test(line)) {
+        if (fenceStart < 0) fenceStart = lineStart;
+        else { fenceRanges.push([fenceStart, lineStart + line.length]); fenceStart = -1; }
+      }
+      lineStart += line.length + 1;
+    }
+    if (fenceStart >= 0) fenceRanges.push([fenceStart, text.length]);
+    const inFence = (at) => fenceRanges.some(([start, end]) => at >= start && at < end);
+
+    const inWikiLink = (at) => {
+      const open = text.lastIndexOf('[[', at);
+      if (open < 0) return false;
+      const close = text.indexOf(']]', open);
+      return close >= 0 && at < close;
+    };
+    const boundary = (ch) => !ch || !/[a-zA-Z0-9]/.test(ch);
+
+    let from = 0;
+    while (from <= lower.length - needle.length) {
+      const at = lower.indexOf(needle, from);
+      if (at < 0) break;
+      const before = at === 0 ? '' : text[at - 1];
+      const after = text[at + needle.length] || '';
+      if (boundary(before) && boundary(after) && !inWikiLink(at) && !inFence(at)) {
+        const original = text.slice(at, at + needle.length);
+        return {
+          body: `${text.slice(0, at)}[[${original}]]${text.slice(at + needle.length)}`,
+          linked: true,
+        };
+      }
+      from = at + 1;
+    }
+    return { body: text, linked: false };
+  }
+
   function renameNoteTitleDrafts(notes = [], noteId, title, ctx = {}) {
     if (!String(title || '').trim()) return null;
     const source = (notes || []).find(note => note.id === noteId);
@@ -198,6 +248,7 @@
     applyNotePatch,
     applyNoteBodyUpdate,
     applyNoteBlocksUpdate,
+    linkMentionInBody,
     renameNoteTitleDrafts,
     convertNovelistTypeTags,
     removeTagFromNotes,

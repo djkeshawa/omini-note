@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('mn', {
   searchDetailed:(vaultId, query, limit) => ipcRenderer.invoke('mn:searchDetailed', vaultId, query, limit),
   searchDetailedStatus:(vaultId, query, limit) => ipcRenderer.invoke('mn:searchDetailedStatus', vaultId, query, limit),
   backlinks:   (vaultId, title) => ipcRenderer.invoke('mn:backlinks', vaultId, title),
+  unlinkedMentions: (vaultId, title, limit) => ipcRenderer.invoke('mn:unlinkedMentions', vaultId, title, limit),
   notesByTag:  (vaultId, tag) => ipcRenderer.invoke('mn:notesByTag', vaultId, tag),
   tagCounts:   (vaultId) => ipcRenderer.invoke('mn:tagCounts', vaultId),
   rebuildIndex:(vaultId) => ipcRenderer.invoke('mn:rebuildIndex', vaultId),
