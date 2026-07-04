@@ -5,6 +5,7 @@ const path = require('path');
 const { fileURLToPath } = require('url');
 const store = require('./lib/store');
 const attachments = require('./lib/attachments');
+const linkRename = require('./lib/linkRename');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
 const zotero = require('./lib/zotero');
@@ -1275,10 +1276,21 @@ ipcMain.handle('mn:setActiveVault', wrap(store.setActiveVault));
 ipcMain.handle('mn:loadVault',      wrap(store.loadVault));
 ipcMain.handle('mn:saveNote',       wrap(async (vaultId, note, options) => {
   return await withIndexVaultLock(vaultId, async () => {
+    const previousNote = note?.id ? await store.getNote(vaultId, note.id).catch(() => null) : null;
     const saved = await store.saveNote(vaultId, note, options || {});
     const indexed = runOptionalSearchIndexTask('index note', () => idx.indexNote(vaultId, saved));
     if (indexed !== null) ai.scheduleEmbed(vaultId, saved);  // fire-and-forget; no-op if Ollama down
-    return saved;
+    const linkedNoteUpdates = await linkRename.renameLinksAfterSave({
+      store,
+      vaultId,
+      previousNote,
+      savedNote: saved,
+      onNoteUpdated: (updated) => {
+        const linkIndexed = runOptionalSearchIndexTask('index link-renamed note', () => idx.indexNote(vaultId, updated));
+        if (linkIndexed !== null) ai.scheduleEmbed(vaultId, updated);
+      },
+    });
+    return linkedNoteUpdates.length ? { ...saved, linkedNoteUpdates } : saved;
   });
 }));
 ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId, noteSnapshot) => {
