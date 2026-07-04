@@ -1313,6 +1313,7 @@ test('Release metadata targets renamed VispNote repository', () => {
     'assets/',
     'build/renderer/',
     'lib/',
+    'bin/',
     'src/',
     'scripts/linux-after-install.sh',
     'scripts/before-pack.js',
