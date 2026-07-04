@@ -498,6 +498,9 @@ function MnApp() {
   useEffectA(() => {
     dismissedReminderKeys.current.clear();
     quietedReminderKeys.current.clear();
+    // Inline renderers (attachment images) resolve vault asset URLs from this
+    // global because block components don't receive the vault id as a prop.
+    window.MN_ACTIVE_VAULT_ID = activeVaultId || '';
   }, [activeVaultId]);
 
   useEffectA(() => {

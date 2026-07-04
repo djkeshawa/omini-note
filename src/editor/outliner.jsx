@@ -877,6 +877,35 @@ function MnBlockRow({
     }
   };
 
+  // Saves dropped/pasted image files as vault attachments, then splices the
+  // resulting ![alt](attachments/...) markdown into this block at [start, end).
+  const insertImageMarkdown = async (files, start, end) => {
+    const api = window.MN_IMAGE_ATTACHMENTS;
+    if (!api) return;
+    const { markdowns, errors } = await api.mnSaveImageAttachments(files);
+    for (const message of errors) console.error('image attachment failed:', message);
+    if (!markdowns.length) return;
+    const value = String(block.content || '');
+    const from = Math.max(0, Math.min(value.length, Number.isFinite(start) ? start : value.length));
+    const to = Math.max(from, Math.min(value.length, Number.isFinite(end) ? end : from));
+    const before = value.slice(0, from);
+    const after = value.slice(to);
+    const glueBefore = before && !/\s$/.test(before) ? ' ' : '';
+    const glueAfter = after && !/^\s/.test(after) ? ' ' : '';
+    const inserted = markdowns.join(' ');
+    onChange(block.id, before + glueBefore + inserted + glueAfter + after);
+    const caret = (before + glueBefore + inserted).length;
+    setTimeout(() => {
+      const ta = inputRef.current;
+      if (!ta) return;
+      const pos = MN_MARKDOWN_INPUT_RULES.contentOffsetToEditorOffset?.(block, caret) ?? caret;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    }, 0);
+  };
+
+  const blockAcceptsImageDrops = block.kind !== 'code' && block.kind !== 'table';
+
   const handlePaste = (e) => {
     const markdown = mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable(e);
     const ta = inputRef.current;
@@ -907,6 +936,14 @@ function MnBlockRow({
       const tableBlock = mkBlock({ kind: 'table', content: markdown });
       onInsertBlocksAt && onInsertBlocksAt(block.id, start, end, [tableBlock]);
       setFocusId && setFocusId(tableBlock.id);
+      return;
+    }
+    const imageFiles = window.MN_IMAGE_ATTACHMENTS?.mnImageFilesFromDataTransfer?.(e.clipboardData) || [];
+    if (imageFiles.length && blockAcceptsImageDrops) {
+      e.preventDefault();
+      setAutoQ(null);
+      setSlashQ(null);
+      void insertImageMarkdown(imageFiles, start, end);
       return;
     }
     const pastedBlocks = parseClipboardBlocks?.(e.clipboardData, { allowSingle: false });
@@ -1214,6 +1251,12 @@ function MnBlockRow({
       data-block-kind={block.kind || 'paragraph'}
       data-block-depth={depth}
       onDragOver={(e) => {
+        if (window.MN_IMAGE_ATTACHMENTS?.mnDataTransferHasFiles?.(e.dataTransfer) && blockAcceptsImageDrops) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setDropPos('child');
+          return;
+        }
         if (!e.dataTransfer.types.includes('text/mn-block')) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
@@ -1227,6 +1270,14 @@ function MnBlockRow({
       }}
       onDragLeave={() => setDropPos(null)}
       onDrop={(e) => {
+        const imageFiles = window.MN_IMAGE_ATTACHMENTS?.mnImageFilesFromDataTransfer?.(e.dataTransfer) || [];
+        if (imageFiles.length && blockAcceptsImageDrops) {
+          e.preventDefault();
+          setDropPos(null);
+          const length = String(block.content || '').length;
+          void insertImageMarkdown(imageFiles, length, length);
+          return;
+        }
         const srcId = e.dataTransfer.getData('text/mn-block');
         if (!srcId || !dropPos) { setDropPos(null); return; }
         e.preventDefault();

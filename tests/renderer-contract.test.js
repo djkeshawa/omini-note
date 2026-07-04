@@ -46,6 +46,7 @@ test('renderer modules declare cross-file globals explicitly during migration', 
 
 test('renderer globals are explicitly allowlisted until ESM migration removes them', () => {
   const allowedGlobals = new Set([
+    'MN_ACTIVE_VAULT_ID',
     'MN_AI_REPORT',
     'MN_AI_UI',
     'MN_APP_ACTIONS',

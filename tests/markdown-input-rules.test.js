@@ -184,5 +184,52 @@ test('Specialized syntax contexts are not treated as markdown input-rule targets
 test('Supported case matrix stays explicit for success-criteria accounting', () => {
   const matrix = rules.supportedCaseMatrix();
   assert.equal(matrix.blockStarters.length, 13);
-  assert.deepEqual(matrix.inlineMarkers.map(item => item.kind), ['bold', 'italic', 'code', 'strike', 'link']);
+  assert.deepEqual(matrix.inlineMarkers.map(item => item.kind), ['bold', 'italic', 'code', 'strike', 'link', 'image']);
+});
+
+test('Inline images parse for vault attachments and remote https sources', () => {
+  const segments = rules.parseInlineMarkdown('before ![Shot](attachments/shot-20260704.png) after');
+  assert.deepEqual(segments.map(s => s.kind), ['text', 'image', 'text']);
+  assert.equal(segments[1].label, 'Shot');
+  assert.equal(segments[1].url, 'attachments/shot-20260704.png');
+  assert.equal(segments[1].source, 'attachment');
+
+  const remote = rules.parseInlineMarkdown('![diagram](https://example.com/d.png)');
+  assert.equal(remote.length, 1);
+  assert.equal(remote[0].kind, 'image');
+  assert.equal(remote[0].source, 'remote');
+
+  const emptyAlt = rules.parseInlineMarkdown('![](attachments/pic.png)');
+  assert.equal(emptyAlt[0].kind, 'image');
+  assert.equal(emptyAlt[0].label, '');
+});
+
+test('Inline images reject unsafe or traversal-shaped sources', () => {
+  const unsafe = [
+    '![x](javascript:alert(1))',
+    '![x](file:///etc/passwd)',
+    '![x](attachments/../secret.png)',
+    '![x](attachments/sub/dir.png)',
+    '![x](../outside.png)',
+    '![x](//evil.example/x.png)',
+  ];
+  for (const text of unsafe) {
+    const segments = rules.parseInlineMarkdown(text);
+    assert.deepEqual(segments.map(s => s.kind), ['text'], text);
+    assert.equal(segments[0].text, text);
+  }
+  assert.equal(rules.isVaultAttachmentPath('attachments/pic.png'), true);
+  assert.equal(rules.isVaultAttachmentPath('attachments/../pic.png'), false);
+  assert.equal(rules.isVaultAttachmentPath('elsewhere/pic.png'), false);
+});
+
+test('Inline images round-trip through serialize and respect escapes', () => {
+  const source = 'a ![Shot](attachments/shot.png) b [site](https://example.com) c';
+  assert.equal(rules.serializeInlineMarkdown(rules.parseInlineMarkdown(source)), source);
+
+  const escaped = rules.parseInlineMarkdown('\\![not](attachments/pic.png)');
+  assert.notEqual(escaped[0].kind, 'image');
+
+  const embed = rules.parseInlineMarkdown('![[Page Embed]]');
+  assert.deepEqual(embed.map(s => s.kind), ['text']);
 });

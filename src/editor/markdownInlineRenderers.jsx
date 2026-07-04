@@ -77,6 +77,7 @@ function mnInlineSegmentSourceLength(segment) {
   if (segment.kind === 'code') return text.length + 2;
   if (segment.kind === 'strike') return text.length + 4;
   if (segment.kind === 'link') return String(segment.label || text).length + String(segment.url || '').length + 4;
+  if (segment.kind === 'image') return String(segment.label || text).length + String(segment.url || '').length + 5;
   return text.length;
 }
 
@@ -87,7 +88,23 @@ function mnInlineSegmentTextOffset(segment, sourceOffset) {
   if (segment.kind === 'code') return sourceOffset + 1;
   if (segment.kind === 'strike') return sourceOffset + 2;
   if (segment.kind === 'link') return sourceOffset + 1;
+  if (segment.kind === 'image') return sourceOffset + 2;
   return sourceOffset;
+}
+
+function mnResolveInlineImageSrc(url) {
+  const value = String(url || '');
+  const isAttachmentPath = MN_MARKDOWN_INPUT_RULES.isVaultAttachmentPath
+    ? MN_MARKDOWN_INPUT_RULES.isVaultAttachmentPath(value)
+    : false;
+  if (isAttachmentPath) {
+    const vaultId = String(window.MN_ACTIVE_VAULT_ID || '');
+    if (!vaultId) return null;
+    const fileName = value.slice('attachments/'.length);
+    return `vispnote-asset://attachment/${encodeURIComponent(vaultId)}/${encodeURIComponent(fileName)}`;
+  }
+  if (/^https:\/\//.test(value)) return value;
+  return null;
 }
 
 function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0) {
@@ -122,6 +139,34 @@ function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, rende
               borderRadius: 4,
               border: `1px solid ${T.lineSub}`,
             }}>{segment.text}</code>
+          );
+        }
+        if (segment.kind === 'image') {
+          const src = mnResolveInlineImageSrc(segment.url);
+          if (!src) {
+            return (
+              <span key={index} style={{ fontFamily: 'var(--mn-mono)', fontSize: '0.85em', color: T.inkDim }}>
+                {`![${segment.label || ''}](${segment.url || ''})`}
+              </span>
+            );
+          }
+          return (
+            <img
+              key={index}
+              src={src}
+              alt={segment.label || ''}
+              loading="lazy"
+              draggable={false}
+              style={{
+                display: 'inline-block',
+                maxWidth: '100%',
+                maxHeight: 480,
+                borderRadius: 8,
+                border: `1px solid ${T.lineSub}`,
+                verticalAlign: 'middle',
+                margin: '4px 0',
+              }}
+            />
           );
         }
         if (segment.kind === 'link') {
