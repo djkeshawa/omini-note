@@ -125,6 +125,23 @@ O(n²) force sim before large vaults hit it (Barnes-Hut or capped node counts).
   first), no cloud accounts.
 - No feature-for-feature Obsidian chase.
 
+## Deferred parity backlog (not scheduled, not forgotten)
+
+Items from the original gap analysis that lost priority under this strategy.
+They re-enter the roadmap only when something above unblocks or demands them:
+
+- **Tabs & split panes** — strongest deferred candidate; "write while
+  referencing" serves the thinking-partner vision too. Gated on the `app.jsx`
+  split (guardrails), so revisit right after that refactor lands.
+- **Typed properties UI + query language (Dataview-lite)** — B2's suggested
+  properties may grow into this; needs a real YAML parser first.
+- **Vault encryption at rest** — aligns with the privacy positioning; pairs
+  naturally with a future paid E2E sync tier.
+- **Vim mode, rebindable shortcuts, custom CSS, multi-window** — personal
+  polish; none blocks the strategy.
+- **Mobile & publish** — see "not doing"; BYO-sync plus a read-only viewer is
+  the likely first step if demand shows up.
+
 ## Suggested order
 
 | # | Item | Size | Why first |
