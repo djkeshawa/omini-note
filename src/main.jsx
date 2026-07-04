@@ -47,6 +47,8 @@ import './app/notesVaultsService.js';
 import './app/vaultsService.js';
 import './app/appRuntime.js';
 import './app/appShell.jsx';
+import './app/quickSwitcherModel.js';
+import './app/quickSwitcher.jsx';
 import './app/app.jsx';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));

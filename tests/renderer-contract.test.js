@@ -48,6 +48,7 @@ test('renderer globals are explicitly allowlisted until ESM migration removes th
   const allowedGlobals = new Set([
     'MN_ACTIVE_VAULT_ID',
     'MN_AI_REPORT',
+    'MnQuickSwitcher',
     'MN_AI_UI',
     'MN_APP_ACTIONS',
     'MN_APP_RUNTIME',
