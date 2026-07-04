@@ -120,15 +120,15 @@
   }
 
   // Wraps the first plain-text occurrence of `title` in `body` with a wiki
-  // link, preserving the original casing. Skips occurrences that are inside
-  // an existing [[wiki link]] or a fenced code block, and requires word
-  // boundaries so "Plan" does not link inside "Planning".
+  // link, preserving the original casing. Skips occurrences inside existing
+  // [[wiki links]], markdown links/images, inline code, and fenced code
+  // blocks, and requires word boundaries so "Plan" does not link inside
+  // "Planning". Matching runs directly on the source text with a
+  // case-insensitive regex so unicode case folding cannot shift offsets.
   function linkMentionInBody(body, title) {
     const text = String(body || '');
     const target = String(title || '').trim();
     if (!target) return { body: text, linked: false };
-    const lower = text.toLowerCase();
-    const needle = target.toLowerCase();
 
     const fenceRanges = [];
     let fenceStart = -1;
@@ -141,30 +141,34 @@
       lineStart += line.length + 1;
     }
     if (fenceStart >= 0) fenceRanges.push([fenceStart, text.length]);
-    const inFence = (at) => fenceRanges.some(([start, end]) => at >= start && at < end);
 
-    const inWikiLink = (at) => {
-      const open = text.lastIndexOf('[[', at);
-      if (open < 0) return false;
-      const close = text.indexOf(']]', open);
-      return close >= 0 && at < close;
-    };
+    // Spans a mention must not touch: wiki links, markdown images/links
+    // (label and url alike), and inline code.
+    const exclusions = [];
+    for (const re of [/\[\[[^\]\n]*\]\]/g, /!?\[[^\]\n]*\]\([^)\n]*\)/g, /`[^`\n]*`/g]) {
+      for (const match of text.matchAll(re)) {
+        exclusions.push([match.index, match.index + match[0].length]);
+      }
+    }
+    const blockedRanges = [...fenceRanges, ...exclusions];
+    const blocked = (at, length) => blockedRanges.some(([start, end]) => at < end && at + length > start);
     const boundary = (ch) => !ch || !/[a-zA-Z0-9]/.test(ch);
 
-    let from = 0;
-    while (from <= lower.length - needle.length) {
-      const at = lower.indexOf(needle, from);
-      if (at < 0) break;
+    const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const matcher = new RegExp(escaped, 'gi');
+    let match;
+    while ((match = matcher.exec(text))) {
+      const at = match.index;
+      const length = match[0].length;
       const before = at === 0 ? '' : text[at - 1];
-      const after = text[at + needle.length] || '';
-      if (boundary(before) && boundary(after) && !inWikiLink(at) && !inFence(at)) {
-        const original = text.slice(at, at + needle.length);
+      const after = text[at + length] || '';
+      if (boundary(before) && boundary(after) && !blocked(at, length)) {
         return {
-          body: `${text.slice(0, at)}[[${original}]]${text.slice(at + needle.length)}`,
+          body: `${text.slice(0, at)}[[${match[0]}]]${text.slice(at + length)}`,
           linked: true,
         };
       }
-      from = at + 1;
+      matcher.lastIndex = at + 1;
     }
     return { body: text, linked: false };
   }

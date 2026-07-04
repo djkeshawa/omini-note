@@ -127,6 +127,9 @@ function MnEditor({
   // Backlinks: prefer SQLite-backed lookup; fall back to in-memory scan
   // when running outside Electron (no window.mn).
   const inMemoryBacklinks = useMemoE(() => {
+    // Electron always uses the SQLite result below; skip the full-vault
+    // regex scan (it would otherwise run per keystroke and be discarded).
+    if (HAS_DISK_E) return [];
     return notes.filter(n => {
       if (n.id === note.id) return false;
       const body = n.body || mnBlocksToMd(n.blocks || []);
@@ -152,7 +155,9 @@ function MnEditor({
       } catch (e) { console.error('backlinks failed', e); }
     }, 200);
     return () => { cancelled = true; clearTimeout(handle); };
-  }, [vaultId, note.id, note.title, note.blocks]);
+    // Backlinks come from OTHER notes' bodies; editing this note's blocks
+    // cannot change them, so blocks are deliberately not a dependency.
+  }, [vaultId, note.id, note.title]);
 
   const backlinks = diskBacklinks != null ? diskBacklinks : inMemoryBacklinks;
 

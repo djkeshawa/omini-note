@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const linkRename = require('../lib/linkRename.js');
+const notesVaultsService = require('../src/app/notesVaultsService.js');
 const { withIsolatedStore } = require('./helpers/common.js');
 
 test('rewriteWikiLinks rewrites plain, alias, and heading links case-insensitively', () => {
@@ -113,4 +114,40 @@ test('renameLinksAfterSave detects the rename and reports updated notes', async 
     });
     assert.deepEqual(again, []);
   });
+});
+
+test('notesVaultsService.saveNote passes linked-note updates and rename titles through', async () => {
+  const contractBridge = {
+    notesVaults: {
+      saveNote: async () => ({
+        ok: true,
+        data: {
+          note: { id: 'n1', title: 'New' },
+          linkedNoteUpdates: [{ id: 'n2', title: 'Src', body: '[[New]]' }],
+          linkedNoteRename: { oldTitle: 'Old', newTitle: 'New' },
+        },
+      }),
+    },
+  };
+  const res = await notesVaultsService.saveNote(contractBridge, 'v1', { id: 'n1' });
+  assert.equal(res.ok, true);
+  assert.equal(res.value.id, 'n1');
+  assert.deepEqual(res.linkedNoteUpdates.map(n => n.id), ['n2']);
+  assert.deepEqual(res.linkedNoteRename, { oldTitle: 'Old', newTitle: 'New' });
+
+  const legacyBridge = {
+    saveNote: async () => ({
+      ok: true,
+      value: {
+        id: 'n1', title: 'New',
+        linkedNoteUpdates: [{ id: 'n2' }],
+        linkedNoteRename: { oldTitle: 'Old', newTitle: 'New' },
+      },
+    }),
+  };
+  const legacy = await notesVaultsService.saveNote(legacyBridge, 'v1', { id: 'n1' });
+  assert.equal(legacy.ok, true);
+  assert.equal(legacy.value.linkedNoteUpdates, undefined, 'extra fields are stripped from the note value');
+  assert.deepEqual(legacy.linkedNoteUpdates.map(n => n.id), ['n2']);
+  assert.deepEqual(legacy.linkedNoteRename, { oldTitle: 'Old', newTitle: 'New' });
 });

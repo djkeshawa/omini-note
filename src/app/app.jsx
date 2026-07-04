@@ -918,23 +918,41 @@ function MnApp() {
 
   // After a rename, the backend rewrites [[wiki links]] in other notes on
   // disk and returns them; merge those into renderer state so it doesn't go
-  // stale and clobber the rewrites on a later autosave. Locally dirty notes
-  // are left alone — their in-flight edits win.
-  const applyLinkedNoteUpdates = useCallbackA((vaultId, updatedNotes) => {
+  // stale and clobber the rewrites on a later autosave. Every affected note
+  // gets its disk stamp refreshed — without that, notes the renderer already
+  // rewrote itself (renameNoteTitleDrafts marks them dirty) would autosave
+  // with a stale expectedModifiedAt and hit a spurious conflict dialog.
+  // Dirty notes keep their in-flight edits but get the same title rewrite
+  // applied in memory, so their next autosave carries the rename too.
+  const applyLinkedNoteUpdates = useCallbackA((vaultId, updatedNotes, rename = null) => {
     if (!vaultId || !Array.isArray(updatedNotes) || !updatedNotes.length) return;
-    const fresh = normalizeNotes(updatedNotes, mnMdToBlocks)
-      .filter(n => n?.id && !dirtyNotesRef.current.has(mnDirtyNoteKey(vaultId, n.id)));
-    if (!fresh.length) return;
-    const byId = new Map(fresh.map(n => [n.id, n]));
-    const mergeList = list => (Array.isArray(list) ? list.map(n => byId.get(n.id) || n) : list);
+    const incoming = normalizeNotes(updatedNotes, mnMdToBlocks).filter(n => n?.id);
+    if (!incoming.length) return;
+    for (const n of incoming) {
+      const stamp = n.diskModifiedAt || n.modifiedAt;
+      if (stamp) noteDiskStampRef.current.set(mnDirtyNoteKey(vaultId, n.id), stamp);
+    }
+    const byId = new Map(incoming.map(n => [n.id, n]));
+    const bodyCtx = {
+      normalizeNoteBody: mnNormalizeNoteBody,
+      blocksToMd: mnBlocksToMd,
+      mdToBlocks: mnMdToBlocks,
+    };
+    const mergeList = list => (Array.isArray(list) ? list.map(n => {
+      const fresh = byId.get(n.id);
+      if (!fresh) return n;
+      if (!dirtyNotesRef.current.has(mnDirtyNoteKey(vaultId, n.id))) return fresh;
+      // Dirty: keep local edits, but rewrite the renamed title in place.
+      if (!rename?.oldTitle || !rename?.newTitle) return n;
+      const currentBody = mnNormalizeNoteBody(mnBlocksToMd(n.blocks || []), n.title || 'Untitled');
+      const rewritten = mnReplaceWikiLinkTitle(currentBody, rename.oldTitle, rename.newTitle);
+      if (rewritten === currentBody) return n;
+      return MN_APP_MUTATIONS.applyNoteBodyUpdate(n, rewritten, bodyCtx);
+    }) : list);
     if (vaultId === activeVaultId) setNotes(mergeList);
     setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
       ? { ...v, notes: mergeList(v.notes) }
       : v));
-    for (const n of fresh) {
-      const stamp = n.diskModifiedAt || n.modifiedAt;
-      if (stamp) noteDiskStampRef.current.set(mnDirtyNoteKey(vaultId, n.id), stamp);
-    }
   }, [activeVaultId, mnMdToBlocks]);
 
   const saveDirtyNotesNow = useCallbackA(async function saveDirtyNotesNowImpl(entries, currentNotes = notesRef.current, currentVaults = vaultsRef.current) {
@@ -987,7 +1005,7 @@ function MnApp() {
           }
           const saved = res?.value;
           if (Array.isArray(res?.linkedNoteUpdates) && res.linkedNoteUpdates.length) {
-            applyLinkedNoteUpdates(vaultId, res.linkedNoteUpdates);
+            applyLinkedNoteUpdates(vaultId, res.linkedNoteUpdates, res.linkedNoteRename || null);
           }
           if (saved?.diskModifiedAt || saved?.modifiedAt) {
             const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
@@ -1677,18 +1695,22 @@ function MnApp() {
 
   const appStats = useMemoA(() => {
     let wordCount = 0, charCount = 0;
-    notesWithBody.forEach(n => {
-      const t = (n.body || '') + ' ' + (n.title || '');
-      charCount += t.length;
-      wordCount += t.trim().split(/\s+/).filter(Boolean).length;
-    });
+    // Word/char totals are only shown in the settings modal; computing them
+    // costs a full-vault text scan, so skip it while the modal is closed.
+    if (settingsOpen) {
+      notesWithBody.forEach(n => {
+        const t = (n.body || '') + ' ' + (n.title || '');
+        charCount += t.length;
+        wordCount += t.trim().split(/\s+/).filter(Boolean).length;
+      });
+    }
     return {
       noteCount: notesWithBody.length,
       tagCount: tags.length,
       linkCount: links.length,
       wordCount, charCount,
     };
-  }, [notesWithBody, tags, links]);
+  }, [notesWithBody, tags, links, settingsOpen]);
 
   // SQLite-backed search: debounced IPC call returns matching IDs;
   // we intersect with in-memory notes for tag-filter compatibility.

@@ -142,17 +142,37 @@ function mnFindBlockById(blocks, id) {
   return null;
 }
 
+// Resolver cache for block refs/embeds. Walking every note's block tree per
+// render is O(vault size) and chips re-render on each keystroke because the
+// notes array identity changes; the cache stays valid as long as the owning
+// note's `blocks` array identity is unchanged (edits replace it).
+const mnBlockRefCache = new Map(); // refId -> { noteId, blocksRef, block }
+
+function mnResolveBlockRef(allNotes, refId) {
+  const notes = allNotes || [];
+  const hit = mnBlockRefCache.get(refId);
+  if (hit) {
+    const note = notes.find(n => n.id === hit.noteId);
+    if (note && note.blocks === hit.blocksRef) return { note, block: hit.block };
+  }
+  for (const n of notes) {
+    const found = mnFindBlockById(n.blocks || [], refId);
+    if (found) {
+      mnBlockRefCache.set(refId, { noteId: n.id, blocksRef: n.blocks, block: found });
+      if (mnBlockRefCache.size > 2000) mnBlockRefCache.clear();
+      return { note: n, block: found };
+    }
+  }
+  mnBlockRefCache.delete(refId);
+  return null;
+}
+
 // Render a block reference inline: shows the target block's content as a chip.
 // `allNotes` is array of {id, title, blocks}
 function MnBlockRef({ refId, allNotes, T, onOpenBlock }) {
-  // Find the block across all notes
-  let targetBlock = null;
-  let parentNote = null;
-  for (const n of (allNotes || [])) {
-    const blocks = n.blocks || [];
-    const found = mnFindBlockById(blocks, refId);
-    if (found) { targetBlock = found; parentNote = n; break; }
-  }
+  const resolved = mnResolveBlockRef(allNotes, refId);
+  const targetBlock = resolved?.block || null;
+  const parentNote = resolved?.note || null;
   if (!targetBlock) {
     return (
       <span style={{
@@ -235,12 +255,9 @@ function MnPageEmbed({ title, allNotes, T, onOpenNote }) {
 
 // Block embed: render the target block + its children in a card
 function MnBlockEmbed({ refId, allNotes, T, onOpenBlock }) {
-  let targetBlock = null;
-  let parentNote = null;
-  for (const n of (allNotes || [])) {
-    const found = mnFindBlockById(n.blocks || [], refId);
-    if (found) { targetBlock = found; parentNote = n; break; }
-  }
+  const resolved = mnResolveBlockRef(allNotes, refId);
+  const targetBlock = resolved?.block || null;
+  const parentNote = resolved?.note || null;
   if (!targetBlock) {
     return (
       <div style={{

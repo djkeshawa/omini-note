@@ -752,7 +752,12 @@ function exportFileNameForNote(note, format) {
   return `${base}.${format}`;
 }
 
+const PDF_EXPORT_TIMEOUT_MS = 20000;
+
 // Renders standalone HTML in a hidden window and prints it to PDF bytes.
+// The HTML goes into a private mkdtemp directory (a predictable name in the
+// shared temp dir could be pre-created by another local user), and the load
+// races a timeout so a stalled remote image cannot hang the export.
 async function renderHtmlToPdf(html) {
   const win = new BrowserWindow({
     show: false,
@@ -763,18 +768,25 @@ async function renderHtmlToPdf(html) {
       webSecurity: true,
     },
   });
-  const tmpFile = path.join(app.getPath('temp'), `vispnote-export-${process.pid}-${Date.now().toString(36)}.html`);
+  const tmpDir = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'vispnote-export-'));
+  const tmpFile = path.join(tmpDir, 'note.html');
+  const timeout = (label) => new Promise((_resolve, reject) => {
+    setTimeout(() => reject(new Error(`PDF export timed out (${label})`)), PDF_EXPORT_TIMEOUT_MS).unref?.();
+  });
   try {
     await fs.promises.writeFile(tmpFile, html, 'utf8');
-    await win.loadFile(tmpFile);
-    return await win.webContents.printToPDF({
-      printBackground: true,
-      pageSize: 'A4',
-      margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 },
-    });
+    await Promise.race([win.loadFile(tmpFile), timeout('load')]);
+    return await Promise.race([
+      win.webContents.printToPDF({
+        printBackground: true,
+        pageSize: 'A4',
+        margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 },
+      }),
+      timeout('print'),
+    ]);
   } finally {
     win.destroy();
-    fs.promises.unlink(tmpFile).catch(() => {});
+    fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -808,7 +820,7 @@ async function exportNoteFromIpc(vaultId, noteId, rawFormat) {
     return { canceled: false, filePath: result.filePath, format };
   }
   const pdf = await renderHtmlToPdf(html);
-  await fs.promises.writeFile(result.filePath, pdf);
+  await store.atomicWriteFile(result.filePath, pdf, null);
   return { canceled: false, filePath: result.filePath, format };
 }
 
@@ -1366,7 +1378,13 @@ ipcMain.handle('mn:saveNote',       wrap(async (vaultId, note, options) => {
         if (linkIndexed !== null) ai.scheduleEmbed(vaultId, updated);
       },
     });
-    return linkedNoteUpdates.length ? { ...saved, linkedNoteUpdates } : saved;
+    return linkedNoteUpdates.length
+      ? {
+          ...saved,
+          linkedNoteUpdates,
+          linkedNoteRename: { oldTitle: previousNote?.title || '', newTitle: saved.title || '' },
+        }
+      : saved;
   });
 }));
 ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId, noteSnapshot) => {
