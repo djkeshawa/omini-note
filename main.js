@@ -1,9 +1,10 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShortcut, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShortcut, shell, protocol } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
 const { fileURLToPath } = require('url');
 const store = require('./lib/store');
+const attachments = require('./lib/attachments');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
 const zotero = require('./lib/zotero');
@@ -33,6 +34,12 @@ let updateState = {
 };
 const APP_NAME = 'VispNote';
 const APP_ID = 'com.vispnote.app';
+const ASSET_PROTOCOL_SCHEME = 'vispnote-asset';
+// Must run before app ready so the renderer can load vault images through the
+// validated asset protocol instead of raw file:// paths.
+protocol.registerSchemesAsPrivileged([
+  { scheme: ASSET_PROTOCOL_SCHEME, privileges: { standard: true, secure: true } },
+]);
 const APP_ICON_PATH = path.join(__dirname, 'assets', 'vispnote-icon.png');
 const SPELL_DICTIONARY_PATHS = [
   '/usr/share/dict/american-english',
@@ -728,6 +735,18 @@ function sanitizeExternalUrl(rawUrl) {
   return parsed.href;
 }
 
+function sanitizeAttachmentPayload(payload = {}) {
+  if (!isPlainObject(payload)) throw new Error('Invalid attachment payload');
+  const bytes = payload.bytes;
+  const isBinary = bytes instanceof Uint8Array || bytes instanceof ArrayBuffer;
+  if (!isBinary) throw new Error('Invalid attachment payload');
+  return {
+    name: capString(payload.name, 'attachment name', 240),
+    mimeType: capString(payload.mimeType, 'attachment type', 100),
+    bytes,
+  };
+}
+
 function sanitizeZoteroSearchPayload(payload = {}) {
   if (!isPlainObject(payload)) throw new Error('Invalid Zotero search request');
   return {
@@ -751,6 +770,28 @@ function sanitizeZoteroReadPayload(payload = {}) {
     itemKey,
     includeFullText: payload.includeFullText !== false,
   };
+}
+
+function registerAssetProtocol() {
+  protocol.handle(ASSET_PROTOCOL_SCHEME, async (request) => {
+    try {
+      const url = new URL(request.url);
+      if (url.host !== 'attachment') return new Response('Not found', { status: 404 });
+      const segments = url.pathname.split('/').filter(Boolean).map(part => decodeURIComponent(part));
+      if (segments.length !== 2) return new Response('Not found', { status: 404 });
+      const [vaultId, fileName] = segments;
+      const { buffer, mimeType } = await attachments.readAttachment(vaultId, fileName);
+      return new Response(buffer, {
+        headers: {
+          'Content-Type': mimeType || 'application/octet-stream',
+          'Content-Security-Policy': "default-src 'none'",
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    } catch (e) {
+      return new Response('Not found', { status: 404 });
+    }
+  });
 }
 
 function hardenWindow(win) {
@@ -1247,6 +1288,9 @@ ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId, noteSnapshot) =
     return result;
   });
 }));
+ipcMain.handle('mn:saveAttachment', wrap(async (vaultId, payload) => {
+  return attachments.saveAttachment(vaultId, sanitizeAttachmentPayload(payload));
+}));
 ipcMain.handle('mn:listDeletedNotes', wrap(store.listDeletedNotes));
 ipcMain.handle('mn:restoreDeletedNote', wrap(async (vaultId, trashId) => {
   return await withIndexVaultLock(vaultId, async () => {
@@ -1477,6 +1521,7 @@ if (singleInstanceLock) app.whenReady().then(async () => {
     dialog.showErrorBox('VispNote failed to initialize', e?.message || String(e));
   }
   initializeSearchIndex();      // opens / creates the local search index
+  registerAssetProtocol();
   createTray();
   createWindow();
   indexReadyPromise = rescanAllVaults().catch(e => {
