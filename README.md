@@ -102,6 +102,37 @@ Existing data under `~/OminiNote` or `~/MyNote` is still supported as a compatib
 
 The repository intentionally ignores local vault data, SQLite databases, generated build output, local tool state, and environment files. Do not commit personal notes, local indexes, `.env` files, or generated app packages.
 
+## Agent Access (MCP)
+
+VispNote ships a local MCP (Model Context Protocol) server so AI agents such
+as Claude Code can use your vaults as a knowledge base — entirely on your
+machine, with no cloud sync.
+
+```bash
+node bin/vispnote-mcp.js                 # read-only (default)
+node bin/vispnote-mcp.js --allow-writes  # also enables create_note / append_to_note
+```
+
+Example Claude Code configuration (`.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "vispnote": {
+      "command": "node",
+      "args": ["/path/to/visp-note/bin/vispnote-mcp.js"]
+    }
+  }
+}
+```
+
+Tools: `list_vaults`, `search_notes`, `get_note`, `get_backlinks`,
+`get_unlinked_mentions`, `list_notes_by_tag`, and (only with
+`--allow-writes`) `create_note` and `append_to_note`. The server reads the
+same vaults and SQLite index as the app (safe to run alongside it), is
+read-only by default, and never listens on the network — it speaks MCP over
+stdio to the process that launched it.
+
 ## AI Setup
 
 AI features are optional. By default, VispNote is built for local Ollama usage.
