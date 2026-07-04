@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld('mn', {
   rebuildIndex:(vaultId) => ipcRenderer.invoke('mn:rebuildIndex', vaultId),
   vaultHealth: (vaultId) => ipcRenderer.invoke('mn:vaultHealth', vaultId),
   exportBackup:(options) => ipcRenderer.invoke('mn:exportBackup', options),
+  exportNote:  (vaultId, noteId, format) => ipcRenderer.invoke('mn:exportNote', vaultId, noteId, format),
   importBackup:(options) => ipcRenderer.invoke('mn:importBackup', options),
   importNovelFiles:(options) => ipcRenderer.invoke('mn:importNovelFiles', options),
 
