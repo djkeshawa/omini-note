@@ -3241,6 +3241,27 @@ function MnApp() {
         preview: () => ({ title: 'Export backup', message: 'VispNote will open a save dialog and write a backup file to the selected location.', steps: ['Open save dialog', 'Write backup JSON'], affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }] }),
         run: async () => { await exportBackup(); return { message: 'Backup export finished or was cancelled.' }; },
       },
+      ...['md', 'html', 'pdf'].map(format => ({
+        id: `export-note-${format}`,
+        label: `Export note as ${format === 'md' ? 'Markdown' : format.toUpperCase()}`,
+        description: `Export the current note to a ${format === 'md' ? 'Markdown' : format.toUpperCase()} file through the operating system save dialog.`,
+        section: 'Note',
+        risk: 'external',
+        enabled: HAS_DISK && !!selectedNote,
+        inputSchema: objectSchema(),
+        preview: () => ({
+          title: `Export note as ${format.toUpperCase()}`,
+          message: 'VispNote will open a save dialog and write the exported file to the selected location.',
+          steps: ['Open save dialog', `Write ${format.toUpperCase()} file`],
+          affected: noteAffected(selectedNote),
+        }),
+        run: async () => {
+          if (!selectedNote) return { message: 'No note is selected.' };
+          const res = await window.mn.exportNote(activeVaultId, selectedNote.id, format);
+          if (res?.ok === false) throw new Error(res.error || 'Export failed');
+          return { message: res?.value?.canceled ? 'Export cancelled.' : `Note exported to ${res?.value?.filePath || 'file'}.` };
+        },
+      })),
       {
         id: 'import-backup',
         label: 'Import backup',

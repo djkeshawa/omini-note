@@ -6,6 +6,7 @@ const { fileURLToPath } = require('url');
 const store = require('./lib/store');
 const attachments = require('./lib/attachments');
 const linkRename = require('./lib/linkRename');
+const exportHtml = require('./lib/exportHtml');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
 const zotero = require('./lib/zotero');
@@ -736,6 +737,81 @@ function sanitizeExternalUrl(rawUrl) {
   return parsed.href;
 }
 
+const NOTE_EXPORT_FORMATS = {
+  md: { name: 'Markdown', extensions: ['md'] },
+  html: { name: 'HTML', extensions: ['html'] },
+  pdf: { name: 'PDF', extensions: ['pdf'] },
+};
+
+function exportFileNameForNote(note, format) {
+  const base = String(note.title || 'note')
+    .replace(/[^\w\s-]+/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .slice(0, 80) || 'note';
+  return `${base}.${format}`;
+}
+
+// Renders standalone HTML in a hidden window and prints it to PDF bytes.
+async function renderHtmlToPdf(html) {
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true,
+    },
+  });
+  const tmpFile = path.join(app.getPath('temp'), `vispnote-export-${process.pid}-${Date.now().toString(36)}.html`);
+  try {
+    await fs.promises.writeFile(tmpFile, html, 'utf8');
+    await win.loadFile(tmpFile);
+    return await win.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+      margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 },
+    });
+  } finally {
+    win.destroy();
+    fs.promises.unlink(tmpFile).catch(() => {});
+  }
+}
+
+async function exportNoteFromIpc(vaultId, noteId, rawFormat) {
+  const format = Object.prototype.hasOwnProperty.call(NOTE_EXPORT_FORMATS, rawFormat) ? rawFormat : 'md';
+  const note = await store.getNote(vaultId, noteId);
+  if (!note) throw new Error('Note not found');
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: `Export note as ${format.toUpperCase()}`,
+    defaultPath: exportFileNameForNote(note, format),
+    filters: [NOTE_EXPORT_FORMATS[format]],
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  try {
+    const targetStat = await fs.promises.lstat(result.filePath);
+    if (targetStat.isSymbolicLink()) throw new Error('Note export target cannot be a symlink');
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  if (format === 'md') {
+    await store.atomicWriteFile(result.filePath, exportHtml.exportMarkdown(note), 'utf8');
+    return { canceled: false, filePath: result.filePath, format };
+  }
+  const html = await exportHtml.renderNoteHtml(note, {
+    resolveAttachment: async (fileName) => {
+      try { return await attachments.readAttachment(vaultId, fileName); } catch (e) { return null; }
+    },
+  });
+  if (format === 'html') {
+    await store.atomicWriteFile(result.filePath, html, 'utf8');
+    return { canceled: false, filePath: result.filePath, format };
+  }
+  const pdf = await renderHtmlToPdf(html);
+  await fs.promises.writeFile(result.filePath, pdf);
+  return { canceled: false, filePath: result.filePath, format };
+}
+
 function sanitizeAttachmentPayload(payload = {}) {
   if (!isPlainObject(payload)) throw new Error('Invalid attachment payload');
   const bytes = payload.bytes;
@@ -1389,6 +1465,7 @@ ipcMain.handle('mn:exportBackup',   wrap(async (options = {}) => {
   await store.atomicWriteFile(result.filePath, backupText, 'utf8');
   return { canceled: false, filePath: result.filePath, vaultCount: payload.vaults.length, warnings: payload.warnings || [] };
 }));
+ipcMain.handle('mn:exportNote',     wrap(exportNoteFromIpc));
 ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Import VispNote backup',
