@@ -2327,7 +2327,10 @@
     if (!oldKey || !cleanNewTitle) return body || '';
     return String(body || '').replace(/\[\[([^\]]+)\]\]/g, (match, rawTarget) => {
       const target = String(rawTarget || '');
-      const [targetAndAnchor, alias] = target.split('|');
+      // Split on the FIRST pipe only so [[Old|a|b]] keeps its full alias.
+      const pipeIndex = target.indexOf('|');
+      const targetAndAnchor = pipeIndex >= 0 ? target.slice(0, pipeIndex) : target;
+      const alias = pipeIndex >= 0 ? target.slice(pipeIndex + 1) : null;
       const anchorIndex = targetAndAnchor.indexOf('#');
       const targetTitle = anchorIndex >= 0 ? targetAndAnchor.slice(0, anchorIndex) : targetAndAnchor;
       const anchor = anchorIndex >= 0 ? targetAndAnchor.slice(anchorIndex) : '';

@@ -3,7 +3,15 @@ const assert = require('node:assert/strict');
 
 const linkRename = require('../lib/linkRename.js');
 const notesVaultsService = require('../src/app/notesVaultsService.js');
+const appHelpers = require('../src/app/appHelpers.js');
 const { withIsolatedStore } = require('./helpers/common.js');
+
+test('replaceWikiLinkTitle keeps anchors and multi-pipe aliases intact', () => {
+  assert.equal(
+    appHelpers.replaceWikiLinkTitle('See [[Old|a|b]] and [[Old#part|x]] and [[Other]]', 'Old', 'New'),
+    'See [[New|a|b]] and [[New#part|x]] and [[Other]]'
+  );
+});
 
 test('rewriteWikiLinks rewrites plain, alias, and heading links case-insensitively', () => {
   const { body, count } = linkRename.rewriteWikiLinks(

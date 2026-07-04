@@ -446,6 +446,10 @@ function MnApp() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useStateA(false);
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useStateA(false);
   const [recentNoteIds, setRecentNoteIds] = useStateA([]);
+  // Bumped when a rename rewrites links in other notes so the editor's
+  // backlinks/mentions panels refetch; their effects otherwise only key on
+  // the open note's id/title and would show stale rows after a rename.
+  const [connectionsRefreshToken, setConnectionsRefreshToken] = useStateA(0);
   const [vaultHealthOpen, setVaultHealthOpen] = useStateA(false);
   const [novelImportDialog, setNovelImportDialog] = useStateA(null);
   const novelImportSeq = useRefA(0);
@@ -732,12 +736,14 @@ function MnApp() {
     if (nextSelectedId) patch.lastSelectedId = nextSelectedId;
     if (!Object.keys(patch).length) return;
     try {
-      await window.mn.saveVaultMeta(vaultId, patch);
+      const res = await window.mn.saveVaultMeta(vaultId, patch);
+      if (res?.ok === false) throw new Error(res.error || 'Save failed');
       if (patch.tags && vaultId === activeVaultId) tagsDirty.current = false;
     } catch (e) {
       console.error('saveVaultMeta failed', e);
+      showAppNotice('Could not save vault settings', e.message || String(e), 'warn');
     }
-  }, [activeVaultId, tags, selectedId]);
+  }, [activeVaultId, tags, selectedId, showAppNotice]);
 
   const loadVaultBundle = useCallbackA(async (vaultId) => {
     const vaultRes = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, vaultId);
@@ -953,6 +959,7 @@ function MnApp() {
     setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
       ? { ...v, notes: mergeList(v.notes) }
       : v));
+    setConnectionsRefreshToken(t => t + 1);
   }, [activeVaultId, mnMdToBlocks]);
 
   const saveDirtyNotesNow = useCallbackA(async function saveDirtyNotesNowImpl(entries, currentNotes = notesRef.current, currentVaults = vaultsRef.current) {
@@ -1657,6 +1664,8 @@ function MnApp() {
     }
     return next;
   }, [notes]);
+  const notesWithBodyRef = useRefA([]);
+  useEffectA(() => { notesWithBodyRef.current = notesWithBody; }, [notesWithBody]);
   const novelistStructure = useMemoA(() => mnBuildNovelistStructure(notesWithBody), [notesWithBody]);
   const novelistNotes = novelistStructure.novelNotes || [];
 
@@ -1726,27 +1735,38 @@ function MnApp() {
     if (!q) { setSearchHits(null); setSearchDetails(new Map()); return; }
     const activeVaultHasUnsaved = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
     if (!HAS_DISK || !activeVaultId || activeVaultHasUnsaved) {
-      // Browser fallback and dirty-note path: in-memory search reflects unsaved edits.
-      const lc = q.toLowerCase();
-      const ids = notesWithBody.filter(n =>
-        n.title.toLowerCase().includes(lc) ||
-        (n.body || '').toLowerCase().includes(lc) ||
-        n.tags.some(t => t.toLowerCase().includes(lc))
-      ).map(n => n.id);
-      if (seq === searchSeq.current) {
-        setSearchHits({ vaultId: activeVaultId || '', query: q, ids });
-        setSearchDetails(new Map());
-      }
-      return;
+      // Browser fallback and dirty-note path: in-memory search reflects
+      // unsaved edits. Debounced like the IPC path — typing in the editor
+      // re-fires this effect per keystroke while a query is active, and the
+      // full-vault scan must not run synchronously in that window.
+      const memHandle = setTimeout(() => {
+        const lc = q.toLowerCase();
+        const ids = notesWithBody.filter(n =>
+          n.title.toLowerCase().includes(lc) ||
+          (n.body || '').toLowerCase().includes(lc) ||
+          n.tags.some(t => t.toLowerCase().includes(lc))
+        ).map(n => n.id);
+        if (seq === searchSeq.current) {
+          setSearchHits({ vaultId: activeVaultId || '', query: q, ids });
+          setSearchDetails(new Map());
+        }
+      }, 150);
+      return () => clearTimeout(memHandle);
     }
     const handle = setTimeout(async () => {
       try {
         const api = window.mn.searchDetailed || window.mn.search;
         const res = await api(activeVaultId, q, 100);
-        if (seq === searchSeq.current && res.ok) {
+        if (seq !== searchSeq.current) return;
+        if (res.ok) {
           const rows = res.value || [];
           setSearchHits({ vaultId: activeVaultId || '', query: q, ids: rows.map(r => r.id) });
           setSearchDetails(new Map(rows.map(r => [r.id, r])));
+        } else {
+          // Don't leave a previous query's hits on screen as if they matched.
+          setSearchHits({ vaultId: activeVaultId || '', query: q, ids: [] });
+          setSearchDetails(new Map());
+          console.error('search failed', res.error);
         }
       } catch (e) { console.error('search failed', e); }
     }, 150);
@@ -3928,6 +3948,11 @@ function MnApp() {
       const key = e.key || '';
       const lowerKey = key.toLowerCase();
       const isBackslashKey = key === '\\' || key === '|' || e.code === 'Backslash';
+      // While a real modal (settings, dialogs, capture) is up, only Escape
+      // acts — Ctrl+N must not create notes behind it. The palette and quick
+      // switcher stay toggleable since their shortcuts also close them.
+      const modalBlocksShortcuts = blockingOverlayOpen && !commandPaletteOpen && !quickSwitcherOpen;
+      if (modalBlocksShortcuts && key !== 'Escape') return;
       if (isMod && e.shiftKey && lowerKey === 'n') {
         e.preventDefault(); setCaptureOpen(true);
       } else if (isMod && lowerKey === 'n' && !e.shiftKey) {
@@ -3966,7 +3991,7 @@ function MnApp() {
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [appNotice, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, navigateView, openAskAi, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
+  }, [appNotice, blockingOverlayOpen, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, navigateView, openAskAi, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
 
   useEffectA(() => {
     if (!toast?.key) return;
@@ -3990,7 +4015,7 @@ function MnApp() {
       const now = Date.now();
       const today = new Date().toDateString();
       const snoozed = mnReadSnoozedReminders();
-      const due = mnCollectReminderItems(notesWithBody)
+      const due = mnCollectReminderItems(notesWithBodyRef.current)
         .filter(item => !(MN_APP_HELPERS.agendaIsDeferred && MN_APP_HELPERS.agendaIsDeferred(item)))
         .filter(item => {
           const dueTime = item.remindAt?.at?.getTime?.();
@@ -4010,7 +4035,9 @@ function MnApp() {
     check();
     const tm = setInterval(check, 60000);
     return () => clearInterval(tm);
-  }, [bootState, notesWithBody, tweaks.showOverdue, tweaks.reminderSound, toast?.key]);
+    // notesWithBody is read via ref: including it re-ran the full reminder
+    // parse on every keystroke and reset the 60s interval so it never fired.
+  }, [bootState, tweaks.showOverdue, tweaks.reminderSound, toast?.key]);
 
   // Push vault + selected note into the OS title bar
   useEffectA(() => {
@@ -4179,6 +4206,7 @@ function MnApp() {
             <MnEditor
               note={selectedNote} notes={notesWithBody} tags={tags} links={links}
               vaultId={activeVaultId}
+              connectionsRefreshToken={connectionsRefreshToken}
               canvases={canvases}
               onOpenCanvas={openCanvas}
               onCreateCanvas={createCanvas}
