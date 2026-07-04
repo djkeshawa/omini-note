@@ -86,6 +86,8 @@ const {
   MnCommandPalette,
   MnVaultHealthDialog,
 } = MN_APP_SHELL;
+const MnQuickSwitcher = window.MnQuickSwitcher;
+const MN_QUICK_SWITCHER_MODEL = window.MN_QUICK_SWITCHER_MODEL || {};
 const {
   MnSmartViewsPanel,
 } = MN_PANEL_COMPONENTS;
@@ -442,6 +444,8 @@ function MnApp() {
   const [customThemes, setCustomThemes] = useStateA([]);
   const [settingsOpen, setSettingsOpen] = useStateA(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useStateA(false);
+  const [quickSwitcherOpen, setQuickSwitcherOpen] = useStateA(false);
+  const [recentNoteIds, setRecentNoteIds] = useStateA([]);
   const [vaultHealthOpen, setVaultHealthOpen] = useStateA(false);
   const [novelImportDialog, setNovelImportDialog] = useStateA(null);
   const novelImportSeq = useRefA(0);
@@ -502,6 +506,11 @@ function MnApp() {
     // global because block components don't receive the vault id as a prop.
     window.MN_ACTIVE_VAULT_ID = activeVaultId || '';
   }, [activeVaultId]);
+
+  useEffectA(() => {
+    if (!selectedId || !MN_QUICK_SWITCHER_MODEL.mnPushRecentNoteId) return;
+    setRecentNoteIds(ids => MN_QUICK_SWITCHER_MODEL.mnPushRecentNoteId(ids, selectedId));
+  }, [selectedId]);
 
   useEffectA(() => {
     activeAskAiSessionIdRef.current = activeAskAiSessionId;
@@ -1788,7 +1797,7 @@ function MnApp() {
 
   const selectedNote = notes.find(n => n.id === selectedId);
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
-  const blockingOverlayOpen = captureOpen || settingsOpen || commandPaletteOpen || vaultHealthOpen || !!novelImportDialog || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
+  const blockingOverlayOpen = captureOpen || settingsOpen || commandPaletteOpen || quickSwitcherOpen || vaultHealthOpen || !!novelImportDialog || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
 
   const reminderCenterItems = useMemoA(() => {
     const now = Date.now();
@@ -3890,14 +3899,18 @@ function MnApp() {
       } else if (isMod && lowerKey === 'k') {
         e.preventDefault();
         setCommandPaletteOpen(v => !v);
+      } else if (isMod && lowerKey === 'p' && !e.shiftKey) {
+        e.preventDefault();
+        setQuickSwitcherOpen(v => !v);
       } else if (isMod && e.shiftKey && isBackslashKey) {
         e.preventDefault(); setNoteListHidden(v => !v);
       } else if (isMod && isBackslashKey && !e.shiftKey) {
         e.preventDefault(); setSidebarHidden(v => !v);
       } else if (e.key === 'Escape') {
-        if (commandPaletteOpen || settingsOpen || reminderCenterOpen || vaultHealthOpen || appNotice || conflictNotice || versionTargetId || deleteTargetId) {
+        if (commandPaletteOpen || quickSwitcherOpen || settingsOpen || reminderCenterOpen || vaultHealthOpen || appNotice || conflictNotice || versionTargetId || deleteTargetId) {
           e.preventDefault();
           setCommandPaletteOpen(false);
+          setQuickSwitcherOpen(false);
           setSettingsOpen(false);
           setReminderCenterOpen(false);
           setVaultHealthOpen(false);
@@ -3910,7 +3923,7 @@ function MnApp() {
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [appNotice, commandPaletteOpen, conflictNotice, createNote, deleteTargetId, navigateView, openAskAi, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
+  }, [appNotice, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, navigateView, openAskAi, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
 
   useEffectA(() => {
     if (!toast?.key) return;
@@ -4411,6 +4424,17 @@ function MnApp() {
           onClose={() => setCommandPaletteOpen(false)}
           T={T}
         />
+        {MnQuickSwitcher && (
+          <MnQuickSwitcher
+            open={quickSwitcherOpen}
+            notes={notes}
+            recentIds={recentNoteIds}
+            onPick={(id) => { setSelectedId(id); navigateView('notes'); }}
+            onCreate={(title) => createNote({ title })}
+            onClose={() => setQuickSwitcherOpen(false)}
+            T={T}
+          />
+        )}
         {vaultHealthOpen && (
           <MnVaultHealthDialog
             vaultId={activeVaultId}

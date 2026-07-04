@@ -1414,6 +1414,7 @@ function SectionShortcuts({ T, shortcutStatus }) {
     { k: '⌘ N', v: 'New note' },
     { k: '⌘ ⇧ N', v: 'Quick capture' },
     { k: '⌘ G', v: 'Open graph' },
+    { k: '⌘ P', v: 'Quick switcher' },
     { k: '⌘ K', v: 'Open Ask AI' },
     { k: '⌘ \\', v: 'Toggle sidebar' },
     { k: '⌘ ⇧ \\', v: 'Toggle note list' },
