@@ -4140,6 +4140,23 @@ function MnApp() {
               onOpenCanvas={openCanvas}
               onCreateCanvas={createCanvas}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onLinkMention={(mentionNoteId) => {
+                const title = String(selectedNote?.title || '').trim();
+                const target = notesWithBody.find(n => n.id === mentionNoteId);
+                if (!title || !target || !MN_APP_MUTATIONS.linkMentionInBody) return false;
+                const currentBody = mnNormalizeNoteBody(mnBlocksToMd(target.blocks || []), target.title || 'Untitled');
+                const { body, linked } = MN_APP_MUTATIONS.linkMentionInBody(currentBody, title);
+                if (!linked) return false;
+                setNotes(ns => ns.map(n => n.id === mentionNoteId
+                  ? MN_APP_MUTATIONS.applyNoteBodyUpdate(n, body, {
+                      normalizeNoteBody: mnNormalizeNoteBody,
+                      blocksToMd: mnBlocksToMd,
+                      mdToBlocks: mnMdToBlocks,
+                    })
+                  : n));
+                markDirty(mentionNoteId);
+                return true;
+              }}
               onCreateLinkedNote={(title) => {
                 const cleanTitle = String(title || '').trim();
                 if (!cleanTitle) return null;

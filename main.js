@@ -1348,6 +1348,7 @@ ipcMain.handle('mn:search',         wrap(async (vaultId, query, limit) => { awai
 ipcMain.handle('mn:searchDetailed', wrap(async (vaultId, query, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.searchDetailed(vaultId, query, limit); }));
 ipcMain.handle('mn:searchDetailedStatus', wrap(async (vaultId, query, limit) => { await indexReadyPromise; if (!searchIndexAvailable) return { ok: false, results: [], error: searchIndexError || 'Search index unavailable' }; return idx.searchDetailedStatus(vaultId, query, limit); }));
 ipcMain.handle('mn:backlinks',      wrap(async (vaultId, title, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.backlinks(vaultId, title, limit); }));
+ipcMain.handle('mn:unlinkedMentions', wrap(async (vaultId, title, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.unlinkedMentions(vaultId, title, limit); }));
 ipcMain.handle('mn:notesByTag',     wrap(async (vaultId, tag) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.notesByTag(vaultId, tag); }));
 ipcMain.handle('mn:tagCounts',      wrap(async (vaultId) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.tagCounts(vaultId); }));
 ipcMain.handle('mn:rebuildIndex',   wrap(async (vaultId) => {

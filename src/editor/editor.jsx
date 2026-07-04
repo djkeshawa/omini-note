@@ -57,10 +57,17 @@ function mnEditorCreatePropertyBlock(key = '', value = '') {
   };
 }
 
+function mnRenderMentionSnippet(snippet, T) {
+  const parts = String(snippet || '').split(/<mark>|<\/mark>/);
+  return parts.map((part, index) => index % 2
+    ? <mark key={index} style={{ background: 'transparent', color: T.accent, fontWeight: 600 }}>{part}</mark>
+    : <React.Fragment key={index}>{part}</React.Fragment>);
+}
+
 function MnEditor({
   note, notes, tags, links, vaultId,
   canvases = [], onOpenCanvas, onCreateCanvas,
-  onOpen, onCreateLinkedNote, onOpenTag,
+  onOpen, onCreateLinkedNote, onOpenTag, onLinkMention,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
   onEndNoteMetadataEdit, onUndoNoteEdit, onRedoNoteEdit,
   onPinToggle, onDuplicate, onDelete, onOpenVersions, onOpenGraph, onOpenCalendar, onBack,
@@ -148,6 +155,31 @@ function MnEditor({
   }, [vaultId, note.id, note.title, note.blocks]);
 
   const backlinks = diskBacklinks != null ? diskBacklinks : inMemoryBacklinks;
+
+  // Unlinked mentions: notes whose text mentions this title without linking
+  // to it. Debounced like backlinks; rows are removed optimistically when the
+  // user links one.
+  const [mentions, setMentions] = useStateE([]);
+  useEffectE(() => {
+    if (!HAS_DISK_E || !vaultId || !window.mn.unlinkedMentions || !String(note.title || '').trim()) {
+      setMentions([]);
+      return;
+    }
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        const res = await window.mn.unlinkedMentions(vaultId, note.title, 8);
+        if (!cancelled && res.ok) setMentions(res.value || []);
+      } catch (e) { console.error('unlinked mentions failed', e); }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [vaultId, note.id, note.title]);
+
+  const linkMention = (mention) => {
+    if (!onLinkMention) return;
+    const linked = onLinkMention(mention.id);
+    if (linked) setMentions(items => items.filter(item => item.id !== mention.id));
+  };
 
   // Related notes via embeddings (semantic) with FTS top-up. Debounced so the
   // IPC fires once the note settles, and re-runs on note id only — content
@@ -689,9 +721,55 @@ function MnEditor({
             </div>
           )}
 
-          {related.items.length > 0 && (
+          {mentions.length > 0 && (
             <div style={{
               marginTop: backlinks.length > 0 ? 28 : 40,
+              paddingTop: 20,
+              borderTop: `1px solid ${T.lineSub}`,
+            }}>
+              <div style={{
+                fontFamily: 'var(--mn-mono)', fontSize: 10,
+                letterSpacing: '0.12em', textTransform: 'uppercase',
+                color: T.inkDim, marginBottom: 10,
+              }}>~ {mentions.length} unlinked mention{mentions.length > 1 ? 's' : ''}</div>
+              {mentions.map(m => (
+                <div key={m.id} style={{
+                  display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center',
+                  padding: '10px 12px', marginBottom: 6, borderRadius: 6,
+                  background: T.bgSub, border: `1px solid ${T.lineSub}`,
+                }}>
+                  <div onClick={() => onOpen(m.id)} style={{ cursor: 'pointer', minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500,
+                      color: T.ink, marginBottom: 3,
+                    }}>{m.title}</div>
+                    <div style={{
+                      fontFamily: 'var(--mn-body)', fontSize: 12.5,
+                      color: T.inkMed, lineHeight: 1.5,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{mnRenderMentionSnippet(m.snippet, T)}</div>
+                  </div>
+                  {onLinkMention && (
+                    <button
+                      onClick={() => linkMention(m)}
+                      title={`Link this mention to “${note.title}”`}
+                      style={{
+                        border: `1px solid ${T.lineSub}`, borderRadius: 6,
+                        background: T.bg, color: T.accent, cursor: 'pointer',
+                        fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 600,
+                        padding: '5px 10px', whiteSpace: 'nowrap',
+                      }}>
+                      Link
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {related.items.length > 0 && (
+            <div style={{
+              marginTop: (backlinks.length > 0 || mentions.length > 0) ? 28 : 40,
               paddingTop: 20,
               borderTop: `1px solid ${T.lineSub}`,
             }}>
