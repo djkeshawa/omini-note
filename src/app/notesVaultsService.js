@@ -28,14 +28,29 @@
     return legacyToContract(response, value => ({ vault: value }));
   }
 
+  function linkedNoteUpdatesFrom(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
   async function saveNote(mn, vaultId, note, options = {}) {
     const api = bridge(mn);
     if (api?.notesVaults?.saveNote) {
       const response = await api.notesVaults.saveNote({ vaultId, noteId: note?.id, note, options });
-      if (response?.ok) return { ok: true, value: response.data.note };
+      if (response?.ok) {
+        return {
+          ok: true,
+          value: response.data.note,
+          linkedNoteUpdates: linkedNoteUpdatesFrom(response.data.linkedNoteUpdates),
+        };
+      }
       return { ok: false, error: contractError(response), code: response.error?.code };
     }
-    return await api.saveNote(vaultId, note, options);
+    const legacy = await api.saveNote(vaultId, note, options);
+    if (legacy?.ok && legacy.value && Array.isArray(legacy.value.linkedNoteUpdates)) {
+      const { linkedNoteUpdates, ...saved } = legacy.value;
+      return { ...legacy, value: saved, linkedNoteUpdates };
+    }
+    return legacy;
   }
 
   async function deleteNote(mn, vaultId, noteId, noteSnapshot = null) {

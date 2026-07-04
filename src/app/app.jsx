@@ -907,6 +907,27 @@ function MnApp() {
     dirtyNotesRef.current = dirtyNotes;
   }, [dirtyNotes]);
 
+  // After a rename, the backend rewrites [[wiki links]] in other notes on
+  // disk and returns them; merge those into renderer state so it doesn't go
+  // stale and clobber the rewrites on a later autosave. Locally dirty notes
+  // are left alone — their in-flight edits win.
+  const applyLinkedNoteUpdates = useCallbackA((vaultId, updatedNotes) => {
+    if (!vaultId || !Array.isArray(updatedNotes) || !updatedNotes.length) return;
+    const fresh = normalizeNotes(updatedNotes, mnMdToBlocks)
+      .filter(n => n?.id && !dirtyNotesRef.current.has(mnDirtyNoteKey(vaultId, n.id)));
+    if (!fresh.length) return;
+    const byId = new Map(fresh.map(n => [n.id, n]));
+    const mergeList = list => (Array.isArray(list) ? list.map(n => byId.get(n.id) || n) : list);
+    if (vaultId === activeVaultId) setNotes(mergeList);
+    setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
+      ? { ...v, notes: mergeList(v.notes) }
+      : v));
+    for (const n of fresh) {
+      const stamp = n.diskModifiedAt || n.modifiedAt;
+      if (stamp) noteDiskStampRef.current.set(mnDirtyNoteKey(vaultId, n.id), stamp);
+    }
+  }, [activeVaultId, mnMdToBlocks]);
+
   const saveDirtyNotesNow = useCallbackA(async function saveDirtyNotesNowImpl(entries, currentNotes = notesRef.current, currentVaults = vaultsRef.current) {
     if (!HAS_DISK || !entries?.length) return;
     for (const entry of entries) {
@@ -956,6 +977,9 @@ function MnApp() {
             throw new Error(res.error || 'Save failed');
           }
           const saved = res?.value;
+          if (Array.isArray(res?.linkedNoteUpdates) && res.linkedNoteUpdates.length) {
+            applyLinkedNoteUpdates(vaultId, res.linkedNoteUpdates);
+          }
           if (saved?.diskModifiedAt || saved?.modifiedAt) {
             const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
             noteDiskStampRef.current.set(dirtyKey, diskModifiedAt);
@@ -987,7 +1011,7 @@ function MnApp() {
         }
       }
     }
-  }, [findNotesForVault, activeVaultId, showAppNotice]);
+  }, [findNotesForVault, activeVaultId, showAppNotice, applyLinkedNoteUpdates]);
 
   // ── Persist dirty notes (debounced) ────────────────────────────────────
   useEffectA(() => {
