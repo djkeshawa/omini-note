@@ -74,13 +74,13 @@ function MnSidebar({
     return c;
   }, [tags, notes]);
 
-  const agendaCount = notes.reduce((acc, n) => {
+  const agendaCount = useMemoS(() => notes.reduce((acc, n) => {
     const lines = String(n.body || '').split('\n');
     return acc + lines.filter(line => {
       if (/^\s*-\s+\[[xX]\]/.test(line)) return false;
       return /^\s*-\s+\[ \]/.test(line) || /@remind\s+\d{4}-\d{2}-\d{2}/.test(line);
     }).length;
-  }, 0);
+  }, 0), [notes]);
 
   const rollupCount = notes.length;
   const vaultKindLabel = (v) => v?.novelistMode ? 'Novelist' : 'Notes';

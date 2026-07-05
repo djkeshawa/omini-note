@@ -7,6 +7,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
   const frameRef = useRef(null);
   const svgRef = useRef(null);
   const rafRef = useRef(null);
+  const settledRef = useRef(false);
   const [dims, setDims] = useState({ w: 900, h: 620 });
   const [nodes, setNodes] = useState(null);
   const [edges, setEdges] = useState([]);
@@ -117,6 +118,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
     if (!nodes) return;
     let ticks = 0;
     const maxTicks = 280;
+    settledRef.current = false;
 
     function step() {
       ticks++;
@@ -126,17 +128,38 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
         const byId = Object.fromEntries(next.map(n => [n.id, n]));
         const alpha = Math.max(0.025, 1 - ticks / maxTicks);
 
+        // Repulsion falls off as 1/d², so only nearby nodes matter. Bucket
+        // nodes into a coarse grid and evaluate pairs within the 3×3
+        // neighborhood — O(n × local density) instead of O(n²), which keeps
+        // multi-thousand-note graphs interactive. Long-range spreading is
+        // provided by the center-pull force below.
+        const CELL = 130;
+        const grid = new Map();
         for (let i = 0; i < next.length; i++) {
-          for (let j = i + 1; j < next.length; j++) {
-            const a = next[i], b = next[j];
-            const dx = b.x - a.x, dy = b.y - a.y;
-            const dist2 = dx * dx + dy * dy + 0.1;
-            const dist = Math.sqrt(dist2);
-            const minGap = a.r + b.r + 18;
-            const force = Math.max(160, minGap * opts.repulsion) / dist2;
-            const fx = (dx / dist) * force, fy = (dy / dist) * force;
-            a.vx -= fx; a.vy -= fy;
-            b.vx += fx; b.vy += fy;
+          const key = (((next[i].x / CELL) | 0) << 16) ^ ((next[i].y / CELL) | 0);
+          const bucket = grid.get(key);
+          if (bucket) bucket.push(i); else grid.set(key, [i]);
+        }
+        for (let i = 0; i < next.length; i++) {
+          const a = next[i];
+          const cx = (a.x / CELL) | 0, cy = (a.y / CELL) | 0;
+          for (let gx = cx - 1; gx <= cx + 1; gx++) {
+            for (let gy = cy - 1; gy <= cy + 1; gy++) {
+              const bucket = grid.get((gx << 16) ^ gy);
+              if (!bucket) continue;
+              for (const j of bucket) {
+                if (j <= i) continue;
+                const b = next[j];
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const dist2 = dx * dx + dy * dy + 0.1;
+                const dist = Math.sqrt(dist2);
+                const minGap = a.r + b.r + 18;
+                const force = Math.max(160, minGap * opts.repulsion) / dist2;
+                const fx = (dx / dist) * force, fy = (dy / dist) * force;
+                a.vx -= fx; a.vy -= fy;
+                b.vx += fx; b.vy += fy;
+              }
+            }
           }
         }
 
@@ -166,21 +189,28 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
           }
         }
 
+        let moved = 0;
         for (const n of next) {
           n.vx *= 0.84; n.vy *= 0.84;
           n.x += n.vx * alpha * 2;
           n.y += n.vy * alpha * 2;
           n.x = Math.max(n.r + 18, Math.min(W - n.r - 18, n.x));
           n.y = Math.max(n.r + 24, Math.min(H - n.r - 22, n.y));
+          moved += Math.abs(n.vx) + Math.abs(n.vy);
         }
+        // Stop early once the layout has settled instead of always burning
+        // the full tick budget.
+        settledRef.current = next.length > 0 && moved / next.length < 0.03;
         return next;
       });
-      if (ticks < maxTicks) rafRef.current = requestAnimationFrame(step);
+      if (ticks < maxTicks && !settledRef.current) rafRef.current = requestAnimationFrame(step);
     }
 
     rafRef.current = requestAnimationFrame(step);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [edges, style, W, H, opts.linkDistance, opts.repulsion, opts.center]);
+    // layoutSeed restarts the loop on "reset layout" — required now that the
+    // simulation can settle and stop before its tick budget runs out.
+  }, [edges, style, W, H, opts.linkDistance, opts.repulsion, opts.center, layoutSeed]);
 
   const nodeById = useMemo(() => Object.fromEntries((nodes || []).map(n => [n.id, n])), [nodes]);
   const themeName = T === MN_THEMES.dark ? 'dark' : 'light';

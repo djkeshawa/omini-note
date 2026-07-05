@@ -41,14 +41,15 @@
           ok: true,
           value: response.data.note,
           linkedNoteUpdates: linkedNoteUpdatesFrom(response.data.linkedNoteUpdates),
+          linkedNoteRename: response.data.linkedNoteRename || null,
         };
       }
       return { ok: false, error: contractError(response), code: response.error?.code };
     }
     const legacy = await api.saveNote(vaultId, note, options);
     if (legacy?.ok && legacy.value && Array.isArray(legacy.value.linkedNoteUpdates)) {
-      const { linkedNoteUpdates, ...saved } = legacy.value;
-      return { ...legacy, value: saved, linkedNoteUpdates };
+      const { linkedNoteUpdates, linkedNoteRename, ...saved } = legacy.value;
+      return { ...legacy, value: saved, linkedNoteUpdates, linkedNoteRename: linkedNoteRename || null };
     }
     return legacy;
   }

@@ -706,6 +706,7 @@ function SectionAI({ T }) {
     if (!window.mn?.ai) return;
     const res = await window.mn.ai.setConfig(patch);
     if (res.ok) setConfig(res.value);
+    else setMessage(res.error || 'Could not save AI settings');
     if (refresh) {
       const st = await window.mn.ai.status();
       if (st.ok) setStatus(st.value);

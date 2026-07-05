@@ -134,6 +134,11 @@ same vaults and SQLite index as the app (safe to run alongside it), is
 read-only by default, and never listens on the network — it speaks MCP over
 stdio to the process that launched it.
 
+Note on concurrent edits: if an agent appends to a note that is open with
+unsaved changes in the app, the app's next autosave detects the conflict and
+asks which version to keep — choosing "keep mine" discards the agent's
+append. Prefer agent writes to notes you are not actively editing.
+
 ## AI Setup
 
 AI features are optional. By default, VispNote is built for local Ollama usage.

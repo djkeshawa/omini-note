@@ -97,3 +97,27 @@ test('linkMentionInBody skips wiki links, code fences, and partial words', () =>
   const empty = mutations.linkMentionInBody('anything', '');
   assert.equal(empty.linked, false);
 });
+
+test('linkMentionInBody never corrupts image alts, link labels, or inline code', () => {
+  const imageAlt = mutations.linkMentionInBody(
+    '![Project Phoenix](attachments/a.png) then Project Phoenix.',
+    'Project Phoenix'
+  );
+  assert.equal(imageAlt.linked, true);
+  assert.equal(imageAlt.body, '![Project Phoenix](attachments/a.png) then [[Project Phoenix]].');
+
+  const linkLabel = mutations.linkMentionInBody('[Project Phoenix](https://example.com) only.', 'Project Phoenix');
+  assert.equal(linkLabel.linked, false, 'markdown link label is untouched');
+
+  const inlineCode = mutations.linkMentionInBody('run `Project Phoenix` command', 'Project Phoenix');
+  assert.equal(inlineCode.linked, false, 'inline code is untouched');
+});
+
+test('linkMentionInBody offsets survive unicode case folding', () => {
+  const { body, linked } = mutations.linkMentionInBody(
+    'İstanbul note then Project Phoenix here',
+    'Project Phoenix'
+  );
+  assert.equal(linked, true);
+  assert.equal(body, 'İstanbul note then [[Project Phoenix]] here');
+});

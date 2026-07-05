@@ -877,15 +877,22 @@ function MnBlockRow({
     }
   };
 
+  // Latest content for async insertions: the attachment save round-trip can
+  // overlap with typing, and splicing into the paste-time snapshot would
+  // silently drop those keystrokes.
+  const latestContentRef = useRefOE('');
+  latestContentRef.current = String(block.content || '');
+
   // Saves dropped/pasted image files as vault attachments, then splices the
-  // resulting ![alt](attachments/...) markdown into this block at [start, end).
+  // resulting ![alt](attachments/...) markdown into this block at [start, end),
+  // clamped against the block's content as it is when the save completes.
   const insertImageMarkdown = async (files, start, end) => {
     const api = window.MN_IMAGE_ATTACHMENTS;
     if (!api) return;
     const { markdowns, errors } = await api.mnSaveImageAttachments(files);
     for (const message of errors) console.error('image attachment failed:', message);
     if (!markdowns.length) return;
-    const value = String(block.content || '');
+    const value = latestContentRef.current;
     const from = Math.max(0, Math.min(value.length, Number.isFinite(start) ? start : value.length));
     const to = Math.max(from, Math.min(value.length, Number.isFinite(end) ? end : from));
     const before = value.slice(0, from);

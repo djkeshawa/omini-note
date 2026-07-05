@@ -146,14 +146,26 @@ const SEED_VAULTS = [
   },
 ];
 
-// Build the link graph by parsing [[wiki-links]]
+// Build the link graph by parsing [[wiki-links]]. Extracted targets are
+// cached per note object: the app's per-note normalization keeps unchanged
+// note identities stable across keystrokes, so only the edited note is
+// re-parsed instead of re-scanning every body in the vault.
+const mnNoteLinkTargetsCache = new WeakMap();
+
+function mnLinkTargetsForNote(note) {
+  const hit = mnNoteLinkTargetsCache.get(note);
+  if (hit) return hit;
+  const targets = [...String(note.body || '').matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1].toLowerCase());
+  mnNoteLinkTargetsCache.set(note, targets);
+  return targets;
+}
+
 function buildLinks(notes) {
   const byTitle = new Map(notes.map(n => [n.title.toLowerCase(), n.id]));
   const links = [];
   for (const n of notes) {
-    const matches = [...n.body.matchAll(/\[\[([^\]]+)\]\]/g)];
-    for (const m of matches) {
-      const targetId = byTitle.get(m[1].toLowerCase());
+    for (const target of mnLinkTargetsForNote(n)) {
+      const targetId = byTitle.get(target);
       if (targetId && targetId !== n.id) {
         links.push({ source: n.id, target: targetId });
       }

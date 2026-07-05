@@ -66,6 +66,7 @@ function mnRenderMentionSnippet(snippet, T) {
 
 function MnEditor({
   note, notes, tags, links, vaultId,
+  connectionsRefreshToken = 0,
   canvases = [], onOpenCanvas, onCreateCanvas,
   onOpen, onCreateLinkedNote, onOpenTag, onLinkMention,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
@@ -127,6 +128,9 @@ function MnEditor({
   // Backlinks: prefer SQLite-backed lookup; fall back to in-memory scan
   // when running outside Electron (no window.mn).
   const inMemoryBacklinks = useMemoE(() => {
+    // Electron always uses the SQLite result below; skip the full-vault
+    // regex scan (it would otherwise run per keystroke and be discarded).
+    if (HAS_DISK_E) return [];
     return notes.filter(n => {
       if (n.id === note.id) return false;
       const body = n.body || mnBlocksToMd(n.blocks || []);
@@ -152,7 +156,10 @@ function MnEditor({
       } catch (e) { console.error('backlinks failed', e); }
     }, 200);
     return () => { cancelled = true; clearTimeout(handle); };
-  }, [vaultId, note.id, note.title, note.blocks]);
+    // Backlinks come from OTHER notes' bodies; editing this note's blocks
+    // cannot change them, so blocks are deliberately not a dependency. The
+    // refresh token bumps when a rename rewrites other notes on disk.
+  }, [vaultId, note.id, note.title, connectionsRefreshToken]);
 
   const backlinks = diskBacklinks != null ? diskBacklinks : inMemoryBacklinks;
 
@@ -173,12 +180,15 @@ function MnEditor({
       } catch (e) { console.error('unlinked mentions failed', e); }
     }, 250);
     return () => { cancelled = true; clearTimeout(handle); };
-  }, [vaultId, note.id, note.title]);
+  }, [vaultId, note.id, note.title, connectionsRefreshToken]);
 
   const linkMention = (mention) => {
     if (!onLinkMention) return;
-    const linked = onLinkMention(mention.id);
-    if (linked) setMentions(items => items.filter(item => item.id !== mention.id));
+    onLinkMention(mention.id);
+    // Remove the row either way: on success the mention became a link; on
+    // failure the indexed mention no longer exists in the note's current
+    // (unsaved) text, so leaving a dead row with a silent button is worse.
+    setMentions(items => items.filter(item => item.id !== mention.id));
   };
 
   // Related notes via embeddings (semantic) with FTS top-up. Debounced so the
