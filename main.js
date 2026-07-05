@@ -1405,6 +1405,13 @@ async function activeMemoryConfig() {
   return llmMemory.normalizeMemoryConfig(plugin.config || {});
 }
 
+// Feeds Ask AI with llm-memory recall. A disabled or unreachable bridge
+// throws here and lib/ai.js degrades to notes-only answers.
+ai.setMemoryRecallProvider(async ({ query, limit }) => {
+  const config = await activeMemoryConfig();
+  return llmMemory.recall(config, { query, limit });
+});
+
 ipcMain.handle('mn:memory.status', wrap(async () => {
   const config = await activeMemoryConfig();
   return llmMemory.status(config);
