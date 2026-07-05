@@ -4,6 +4,7 @@ const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: u
 
 function MnTodayPanel({
   notes = [], tags = [], tasks = [], reminders = [], todayNote = null, agendaItems = [],
+  staleTasks = [], unlinkedNotes = [],
   onOpen, onOpenOrCreateDailyNote, onAddQuickTask, onAddReflection, onEndDayRecap, onOpenAgenda, onPlanItem, T, theme, rollupFormat = 'long',
   rollupDefaultRange = 'today', rollupGroupBy = 'created', rollupShowPreviews = true,
   rollupShowTasks = true, rollupShowReminders = true, rollupCollapseOlder = true,
@@ -343,6 +344,56 @@ function MnTodayPanel({
             </div>
           )}
         </div>
+
+        {(staleTasks.length > 0 || unlinkedNotes.length > 0) && (
+          <div style={{
+            border: `1px solid ${T.lineSub}`,
+            borderRadius: 8,
+            background: T.bgSub,
+            padding: 12,
+            marginBottom: 16,
+          }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720, color: T.ink, marginBottom: 8 }}>
+              Needs attention
+            </div>
+            {staleTasks.length > 0 && (
+              <div style={{ marginBottom: unlinkedNotes.length ? 10 : 0 }}>
+                <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.inkDim, marginBottom: 5 }}>
+                  Stale todos · notes untouched 2+ weeks
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {staleTasks.map(item => (
+                    <button key={item.key || `${item.noteId}:${item.label}`} type="button" onClick={() => onOpen?.(item.noteId)} style={{
+                      border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bg, color: T.ink,
+                      padding: '7px 10px', cursor: 'pointer', textAlign: 'left',
+                    }}>
+                      <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 600 }}>{item.label || item.text}</span>
+                      <span style={{ marginLeft: 8, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{item.noteTitle || 'Untitled'}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {unlinkedNotes.length > 0 && (
+              <div>
+                <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.inkDim, marginBottom: 5 }}>
+                  Recently edited, not linked anywhere
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {unlinkedNotes.map(note => (
+                    <button key={note.id} type="button" onClick={() => onOpen?.(note.id)} style={{
+                      border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bg, color: T.ink,
+                      padding: '7px 10px', cursor: 'pointer', textAlign: 'left',
+                      fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 600,
+                    }}>
+                      {note.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
           {rangeOptions.map(option => (

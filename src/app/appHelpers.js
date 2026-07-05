@@ -2006,7 +2006,44 @@
     return contextualAiCleanText(item.label || item.text || item.title || 'Untitled action', 220);
   }
 
-  function contextualAiBuildTodayRecapContext({ notes = [], tasks = [], reminders = [], agendaItems = [], now = new Date(), weekStart = 'monday', limit = 6 } = {}) {
+  // Open todos living in notes untouched for `staleDays` — the "open loops
+  // you probably forgot" digest section, oldest first.
+  function digestStaleTodoItems(tasks = [], notes = [], { now = new Date(), staleDays = 14, limit = 6 } = {}) {
+    const cutoff = now.getTime() - Math.max(1, staleDays) * 24 * 60 * 60 * 1000;
+    const noteById = new Map((notes || []).map(note => [note.id, note]));
+    return (tasks || [])
+      .filter(item => item?.type === 'todo' && !item.checked)
+      .map(item => {
+        const note = noteById.get(item.noteId);
+        const touched = Date.parse(note?.modifiedAt || note?.date || '') || 0;
+        return { item, touched };
+      })
+      .filter(({ touched }) => touched > 0 && touched < cutoff)
+      .sort((a, b) => a.touched - b.touched)
+      .slice(0, Math.max(1, limit))
+      .map(({ item, touched }) => ({ ...item, staleSince: new Date(touched).toISOString() }));
+  }
+
+  // Recently edited notes that neither link out nor receive links — fresh
+  // thinking that never got wired into the vault. Date-titled daily notes
+  // are excluded; they live unlinked by design.
+  function digestUnlinkedRecentNotes(notes = [], links = [], { now = new Date(), days = 7, limit = 6 } = {}) {
+    const cutoff = now.getTime() - Math.max(1, days) * 24 * 60 * 60 * 1000;
+    const linked = new Set();
+    (links || []).forEach(link => { linked.add(link.source); linked.add(link.target); });
+    return (notes || [])
+      .filter(note => {
+        if (!note?.id || linked.has(note.id)) return false;
+        if (rollupTitleDateKey(note)) return false;
+        const touched = Date.parse(note.modifiedAt || note.date || '') || 0;
+        return touched >= cutoff;
+      })
+      .sort((a, b) => (Date.parse(b.modifiedAt || b.date || '') || 0) - (Date.parse(a.modifiedAt || a.date || '') || 0))
+      .slice(0, Math.max(1, limit))
+      .map(note => ({ id: note.id, title: note.title || 'Untitled', modifiedAt: note.modifiedAt || note.date || '' }));
+  }
+
+  function contextualAiBuildTodayRecapContext({ notes = [], tasks = [], reminders = [], agendaItems = [], links = [], now = new Date(), weekStart = 'monday', limit = 6 } = {}) {
     const today = todayIsoDate(now);
     const maxItems = Math.max(1, Math.min(Number(limit) || 6, 12));
     const noteById = new Map((notes || []).map(note => [note.id, note]));
@@ -2020,9 +2057,12 @@
     const openTasks = rollupFilterTaskItems(tasks, notes, { range: 'today', now, weekStart }).slice(0, maxItems);
     const dueReminders = rollupFilterReminderItems(reminders, notes, { range: 'today', now, weekStart }).slice(0, maxItems);
     const todayAgenda = (agendaItems || []).slice(0, maxItems);
+    const staleTodos = digestStaleTodoItems(tasks, notes, { now, limit: maxItems });
+    const unlinkedNotes = digestUnlinkedRecentNotes(notes, links, { now, limit: maxItems });
     const sourceIds = new Set();
     todayNotes.forEach(note => note?.id && sourceIds.add(note.id));
-    [...openTasks, ...dueReminders, ...todayAgenda].forEach(item => item?.noteId && sourceIds.add(item.noteId));
+    [...openTasks, ...dueReminders, ...todayAgenda, ...staleTodos].forEach(item => item?.noteId && sourceIds.add(item.noteId));
+    unlinkedNotes.forEach(note => sourceIds.add(note.id));
     const sourceNotes = [...sourceIds].map(id => noteById.get(id)).filter(Boolean);
     const sources = contextualAiSourcesFromNotes(sourceNotes.length ? sourceNotes : todayNotes, { limit: maxItems * 2 });
     return {
@@ -2031,6 +2071,8 @@
       tasks: openTasks,
       reminders: dueReminders,
       agendaItems: todayAgenda,
+      staleTodos,
+      unlinkedNotes,
       sources,
     };
   }
@@ -2055,6 +2097,12 @@
       '',
       'Agenda today:',
       ...(context.agendaItems?.length ? context.agendaItems.map(actionLine) : ['- None.']),
+      '',
+      'Stale todos (their notes untouched for 2+ weeks):',
+      ...(context.staleTodos?.length ? context.staleTodos.map(actionLine) : ['- None.']),
+      '',
+      'Recently edited notes with no links in or out:',
+      ...(context.unlinkedNotes?.length ? context.unlinkedNotes.map(note => `- ${note.title}`) : ['- None.']),
     ].join('\n');
   }
 
@@ -3010,6 +3058,8 @@
     contextualAiCompareMarkdownMarkers,
     contextualAiBuildTodayRecapContext,
     contextualAiBuildTodayRecapPrompt,
+    digestStaleTodoItems,
+    digestUnlinkedRecentNotes,
     contextualAiBuildTodayRecapResult,
     reminderDisplayDate,
     reminderStatusLabel,
