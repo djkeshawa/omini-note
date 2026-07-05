@@ -203,6 +203,122 @@ function mnCanvasMoveElement(element, dx, dy) {
   return next;
 }
 
+const MN_CANVAS_ANCHORABLE_TYPES = ['note', 'sticky', 'rect', 'ellipse', 'diamond', 'triangle', 'text'];
+
+function mnCanvasIsConnector(element) {
+  return element?.type === 'line' || element?.type === 'arrow';
+}
+
+// Topmost anchorable element whose bounds contain the point. Later elements
+// draw on top, so scan from the end of the list.
+function mnCanvasAnchorTargetAt(elements, point, excludeId = null) {
+  const list = Array.isArray(elements) ? elements : [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    const el = list[i];
+    if (!el || el.id === excludeId || !MN_CANVAS_ANCHORABLE_TYPES.includes(el.type)) continue;
+    const b = mnCanvasBounds(el);
+    if (point.x >= b.x && point.x <= b.x + b.w && point.y >= b.y && point.y <= b.y + b.h) return el;
+  }
+  return null;
+}
+
+// Point on the element's bounding-box border along the ray from its center
+// toward `toward`, so connectors touch the card edge instead of its middle.
+function mnCanvasAnchorPoint(element, toward) {
+  const b = mnCanvasBounds(element);
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+  const dx = (toward?.x ?? cx) - cx;
+  const dy = (toward?.y ?? cy) - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  const t = 1 / Math.max(Math.abs(dx) / Math.max(1, b.w / 2), Math.abs(dy) / Math.max(1, b.h / 2));
+  return { x: cx + dx * t, y: cy + dy * t };
+}
+
+// Endpoints of a connector with anchors resolved against the live elements,
+// so arrows follow their cards when dragged. Free endpoints and dangling
+// anchors (deleted targets) keep the stored coordinates.
+function mnCanvasResolveConnector(element, elementsById) {
+  const startEl = element.startAnchorId ? elementsById?.get?.(element.startAnchorId) : null;
+  const endEl = element.endAnchorId ? elementsById?.get?.(element.endAnchorId) : null;
+  const center = (el) => {
+    const b = mnCanvasBounds(el);
+    return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  };
+  const startRef = startEl ? center(startEl) : { x: element.x, y: element.y };
+  const endRef = endEl ? center(endEl) : { x: element.x2, y: element.y2 };
+  const from = startEl ? mnCanvasAnchorPoint(startEl, endRef) : startRef;
+  const to = endEl ? mnCanvasAnchorPoint(endEl, startRef) : endRef;
+  return { x: from.x, y: from.y, x2: to.x, y2: to.y };
+}
+
+// Writes resolved connector endpoints back into stored coordinates (and drops
+// anchors whose target was deleted) so bounds, marquee hit-testing, and
+// previews see the followed positions. Returns the same array when unchanged.
+function mnCanvasSyncConnectors(elements) {
+  const list = Array.isArray(elements) ? elements : [];
+  const byId = new Map(list.map(el => [el.id, el]));
+  let changed = false;
+  const next = list.map(el => {
+    if (!mnCanvasIsConnector(el) || (!el.startAnchorId && !el.endAnchorId)) return el;
+    const patch = {};
+    if (el.startAnchorId && !byId.has(el.startAnchorId)) patch.startAnchorId = null;
+    if (el.endAnchorId && !byId.has(el.endAnchorId)) patch.endAnchorId = null;
+    const resolved = mnCanvasResolveConnector(el, byId);
+    if (resolved.x !== el.x || resolved.y !== el.y || resolved.x2 !== el.x2 || resolved.y2 !== el.y2) {
+      Object.assign(patch, resolved);
+    }
+    if (!Object.keys(patch).length) return el;
+    changed = true;
+    return { ...el, ...patch };
+  });
+  return changed ? next : list;
+}
+
+// Clones a set of elements together: connector anchors are remapped to the
+// cloned counterparts when the target is in the set, and dropped otherwise.
+function mnCanvasCloneElements(elements, offset = 24) {
+  const list = Array.isArray(elements) ? elements : [];
+  const idMap = new Map();
+  const clones = list.map(el => {
+    const clone = mnCanvasCloneElement(el, offset);
+    idMap.set(el.id, clone.id);
+    return clone;
+  });
+  return clones.map(clone => {
+    if (!mnCanvasIsConnector(clone) || (!clone.startAnchorId && !clone.endAnchorId)) return clone;
+    return {
+      ...clone,
+      startAnchorId: clone.startAnchorId ? (idMap.get(clone.startAnchorId) || null) : clone.startAnchorId,
+      endAnchorId: clone.endAnchorId ? (idMap.get(clone.endAnchorId) || null) : clone.endAnchorId,
+    };
+  });
+}
+
+// Adds a live note card to a canvas document without a stage rect (used by
+// "Add to canvas" from the palette and note list). Places the card near the
+// stored viewport center, cascading so repeated adds don't stack exactly.
+function mnCanvasAddNoteCard(canvas, note, stage = {}) {
+  const doc = canvas && typeof canvas === 'object' ? canvas : mnNewCanvas();
+  const elements = Array.isArray(doc.elements) ? doc.elements : [];
+  const noteId = String(note?.id || '');
+  const existing = elements.find(el => el.type === 'note' && el.noteId === noteId);
+  if (existing) return { canvas: doc, element: existing, existing: true };
+  const vp = doc.viewport || { x: 0, y: 0, scale: 1 };
+  const scale = vp.scale || 1;
+  const cascade = (elements.length % 6) * 26;
+  const point = {
+    x: ((stage.width || 900) / 2 - (vp.x || 0)) / scale - 125 + cascade,
+    y: ((stage.height || 600) / 2 - (vp.y || 0)) / scale - 75 + cascade,
+  };
+  const element = mnCanvasNoteElement(point, note);
+  return {
+    canvas: { ...doc, elements: [...elements, element], modifiedAt: new Date().toISOString() },
+    element,
+    existing: false,
+  };
+}
+
 
 const MN_CANVAS_MODEL_API = {
   MN_CANVAS_TOOLS,
@@ -221,6 +337,14 @@ const MN_CANVAS_MODEL_API = {
   mnCanvasBounds,
   mnCanvasSelectionBounds,
   mnCanvasMoveElement,
+  MN_CANVAS_ANCHORABLE_TYPES,
+  mnCanvasIsConnector,
+  mnCanvasAnchorTargetAt,
+  mnCanvasAnchorPoint,
+  mnCanvasResolveConnector,
+  mnCanvasSyncConnectors,
+  mnCanvasCloneElements,
+  mnCanvasAddNoteCard,
 };
 if (typeof window !== 'undefined') {
   window.MN_CANVAS_MODEL = MN_CANVAS_MODEL_API;

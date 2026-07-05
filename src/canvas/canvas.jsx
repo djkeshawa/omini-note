@@ -18,6 +18,11 @@ const {
   mnCanvasBounds,
   mnCanvasSelectionBounds,
   mnCanvasMoveElement,
+  mnCanvasIsConnector,
+  mnCanvasAnchorTargetAt,
+  mnCanvasResolveConnector,
+  mnCanvasSyncConnectors,
+  mnCanvasCloneElements,
 } = window.MN_CANVAS_MODEL || {};
 
 function MnCanvasPanel({ canvases, activeCanvas, onCreate, onOpen, onBack, onSave, onDelete, notes = [], onOpenNote, onTextEditingChange, T }) {
@@ -493,6 +498,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
   };
 
   const noteById = useMemoC(() => new Map((notes || []).map(n => [n.id, n])), [notes]);
+  const elementById = useMemoC(() => new Map((draft.elements || []).map(el => [el.id, el])), [draft.elements]);
 
   // Tell the app when a canvas text box (element text or title) is being
   // edited so floating notifications hold instead of covering the input.
@@ -594,10 +600,10 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
 
   const removeElements = (ids) => {
     if (!ids.length) return;
-    updateDraft(prev => ({
-      ...prev,
-      elements: (prev.elements || []).filter(el => !ids.includes(el.id)),
-    }), true);
+    updateDraft(prev => {
+      const kept = (prev.elements || []).filter(el => !ids.includes(el.id));
+      return { ...prev, elements: mnCanvasSyncConnectors ? mnCanvasSyncConnectors(kept) : kept };
+    }, true);
     setSelectedIds(prev => prev.filter(id => !ids.includes(id)));
     setContextMenu(null);
   };
@@ -628,7 +634,9 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
   const pasteElements = async () => {
     const elements = await readClipboardElements();
     if (!elements.length) return;
-    const clones = elements.map(el => mnCanvasCloneElement(el));
+    const clones = mnCanvasCloneElements
+      ? mnCanvasCloneElements(elements)
+      : elements.map(el => mnCanvasCloneElement(el));
     updateDraft(prev => ({ ...prev, elements: [...(prev.elements || []), ...clones] }), true);
     setSelectedIds(clones.map(el => el.id));
     setContextMenu(null);
@@ -731,6 +739,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
       },
     }), true);
   };
+  handlersRef.current.fitToScreen = fitToScreen;
 
   const beginCreate = (e, point) => {
     if (tool === 'eraser') return;
@@ -935,6 +944,26 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
       }
       return;
     }
+    // A connector released over cards anchors to them; anchored connectors
+    // then keep their stored endpoints in sync with the elements they follow.
+    if (action.mode === 'create' && (action.type === 'line' || action.type === 'arrow') && mnCanvasAnchorTargetAt) {
+      const el = (draftRef.current.elements || []).find(item => item.id === action.id);
+      if (el) {
+        const startHit = mnCanvasAnchorTargetAt(draftRef.current.elements, { x: el.x, y: el.y }, el.id);
+        const endHit = mnCanvasAnchorTargetAt(draftRef.current.elements, { x: el.x2, y: el.y2 }, el.id);
+        if ((startHit || endHit) && startHit?.id !== endHit?.id) {
+          updateDraft(prev => ({
+            ...prev,
+            elements: (prev.elements || []).map(item => item.id === el.id
+              ? { ...item, startAnchorId: startHit?.id || null, endAnchorId: endHit?.id || null }
+              : item),
+          }), false);
+        }
+      }
+    }
+    if (mnCanvasSyncConnectors) {
+      updateDraft(prev => ({ ...prev, elements: mnCanvasSyncConnectors(prev.elements || []) }), false);
+    }
     persistCanvas(draftRef.current, { history: false });
   };
 
@@ -967,6 +996,11 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
       if (isMod && key === 'y') {
         e.preventDefault();
         handlersRef.current.redoCanvas?.();
+        return;
+      }
+      if (!isMod && e.shiftKey && e.code === 'Digit1') {
+        e.preventDefault();
+        handlersRef.current.fitToScreen?.();
         return;
       }
       const currentSelectedIds = selectedIdsRef.current || [];
@@ -1132,7 +1166,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
                 {Math.round((viewport.scale || 1) * 100)}%
               </span>
               <MnCanvasActionButton icon="zoom-in" label="Zoom in" onClick={() => setZoom((viewport.scale || 1) + 0.15)} T={T} />
-              <MnCanvasActionButton icon="fit" label="Fit to screen" onClick={fitToScreen} disabled={!(draft.elements || []).length} T={T} />
+              <MnCanvasActionButton icon="fit" label="Fit to screen (Shift+1)" onClick={fitToScreen} disabled={!(draft.elements || []).length} T={T} />
             </div>
           </div>
           <div ref={toolbarMenuRef} style={mnCanvasToolbarMoreSlot()}>
@@ -1197,17 +1231,21 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
             background: mnCanvasStageBackground(T, 28),
           }}>
           <g transform={`translate(${viewport.x || 0} ${viewport.y || 0}) scale(${viewport.scale || 1})`}>
-            {(draft.elements || []).map(el => (
-              <MnCanvasElement
-                key={el.id}
-                element={el}
-                note={el.type === 'note' ? noteById.get(el.noteId) : null}
-                selected={showSelectionUi && selectedIds.includes(el.id)}
-                onPointerDown={(e) => onElementDown(e, el)}
-                onDoubleClick={() => (el.type === 'note' ? (onOpenNote && onOpenNote(el.noteId)) : editText(el))}
-                T={T}
-              />
-            ))}
+            {(draft.elements || []).map(el => {
+              const anchored = mnCanvasIsConnector?.(el) && (el.startAnchorId || el.endAnchorId) && mnCanvasResolveConnector;
+              const display = anchored ? { ...el, ...mnCanvasResolveConnector(el, elementById) } : el;
+              return (
+                <MnCanvasElement
+                  key={el.id}
+                  element={display}
+                  note={el.type === 'note' ? noteById.get(el.noteId) : null}
+                  selected={showSelectionUi && selectedIds.includes(el.id)}
+                  onPointerDown={(e) => onElementDown(e, el)}
+                  onDoubleClick={() => (el.type === 'note' ? (onOpenNote && onOpenNote(el.noteId)) : editText(el))}
+                  T={T}
+                />
+              );
+            })}
             {showSelectionUi && selectedIds.length > 1 && selectionBounds && (
               <rect
                 x={selectionBounds.x - 6}
