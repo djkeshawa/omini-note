@@ -281,7 +281,9 @@ function MnMarkdown({ md, onOpen, onTagClick, onToggleCheck, T }) {
                 }}>
                   {it.checked !== null ? (
                     <button
-                      onClick={() => onToggleCheck && onToggleCheck(b.idx, j)}
+                      type="button"
+                      aria-label={it.checked ? 'Reopen todo' : 'Complete todo'}
+                      onClick={(e) => { e.stopPropagation(); onToggleCheck && onToggleCheck(b.idx, j); }}
                       style={{
                         width: 16, height: 16, marginTop: 5, flexShrink: 0,
                         border: `1.5px solid ${it.checked ? T.accent : T.line}`,

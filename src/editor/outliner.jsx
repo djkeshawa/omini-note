@@ -1356,7 +1356,10 @@ function MnBlockRow({
         }}>
         {block.kind === 'todo' ? (
           <button
-            onClick={() => onToggleCheck(block.id)}
+            type="button"
+            aria-label={block.checked ? 'Reopen todo' : 'Complete todo'}
+            title={block.checked ? 'Reopen todo' : 'Complete todo'}
+            onClick={(e) => { e.stopPropagation(); onToggleCheck(block.id); }}
             style={{
               width: 15, height: 15,
               border: `1.5px solid ${block.checked ? T.accent : T.line}`,
