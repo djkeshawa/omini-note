@@ -18,6 +18,7 @@ files:
   - assets/**/*
   - build/renderer/**/*
   - lib/**/*
+  - bin/**/*
   - src/**/*
   - node_modules/**/*
   - "!**/*.map"
