@@ -4514,6 +4514,8 @@ function MnApp() {
               onBack={openCanvasDashboard}
               onSave={saveCanvas}
               onDelete={deleteCanvas}
+              notes={notesWithBody}
+              onOpenNote={(id) => { setSelectedId(id); navigateView('notes'); }}
               T={T}
             />
           )}
