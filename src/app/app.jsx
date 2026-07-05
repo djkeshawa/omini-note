@@ -2833,6 +2833,46 @@ function MnApp() {
     return MN_APP_CANVAS_ACTIONS.deleteCanvas(canvasId, canvasActionContext());
   }, [canvasActionContext]);
 
+  // Places a note on a canvas as a live card from outside the canvas editor
+  // (palette / note list). Defaults to the most recently modified canvas and
+  // creates one when the vault has none.
+  const addNoteToCanvas = useCallbackA(async (noteId, canvasId = null) => {
+    const model = window.MN_CANVAS_MODEL;
+    const note = (notesWithBody || []).find(n => n.id === noteId);
+    if (!note || !model?.mnCanvasAddNoteCard) return { ok: false, message: 'Note not found.' };
+    let target = canvasId ? (canvases || []).find(c => c.id === canvasId) || null : null;
+    if (!target && !canvasId) {
+      target = [...(canvases || [])].sort((a, b) =>
+        (Date.parse(b.modifiedAt || '') || 0) - (Date.parse(a.modifiedAt || '') || 0))[0] || null;
+    }
+    let doc = null;
+    if (!target) {
+      doc = await createCanvas('Untitled canvas', { open: false });
+      if (!doc) return { ok: false, message: 'Could not create a canvas.' };
+    } else if (HAS_DISK && activeVaultId) {
+      try {
+        const res = await window.mn.getCanvas(activeVaultId, target.id);
+        if (!res.ok) throw new Error(res.error);
+        doc = res.value;
+      } catch (e) {
+        return { ok: false, message: `Could not load canvas: ${e.message || String(e)}` };
+      }
+    } else {
+      doc = target;
+    }
+    const placed = model.mnCanvasAddNoteCard(doc, note);
+    const canvasAffected = [{ type: 'canvas', id: doc.id, title: doc.title || 'Untitled canvas' }];
+    if (placed.existing) {
+      return { message: `"${note.title || 'Untitled'}" is already on "${doc.title || 'Untitled canvas'}".`, affected: canvasAffected };
+    }
+    const saved = await saveCanvas(placed.canvas);
+    if (!saved) return { ok: false, message: 'Could not save canvas.' };
+    return {
+      message: `Added "${note.title || 'Untitled'}" to "${saved.title || 'Untitled canvas'}".`,
+      affected: [{ type: 'canvas', id: saved.id, title: saved.title || 'Untitled canvas' }],
+    };
+  }, [notesWithBody, canvases, createCanvas, saveCanvas, activeVaultId]);
+
   const exportBackup = useCallbackA(async () => {
     if (!window.mn?.exportBackup) return showAppNotice('Backup unavailable', 'This build does not expose backup export.');
     try {
@@ -3684,6 +3724,20 @@ function MnApp() {
         },
       },
       {
+        id: 'add-note-to-canvas',
+        label: 'Add note to canvas',
+        description: 'Place the current or named note on a canvas as a live note card.',
+        section: 'Canvas',
+        keywords: 'send to canvas note card board place',
+        inputSchema: objectSchema({ title: stringArg(180), noteTitle: stringArg(180), canvasId: stringArg(120), canvasTitle: stringArg(180) }),
+        run: async (args) => {
+          const note = writableMetadataNote({ title: args.noteTitle || args.title });
+          if (!note) return { ok: false, message: 'No note is available to add to a canvas.' };
+          const canvas = args.canvasId || args.canvasTitle ? resolveCanvas({ canvasId: args.canvasId, canvasTitle: args.canvasTitle }) : null;
+          return await addNoteToCanvas(note.id, canvas?.id || null);
+        },
+      },
+      {
         id: 'delete-canvas',
         label: 'Delete canvas',
         description: 'Move a canvas to recently deleted.',
@@ -3945,7 +3999,7 @@ function MnApp() {
       })),
     ];
     return makeRegistry(actions);
-  }, [activeCanvas, activeVault?.name, activeVaultId, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openSmartView, plugins, rebuildIndex, recordPhase5Metric, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+  }, [activeCanvas, activeVault?.name, activeVaultId, addNoteToCanvas, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openSmartView, plugins, rebuildIndex, recordPhase5Metric, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
 
   useEffectA(() => {
     window.MN_APP_ACTIONS = appActionRegistry;
@@ -4232,6 +4286,7 @@ function MnApp() {
               onRenameNote={renameNoteTitle}
               onDuplicateNote={duplicateNote}
               onDeleteNote={requestDeleteNote}
+              onAddToCanvas={async (id) => handleAppActionResult(await addNoteToCanvas(id))}
               tags={tags} theme={theme} density={tweaks.density} T={T}
             />
           )}

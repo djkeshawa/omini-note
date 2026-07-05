@@ -97,6 +97,7 @@ function MnNoteList({
   onRenameNote,
   onDuplicateNote,
   onDeleteNote,
+  onAddToCanvas = null,
   tags, theme, density, T,
 }) {
   const [collapsed, setCollapsed] = useStateL({});
@@ -604,6 +605,7 @@ function MnNoteList({
           {[
             { label: 'Rename', action: () => startRename(menu.note) },
             { label: 'Duplicate', action: () => { setMenu(null); onDuplicateNote && onDuplicateNote(menu.note?.id); } },
+            ...(onAddToCanvas ? [{ label: 'Add to canvas', action: () => { setMenu(null); onAddToCanvas(menu.note?.id); } }] : []),
             { label: 'Delete', danger: true, action: () => { setMenu(null); onDeleteNote && onDeleteNote(menu.note?.id); } },
           ].map(item => (
             <button
@@ -628,7 +630,7 @@ function MnNoteList({
               onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               <span style={{ width: 14, color: item.danger ? (T.danger || T.warn) : T.inkDim }}>
-                {item.label === 'Rename' ? 'R' : item.label === 'Duplicate' ? '+' : 'x'}
+                {item.label === 'Rename' ? 'R' : item.label === 'Duplicate' ? '+' : item.label === 'Add to canvas' ? '▦' : 'x'}
               </span>
               <span>{item.label}</span>
             </button>
