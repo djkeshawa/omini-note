@@ -7,6 +7,7 @@ const store = require('./lib/store');
 const attachments = require('./lib/attachments');
 const linkRename = require('./lib/linkRename');
 const exportHtml = require('./lib/exportHtml');
+const llmMemory = require('./lib/llmMemory');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
 const zotero = require('./lib/zotero');
@@ -1394,6 +1395,45 @@ ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId, noteSnapshot) =
     return result;
   });
 }));
+// Resolves the enabled llm-memory plugin's config from preferences so the
+// renderer never supplies the server URL directly.
+async function activeMemoryConfig() {
+  const prefs = await store.getPrefs();
+  const plugins = Array.isArray(prefs?.tweaks?.plugins) ? prefs.tweaks.plugins : [];
+  const plugin = plugins.find(item => item?.enabled !== false && item?.type === 'llm-memory');
+  if (!plugin) throw new Error('Enable the LLM Memory bridge plugin in Settings first.');
+  return llmMemory.normalizeMemoryConfig(plugin.config || {});
+}
+
+ipcMain.handle('mn:memory.status', wrap(async () => {
+  const config = await activeMemoryConfig();
+  return llmMemory.status(config);
+}));
+ipcMain.handle('mn:memory.recall', wrap(async (query, limit) => {
+  const config = await activeMemoryConfig();
+  return llmMemory.recall(config, { query, limit });
+}));
+ipcMain.handle('mn:memory.import', wrap(async (vaultId) => {
+  const config = await activeMemoryConfig();
+  return await withIndexVaultLock(vaultId, async () => {
+    return llmMemory.importMemoriesToVault({
+      store,
+      onNoteSaved: (saved) => {
+        const indexed = runOptionalSearchIndexTask('index imported memory note', () => idx.indexNote(vaultId, saved));
+        if (indexed !== null) ai.scheduleEmbed(vaultId, saved);
+      },
+    }, config, vaultId, {});
+  });
+}));
+ipcMain.handle('mn:memory.remember', wrap(async (vaultId, noteId) => {
+  const config = await activeMemoryConfig();
+  const note = await store.getNote(vaultId, noteId);
+  if (!note) throw new Error('Note not found');
+  const cfg = await store.loadConfig();
+  const vaultName = cfg.vaults.find(v => v.id === vaultId)?.name || '';
+  return llmMemory.rememberNote(config, note, { vaultName });
+}));
+
 ipcMain.handle('mn:saveAttachment', wrap(async (vaultId, payload) => {
   return attachments.saveAttachment(vaultId, sanitizeAttachmentPayload(payload));
 }));

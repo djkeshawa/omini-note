@@ -140,6 +140,22 @@ unsaved changes in the app, the app's next autosave detects the conflict and
 asks which version to keep — choosing "keep mine" discards the agent's
 append. Prefer agent writes to notes you are not actively editing.
 
+## LLM Memory Bridge
+
+VispNote can pair with a local [llm-memory](https://github.com/djkeshawa/llm-memory)
+server so your notes and your agents share one memory:
+
+1. Run the llm-memory server locally (`llm-memory serve`).
+2. In VispNote settings, add the **LLM Memory bridge** plugin and set the
+   server URL (localhost only), repository id, and API key if the server
+   requires one.
+3. From the command palette: **Import memories as notes** materializes
+   memories as editable notes tagged `#memory` with provenance properties
+   (`memoryId::`, `memoryLayer::`, ...). Imported notes are yours — re-imports
+   never overwrite them.
+4. **Remember this note** distills the open note back into the memory server
+   so agents can recall it.
+
 ## AI Setup
 
 AI features are optional. By default, VispNote is built for local Ollama usage.

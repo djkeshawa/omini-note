@@ -144,6 +144,14 @@ contextBridge.exposeInMainWorld('mn', {
     setConfig: (patch) => ipcRenderer.invoke('mn:ai.setConfig', patch),
   },
 
+  // Local llm-memory server bridge
+  memory: {
+    status: () => ipcRenderer.invoke('mn:memory.status'),
+    recall: (query, limit) => ipcRenderer.invoke('mn:memory.recall', query, limit),
+    import: (vaultId) => ipcRenderer.invoke('mn:memory.import', vaultId),
+    remember: (vaultId, noteId) => ipcRenderer.invoke('mn:memory.remember', vaultId, noteId),
+  },
+
   // Zotero Desktop local API
   zotero: {
     status: () => ipcRenderer.invoke('mn:zotero.status'),

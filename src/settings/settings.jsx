@@ -551,6 +551,13 @@ function SectionPlugins({ tweaks, setTweak, T }) {
             This plugin lets AI search and read Zotero Desktop documents through the local Zotero API. In Ask AI, include "Zotero" or "paper" in the request, for example: "summarize the Recursive Language Models paper from Zotero" or "use the Zotero paper to improve this note."
           </div>
         )}
+        {draft.type === 'llm-memory' && (
+          <div style={{ display: 'grid', gap: 10, marginBottom: 10 }}>
+            <input value={draft.config.serverUrl || ''} onChange={e => setConfigField('serverUrl', e.target.value)} placeholder="Server URL (localhost only), e.g. http://127.0.0.1:8000" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
+            <input value={draft.config.repoId || ''} onChange={e => setConfigField('repoId', e.target.value)} placeholder="Repository/project id, e.g. my_notes" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
+            <input type="password" value={draft.config.apiKey || ''} onChange={e => setConfigField('apiKey', e.target.value)} placeholder="API key (leave empty for local no-auth mode)" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{selectedType.purpose || 'Choose a plugin purpose.'}</div>
           <BtnOutline T={T} disabled={!draft.name.trim()} onClick={addPlugin}>Add plugin</BtnOutline>
@@ -589,6 +596,16 @@ function SectionPlugins({ tweaks, setTweak, T }) {
                   {plugin.type === 'zotero-reader' && (
                     <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12.5, color: T.inkMed, lineHeight: 1.5 }}>
                       Uses Zotero Desktop at 127.0.0.1:23119. Keep Zotero open. In Ask AI, include "Zotero" or "paper", for example: "summarize the Recursive Language Models paper from Zotero" or "use the Zotero paper to improve this note."
+                    </div>
+                  )}
+                  {plugin.type === 'llm-memory' && (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <input value={plugin.config.serverUrl || ''} onChange={e => updatePluginConfig(plugin.id, { serverUrl: e.target.value })} placeholder="Server URL (localhost only)" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
+                      <input value={plugin.config.repoId || ''} onChange={e => updatePluginConfig(plugin.id, { repoId: e.target.value })} placeholder="Repository/project id" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
+                      <input type="password" value={plugin.config.apiKey || ''} onChange={e => updatePluginConfig(plugin.id, { apiKey: e.target.value })} placeholder="API key (optional)" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
+                      <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12, color: T.inkMed, lineHeight: 1.5 }}>
+                        Run the palette commands "Import memories as notes" and "Remember this note" (Ctrl+K). The server must run on this machine.
+                      </div>
                     </div>
                   )}
                 </div>

@@ -46,6 +46,20 @@ const MN_PLUGIN_TYPES = [
       url: '',
     },
   },
+  {
+    id: 'llm-memory',
+    label: 'LLM Memory bridge',
+    purpose: 'Import agent memories as editable notes and distill notes back into the local llm-memory server.',
+    defaultConfig: {
+      title: '',
+      body: '',
+      tags: '',
+      url: '',
+      serverUrl: 'http://127.0.0.1:8000',
+      repoId: '',
+      apiKey: '',
+    },
+  },
 ];
 
 function mnPluginType(typeId) {
@@ -84,6 +98,9 @@ function mnNormalizePlugin(raw = {}) {
       body: mnSafePluginText(config.body, meta.defaultConfig.body, 4000),
       tags: mnSafePluginText(config.tags, meta.defaultConfig.tags, 240),
       url: mnSafePluginText(config.url, meta.defaultConfig.url, 500),
+      serverUrl: mnSafePluginText(config.serverUrl, meta.defaultConfig.serverUrl || '', 500),
+      repoId: mnSafePluginText(config.repoId, meta.defaultConfig.repoId || '', 120),
+      apiKey: mnSafePluginText(config.apiKey, meta.defaultConfig.apiKey || '', 300),
     },
   };
 }
