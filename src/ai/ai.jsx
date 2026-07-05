@@ -2964,7 +2964,9 @@ function MnAskAI({
                     <div style={{ marginTop: 9 }}>
                       {m.sources.map((s, sourceIndex) => {
                         const sourceId = String(s?.id || '');
-                        const canOpenSource = !!sourceId && noteIdSet.has(sourceId);
+                        const isMemorySource = s?.kind === 'memory' || sourceId.startsWith('memory:');
+                        const sourceBadge = isMemorySource ? 'from memory' : (s?.kind === 'note' ? 'from notes' : '');
+                        const canOpenSource = !isMemorySource && !!sourceId && noteIdSet.has(sourceId);
                         return (
                           <div key={sourceId || sourceIndex}
                             onClick={() => {
@@ -2979,16 +2981,26 @@ function MnAskAI({
                             }}
                             onMouseEnter={e => { if (canOpenSource) e.currentTarget.style.background = T.bgHover; }}
                             onMouseLeave={e => e.currentTarget.style.background = T.bg}>
-                            <div style={{ fontSize: 12.5, fontWeight: 500, color: T.ink }}>{sourceIndex + 1}. {s.title}</div>
+                            <div style={{ fontSize: 12.5, fontWeight: 500, color: T.ink }}>
+                              {sourceIndex + 1}. {s.title}
+                              {sourceBadge && (
+                                <span style={{
+                                  marginLeft: 6, padding: '1px 6px', borderRadius: 999,
+                                  border: `1px solid ${T.lineSub}`, background: T.bgSub,
+                                  fontFamily: 'var(--mn-mono)', fontSize: 10, fontWeight: 400,
+                                  color: T.inkDim, verticalAlign: 'middle',
+                                }}>{sourceBadge}</span>
+                              )}
+                            </div>
                             <div style={{
                               fontSize: 12, color: T.inkDim, marginTop: 2,
                               fontFamily: 'var(--mn-body)', lineHeight: 1.5,
                               display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                               overflow: 'hidden',
                             }}>{s.snippet}</div>
-                            {s.modifiedAt && (
+                            {(s.modifiedAt || s.createdAt) && (
                               <div style={{ marginTop: 5, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
-                                {new Date(s.modifiedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                                {new Date(s.modifiedAt || s.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                               </div>
                             )}
                           </div>
@@ -3083,7 +3095,7 @@ function MnAskAI({
               <div style={{ color: T.inkMed, fontSize: 14, fontWeight: 650, fontFamily: 'var(--mn-ui)', marginBottom: 5 }}>
                 Ask about the vault or ask for a page action.
               </div>
-              Answers cite note sources when they use your notes.
+              Answers cite your notes, plus remembered context when the memory bridge is on.
             </div>
           )}
           <div ref={scrollBottomRef} data-mn-chat-bottom="true" style={{ height: 1 }} />
