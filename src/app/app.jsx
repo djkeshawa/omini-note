@@ -446,6 +446,7 @@ function MnApp() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useStateA(false);
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useStateA(false);
   const [recentNoteIds, setRecentNoteIds] = useStateA([]);
+  const [canvasTextEditing, setCanvasTextEditing] = useStateA(false);
   // Bumped when a rename rewrites links in other notes so the editor's
   // backlinks/mentions panels refetch; their effects otherwise only key on
   // the open note's id/title and would show stale rows after a rename.
@@ -4012,12 +4013,16 @@ function MnApp() {
       setToast(null);
       return;
     }
+    // While a canvas text box is being edited the toast is hidden, not
+    // dismissed — hold the auto-quiet timer so the reminder reappears when
+    // editing ends instead of expiring unseen.
+    if (canvasTextEditing) return;
     const handle = setTimeout(() => {
       quietedReminderKeys.current.add(toast.key);
       setToast(current => current?.key === toast.key ? null : current);
     }, 9000);
     return () => clearTimeout(handle);
-  }, [toast?.key, blockingOverlayOpen]);
+  }, [toast?.key, blockingOverlayOpen, canvasTextEditing]);
 
   // Runtime reminder scan over @remind directives in the active vault.
   useEffectA(() => {
@@ -4516,6 +4521,7 @@ function MnApp() {
               onDelete={deleteCanvas}
               notes={notesWithBody}
               onOpenNote={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onTextEditingChange={setCanvasTextEditing}
               T={T}
             />
           )}
@@ -4564,7 +4570,7 @@ function MnApp() {
           />
         )}
         <MnReminderToast
-          toast={blockingOverlayOpen ? null : toast}
+          toast={blockingOverlayOpen || canvasTextEditing ? null : toast}
           onDismiss={() => {
             if (toast?.key) dismissedReminderKeys.current.add(toast.key);
             setToast(null);

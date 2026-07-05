@@ -20,7 +20,7 @@ const {
   mnCanvasMoveElement,
 } = window.MN_CANVAS_MODEL || {};
 
-function MnCanvasPanel({ canvases, activeCanvas, onCreate, onOpen, onBack, onSave, onDelete, notes = [], onOpenNote, T }) {
+function MnCanvasPanel({ canvases, activeCanvas, onCreate, onOpen, onBack, onSave, onDelete, notes = [], onOpenNote, onTextEditingChange, T }) {
   if (activeCanvas) {
     return (
       <MnCanvasEditor
@@ -30,6 +30,7 @@ function MnCanvasPanel({ canvases, activeCanvas, onCreate, onOpen, onBack, onSav
         onDelete={onDelete}
         notes={notes}
         onOpenNote={onOpenNote}
+        onTextEditingChange={onTextEditingChange}
         T={T}
       />
     );
@@ -396,10 +397,11 @@ function MnCanvasPreviewShape({ element, transform }) {
   return <rect x={x} y={y} width={w} height={h} rx={element.type === 'sticky' ? 6 : 4} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
 }
 
-function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNote, T }) {
+function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNote, onTextEditingChange, T }) {
   const [draft, setDraft] = useStateC(canvas);
   const [tool, setTool] = useStateC('select');
   const [notePickerOpen, setNotePickerOpen] = useStateC(false);
+  const [titleFocused, setTitleFocused] = useStateC(false);
   const [selectedIds, setSelectedIds] = useStateC([]);
   const [style, setStyle] = useStateC(MN_CANVAS_DEFAULT_STYLE);
   const [contextMenu, setContextMenu] = useStateC(null);
@@ -491,6 +493,14 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
   };
 
   const noteById = useMemoC(() => new Map((notes || []).map(n => [n.id, n])), [notes]);
+
+  // Tell the app when a canvas text box (element text or title) is being
+  // edited so floating notifications hold instead of covering the input.
+  const textEditingActive = !!editingTextId || titleFocused;
+  useEffectC(() => {
+    onTextEditingChange?.(textEditingActive);
+  }, [textEditingActive]);
+  useEffectC(() => () => { onTextEditingChange?.(false); }, []);
 
   // Places a live note card at the center of the current viewport.
   const addNoteCard = (note) => {
@@ -1041,7 +1051,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
             value={draft.title || ''}
             onMouseDown={(e) => e.stopPropagation()}
             onChange={(e) => updateDraft(prev => ({ ...prev, title: e.target.value }), false)}
-            onBlur={saveTitle}
+            onBlur={() => { setTitleFocused(false); saveTitle(); }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') e.currentTarget.blur();
               if (e.key === 'Escape') {
@@ -1063,6 +1073,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
               padding: '5px 7px',
             }}
             onFocus={e => {
+              setTitleFocused(true);
               e.currentTarget.style.background = T.bg;
               e.currentTarget.style.borderColor = T.lineSub;
             }}
@@ -1266,7 +1277,9 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
               fontFamily: editingElement.type === 'text' ? 'var(--mn-body)' : 'var(--mn-ui)',
               fontSize: (editingElement.type === 'text' ? 18 : 13) * (viewport.scale || 1),
               lineHeight: 1.35,
-              zIndex: 12,
+              // Above floating notifications (toast zIndex 50) so an active
+              // text edit is never painted over.
+              zIndex: 60,
               boxShadow: `0 10px 26px color-mix(in oklab, ${T.ink} 14%, transparent)`,
             }}
           />
