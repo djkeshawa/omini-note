@@ -597,11 +597,17 @@
     const byState = Object.fromEntries(stateIds.map(id => [id, []]));
     const noteIdsByState = Object.fromEntries(stateIds.map(id => [id, new Set()]));
     const archivedNotes = [];
+    const propertyRegexCache = new Map();
     const propertyValue = typeof options.propertyValue === 'function'
       ? options.propertyValue
       : (body, key) => {
-        const safeKey = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const match = String(body || '').match(new RegExp(`^\\s*(?:-\\s*)?${safeKey}::\\s*(.*)$`, 'im'));
+        let regex = propertyRegexCache.get(key);
+        if (!regex) {
+          const safeKey = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          regex = new RegExp(`^\\s*(?:-\\s*)?${safeKey}::\\s*(.*)$`, 'im');
+          propertyRegexCache.set(key, regex);
+        }
+        const match = String(body || '').match(regex);
         return match ? String(match[1] || '').trim() : '';
       };
 

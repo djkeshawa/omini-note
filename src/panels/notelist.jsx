@@ -27,14 +27,25 @@ function mnPreview(body) {
   return s.slice(0, 120);
 }
 
-function mnSnippet(body, query) {
+// mnSnippet runs once per visible note row per render; cache the workflow
+// regex so the escape/sort/compile work happens only when the states change.
+let mnWorkflowRegexCache = { states: null, regex: null };
+
+function mnWorkflowRegex() {
   const states = window.MN_LOGSEQ?.WORKFLOW_STATES || window.MN_LOGSEQ?.DEFAULT_WORKFLOW_STATES || [];
+  if (mnWorkflowRegexCache.states === states) return mnWorkflowRegexCache.regex;
   const workflowPattern = states
     .map(s => s.id)
     .filter(Boolean)
     .sort((a, b) => b.length - a.length)
     .map(id => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|');
+  const regex = workflowPattern ? new RegExp(`^(${workflowPattern})\\s+`, 'gm') : null;
+  mnWorkflowRegexCache = { states, regex };
+  return regex;
+}
+
+function mnSnippet(body, query) {
   const plain = body
     .split('\n')
     .filter(l => !/^[a-zA-Z][a-zA-Z0-9_-]*::\s/.test(l))  // skip page properties
@@ -46,7 +57,7 @@ function mnSnippet(body, query) {
     .replace(/-\s+\[[ x]\]/g, '✓')
     .replace(/-\s+/g, '')
     .replace(/@remind\s+\S+\s*\S*/g, '')
-    .replace(workflowPattern ? new RegExp(`^(${workflowPattern})\\s+`, 'gm') : /$^/, '')
+    .replace(mnWorkflowRegex() || /$^/, '')
     .trim().replace(/\s+/g, ' ');
   if (!query) return plain.slice(0, 140);
   const idx = plain.toLowerCase().indexOf(query.toLowerCase());

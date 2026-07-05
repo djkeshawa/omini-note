@@ -855,16 +855,18 @@ function MnNovelistPanel({
       .filter((value, index, arr) => arr.findIndex(item => item.toLowerCase() === value.toLowerCase()) === index);
     return { note, aliases };
   });
-  const characterSceneCounts = characterAliases.map(character => ({
-    ...character,
-    sceneCounts: scenes.map(scene => {
-      const haystack = plainNoteText(scene).toLowerCase();
-      return character.aliases.reduce((sum, alias) => {
-        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return sum + ((haystack.match(new RegExp(`\\b${escaped}\\b`, 'gi')) || []).length);
-      }, 0);
-    }),
-  }));
+  const sceneHaystacks = scenes.map(scene => plainNoteText(scene).toLowerCase());
+  const characterSceneCounts = characterAliases.map(character => {
+    const aliasRegexes = character.aliases.map(alias => {
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`\\b${escaped}\\b`, 'gi');
+    });
+    return {
+      ...character,
+      sceneCounts: sceneHaystacks.map(haystack => aliasRegexes.reduce(
+        (sum, regex) => sum + ((haystack.match(regex) || []).length), 0)),
+    };
+  });
   const maxCharacterHits = Math.max(1, ...characterSceneCounts.flatMap(row => row.sceneCounts));
   const completionCoverage = scenes.length
     ? Math.round((scenes.filter(scene => statusForNote(scene) === 'FINAL').length / scenes.length) * 100)

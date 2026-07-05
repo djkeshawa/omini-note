@@ -15,13 +15,20 @@ const MN_CODE_LANGUAGES = [
   { value: 'mermaid', label: 'Mermaid', aliases: ['flowchart', 'sequence'] },
 ];
 
+const MN_CODE_LANGUAGE_CACHE = new Map();
+
 function mnNormalizeCodeLanguage(value) {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw || raw === 'plain' || raw === 'text' || raw === 'txt') return '';
+  const cached = MN_CODE_LANGUAGE_CACHE.get(raw);
+  if (cached !== undefined) return cached;
+  let normalized = null;
   for (const lang of MN_CODE_LANGUAGES) {
-    if (lang.value === raw || (lang.aliases || []).includes(raw)) return lang.value;
+    if (lang.value === raw || (lang.aliases || []).includes(raw)) { normalized = lang.value; break; }
   }
-  return raw.replace(/[^a-z0-9_+#.-]/g, '');
+  if (normalized === null) normalized = raw.replace(/[^a-z0-9_+#.-]/g, '');
+  if (MN_CODE_LANGUAGE_CACHE.size < 200) MN_CODE_LANGUAGE_CACHE.set(raw, normalized);
+  return normalized;
 }
 
 function mnCodeLanguageLabel(value) {
@@ -46,6 +53,20 @@ function mnCodeKeywords(language) {
   return '';
 }
 
+// Keyword membership checked per token; a Set avoids recompiling the big
+// alternation regex on every token of a code block.
+const MN_CODE_KEYWORD_SETS = new Map();
+
+function mnCodeKeywordSet(lang) {
+  let set = MN_CODE_KEYWORD_SETS.get(lang);
+  if (set === undefined) {
+    const keywords = mnCodeKeywords(lang);
+    set = keywords ? new Set(keywords.split('|')) : null;
+    MN_CODE_KEYWORD_SETS.set(lang, set);
+  }
+  return set;
+}
+
 function mnCodeTokenStyle(token, language, T) {
   const lang = mnNormalizeCodeLanguage(language);
   if (lang === 'markdown' && /^(#{1,6}|[-*+]|\*\*|__|`|\[|\])/.test(token)) return { color: T.accent, fontWeight: 600 };
@@ -55,8 +76,8 @@ function mnCodeTokenStyle(token, language, T) {
   if (lang === 'html' && /^<\/?/.test(token)) return { color: T.accent };
   if (lang === 'html' && /^[A-Za-z:-]+$/.test(token)) return { color: 'oklch(0.50 0.16 240)' };
   if (lang === 'css' && /^[@.#]?[A-Za-z_-][\w-]*/.test(token)) return { color: 'oklch(0.50 0.16 240)' };
-  const keywords = mnCodeKeywords(lang);
-  if (keywords && new RegExp(`^(${keywords})$`, lang === 'sql' ? 'i' : '').test(token)) {
+  const keywords = mnCodeKeywordSet(lang);
+  if (keywords && keywords.has(lang === 'sql' ? token.toUpperCase() : token)) {
     return { color: T.accent, fontWeight: 600 };
   }
   return null;
