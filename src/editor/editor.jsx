@@ -131,10 +131,10 @@ function MnEditor({
     // Electron always uses the SQLite result below; skip the full-vault
     // regex scan (it would otherwise run per keystroke and be discarded).
     if (HAS_DISK_E) return [];
+    const re = new RegExp(`\\[\\[${note.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\]`, 'i');
     return notes.filter(n => {
       if (n.id === note.id) return false;
       const body = n.body || mnBlocksToMd(n.blocks || []);
-      const re = new RegExp(`\\[\\[${note.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\]`, 'i');
       return re.test(body);
     }).map(n => {
       const body = n.body || mnBlocksToMd(n.blocks || []);

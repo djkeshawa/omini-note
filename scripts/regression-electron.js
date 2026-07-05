@@ -1127,10 +1127,22 @@ async function closeWindowsBeforeCleanup() {
 async function cleanupAndExit(code) {
   await closeWindowsBeforeCleanup();
   if (!process.env.VISPNOTE_KEEP_REGRESSION_HOME) {
-    try {
-      fs.rmSync(regressionHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    } catch (error) {
-      console.warn(`Could not remove regression temp home ${regressionHome}: ${error?.message || String(error)}`);
+    // Release the FTS index DB handle before deleting; on Windows an open
+    // SQLite file blocks removal of the temp home with EPERM.
+    try { require('../lib/index').close(); } catch {}
+    let lastError = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        fs.rmSync(regressionHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        await wait(250);
+      }
+    }
+    if (lastError) {
+      console.warn(`Could not remove regression temp home ${regressionHome}: ${lastError?.message || String(lastError)}`);
     }
   }
   app.exit(code);

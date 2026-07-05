@@ -61,12 +61,24 @@ async function waitForRenderer(win, timeoutMs = 30000) {
   throw new Error(`Smoke test timed out waiting for renderer boot: ${JSON.stringify(lastState)}`);
 }
 
-function removeSmokeHome() {
+async function removeSmokeHome() {
   if (process.env.VISPNOTE_KEEP_SMOKE_HOME) return;
-  try {
-    fs.rmSync(smokeHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  } catch (error) {
-    console.warn(`Could not remove smoke temp home ${smokeHome}: ${error?.message || String(error)}`);
+  // Release the FTS index DB handle before deleting; on Windows an open
+  // SQLite file blocks removal of the temp home with EPERM.
+  try { require('../lib/index').close(); } catch {}
+  let lastError = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      fs.rmSync(smokeHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+      await wait(250);
+    }
+  }
+  if (lastError) {
+    console.warn(`Could not remove smoke temp home ${smokeHome}: ${lastError?.message || String(lastError)}`);
   }
 }
 
@@ -74,10 +86,10 @@ app.whenReady().then(async () => {
   const win = await waitForMainWindow();
   await waitForRenderer(win);
   console.log('Renderer smoke booted');
-  removeSmokeHome();
+  await removeSmokeHome();
   app.exit(0);
-}).catch((error) => {
+}).catch(async (error) => {
   console.error(error);
-  removeSmokeHome();
+  await removeSmokeHome();
   app.exit(1);
 });
