@@ -11,6 +11,7 @@ The project is designed around a simple rule: your notes should stay usable as p
 - **Fast editing**: keyboard shortcuts, block zoom, block movement, duplication, undo, redo, and area selection.
 - **Images**: paste or drag-drop images into notes; files live inside the vault under `attachments/` and render inline.
 - **Export**: save any note as Markdown, self-contained HTML, or PDF from the command palette.
+- **Canvas**: freeform whiteboard with sketching tools, plus live note cards — place notes on the canvas, arrange and connect them, double-click to open.
 - **Knowledge navigation**: quick switcher (⌘P), backlinks, unlinked mentions with one-click linking, related notes, wiki links, tag filtering, and graph view.
 - **Agenda workflows**: dated todos, today view, workflow states, and reminder-style syntax.
 - **Local search**: SQLite-backed search and backlink indexes.

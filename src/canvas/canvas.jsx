@@ -1,6 +1,6 @@
 // Canvas dashboard, freeform editor, and note embed cards.
 
-const { useState: useStateC, useEffect: useEffectC, useRef: useRefC } = React;
+const { useState: useStateC, useEffect: useEffectC, useRef: useRefC, useMemo: useMemoC } = React;
 
 const {
   MN_CANVAS_TOOLS,
@@ -10,6 +10,8 @@ const {
   mnCanvasId,
   mnNewCanvas,
   mnCanvasElement,
+  mnCanvasNoteElement,
+  mnCanvasNotePreview,
   mnCanvasDate,
   mnCanvasPreviewElements,
   mnCanvasCloneElement,
@@ -18,7 +20,7 @@ const {
   mnCanvasMoveElement,
 } = window.MN_CANVAS_MODEL || {};
 
-function MnCanvasPanel({ canvases, activeCanvas, onCreate, onOpen, onBack, onSave, onDelete, T }) {
+function MnCanvasPanel({ canvases, activeCanvas, onCreate, onOpen, onBack, onSave, onDelete, notes = [], onOpenNote, T }) {
   if (activeCanvas) {
     return (
       <MnCanvasEditor
@@ -26,6 +28,8 @@ function MnCanvasPanel({ canvases, activeCanvas, onCreate, onOpen, onBack, onSav
         onBack={onBack}
         onSave={onSave}
         onDelete={onDelete}
+        notes={notes}
+        onOpenNote={onOpenNote}
         T={T}
       />
     );
@@ -392,9 +396,10 @@ function MnCanvasPreviewShape({ element, transform }) {
   return <rect x={x} y={y} width={w} height={h} rx={element.type === 'sticky' ? 6 : 4} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />;
 }
 
-function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
+function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNote, T }) {
   const [draft, setDraft] = useStateC(canvas);
   const [tool, setTool] = useStateC('select');
+  const [notePickerOpen, setNotePickerOpen] = useStateC(false);
   const [selectedIds, setSelectedIds] = useStateC([]);
   const [style, setStyle] = useStateC(MN_CANVAS_DEFAULT_STYLE);
   const [contextMenu, setContextMenu] = useStateC(null);
@@ -483,6 +488,25 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
     if (persist) return persistCanvas(next);
     setDraftLocal(next);
     return next;
+  };
+
+  const noteById = useMemoC(() => new Map((notes || []).map(n => [n.id, n])), [notes]);
+
+  // Places a live note card at the center of the current viewport.
+  const addNoteCard = (note) => {
+    if (!note?.id || !mnCanvasNoteElement) return;
+    const rect = svgRef.current?.getBoundingClientRect?.();
+    const vp = draftRef.current.viewport || { x: 0, y: 0, scale: 1 };
+    const scale = vp.scale || 1;
+    const point = {
+      x: ((rect?.width || 900) / 2 - (vp.x || 0)) / scale - 125,
+      y: ((rect?.height || 600) / 2 - (vp.y || 0)) / scale - 75,
+    };
+    const element = mnCanvasNoteElement(point, note);
+    persistCanvas({ ...draftRef.current, elements: [...(draftRef.current.elements || []), element] });
+    setSelectedIds([element.id]);
+    setNotePickerOpen(false);
+    setTool('select');
   };
 
   const undoCanvas = () => {
@@ -1064,6 +1088,14 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
                   T={T}
                 />
               ))}
+              {(notes || []).length > 0 && (
+                <MnCanvasToolButton
+                  tool={{ id: 'note', label: 'Note card' }}
+                  active={notePickerOpen}
+                  onClick={() => setNotePickerOpen(v => !v)}
+                  T={T}
+                />
+              )}
             </div>
             <div style={mnCanvasToolbarGroup(T)}>
               <MnCanvasColorControl label="Stroke" value={activeStroke} onChange={(v) => applyColor('stroke', v)} T={T} />
@@ -1158,9 +1190,10 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
               <MnCanvasElement
                 key={el.id}
                 element={el}
+                note={el.type === 'note' ? noteById.get(el.noteId) : null}
                 selected={showSelectionUi && selectedIds.includes(el.id)}
                 onPointerDown={(e) => onElementDown(e, el)}
-                onDoubleClick={() => editText(el)}
+                onDoubleClick={() => (el.type === 'note' ? (onOpenNote && onOpenNote(el.noteId)) : editText(el))}
                 T={T}
               />
             ))}
@@ -1276,6 +1309,89 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, T }) {
           }}
         />
       )}
+      {notePickerOpen && (
+        <MnCanvasNotePicker
+          notes={notes}
+          onPick={addNoteCard}
+          onClose={() => setNotePickerOpen(false)}
+          T={T}
+        />
+      )}
+    </div>
+  );
+}
+
+// Picker for placing a note card: fuzzy-filtered note list, Enter/click to
+// place at the viewport center.
+function MnCanvasNotePicker({ notes = [], onPick, onClose, T }) {
+  const [query, setQuery] = useStateC('');
+  const [active, setActive] = useStateC(0);
+  const inputRef = useRefC(null);
+  useEffectC(() => {
+    const handle = setTimeout(() => inputRef.current?.focus(), 0);
+    return () => clearTimeout(handle);
+  }, []);
+  const items = useMemoC(() => {
+    const model = window.MN_QUICK_SWITCHER_MODEL;
+    if (model?.mnQuickSwitcherResults) {
+      return model.mnQuickSwitcherResults({ notes, query, recentIds: [], limit: 10 }).items;
+    }
+    const q = query.trim().toLowerCase();
+    return (notes || [])
+      .filter(n => !q || String(n.title || '').toLowerCase().includes(q))
+      .slice(0, 10);
+  }, [notes, query]);
+  useEffectC(() => setActive(0), [query]);
+  return (
+    <div role="presentation" onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 260,
+      background: 'color-mix(in oklab, oklch(0.2 0.02 240) 30%, transparent)',
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+      padding: '12vh 18px 18px',
+    }}>
+      <div role="dialog" aria-modal="true" aria-label="Add note to canvas" onClick={e => e.stopPropagation()} style={{
+        width: 'min(520px, 100%)', background: T.bg, color: T.ink,
+        border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden',
+        boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 30%, transparent)`,
+      }}>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => Math.min(items.length - 1, i + 1)); }
+            if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(0, i - 1)); }
+            if (e.key === 'Enter') { e.preventDefault(); if (items[active]) onPick?.(items[active]); }
+          }}
+          placeholder="Add a note to the canvas..."
+          style={{
+            width: '100%', border: 'none', borderBottom: `1px solid ${T.lineSub}`,
+            outline: 'none', background: T.bg, color: T.ink,
+            padding: '13px 15px', fontFamily: 'var(--mn-ui)', fontSize: 14,
+          }}
+        />
+        <div style={{ maxHeight: 320, overflow: 'auto', padding: 6 }}>
+          {items.map((note, index) => (
+            <button
+              key={note.id}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => onPick?.(note)}
+              style={{
+                width: '100%', display: 'block', border: 'none', borderRadius: 7,
+                background: index === active ? T.selBg : 'transparent', color: T.ink,
+                padding: '9px 11px', textAlign: 'left', cursor: 'pointer',
+                fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 600,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+              {note.title || 'Untitled'}
+            </button>
+          ))}
+          {!items.length && (
+            <div style={{ padding: 16, color: T.inkDim, fontSize: 13, textAlign: 'center' }}>No matching notes</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1450,6 +1566,9 @@ function MnCanvasToolIcon({ id }) {
   );
   if (id === 'sticky') return (
     <svg {...common}><path d="M3 3H13V10L10 13H3V3Z" strokeLinejoin="round"/><path d="M10 13V10H13" strokeLinejoin="round"/></svg>
+  );
+  if (id === 'note') return (
+    <svg {...common}><rect x="2.6" y="3" width="10.8" height="10" rx="1.4"/><path d="M4.8 5.8H11.2M4.8 8H11.2M4.8 10.2H8.6" strokeLinecap="round"/></svg>
   );
   if (id === 'rect') return (
     <svg {...common}><rect x="3" y="4" width="10" height="8" rx="1.2"/></svg>
@@ -1693,10 +1812,50 @@ function mnCanvasArrowHead(x1, y1, x2, y2, size = 11) {
   return `${x2},${y2} ${p1.x},${p1.y} ${p2.x},${p2.y}`;
 }
 
-function MnCanvasElement({ element, selected, onPointerDown, onDoubleClick, T }) {
+function MnCanvasElement({ element, note = null, selected, onPointerDown, onDoubleClick, T }) {
   const stroke = selected ? T.accent : (element.stroke || T.inkDim);
   const strokeWidth = selected ? Math.max(2, (element.strokeWidth || 2) + 1) : (element.strokeWidth || 2);
   const fill = element.fill || 'transparent';
+  if (element.type === 'note') {
+    const missing = !note;
+    const title = note?.title || 'Note not found';
+    const preview = note && mnCanvasNotePreview ? mnCanvasNotePreview(note) : '';
+    return (
+      <g onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} style={{ cursor: 'move' }}>
+        <rect x={element.x} y={element.y} width={element.w} height={element.h} rx={9}
+          fill={missing ? 'transparent' : (element.fill || T.bg)}
+          stroke={missing ? T.warn : stroke}
+          strokeDasharray={missing ? '5 4' : undefined}
+          strokeWidth={strokeWidth} />
+        <foreignObject x={element.x + 12} y={element.y + 10} width={Math.max(0, element.w - 24)} height={Math.max(0, element.h - 20)}
+          style={{ pointerEvents: 'none' }}>
+          <div xmlns="http://www.w3.org/1999/xhtml" style={{
+            width: '100%', height: '100%', overflow: 'hidden',
+            display: 'flex', flexDirection: 'column', gap: 5,
+          }}>
+            <div style={{
+              fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 700,
+              color: missing ? '#b45309' : '#1f2430', lineHeight: 1.3,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{title}</div>
+            {!missing && (
+              <div style={{
+                fontFamily: 'var(--mn-body)', fontSize: 11.5, lineHeight: 1.45,
+                color: '#4b5563', overflow: 'hidden', flex: 1,
+              }}>{preview || 'Empty note'}</div>
+            )}
+            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 9, color: '#9ca3af' }}>
+              {missing ? 'the linked note was deleted' : 'note · double-click to open'}
+            </div>
+          </div>
+        </foreignObject>
+        {selected && (
+          <rect x={element.x - 4} y={element.y - 4} width={(element.w || 0) + 8} height={(element.h || 0) + 8}
+            fill="none" stroke={T.accent} strokeDasharray="4 3" strokeWidth="1.2" pointerEvents="none" />
+        )}
+      </g>
+    );
+  }
   if (element.type === 'line' || element.type === 'arrow') {
     return (
       <g onPointerDown={onPointerDown} style={{ cursor: 'move' }}>

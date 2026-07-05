@@ -74,6 +74,47 @@ function mnCanvasElement(type, point, style = MN_CANVAS_DEFAULT_STYLE) {
   return { ...base, type: 'rect', w: 1, h: 1, text: '' };
 }
 
+// A live note placed on the canvas as a card. Only the note id is stored;
+// title/preview render from the current note so cards never go stale.
+function mnCanvasNoteElement(point, note = {}) {
+  return {
+    id: mnCanvasId('ce'),
+    type: 'note',
+    x: point.x,
+    y: point.y,
+    w: 250,
+    h: 150,
+    noteId: String(note.id || ''),
+    text: String(note.title || 'Untitled'),
+    stroke: '#1f2937',
+    fill: '#ffffff',
+    strokeWidth: 1.6,
+  };
+}
+
+// Plain-text preview of a note body for canvas cards: drops properties,
+// code fences, embeds, and markdown syntax, keeping readable prose.
+function mnCanvasNotePreview(note, maxLength = 220) {
+  return String(note?.body || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .split('\n')
+    .filter(line => !/^[a-zA-Z][a-zA-Z0-9_-]*::/.test(line.trim()))
+    .join(' ')
+    .replace(/\{\{[^}]*\}\}/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[\[([^\]\n]+)\]\]/g, (_match, target) => {
+      const pipeIndex = String(target).indexOf('|');
+      return pipeIndex >= 0 ? String(target).slice(pipeIndex + 1) : String(target);
+    })
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[#>*`~|]+/g, ' ')
+    .replace(/(^|\s)-\s+\[[ xX]\]\s+/g, '$1')
+    .replace(/(^|\s)-\s+/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, Math.max(0, maxLength));
+}
+
 function mnCanvasDate(value) {
   if (!value) return '';
   return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -163,7 +204,7 @@ function mnCanvasMoveElement(element, dx, dy) {
 }
 
 
-window.MN_CANVAS_MODEL = {
+const MN_CANVAS_MODEL_API = {
   MN_CANVAS_TOOLS,
   MN_CANVAS_COLORS,
   MN_CANVAS_DEFAULT_STYLE,
@@ -171,6 +212,8 @@ window.MN_CANVAS_MODEL = {
   mnCanvasId,
   mnNewCanvas,
   mnCanvasElement,
+  mnCanvasNoteElement,
+  mnCanvasNotePreview,
   mnCanvasDate,
   mnCanvasPreviewElements,
   mnCanvasCloneElement,
@@ -179,4 +222,8 @@ window.MN_CANVAS_MODEL = {
   mnCanvasSelectionBounds,
   mnCanvasMoveElement,
 };
-window.mnNewCanvas = mnNewCanvas;
+if (typeof window !== 'undefined') {
+  window.MN_CANVAS_MODEL = MN_CANVAS_MODEL_API;
+  window.mnNewCanvas = mnNewCanvas;
+}
+if (typeof module === 'object' && module.exports) module.exports = MN_CANVAS_MODEL_API;
