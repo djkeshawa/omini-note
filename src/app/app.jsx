@@ -1912,10 +1912,22 @@ function MnApp() {
         tasks: calendarTaskItems,
         reminders: reminderCenterItems,
         agendaItems: todayAgendaItems,
+        links,
         weekStart: tweaks.weekStart || 'monday',
       })
       : null
-  ), [notesWithBody, calendarTaskItems, reminderCenterItems, todayAgendaItems, tweaks.weekStart]);
+  ), [notesWithBody, calendarTaskItems, reminderCenterItems, todayAgendaItems, links, tweaks.weekStart]);
+
+  // Housekeeping digest for the Today view: forgotten open loops and fresh
+  // notes that never got linked into the vault. Only computed while the
+  // Today view is visible.
+  const todayDigest = useMemoA(() => {
+    if (view !== 'today' || !MN_APP_HELPERS.digestStaleTodoItems) return { staleTodos: [], unlinkedNotes: [] };
+    return {
+      staleTodos: MN_APP_HELPERS.digestStaleTodoItems(calendarTaskItems, notesWithBody, { limit: 5 }),
+      unlinkedNotes: MN_APP_HELPERS.digestUnlinkedRecentNotes(notesWithBody, links, { limit: 5 }),
+    };
+  }, [view, calendarTaskItems, notesWithBody, links]);
 
   const generateTodayAiRecap = useCallbackA(async () => {
     if (!todayAiContext || !MN_APP_HELPERS.contextualAiBuildTodayRecapPrompt || !MN_APP_HELPERS.contextualAiBuildTodayRecapResult) {
@@ -4458,6 +4470,8 @@ function MnApp() {
               reminders={reminderCenterItems}
               todayNote={todayDailyNote}
               agendaItems={todayAgendaItems}
+              staleTasks={todayDigest.staleTodos}
+              unlinkedNotes={todayDigest.unlinkedNotes}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               onOpenOrCreateDailyNote={createDailyNote}
               onAddQuickTask={addQuickTodayTask}
