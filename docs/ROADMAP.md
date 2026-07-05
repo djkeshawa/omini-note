@@ -1,157 +1,119 @@
 # VispNote Roadmap — the private thinking partner
 
-VispNote is not trying to be Obsidian. Obsidian's moat is a thousand community
-plugins; ours is a different bet:
+VispNote is not an Obsidian clone. The bet:
 
 > **Local-first notes that think with you.** On-device AI that reads, links,
 > and remembers your knowledge — without any of it leaving your machine — and
 > a vault that doubles as durable, human-readable memory for your AI agents.
 
-Everything below is prioritized through that lens. Parity features earn a slot
-only when their absence blocks adoption ("table stakes"), not because Obsidian
-has them.
+This revision adds a product/UX lens to the original engineering plan: canvas,
+Ask AI, and workflow improvements, plus everyday usability work that makes the
+app feel valuable in the first ten minutes, not just architecturally sound.
 
-## Where we are (done)
+## Shipped (0.2.0)
 
-- Local-first multi-vault markdown store, block outliner, agenda/workflow
-  states, graph, whiteboard canvas, smart views, themes, versions + trash
-- Multi-provider local-capable AI: Ollama-first RAG over `sqlite-vec`
-  embeddings, agentic note research, inline writing tools, PII scrubbing
-- Zotero read integration
-- Recent: image attachments (paste/drop), rename-safe wiki links, quick
-  switcher (⌘P)
+Image attachments (paste/drop) · rename-safe wiki links · quick switcher (⌘P)
+· unlinked mentions with one-click linking · connections footer (backlinks +
+semantic related notes) · local MCP server (`bin/vispnote-mcp.js`) · per-note
+export (MD/HTML/PDF) · Today housekeeping digest · live note cards on the
+canvas · **llm-memory bridge** (import memories as notes, remember notes) ·
+two-round audited quality pass (rename races, paste data loss, mention
+corruption, per-keystroke performance, 43% smaller bundle).
 
-## The bet: notes as shared memory (human + agents)
+---
 
-The differentiating pillar. VispNote already has the storage, index, and
-embedding layers; what is missing is the interop surface.
+## Track 1 — Intelligence (the moat)
 
-### A1. VispNote MCP server (L)
+| Item | Size | What the user gets |
+|---|---|---|
+| **A3. Memory-aware Ask AI** | M | Ask AI blends llm-memory recall into answers with distinct "from memory" vs "from notes" citations. The `recall` IPC hook is already wired. |
+| Memory bridge deepening | S–M | Refresh un-edited memory notes when the upstream memory changed; "remember this block" slash command; scheduled auto-import; importance shown on memory notes. |
+| B2. Suggested tags & properties | M | On save, a local model proposes tags/properties as accept-or-ignore chips — never silent writes. |
+| MCP server v2 | S–M | Semantic (vector) search tool + `get_agenda`, so agents get the same recall quality the app has. |
 
-Expose the active vault to local AI agents (Claude Code, or any MCP client)
-over a localhost MCP server:
+## Track 2 — Canvas UX
 
-- Tools: `search_notes` (FTS + vector), `get_note`, `get_backlinks`,
-  `list_by_tag`, `append_to_note`, `create_note`, `get_agenda`
-- Reuses `lib/index.js` and `lib/store.js` directly — the same bounded tool
-  surface the built-in note-research agent already uses (`lib/ai.js`)
-- Opt-in per vault, capability-scoped (read-only by default, write behind a
-  setting), localhost only — same trust posture as the Zotero client
-- Outcome: any coding/personal agent can use your notes as its knowledge base
-  without cloud sync. "Agents are our plugins."
+Note cards made the canvas a thinking surface; these make it a *good* one.
 
-### A2. llm-memory bridge (M)
+| Item | Size | What the user gets |
+|---|---|---|
+| **Anchored connectors** | M | Arrows that attach to cards and follow them when dragged — edges between ideas that survive rearranging. Today's arrows are free-floating. |
+| Send to canvas | S | "Add to canvas…" on notes (palette + note list context menu) instead of only pulling from inside the canvas. |
+| Promote sticky → note | S | Turn a sketch-phase sticky into a real note (and card) in place; thinking hardens into knowledge without retyping. |
+| Zoom-to-fit + minimap | S | One key to see everything; orientation on large boards. |
+| Alignment & tidy | S–M | Snap-to-grid, drag alignment guides, "arrange selection" auto-layout. |
+| Groups/frames | M | Labeled frames that move their children together — chapters, clusters, swimlanes. |
+| Canvas export | S | PNG/SVG export of the board (the graph already exports SVG). |
 
-Two-way bridge to the llm-memory MCP server (the durable agent-memory store
-already used during VispNote development):
+## Track 3 — Ask AI UX
 
-- **Memories → notes**: materialize memory items as markdown notes in a
-  dedicated `Memory` section/vault with provenance front matter
-  (`source: llm-memory`, repo/topic ids). Memories become searchable,
-  linkable, editable — human curation of agent memory.
-- **Notes → memories**: a "Remember this" block/note action (slash command +
-  palette) that writes a distilled memory back through the bridge.
-- Conflict rule: notes are the human-owned copy; the bridge never silently
-  overwrites an edited note.
+The engine is strong (multi-provider, RAG, PII scrubbing); the surface can
+earn more trust and reuse.
 
-### A3. Memory-aware Ask AI (M)
+| Item | Size | What the user gets |
+|---|---|---|
+| **Context transparency chips** | M | Before the answer streams, show which notes/memories were retrieved as removable chips — see and steer what the AI read. |
+| Clickable citations + hover preview | S | Sources open the note; hovering previews it. Trust through verifiability. |
+| Save answer as note | S | One click turns a good answer into a note (tagged, source-linked) — today good answers evaporate. |
+| Prompt library | S–M | Reusable prompts (e.g. "weekly review", "critique this draft") surfaced in the chat input and palette. |
+| Regenerate / stop / model badge | S | Visible model + status, stop button, one-click regenerate. |
+| Selection → Ask AI polish | S | Make the existing selection AI menu discoverable (hint on first selection, palette entry "Ask AI about selection"). |
 
-`aiRuntime` gains a recall step: before RAG, query the llm-memory bridge and
-blend recalled memories into context with distinct citations ("from memory"
-vs "from notes"). Honors the existing PII scrubber and provider config.
+## Track 4 — Workflow & agenda UX
 
-## Self-organizing knowledge
+The task model (states, dated todos, reminders) outclasses most note apps;
+the views underuse it.
 
-Make the vault wire itself together — locally.
+| Item | Size | What the user gets |
+|---|---|---|
+| **Kanban board view** | M | Drag notes/tasks between workflow states (TODO → DOING → DONE). The states and workflow panel exist; the board makes them tactile. |
+| Natural-language reminders | S–M | `@remind tomorrow 9am`, `@remind next friday` — parsed locally into the existing syntax. |
+| Recurring reminders | M | `@remind every monday 09:00`; completions roll the date forward. |
+| Inline check-off everywhere | S | Tick todos directly in Today, calendar, and note list previews without opening the note. |
+| Note progress chips | S | "3/7 todos" chip in the note list for notes with open tasks. |
+| Calendar week view + drag-to-reschedule | M | Drag a task to another day; see the week, not just the month. |
 
-### B1. Connections panel (M)
+## Track 5 — Everyday usability (first-ten-minutes value)
 
-Per-note side panel: semantically related notes (existing `vectorSearch`),
-unlinked mentions (existing FTS), one-click "link it" that inserts the
-`[[wiki link]]`. This is where the embedding index becomes visible value.
+| Item | Size | What the user gets |
+|---|---|---|
+| **Search UX upgrade** | M | `tag:` / `in:` filters, match highlighting in the opened note, jump-to-next-match. FTS already supports the queries. |
+| Version diff view | S–M | The version history dialog shows *what changed* between versions, not just timestamps. Pairs with retention age-tiers (Track 6). |
+| Template picker on new note | S | Long-press/dropdown on ⌘N offering note templates (they exist as plugins; surface them). |
+| Onboarding polish | S–M | First-run checklist (make a note → link it → try ⌘P → try the canvas), refreshed seed vault, actionable empty states. |
+| Trust panel | S | A settings card stating plainly what stays local, where files live, and one-click "open vault folder" / backup reminder. |
+| Note list at scale | M | Virtualized rows + memoized snippets — smoothness at 5k+ notes (flagged in both perf reviews). |
+| Accessibility pass | M | Focus traps in modals, aria labels on icon buttons, reduced-motion support, contrast audit via the existing theme validator. |
 
-### B2. Suggested tags & properties (S/M)
+## Track 6 — Foundations (protects everything above)
 
-On save, a local model proposes tags/properties as *suggestions* (chips to
-accept, never silent writes). Reuses the embed/chat pipeline.
+| Item | Size | Why |
+|---|---|---|
+| **CI workflow** | S | Node tests + lint + renderer build on every PR. 13 PRs merged this cycle with zero machine checks. Do this first. |
+| **D2. File watching** | M | External edits (Syncthing/git/agents via MCP) appear live; removes the documented MCP-write conflict caveat. The honest multi-device story. |
+| `app.jsx` refactor | L | ~4,900 lines; every feature pays a tax. Unlocks tabs/split panes. |
+| Tabs & split panes | M (after refactor) | Write in one pane while referencing another — the one parity feature worth reclaiming. |
+| Version retention age tiers | S–M | Keep all recent, hourly for a day, daily for 30 — today ~4 minutes of typing can evict a note's older history. |
+| Perf follow-ups | S | `dirtyNotes` callback churn; embedding backfill progress surfacing. |
+| Editor completeness drip | S each | Callouts, footnotes, inline `$math$`, real syntax highlighting, Obsidian/Logseq importers. |
 
-### B3. Daily digest (M)
+## Deferred / positioning
 
-The Today view gains an on-device AI digest: what changed yesterday, what is
-due, stale TODOs, notes touched but never linked. Pairs with a true
-daily-note-per-day journal file (small, and it anchors the habit).
+Typed properties UI growing into a query language · vault encryption at rest
+(pairs with a future paid E2E sync tier) · attachments in backup export ·
+rebindable shortcuts, vim mode, custom CSS, multi-window · mobile & publish
+(BYO-sync + read-only viewer first, if demand shows).
 
-## Thinking surfaces
+**Not doing:** community JS plugin marketplace (MCP/agents are the extension
+story) · cloud accounts · feature-for-feature Obsidian chase.
 
-### C1. Canvas note-cards (M/L)
+## Suggested sequence
 
-Place real notes on the whiteboard canvas and draw edges between them. Merges
-our two visual features into something neither Obsidian Canvas nor Excalidraw
-is: a spatial view over live notes, with the sketch tools already built.
-
-### C2. Local graph (S)
-
-Per-note neighborhood graph (1–2 hops) in the connections panel; fix the
-O(n²) force sim before large vaults hit it (Barnes-Hut or capped node counts).
-
-## Table stakes we still owe (kept deliberately small)
-
-- **D1. Export pack (S/M)**: per-note PDF (`printToPDF`), HTML, copy-as-
-  markdown; include attachments in backup export/import.
-- **D2. Live with external sync (M)**: file watching so Syncthing/Dropbox/git
-  edits appear without reload; document the BYO-sync story. (We are not
-  building a sync service yet; E2E sync can become the paid tier later.)
-- **D3. Editor completeness drip (S each)**: callouts, footnotes, inline
-  `$math$`, real syntax highlighting (highlight.js/Shiki), import from
-  Obsidian/Logseq folders.
-
-## Engineering guardrails (prerequisites, not features)
-
-- Split `app.jsx` (~200 KB), `outliner.jsx` (~170 KB), `ai.jsx` (~140 KB)
-  into the focused modules `AGENTS.md` already mandates — A1/B1/C1 all touch
-  these files and get riskier the longer this waits.
-- Replace renderer full-`allNotes` scans (block-ref resolution, backlink
-  fallback) with index-backed lookups before promoting 5k+ note vaults.
-- Prioritize embedding backfill by recency so big imports become AI-searchable
-  fast.
-- Every phase lands with node tests + an Electron regression scenario, per
-  the existing release gate.
-
-## What we are deliberately NOT doing
-
-- No community JS plugin marketplace — MCP/agent interop is our extension
-  story, with a real security model instead of "plugins run with full access".
-- No publish-to-web service, no mobile app yet (BYO-sync + future viewer
-  first), no cloud accounts.
-- No feature-for-feature Obsidian chase.
-
-## Deferred parity backlog (not scheduled, not forgotten)
-
-Items from the original gap analysis that lost priority under this strategy.
-They re-enter the roadmap only when something above unblocks or demands them:
-
-- **Tabs & split panes** — strongest deferred candidate; "write while
-  referencing" serves the thinking-partner vision too. Gated on the `app.jsx`
-  split (guardrails), so revisit right after that refactor lands.
-- **Typed properties UI + query language (Dataview-lite)** — B2's suggested
-  properties may grow into this; needs a real YAML parser first.
-- **Vault encryption at rest** — aligns with the privacy positioning; pairs
-  naturally with a future paid E2E sync tier.
-- **Vim mode, rebindable shortcuts, custom CSS, multi-window** — personal
-  polish; none blocks the strategy.
-- **Mobile & publish** — see "not doing"; BYO-sync plus a read-only viewer is
-  the likely first step if demand shows up.
-
-## Suggested order
-
-| # | Item | Size | Why first |
-|---|------|------|-----------|
-| 1 | B1 Connections panel | M | Fastest visible payoff from the embedding index; no new architecture |
-| 2 | A1 MCP server | L | The moat; design its tool surface while B1 exercises the same queries |
-| 3 | A2 llm-memory bridge | M | Builds on A1's plumbing and trust model |
-| 4 | D1 Export pack | S/M | Cheap trust-builder, fits between larger items |
-| 5 | A3 Memory-aware Ask AI | M | Completes the memory loop |
-| 6 | B3 Daily digest + daily notes | M | Habit anchor on top of A3/B2 pieces |
-| 7 | C1 Canvas note-cards | M/L | Headline visual feature once panels/refactor land |
+1. **CI + A3** — protect the codebase, finish the memory loop (the strategic headline).
+2. **Canvas pack 1**: anchored connectors + send-to-canvas + zoom-to-fit — makes 0.2.0's headline feature sing.
+3. **Ask AI trust pack**: context chips + clickable citations + save-answer-as-note.
+4. **Workflow pack**: kanban board + natural-language reminders + inline check-off.
+5. **D2 file watching**, then the **`app.jsx` refactor → tabs/panes**.
+6. Usability drip (search UX, version diff, onboarding, virtualization) woven between the larger items.
 
 Sizes: S ≈ a day, M ≈ 2–4 days, L ≈ a week+, at the current test bar.
