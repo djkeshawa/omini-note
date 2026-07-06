@@ -156,6 +156,15 @@ server so your notes and your agents share one memory:
 4. **Remember this note** distills the open note back into the memory server
    so agents can recall it.
 
+`npm run regression:memory` exercises the whole bridge against a real
+llm-memory server (for example the Docker container): create → recall →
+import-as-note → remember → cleanup, all inside an isolated
+`vispnote_regression` repo id. If no server is reachable the run is skipped,
+so `npm run test:all` works with or without the container; set
+`VISPNOTE_MEMORY_REQUIRED=1` to make an unreachable server a failure and
+`VISPNOTE_MEMORY_URL` / `VISPNOTE_MEMORY_API_KEY` to point at a non-default
+server.
+
 ## AI Setup
 
 AI features are optional. By default, VispNote is built for local Ollama usage.

@@ -1,3 +1,11 @@
+// Packaged Windows builds run without a console, so stdout/stderr are pipes
+// the OS may close. Without these handlers, any console.log/error write after
+// that raises an unhandled EPIPE and crashes the main process with Electron's
+// "JavaScript error in the main process" dialog.
+for (const stream of [process.stdout, process.stderr]) {
+  if (stream && typeof stream.on === 'function') stream.on('error', () => {});
+}
+
 const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShortcut, shell, protocol } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
