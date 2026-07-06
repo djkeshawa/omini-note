@@ -154,7 +154,9 @@ server so your notes and your agents share one memory:
    (`memoryId::`, `memoryLayer::`, ...). Imported notes are yours — re-imports
    never overwrite them.
 4. **Remember this note** distills the open note back into the memory server
-   so agents can recall it.
+   so agents can recall it. If the configured project does not exist on the
+   server it is registered automatically, and when no project id is configured
+   at all, a project is created from the note's name.
 
 `npm run regression:memory` exercises the whole bridge against a real
 llm-memory server (for example the Docker container): create → recall →

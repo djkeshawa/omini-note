@@ -82,8 +82,18 @@ async function deleteMemory(id) {
   return res.ok;
 }
 
-async function sweepRegressionRepo() {
-  const leftovers = await llmMemory.listMemories(config, {});
+// The project derived from the regression note's title, exercised by the
+// "no configured project" check below. Stable so reruns reuse one project.
+const DERIVED_NOTE_TITLE = 'VispNote Regression Project';
+const DERIVED_REPO_ID = 'vispnote_regression_project';
+const derivedConfig = llmMemory.normalizeMemoryConfig({
+  serverUrl: process.env.VISPNOTE_MEMORY_URL || llmMemory.DEFAULT_SERVER_URL,
+  repoId: '',
+  apiKey: process.env.VISPNOTE_MEMORY_API_KEY || '',
+});
+
+async function sweepRepo(repoConfig) {
+  const leftovers = await llmMemory.listMemories(repoConfig, {});
   for (const memory of leftovers) {
     if (memory.id) await deleteMemory(memory.id);
   }
@@ -104,7 +114,7 @@ async function run() {
   }
   pass('server is reachable');
 
-  const swept = await sweepRegressionRepo();
+  const swept = await sweepRepo(config) + await sweepRepo({ ...derivedConfig, repoId: DERIVED_REPO_ID });
   if (swept > 0) console.log(`  # swept ${swept} leftover memories from a previous run`);
 
   const runMarker = `run-${Date.now().toString(36)}`;
@@ -154,8 +164,17 @@ async function run() {
   const distilled = afterRemember.find(m => m.id === remembered.id);
   assert(distilled && distilled.tags.includes('vispnote'), 'distilled memory is tagged as coming from vispnote', distilled);
 
-  // Cleanup: the regression repo goes back to empty.
-  for (const id of [created.id, remembered.id]) {
+  // No configured project: rememberNote registers a project derived from the
+  // note's title and files the memory under it.
+  const derived = await withRetry('rememberNote (derived project)', () => llmMemory.rememberNote(derivedConfig, {
+    id: 'derived-note', title: DERIVED_NOTE_TITLE, body: `Derived project ${runMarker}.`, tags: [],
+  }, { vaultName: 'Regression' }));
+  assert(derived.repoId === DERIVED_REPO_ID, 'missing project is created from the note name', derived);
+  const derivedListed = await llmMemory.listMemories({ ...derivedConfig, repoId: DERIVED_REPO_ID }, {});
+  assert(derivedListed.some(m => m.id === derived.id), 'derived project contains the distilled memory', { count: derivedListed.length });
+
+  // Cleanup: the regression repos go back to empty.
+  for (const id of [created.id, remembered.id, derived.id]) {
     assert(await deleteMemory(id), `cleanup deletes memory ${id}`);
   }
   const remaining = await llmMemory.listMemories(config, {});

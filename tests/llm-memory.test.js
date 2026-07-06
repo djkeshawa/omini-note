@@ -27,6 +27,12 @@ function startFakeServer(state = {}) {
         return respond(200, { id: 'created123', ...record.body, created_at: '2026-07-05T10:00:00Z', accessed_at: '2026-07-05T10:00:00Z' });
       }
       if (url.pathname === '/recall' && req.method === 'POST') return respond(200, state.recall || []);
+      if (url.pathname === '/repos' && req.method === 'POST') {
+        state.repos = state.repos || new Set();
+        if (state.repos.has(record.body.id)) return respond(409, { detail: `Repository already exists: ${record.body.id}` });
+        state.repos.add(record.body.id);
+        return respond(200, { id: record.body.id, name: record.body.name });
+      }
       respond(404, { detail: 'not found' });
     });
   });
@@ -161,6 +167,42 @@ test('rememberNote distills title and body with vault metadata', async () => {
     assert.deepEqual(req.body.tags, ['work', 'vispnote']);
     assert.equal(req.body.metadata.vispnote_note_id, 'n1');
     assert.equal(req.body.metadata.vispnote_vault, 'Personal');
+  } finally {
+    await fake.close();
+  }
+});
+
+test('rememberNote registers the configured project when the server lacks it', async () => {
+  const fake = await startFakeServer({});
+  try {
+    await llmMemory.rememberNote(fake.config, { id: 'n1', title: 'Design call', body: 'x' }, {});
+    const repoReq = fake.requests.find(r => r.path === '/repos' && r.method === 'POST');
+    assert.deepEqual(repoReq.body, { id: 'my_notes', name: 'my_notes' });
+
+    // Second remember hits the 409 "already exists" path and still succeeds.
+    const again = await llmMemory.rememberNote(fake.config, { id: 'n2', title: 'Another', body: 'y' }, {});
+    assert.equal(again.id, 'created123');
+  } finally {
+    await fake.close();
+  }
+});
+
+test('rememberNote without a configured project creates one from the note name', async () => {
+  const fake = await startFakeServer({ repoId: ' ' });
+  try {
+    const created = await llmMemory.rememberNote(fake.config, {
+      id: 'n1', title: 'Novel Research: Act 2!', body: 'Outline.',
+    }, {});
+    const repoReq = fake.requests.find(r => r.path === '/repos' && r.method === 'POST');
+    assert.deepEqual(repoReq.body, { id: 'novel_research_act_2', name: 'Novel Research: Act 2!' });
+    const memoryReq = fake.requests.find(r => r.path === '/memories' && r.method === 'POST');
+    assert.equal(memoryReq.body.repo_id, 'novel_research_act_2');
+    assert.equal(created.repoId, 'novel_research_act_2');
+
+    // A title with no usable characters falls back to a stable project id.
+    await llmMemory.rememberNote(fake.config, { id: 'n2', title: '!!!', body: 'z' }, {});
+    const fallbackReq = fake.requests.filter(r => r.path === '/repos' && r.method === 'POST').pop();
+    assert.equal(fallbackReq.body.id, 'vispnote');
   } finally {
     await fake.close();
   }
