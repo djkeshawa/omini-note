@@ -1249,6 +1249,25 @@ test('Plugin ids normalize to AI-safe action names', () => {
   assert.deepEqual(registry.describeForAi().map(action => action.name), ['plugin-bad-plugin-id']);
 });
 
+test('Main-process prefs sanitizer accepts every renderer plugin type', () => {
+  const pluginsSource = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const sandbox = { window: {} };
+  vm.runInNewContext(pluginsSource, sandbox);
+
+  const allowlist = main.match(/if \(!\[([^\]]+)\]\.includes\(type\)\) throw new Error\('Invalid plugin type'\)/);
+  assert.ok(allowlist, 'plugin type allowlist exists in main.js sanitizer');
+  const allowedTypes = allowlist[1].split(',').map(entry => entry.trim().replace(/^'|'$/g, ''));
+  for (const type of sandbox.window.MN_PLUGINS.TYPES) {
+    assert.ok(allowedTypes.includes(type.id), `main.js prefs sanitizer allows plugin type "${type.id}"`);
+  }
+
+  // llm-memory config fields must survive the sanitizer round trip.
+  assert.match(main, /serverUrl: capString\(config\.serverUrl/);
+  assert.match(main, /repoId: capString\(config\.repoId/);
+  assert.match(main, /apiKey: capString\(config\.apiKey/);
+});
+
 test('Zotero reader is wired as a read-only AI app action', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const plugins = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
