@@ -238,7 +238,7 @@ function sanitizePluginsForPrefs(value) {
     if (!isPlainObject(plugin)) throw new Error('Invalid plugin preference');
     const config = isPlainObject(plugin.config) ? plugin.config : {};
     const type = capString(plugin.type, `plugins[${index}].type`, 40);
-    if (!['note-template', 'quick-capture', 'open-url', 'zotero-reader'].includes(type)) throw new Error('Invalid plugin type');
+    if (!['note-template', 'quick-capture', 'open-url', 'zotero-reader', 'llm-memory'].includes(type)) throw new Error('Invalid plugin type');
     return {
       id: sanitizePluginIdForPrefs(plugin.id, index),
       name: capString(plugin.name, `plugins[${index}].name`, 80),
@@ -250,6 +250,9 @@ function sanitizePluginsForPrefs(value) {
         body: capString(config.body, `plugins[${index}].config.body`, 4000),
         tags: capString(config.tags, `plugins[${index}].config.tags`, 240),
         url: capString(config.url, `plugins[${index}].config.url`, 500),
+        serverUrl: capString(config.serverUrl, `plugins[${index}].config.serverUrl`, 500),
+        repoId: capString(config.repoId, `plugins[${index}].config.repoId`, 120),
+        apiKey: capString(config.apiKey, `plugins[${index}].config.apiKey`, 300),
       },
     };
   });
