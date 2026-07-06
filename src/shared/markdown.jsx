@@ -130,9 +130,12 @@ function MnInline({ text, onOpen, onTagClick, T, allNotes }) {
         out.push(<span key={key++} style={{ fontFamily: 'var(--mn-mono)', fontSize: '0.85em', color: T.inkDim }}>{whole}</span>);
       }
     } else if (whole.startsWith('[[')) {
-      const label = whole.slice(2, -2);
+      const inner = whole.slice(2, -2);
+      const pipeIdx = inner.indexOf('|');
+      const label = pipeIdx >= 0 ? inner.slice(pipeIdx + 1) : inner;
+      const openTarget = (pipeIdx >= 0 ? inner.slice(0, pipeIdx) : inner).split('#')[0];
       out.push(
-        <a key={key++} onClick={(e) => { e.preventDefault(); onOpen && onOpen(label); }}
+        <a key={key++} onClick={(e) => { e.preventDefault(); onOpen && onOpen(openTarget); }}
            style={{
              color: T.accent, cursor: 'pointer', borderBottom: `1px dotted ${T.accent}`,
              padding: '0 1px', textDecoration: 'none', fontFamily: 'inherit',

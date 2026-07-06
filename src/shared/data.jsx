@@ -155,7 +155,7 @@ const mnNoteLinkTargetsCache = new WeakMap();
 function mnLinkTargetsForNote(note) {
   const hit = mnNoteLinkTargetsCache.get(note);
   if (hit) return hit;
-  const targets = [...String(note.body || '').matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1].toLowerCase());
+  const targets = [...String(note.body || '').matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1].split('|')[0].split('#')[0].trim().toLowerCase());
   mnNoteLinkTargetsCache.set(note, targets);
   return targets;
 }

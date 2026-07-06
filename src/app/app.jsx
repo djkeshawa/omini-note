@@ -878,7 +878,9 @@ function MnApp() {
   useEffectA(() => {
     if (!HAS_DISK) return;
     if (!tweakInitialized.current) { tweakInitialized.current = true; return; }
-    window.mn.setPrefs({ tweaks });
+    window.mn.setPrefs({ tweaks }).then(res => {
+      if (res && res.ok === false) showAppNotice('Settings not saved', res.error || 'Preferences could not be saved.', 'warn');
+    }).catch(() => {});
   }, [tweaks]);
 
   const findNotesForVault = useCallbackA((vaultId, currentNotes = notes, currentVaults = vaults) => {
@@ -1162,16 +1164,24 @@ function MnApp() {
         setNotes(activeBundle.notes);
         setTags(activeBundle.tags);
         setCanvases(activeBundle.canvases);
-        setActiveCanvas(null);
-        setSelectedId(activeBundle.lastSelectedId || activeBundle.notes[0]?.id || null);
         setActiveVaultId(nextActiveId);
         tagsDirty.current = false;
         if (activeChanged) {
+          setActiveCanvas(null);
+          setSelectedId(activeBundle.lastSelectedId || activeBundle.notes[0]?.id || null);
           setSelectedTag(null);
           setSelectedWorkflow(null);
           setQuery('');
           navigateView('notes');
           window.mn.setPrefs({ activeVaultId: nextActiveId });
+        } else {
+          // Same-vault reload: keep the current selection unless the note vanished
+          // from disk (e.g. deleted externally), then fall back like a vault switch.
+          setSelectedId(current =>
+            current && activeBundle.notes.some(n => n.id === current)
+              ? current
+              : (activeBundle.lastSelectedId || activeBundle.notes[0]?.id || null)
+          );
         }
       }
       return { ok: true, vaults: metas, activeVaultId: nextActiveId, reason };
@@ -4637,8 +4647,8 @@ function MnApp() {
             open={quickSwitcherOpen}
             notes={notes}
             recentIds={recentNoteIds}
-            onPick={(id) => { setSelectedId(id); navigateView('notes'); }}
-            onCreate={(title) => createNote({ title })}
+            onPick={(id) => openNoteById(id)}
+            onCreate={(title) => { createNote({ title }); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
             onClose={() => setQuickSwitcherOpen(false)}
             T={T}
           />

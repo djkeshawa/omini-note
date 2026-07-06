@@ -19,7 +19,7 @@ function mnPreview(body) {
     .replace(/^#{1,4}\s+.*/gm, '')
     .replace(/\[\[([^\]]+)\]\]/g, '$1')
     .replace(/[`*>#]/g, '')
-    .replace(/-\s+\[[ x]\]/g, '✓')
+    .replace(/-\s+\[[ xX]\]/g, '✓')
     .replace(/-\s+/g, '')
     .replace(/@remind\s+\S+\s*\S*/g, '')
     .trim()
@@ -54,7 +54,7 @@ function mnSnippet(body, query) {
     .replace(/\(\([A-Za-z0-9_-]+\)\)/g, '')                 // skip block refs
     .replace(/\[\[([^\]]+)\]\]/g, '$1')
     .replace(/[`*>#]/g, '')
-    .replace(/-\s+\[[ x]\]/g, '✓')
+    .replace(/-\s+\[[ xX]\]/g, '✓')
     .replace(/-\s+/g, '')
     .replace(/@remind\s+\S+\s*\S*/g, '')
     .replace(mnWorkflowRegex() || /$^/, '')
