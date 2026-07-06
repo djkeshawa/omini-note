@@ -3108,6 +3108,15 @@ function MnOutliner({
     // Find deepest end of prev's tree
     let target = prev;
     while (target.children.length && !target.collapsed) target = target.children[target.children.length - 1];
+    // Merging text into a divider would silently destroy it (dividers render as
+    // an empty <hr> and serialize to '---'). Instead, delete the divider and
+    // keep the current block in place.
+    if (target.kind === 'divider') {
+      const tLoc = mnLocate(bs, target.id);
+      if (tLoc) tLoc.arr.splice(tLoc.idx, 1, ...(target.children || []));
+      setFocusId(loc.block.id);
+      return;
+    }
     mnMergeBlockContent(target, loc.block);
     // Move children of deleted block to target's children
     target.children = target.children.concat(loc.block.children || []);
@@ -3160,13 +3169,23 @@ function MnOutliner({
 
   deleteSelectionRef.current = deleteSelection;
 
+  // When zoomed into a block, only its children are rendered, so focus
+  // navigation must be scoped to that subtree — otherwise ArrowUp/ArrowDown at
+  // the edge would move focus to an off-screen block outside the zoom.
+  const focusScopeBlocks = () => {
+    if (zoomBlockId) {
+      const zLoc = mnLocate(blocks, zoomBlockId);
+      if (zLoc) return zLoc.block.children || [];
+    }
+    return blocks;
+  };
   const onFocusNext = (id) => {
-    const flat = mnFlatten(blocks);
+    const flat = mnFlatten(focusScopeBlocks());
     const i = flat.findIndex(f => f.block.id === id);
     if (i >= 0 && i < flat.length - 1) setFocusId(flat[i + 1].block.id);
   };
   const onFocusPrev = (id) => {
-    const flat = mnFlatten(blocks);
+    const flat = mnFlatten(focusScopeBlocks());
     const i = flat.findIndex(f => f.block.id === id);
     if (i > 0) setFocusId(flat[i - 1].block.id);
   };
