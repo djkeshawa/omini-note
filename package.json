@@ -35,7 +35,7 @@
   "scripts": {
     "build:renderer": "node scripts/build-renderer.js",
     "verify:package-renderer": "node scripts/verify-packaged-renderer.js",
-    "check:main": "npm run lint -- --quiet=false && node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js && node --check lib/zotero.js && node --check lib/llmMemory.js && node --check lib/mcp/server.js && node --check lib/mcp/tools.js && node --check bin/vispnote-mcp.js",
+    "check:main": "npm run lint -- --quiet=false && node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ollama.js && node --check lib/zotero.js && node --check lib/llmMemory.js && node --check lib/memoryLinks.js && node --check lib/mcp/server.js && node --check lib/mcp/tools.js && node --check bin/vispnote-mcp.js",
     "test:editor": "node scripts/run-node-tests.js",
     "mcp": "node bin/vispnote-mcp.js",
     "regression:renderer": "npm run build:renderer && electron --no-sandbox scripts/regression-electron.js",

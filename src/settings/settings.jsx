@@ -604,7 +604,7 @@ function SectionPlugins({ tweaks, setTweak, T }) {
                       <input value={plugin.config.repoId || ''} onChange={e => updatePluginConfig(plugin.id, { repoId: e.target.value })} placeholder="Project id (optional — empty creates one from the note name)" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
                       <input type="password" value={plugin.config.apiKey || ''} onChange={e => updatePluginConfig(plugin.id, { apiKey: e.target.value })} placeholder="API key (optional)" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
                       <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12, color: T.inkMed, lineHeight: 1.5 }}>
-                        Run the palette commands "Import memories as notes" and "Remember this note" (Ctrl+K). The server must run on this machine.
+                        Palette commands (Ctrl+K): "Import memories as notes", "Remember this note", and "Sync note links to memory graph" — the last mirrors your [[wiki-links]] into the memory graph so Ask AI can follow how pages connect. Ask AI automatically blends graph-aware memory recall into answers when this bridge is on. The server must run on this machine.
                       </div>
                     </div>
                   )}

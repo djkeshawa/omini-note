@@ -76,7 +76,9 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, onDelete, T }) {
       height: '100%',
       overflow: 'auto',
       background: `linear-gradient(180deg, ${T.bg} 0%, ${T.bgSub} 100%)`,
-      padding: '32px 38px',
+      // Extra top inset clears the floating reminder bell (fixed at top:14,
+      // right:18) so it never overlaps the "Canvas name" box in the top-right.
+      padding: '52px 38px 32px',
       color: T.ink,
     }}>
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
@@ -1069,7 +1071,9 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          padding: '9px 18px 7px',
+          // Right inset keeps the "Delete canvas" button clear of the floating
+          // reminder bell (fixed at top:14, right:18) in the top-right corner.
+          padding: '9px 60px 7px 18px',
         }}>
           <button
             onMouseDown={(e) => e.preventDefault()}

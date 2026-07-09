@@ -16,6 +16,7 @@ const attachments = require('./lib/attachments');
 const linkRename = require('./lib/linkRename');
 const exportHtml = require('./lib/exportHtml');
 const llmMemory = require('./lib/llmMemory');
+const memoryLinks = require('./lib/memoryLinks');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
 const zotero = require('./lib/zotero');
@@ -1418,10 +1419,96 @@ async function activeMemoryConfig() {
 
 // Feeds Ask AI with llm-memory recall. A disabled or unreachable bridge
 // throws here and lib/ai.js degrades to notes-only answers.
+//
+// Graph-aware by default: /graph-recall/trace seeds on the query, then expands
+// ONE hop through the relationship graph so connected context — not just
+// nearest-neighbour chunks — reaches the answer. Depth is kept at 1 because
+// GraphRAG evidence shows traversal helps multi-hop/relational questions but
+// adds noise on simple factoid lookups. Flat /recall is the fallback for
+// unrelated queries and older servers without the graph endpoints.
 ai.setMemoryRecallProvider(async ({ query, limit }) => {
   const config = await activeMemoryConfig();
-  return llmMemory.recall(config, { query, limit });
+  const want = Math.max(1, Math.min(12, Math.trunc(Number(limit)) || 6));
+  try {
+    const trace = await llmMemory.graphTrace(config, { query, depth: 1, limit: want });
+    const nodes = Array.isArray(trace?.nodes) ? trace.nodes : [];
+    if (nodes.length) {
+      return nodes.map(node => ({
+        id: node.id,
+        content: node.content,
+        layer: node.layer,
+        category: node.category,
+        importance: node.importance,
+        tags: [],
+        createdAt: '',
+      }));
+    }
+  } catch (e) {
+    // Graph recall unavailable (older server) or errored — fall back to flat.
+  }
+  return llmMemory.recall(config, { query, limit: want });
 });
+
+// Fetches remembered memories and maps notes→memories via the pure helper in
+// lib/memoryLinks. Returns the index plus a truncation flag: the server has no
+// pagination cursor, so a vault with more remembered notes than the ceiling
+// would silently drop mappings — the flag lets callers say the sync was partial
+// instead of miscounting.
+const MEMORY_INDEX_LIMIT = 2000;
+async function buildNoteMemoryIndex(config) {
+  // Probe one row beyond the ceiling so a complete set (exactly the ceiling) is
+  // distinguishable from a genuinely over-full one; only the latter is partial.
+  const memories = await llmMemory.listMemories(config, { limit: MEMORY_INDEX_LIMIT + 1, maxLimit: MEMORY_INDEX_LIMIT + 1 });
+  const truncated = memories.length > MEMORY_INDEX_LIMIT;
+  return { index: memoryLinks.noteMemoryIndex(memories.slice(0, MEMORY_INDEX_LIMIT)), truncated };
+}
+
+// Mirrors the vault's [[wiki-link]] structure into the memory graph as directed,
+// weighted REFERENCES edges (only between notes that have been remembered). The
+// edge-weighting logic lives in lib/memoryLinks so it stays unit-testable.
+async function memorySyncNoteLinks(config, vaultId) {
+  const vault = await store.loadVault(vaultId);
+  const notes = Array.isArray(vault?.notes) ? vault.notes : [];
+  const { index, truncated } = await buildNoteMemoryIndex(config);
+  const { edges, stats } = memoryLinks.buildNoteLinkEdges(notes, index);
+  const result = await llmMemory.syncNoteLinks(config, edges);
+  return {
+    ...result,
+    notesScanned: notes.length,
+    notesRemembered: index.size,
+    wikiLinks: stats.wikiLinks,
+    linkedNotesMissingMemory: stats.linkedNotesMissingMemory,
+    ambiguousTitles: stats.ambiguousTitles,
+    indexTruncated: truncated,
+  };
+}
+
+// Resolves the memories connected to a note (its neighbors in the graph). Falls
+// back to a content recall when the note itself was never remembered — the
+// caller labels that path 'similar' rather than 'graph' so the seed is honest.
+async function memoryConnectedForNote(config, vaultId, noteId, options = {}) {
+  const { index } = await buildNoteMemoryIndex(config);
+  const mapped = index.get(noteId);
+  let memoryId = mapped?.memoryId || null;
+  let via = memoryId ? 'link' : '';
+
+  if (!memoryId) {
+    const note = await store.getNote(vaultId, noteId);
+    const query = [note?.title, String(note?.body || '').slice(0, 400)].filter(Boolean).join('\n');
+    if (query.trim()) {
+      const seeds = await llmMemory.recall(config, { query, limit: 1 });
+      if (seeds[0]?.id) { memoryId = seeds[0].id; via = 'recall'; }
+    }
+  }
+  if (!memoryId) return { ok: true, remembered: false, via: '', memoryId: '', neighbors: null };
+
+  const neighbors = await llmMemory.graphNeighbors(config, {
+    memoryId,
+    depth: Math.max(1, Math.min(3, Number(options.depth) || 1)),
+    limit: Math.max(1, Math.min(30, Number(options.limit) || 12)),
+  });
+  return { ok: true, remembered: via === 'link', via, memoryId, neighbors };
+}
 
 ipcMain.handle('mn:memory.status', wrap(async () => {
   const config = await activeMemoryConfig();
@@ -1450,6 +1537,44 @@ ipcMain.handle('mn:memory.remember', wrap(async (vaultId, noteId) => {
   const cfg = await store.loadConfig();
   const vaultName = cfg.vaults.find(v => v.id === vaultId)?.name || '';
   return llmMemory.rememberNote(config, note, { vaultName });
+}));
+
+// ── Graph-aware memory features ──────────────────────────────────────────────
+ipcMain.handle('mn:memory.ask', wrap(async (query, options) => {
+  const config = await activeMemoryConfig();
+  return llmMemory.askMemory(config, { query, ...(options || {}) });
+}));
+ipcMain.handle('mn:memory.graphTrace', wrap(async (query, options) => {
+  const config = await activeMemoryConfig();
+  return llmMemory.graphTrace(config, { query, ...(options || {}) });
+}));
+ipcMain.handle('mn:memory.neighbors', wrap(async (memoryId, options) => {
+  const config = await activeMemoryConfig();
+  return llmMemory.graphNeighbors(config, { memoryId, ...(options || {}) });
+}));
+ipcMain.handle('mn:memory.whyRelevant', wrap(async (query, memoryId, options) => {
+  const config = await activeMemoryConfig();
+  return llmMemory.whyRelevant(config, { query, memoryId, ...(options || {}) });
+}));
+ipcMain.handle('mn:memory.graph', wrap(async () => {
+  const config = await activeMemoryConfig();
+  return llmMemory.getGraph(config);
+}));
+ipcMain.handle('mn:memory.intelligence', wrap(async (options) => {
+  const config = await activeMemoryConfig();
+  return llmMemory.memoryIntelligence(config, options || {});
+}));
+ipcMain.handle('mn:memory.duplicates', wrap(async (options) => {
+  const config = await activeMemoryConfig();
+  return llmMemory.duplicates(config, options || {});
+}));
+ipcMain.handle('mn:memory.connected', wrap(async (vaultId, noteId, options) => {
+  const config = await activeMemoryConfig();
+  return memoryConnectedForNote(config, vaultId, noteId, options || {});
+}));
+ipcMain.handle('mn:memory.syncLinks', wrap(async (vaultId) => {
+  const config = await activeMemoryConfig();
+  return memorySyncNoteLinks(config, vaultId);
 }));
 
 ipcMain.handle('mn:saveAttachment', wrap(async (vaultId, payload) => {

@@ -139,12 +139,66 @@ async function run() {
   });
   assert(recalled.find(m => m.id === created.id).similarity !== null, 'recall returns similarity scores', recalled[0]);
 
+  // ── Graph & relationships round trip ────────────────────────────────────────
+  // A second memory + an explicit edge exercises the graph endpoints the way
+  // VispNote's [[wiki-link]] sync and connected-memories panel do.
+  const related = await withRetry('createMemory (related)', () => llmMemory.createMemory(config, {
+    content: `## VispNote regression related ${runMarker}\nPair WAL mode with a busy_timeout so concurrent sqlite writers do not fail.`,
+    category: 'pattern',
+    tags: ['vispnote-regression', 'sqlite'],
+    importance: 0.6,
+    metadata: { regression_marker: runMarker, vispnote_note_id: `regr-${runMarker}` },
+  }));
+  assert(related.id && related.id !== created.id, 'second memory created for graph tests', related);
+
+  await llmMemory.addRelationship(config, { sourceId: created.id, targetId: related.id, relationship: 'REFERENCES', strength: 0.9 });
+  const rels = await llmMemory.listRelationships(config);
+  assert(rels.some(r => r.sourceId === created.id && r.targetId === related.id), 'addRelationship + listRelationships round trip', { count: rels.length });
+
+  const trace = await withRetry('graphTrace', async () => {
+    const res = await llmMemory.graphTrace(config, { query: `WAL mode sqlite ${runMarker}`, depth: 2, limit: 5 });
+    if (!res.nodes.length) throw new Error('graph trace returned no nodes yet');
+    return res;
+  });
+  assert(trace.nodes.length > 0, 'graphTrace returns seed + connected nodes', { nodes: trace.nodes.length, edges: trace.edges.length });
+
+  const neighbors = await llmMemory.graphNeighbors(config, { memoryId: created.id, depth: 1, limit: 10 });
+  assert(
+    neighbors.nodes.some(n => n.id === related.id) || neighbors.edges.some(e => e.targetId === related.id || e.sourceId === related.id),
+    'graphNeighbors surfaces the linked memory',
+    { nodes: neighbors.nodes.length, edges: neighbors.edges.length }
+  );
+
+  const path = await llmMemory.graphPath(config, { sourceId: created.id, targetId: related.id, maxHops: 3 });
+  assert(path.nodes.length >= 1, 'graphPath connects the two related memories', { nodes: path.nodes.length });
+
+  const graph = await llmMemory.getGraph(config);
+  assert(graph.nodes.some(n => n.id === created.id) && graph.nodes.some(n => n.id === related.id), 'getGraph includes both memories as nodes', { nodes: graph.nodes.length, links: graph.links.length });
+  assert(graph.links.some(l => l.source === created.id && l.target === related.id), 'getGraph includes the created relationship as a link');
+
+  // syncNoteLinks is idempotent: the created→related edge already exists (skip),
+  // and the reverse edge is created exactly once.
+  const syncExisting = await llmMemory.syncNoteLinks(config, [{ sourceMemoryId: created.id, targetMemoryId: related.id }]);
+  assert(syncExisting.created === 0, 'syncNoteLinks skips an edge that already exists', syncExisting);
+  const syncNew = await llmMemory.syncNoteLinks(config, [{ sourceMemoryId: related.id, targetMemoryId: created.id }]);
+  assert(syncNew.created === 1, 'syncNoteLinks creates the new reverse edge once', syncNew);
+
+  // askMemory hits the server's own LLM provider, which may not be configured in
+  // every environment — verify shape when it answers, note-and-continue if not.
+  try {
+    const answer = await llmMemory.askMemory(config, { query: `WAL mode ${runMarker}`, limit: 3 });
+    assert(typeof answer.answer === 'string' && Array.isArray(answer.citations), 'askMemory returns an answer with a citations array', { mode: answer.mode, citations: answer.citations.length });
+  } catch (e) {
+    console.log(`  # note - askMemory skipped (server LLM not available): ${e.message}`);
+  }
+
   // Import into a scratch vault: provenance note created once, edits preserved.
   const cfg = await store.loadConfig();
   const vaultId = cfg.vaults[0].id;
 
+  // Both regression memories (the original + the related one) materialize.
   const firstImport = await llmMemory.importMemoriesToVault({ store }, config, vaultId, {});
-  assert(firstImport.imported === 1, 'import materializes the memory as a note', firstImport);
+  assert(firstImport.imported === 2, 'import materializes each memory as a note', firstImport);
 
   const noteId = `mem_${created.id}`;
   const note = await store.getNote(vaultId, noteId);
@@ -174,7 +228,7 @@ async function run() {
   assert(derivedListed.some(m => m.id === derived.id), 'derived project contains the distilled memory', { count: derivedListed.length });
 
   // Cleanup: the regression repos go back to empty.
-  for (const id of [created.id, remembered.id, derived.id]) {
+  for (const id of [created.id, related.id, remembered.id, derived.id]) {
     assert(await deleteMemory(id), `cleanup deletes memory ${id}`);
   }
   const remaining = await llmMemory.listMemories(config, {});
