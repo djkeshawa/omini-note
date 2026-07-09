@@ -27,6 +27,43 @@ function startFakeServer(state = {}) {
         return respond(200, { id: 'created123', ...record.body, created_at: '2026-07-05T10:00:00Z', accessed_at: '2026-07-05T10:00:00Z' });
       }
       if (url.pathname === '/recall' && req.method === 'POST') return respond(200, state.recall || []);
+      if (url.pathname === '/ai/ask' && req.method === 'POST') {
+        return respond(200, state.ask || {
+          answer: 'Server answer with a [citation].',
+          mode: 'graph',
+          citations: [{ memory_id: 'abc-123', snippet: 'WAL mode', layer: 'semantic', category: 'pattern', repo_id: record.query.repo_id || record.body.repo_id || '', relevance_score: 0.71 }],
+          provider_status: 'not_configured',
+        });
+      }
+      if (url.pathname.startsWith('/graph-recall/') && req.method === 'POST') {
+        return respond(200, state.graphRecall || {
+          mode: url.pathname.split('/').pop(),
+          query: record.body.query || '',
+          nodes: [{ id: 'abc-123', content: 'Use WAL mode', layer: 'semantic', category: 'pattern', importance: 0.7, repo_id: 'my_notes', relevance_score: 0.9, relevance_factors: { seed: true, distance: 0 } }],
+          edges: [{ source_id: 'abc-123', target_id: 'def-456', relationship: 'REFERENCES', strength: 0.8 }],
+          explanation: 'Expanded seeds through relationships.',
+          omitted: 0,
+          limits: { depth: record.body.depth, limit: record.body.limit },
+        });
+      }
+      if (url.pathname === '/graph' && req.method === 'GET') {
+        return respond(200, state.graph || { nodes: [{ id: 'abc-123', group: 'semantic', label: 'WAL', full_label: 'Use WAL mode', category: 'pattern', importance: 0.7 }], links: [{ source: 'abc-123', target: 'def-456', value: 0.8, label: 'REFERENCES' }] });
+      }
+      if (url.pathname === '/relationships' && req.method === 'GET') {
+        return respond(200, state.relationships || []);
+      }
+      if (url.pathname === '/relationships' && req.method === 'POST') {
+        state.relationships = state.relationships || [];
+        const created = { id: `rel-${state.relationships.length + 1}`, ...record.body };
+        state.relationships.push(created);
+        return respond(200, { ok: true, ...created });
+      }
+      if (url.pathname === '/reports/memory-intelligence' && req.method === 'GET') {
+        return respond(200, state.intelligence || { insights: [], repo_id: record.query.repo_id || null });
+      }
+      if (url.pathname === '/quality/duplicates' && req.method === 'GET') {
+        return respond(200, state.duplicates || { duplicates: [] });
+      }
       if (url.pathname === '/repos' && req.method === 'POST') {
         state.repos = state.repos || new Set();
         if (state.repos.has(record.body.id)) return respond(409, { detail: `Repository already exists: ${record.body.id}` });
@@ -182,6 +219,161 @@ test('rememberNote registers the configured project when the server lacks it', a
     // Second remember hits the 409 "already exists" path and still succeeds.
     const again = await llmMemory.rememberNote(fake.config, { id: 'n2', title: 'Another', body: 'y' }, {});
     assert.equal(again.id, 'created123');
+  } finally {
+    await fake.close();
+  }
+});
+
+test('publicMemory preserves provenance metadata for note↔memory mapping', () => {
+  const shaped = llmMemory.__test.publicMemory({ id: 'm1', content: 'x', metadata: { vispnote_note_id: 'n42' } });
+  assert.deepEqual(shaped.metadata, { vispnote_note_id: 'n42' });
+  assert.deepEqual(llmMemory.__test.publicMemory({ id: 'm2', content: 'y' }).metadata, {});
+  assert.deepEqual(llmMemory.__test.publicMemory({ id: 'm3', content: 'z', metadata: ['bad'] }).metadata, {});
+});
+
+test('listMemories honors an explicit maxLimit above the default import cap', async () => {
+  const fake = await startFakeServer({ memories: [] });
+  try {
+    await llmMemory.listMemories(fake.config, { limit: 2000, maxLimit: 2000 });
+    const high = fake.requests.find(r => r.path === '/memories');
+    assert.equal(high.query.limit, '2000', 'the high internal ceiling is sent, not clamped to 200');
+
+    await llmMemory.listMemories(fake.config, { limit: 999 });
+    const clamped = fake.requests.filter(r => r.path === '/memories').pop();
+    assert.equal(clamped.query.limit, '200', 'without maxLimit the default import cap still applies');
+  } finally {
+    await fake.close();
+  }
+});
+
+test('askMemory shapes the server answer and citations and scopes to the repo', async () => {
+  const fake = await startFakeServer({});
+  try {
+    const res = await llmMemory.askMemory(fake.config, { query: 'what pattern', limit: 3 });
+    assert.match(res.answer, /Server answer/);
+    assert.equal(res.mode, 'graph');
+    assert.equal(res.citations.length, 1);
+    assert.equal(res.citations[0].memoryId, 'abc-123');
+    assert.equal(res.citations[0].relevanceScore, 0.71);
+    assert.equal(res.providerStatus, 'not_configured', 'provider_status is a string enum, not an object');
+    const req = fake.requests.find(r => r.path === '/ai/ask');
+    assert.equal(req.body.repo_id, 'my_notes');
+    assert.equal(req.body.limit, 3);
+    assert.equal(req.body.require_citations, true);
+    await assert.rejects(llmMemory.askMemory(fake.config, { query: '  ' }), /empty/);
+  } finally {
+    await fake.close();
+  }
+});
+
+test('graphTrace maps nodes/edges/explanation and clamps depth and limit', async () => {
+  const fake = await startFakeServer({});
+  try {
+    // A legacy array input must be normalized to a single string — the live
+    // server types relationship_filter as anyOf string|null and 422s on arrays.
+    const res = await llmMemory.graphTrace(fake.config, { query: 'sqlite', depth: 99, limit: 999, relationshipFilter: ['references'] });
+    assert.equal(res.mode, 'trace');
+    assert.equal(res.nodes.length, 1);
+    assert.equal(res.nodes[0].id, 'abc-123');
+    assert.equal(res.nodes[0].relevanceScore, 0.9);
+    assert.equal(res.edges[0].relationship, 'REFERENCES');
+    assert.match(res.explanation, /Expanded seeds/);
+    const req = fake.requests.find(r => r.path === '/graph-recall/trace');
+    assert.equal(req.body.depth, 4, 'depth clamps to MAX_GRAPH_DEPTH');
+    assert.equal(req.body.limit, 50, 'limit clamps to MAX_GRAPH_LIMIT');
+    assert.equal(req.body.relationship_filter, 'REFERENCES', 'relationship_filter is a single normalized string, not an array');
+    assert.equal(req.body.repo_id, 'my_notes');
+  } finally {
+    await fake.close();
+  }
+});
+
+test('graphNeighbors, graphPath and whyRelevant send validated ids', async () => {
+  const fake = await startFakeServer({});
+  try {
+    await llmMemory.graphNeighbors(fake.config, { memoryId: 'abc-123', limit: 5 });
+    assert.equal(fake.requests.find(r => r.path === '/graph-recall/neighbors').body.memory_id, 'abc-123');
+
+    await llmMemory.graphPath(fake.config, { sourceId: 'abc-123', targetId: 'def-456' });
+    const pathReq = fake.requests.find(r => r.path === '/graph-recall/path');
+    assert.equal(pathReq.body.source_id, 'abc-123');
+    assert.equal(pathReq.body.target_id, 'def-456');
+
+    await llmMemory.whyRelevant(fake.config, { query: 'q', memoryId: 'abc-123' });
+    assert.equal(fake.requests.find(r => r.path === '/graph-recall/why-relevant').body.memory_id, 'abc-123');
+
+    await assert.rejects(llmMemory.graphNeighbors(fake.config, { memoryId: 'bad id!' }), /Invalid memory id/);
+    await assert.rejects(llmMemory.graphNeighbors(fake.config, { memoryId: '' }), /empty/);
+  } finally {
+    await fake.close();
+  }
+});
+
+test('getGraph maps nodes and links into a stable renderer shape', async () => {
+  const fake = await startFakeServer({});
+  try {
+    const graph = await llmMemory.getGraph(fake.config);
+    assert.equal(graph.nodes.length, 1);
+    assert.equal(graph.nodes[0].id, 'abc-123');
+    assert.equal(graph.nodes[0].fullLabel, 'Use WAL mode');
+    assert.equal(graph.links.length, 1);
+    assert.equal(graph.links[0].source, 'abc-123');
+    assert.equal(graph.links[0].target, 'def-456');
+    assert.equal(graph.links[0].relationship, 'REFERENCES');
+    assert.equal(graph.links[0].strength, 0.8);
+  } finally {
+    await fake.close();
+  }
+});
+
+test('addRelationship normalizes the type, clamps strength, and rejects self-loops', async () => {
+  const fake = await startFakeServer({});
+  try {
+    await llmMemory.addRelationship(fake.config, { sourceId: 'abc-123', targetId: 'def-456', relationship: 'references note', strength: 5 });
+    const req = fake.requests.find(r => r.path === '/relationships' && r.method === 'POST');
+    assert.equal(req.body.relationship, 'REFERENCES_NOTE');
+    assert.equal(req.body.strength, 1, 'strength clamps to [0,1]');
+    await assert.rejects(llmMemory.addRelationship(fake.config, { sourceId: 'abc-123', targetId: 'abc-123' }), /itself/);
+  } finally {
+    await fake.close();
+  }
+});
+
+test('syncNoteLinks is idempotent, skips self-loops, and tolerates per-edge failures', async () => {
+  const fake = await startFakeServer({ relationships: [{ id: 'r0', source_id: 'abc-123', target_id: 'def-456', relationship: 'REFERENCES', strength: 0.9 }] });
+  try {
+    const first = await llmMemory.syncNoteLinks(fake.config, [
+      { sourceMemoryId: 'abc-123', targetMemoryId: 'def-456' },  // already exists → skipped
+      { sourceMemoryId: 'abc-123', targetMemoryId: 'ghi-789' },  // new → created
+      { sourceMemoryId: 'xyz-000', targetMemoryId: 'xyz-000' },  // self-loop → dropped
+      { sourceMemoryId: 'abc-123', targetMemoryId: 'ghi-789' },  // duplicate of #2 → deduped
+    ]);
+    assert.equal(first.created, 1, 'only the one genuinely new edge is created');
+    assert.equal(first.total, 1);
+
+    // Re-syncing the same edges creates nothing: the new edge now exists too.
+    const second = await llmMemory.syncNoteLinks(fake.config, [
+      { sourceMemoryId: 'abc-123', targetMemoryId: 'def-456' },
+      { sourceMemoryId: 'abc-123', targetMemoryId: 'ghi-789' },
+    ]);
+    assert.equal(second.created, 0, 're-sync is idempotent');
+  } finally {
+    await fake.close();
+  }
+});
+
+test('memoryIntelligence and duplicates pass repo scope and limits', async () => {
+  const fake = await startFakeServer({});
+  try {
+    await llmMemory.memoryIntelligence(fake.config, { limit: 10 });
+    const intel = fake.requests.find(r => r.path === '/reports/memory-intelligence');
+    assert.equal(intel.query.repo_id, 'my_notes');
+    assert.equal(intel.query.limit, '10');
+
+    await llmMemory.duplicates(fake.config, { layer: 'semantic', limit: 5 });
+    const dup = fake.requests.find(r => r.path === '/quality/duplicates');
+    assert.equal(dup.query.layer, 'semantic');
+    assert.equal(dup.query.limit, '5');
   } finally {
     await fake.close();
   }

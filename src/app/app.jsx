@@ -3411,6 +3411,61 @@ function MnApp() {
         },
       },
       {
+        id: 'memory-sync-links',
+        label: 'Sync note links to memory graph',
+        description: 'Mirror this vault\'s [[wiki-links]] into the llm-memory knowledge graph as relationships between remembered notes.',
+        section: 'Memory',
+        enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
+        inputSchema: objectSchema(),
+        preview: () => ({
+          title: 'Sync note links to memory graph',
+          message: 'VispNote reads the [[wiki-links]] between notes you have remembered and creates matching relationships on the local llm-memory server, so graph-aware recall can follow how your pages connect. Links to heavily-referenced hub notes are down-weighted, reciprocal links are strengthened, and existing relationships are never duplicated.',
+          steps: ['Map remembered notes to their memories', 'Resolve [[wiki-links]] between them', 'Create weighted relationships on 127.0.0.1'],
+          affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
+        }),
+        run: async () => {
+          const res = await window.mn.memory.syncLinks(activeVaultId);
+          if (res?.ok === false) throw new Error(res.error || 'Link sync failed');
+          const value = res?.value || {};
+          if (!value.notesRemembered) {
+            return { message: 'No remembered notes yet — run “Remember this note” on a few linked notes first, then sync.' };
+          }
+          const created = value.created || 0;
+          const partial = value.indexTruncated ? ' (partial — this vault has more remembered notes than one sync pass covers)' : '';
+          return { message: `Linked ${created} relationship${created === 1 ? '' : 's'} from ${value.wikiLinks || 0} wiki-link${(value.wikiLinks || 0) === 1 ? '' : 's'} across ${value.notesRemembered} remembered note${value.notesRemembered === 1 ? '' : 's'}.${partial}` };
+        },
+      },
+      {
+        id: 'memory-insights',
+        label: 'Memory graph insights',
+        description: 'Show a health summary of the local llm-memory knowledge graph: memories, relationships, and duplicate candidates.',
+        section: 'Memory',
+        enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
+        inputSchema: objectSchema(),
+        preview: () => ({
+          title: 'Memory graph insights',
+          message: 'VispNote will fetch a summary report from the local llm-memory server: total memories and relationships, active intents, and duplicate candidates.',
+          steps: ['Fetch memory-intelligence report from 127.0.0.1', 'Fetch duplicate candidates', 'Summarize'],
+          affected: [],
+        }),
+        run: async () => {
+          const [reportRes, dupRes] = await Promise.all([
+            window.mn.memory.intelligence({ limit: 5 }),
+            window.mn.memory.duplicates({ limit: 20 }),
+          ]);
+          if (reportRes?.ok === false) throw new Error(reportRes.error || 'Could not load memory insights');
+          const summary = reportRes?.value?.summary || {};
+          const dupCount = Array.isArray(dupRes?.value?.candidates) ? dupRes.value.candidates.length : 0;
+          const parts = [
+            `${summary.total_memories ?? 0} memories`,
+            `${summary.total_relationships ?? 0} relationships`,
+          ];
+          if (summary.active_intents != null) parts.push(`${summary.active_intents} active intents`);
+          parts.push(`${dupCount} duplicate candidate${dupCount === 1 ? '' : 's'}`);
+          return { message: `Memory graph: ${parts.join(' · ')}.` };
+        },
+      },
+      {
         id: 'import-backup',
         label: 'Import backup',
         description: 'Import a backup into new vaults through the operating system open dialog.',
@@ -4332,6 +4387,7 @@ function MnApp() {
               note={selectedNote} notes={notesWithBody} tags={tags} links={links}
               vaultId={activeVaultId}
               connectionsRefreshToken={connectionsRefreshToken}
+              memoryEnabled={HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory')}
               canvases={canvases}
               onOpenCanvas={openCanvas}
               onCreateCanvas={createCanvas}

@@ -64,9 +64,18 @@ function mnRenderMentionSnippet(snippet, T) {
     : <React.Fragment key={index}>{part}</React.Fragment>);
 }
 
+function mnMemoryNodeTitle(node) {
+  const firstLine = String(node?.content || '')
+    .split('\n')
+    .map(line => line.replace(/^[#>\-*\s]+/, '').trim())
+    .find(Boolean) || '';
+  return firstLine.slice(0, 80) || node?.category || 'Memory';
+}
+
 function MnEditor({
   note, notes, tags, links, vaultId,
   connectionsRefreshToken = 0,
+  memoryEnabled = false,
   canvases = [], onOpenCanvas, onCreateCanvas,
   onOpen, onCreateLinkedNote, onOpenTag, onLinkMention,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
@@ -214,6 +223,48 @@ function MnEditor({
     }, 400);
     return () => { cancelled = true; clearTimeout(handle); };
   }, [vaultId, note.id]);
+
+  // Connected memories: this note's neighbors in the llm-memory knowledge graph.
+  // Only runs when the bridge is enabled; a disabled/unreachable server or an
+  // un-remembered note degrades to an empty panel (no error surfaced). The seed
+  // node and low-relevance neighbors are filtered so the panel stays a signal,
+  // not a firehose.
+  const [connected, setConnected] = useStateE({ items: [], explanation: '', via: '', loading: false });
+  useEffectE(() => {
+    if (!HAS_DISK_E || !memoryEnabled || !vaultId || !note.id || !window.mn.memory?.connected) {
+      setConnected({ items: [], explanation: '', via: '', loading: false });
+      return;
+    }
+    let cancelled = false;
+    setConnected(prev => ({ ...prev, loading: true }));
+    const handle = setTimeout(async () => {
+      try {
+        const res = await window.mn.memory.connected(vaultId, note.id, { limit: 8 });
+        if (cancelled) return;
+        const value = res?.ok ? res.value : null;
+        const neighbors = value?.neighbors;
+        if (!neighbors || !Array.isArray(neighbors.nodes) || !neighbors.nodes.length) {
+          setConnected({ items: [], explanation: '', via: '', loading: false });
+          return;
+        }
+        const items = neighbors.nodes
+          .filter(n => n.id && n.id !== value.memoryId)
+          .filter(n => n.relevanceScore == null || n.relevanceScore >= 0.2)
+          .slice(0, 6)
+          .map(n => ({
+            id: n.id,
+            title: mnMemoryNodeTitle(n),
+            content: String(n.content || '').replace(/\s+/g, ' ').trim(),
+            snippet: String(n.content || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+            category: n.category || '',
+          }));
+        setConnected({ items, explanation: String(neighbors.explanation || ''), via: value.via || '', loading: false });
+      } catch (e) {
+        if (!cancelled) setConnected({ items: [], explanation: '', via: '', loading: false });
+      }
+    }, 500);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [vaultId, note.id, memoryEnabled, connectionsRefreshToken]);
 
   // Word count from blocks
   const wordCount = useMemoE(() => {
@@ -814,6 +865,58 @@ function MnEditor({
                       fontFamily: 'var(--mn-body)', fontSize: 12.5,
                       color: T.inkMed, lineHeight: 1.5,
                     }}>{r.snippet}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {connected.items.length > 0 && (
+            <div style={{
+              marginTop: (backlinks.length > 0 || mentions.length > 0 || related.items.length > 0) ? 28 : 40,
+              paddingTop: 20,
+              borderTop: `1px solid ${T.lineSub}`,
+            }}>
+              <div style={{
+                fontFamily: 'var(--mn-mono)', fontSize: 10,
+                letterSpacing: '0.12em', textTransform: 'uppercase',
+                color: T.inkDim, marginBottom: 10,
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span>◆ {connected.items.length} in memory</span>
+                <span style={{
+                  fontSize: 9, letterSpacing: '0.1em',
+                  color: T.inkDim, opacity: 0.7,
+                }}>{connected.via === 'link' ? 'graph' : 'similar'}</span>
+              </div>
+              {connected.explanation && (
+                <div style={{
+                  fontFamily: 'var(--mn-body)', fontSize: 11.5,
+                  color: T.inkDim, lineHeight: 1.45, marginBottom: 10, fontStyle: 'italic',
+                }}>{connected.explanation}</div>
+              )}
+              {connected.items.map(item => (
+                <div key={item.id} title={item.content} style={{
+                  padding: '10px 12px', marginBottom: 6, borderRadius: 6,
+                  background: T.bgSub, border: `1px solid ${T.lineSub}`,
+                }}>
+                  <div style={{
+                    fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500,
+                    color: T.ink, marginBottom: 3,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+                    {item.category && (
+                      <span style={{
+                        fontFamily: 'var(--mn-mono)', fontSize: 8.5, letterSpacing: '0.08em',
+                        textTransform: 'uppercase', color: T.inkDim, opacity: 0.75, flexShrink: 0,
+                      }}>{item.category}</span>
+                    )}
+                  </div>
+                  {item.snippet && (
+                    <div style={{
+                      fontFamily: 'var(--mn-body)', fontSize: 12.5,
+                      color: T.inkMed, lineHeight: 1.5,
+                    }}>{item.snippet}</div>
                   )}
                 </div>
               ))}

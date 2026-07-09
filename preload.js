@@ -150,6 +150,16 @@ contextBridge.exposeInMainWorld('mn', {
     recall: (query, limit) => ipcRenderer.invoke('mn:memory.recall', query, limit),
     import: (vaultId) => ipcRenderer.invoke('mn:memory.import', vaultId),
     remember: (vaultId, noteId) => ipcRenderer.invoke('mn:memory.remember', vaultId, noteId),
+    // Graph-aware features backed by the llm-memory knowledge graph.
+    ask: (query, options) => ipcRenderer.invoke('mn:memory.ask', query, options),
+    graphTrace: (query, options) => ipcRenderer.invoke('mn:memory.graphTrace', query, options),
+    neighbors: (memoryId, options) => ipcRenderer.invoke('mn:memory.neighbors', memoryId, options),
+    whyRelevant: (query, memoryId, options) => ipcRenderer.invoke('mn:memory.whyRelevant', query, memoryId, options),
+    graph: () => ipcRenderer.invoke('mn:memory.graph'),
+    intelligence: (options) => ipcRenderer.invoke('mn:memory.intelligence', options),
+    duplicates: (options) => ipcRenderer.invoke('mn:memory.duplicates', options),
+    connected: (vaultId, noteId, options) => ipcRenderer.invoke('mn:memory.connected', vaultId, noteId, options),
+    syncLinks: (vaultId) => ipcRenderer.invoke('mn:memory.syncLinks', vaultId),
   },
 
   // Zotero Desktop local API
