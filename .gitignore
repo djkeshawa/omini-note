@@ -32,6 +32,8 @@ VispNote/
 # Local tool/editor state
 .claude/
 .codex
+.codex-local/runs/
+.gitconfig.codex
 vispnote-web/
 .vscode/
 .idea/
@@ -56,4 +58,3 @@ docs/web-app-architecture.md
 docs/product-roadmap.md
 results.tsv
 programe.md
-.visp/

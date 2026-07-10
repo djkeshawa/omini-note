@@ -525,6 +525,69 @@ test('Hosted provider chat stream cancels open response body after done marker',
   }
 });
 
+test('Hosted provider chat stream ignores malformed events between valid tokens', async () => {
+  const ai = require('../lib/ai');
+  const originalConfig = ai.getConfig();
+  const originalFetch = global.fetch;
+  const stream = new ReadableStream({
+    start(controller) {
+      const enc = new TextEncoder();
+      controller.enqueue(enc.encode('data: {"choices":[{"delta":{"content":"Before "}}]}\n\n'));
+      controller.enqueue(enc.encode('data: {bad json}\n\n'));
+      controller.enqueue(enc.encode('data: {"choices":[{"delta":{"content":"after"}}]}\n\n'));
+      controller.enqueue(enc.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
+  global.fetch = async () => ({ ok: true, body: stream });
+  ai.setConfig({ provider: 'openai', openaiApiKey: 'test-key', chatModel: 'test-model', enabled: true, piiReduction: false }, { rejectUnknown: false });
+  try {
+    const chunks = [];
+    const result = await ai.__test.providerChatStream([{ role: 'user', content: 'continue' }], { onToken: token => chunks.push(token) });
+    assert.equal(chunks.join(''), 'Before after');
+    assert.equal(result.text, 'Before after');
+  } finally {
+    global.fetch = originalFetch;
+    ai.setConfig(originalConfig, { rejectUnknown: false });
+  }
+});
+
+test('Hosted provider chat stream falls back when the stream has no usable text', async () => {
+  const ai = require('../lib/ai');
+  const originalConfig = ai.getConfig();
+  const originalFetch = global.fetch;
+  let callCount = 0;
+  global.fetch = async () => {
+    callCount++;
+    if (callCount === 1) {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: ping\n\n'));
+          controller.close();
+        },
+      });
+      return { ok: true, body: stream };
+    }
+    return {
+      ok: true,
+      async json() {
+        return { choices: [{ message: { content: 'Recovered answer' } }] };
+      },
+    };
+  };
+  ai.setConfig({ provider: 'openai', openaiApiKey: 'test-key', chatModel: 'test-model', enabled: true, piiReduction: false }, { rejectUnknown: false });
+  try {
+    const chunks = [];
+    const result = await ai.__test.providerChatStream([{ role: 'user', content: 'recover' }], { onToken: token => chunks.push(token) });
+    assert.equal(callCount, 2);
+    assert.equal(chunks.join(''), 'Recovered answer');
+    assert.equal(result.text, 'Recovered answer');
+  } finally {
+    global.fetch = originalFetch;
+    ai.setConfig(originalConfig, { rejectUnknown: false });
+  }
+});
+
 test('Hosted provider tool planner sends native tool schemas and parses calls', async () => {
   const ai = require('../lib/ai');
   const originalConfig = ai.getConfig();

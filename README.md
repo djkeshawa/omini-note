@@ -156,7 +156,15 @@ server so your notes and your agents share one memory:
 4. **Remember this note** distills the open note back into the memory server
    so agents can recall it. If the configured project does not exist on the
    server it is registered automatically, and when no project id is configured
-   at all, a project is created from the note's name.
+   at all, a project is created from the note's name. VispNote records both the
+   note and vault identities so notes with the same id in different vaults stay
+   isolated.
+5. Ask AI can blend relevant llm-memory recall into its answers, and the note
+   footer shows memories connected to the open note.
+6. **Synchronize note links to memory** creates new managed relationships and
+   updates their weights when the note graph changes. It preserves unmanaged
+   relationships and reports stale managed links; deletion remains manual until
+   llm-memory provides a relationship-delete API.
 
 `npm run regression:memory` exercises the whole bridge against a real
 llm-memory server (for example the Docker container): create → recall →

@@ -42,6 +42,7 @@ import './app/appHelpers.js';
 import './app/appNovelist.js';
 import './app/appMutations.js';
 import './app/appCanvasActions.js';
+import './app/memoryActions.js';
 import './app/notesVaultsState.js';
 import './app/notesVaultsService.js';
 import './app/vaultsService.js';

@@ -17,6 +17,8 @@ Image attachments (paste/drop) · rename-safe wiki links · quick switcher (⌘P
 semantic related notes) · local MCP server (`bin/vispnote-mcp.js`) · per-note
 export (MD/HTML/PDF) · Today housekeeping digest · live note cards on the
 canvas · **llm-memory bridge** (import memories as notes, remember notes) ·
+memory-aware Ask AI with note/memory citations · anchored canvas connectors ·
+send-to-canvas commands · zoom-to-fit ·
 two-round audited quality pass (rename races, paste data loss, mention
 corruption, per-keystroke performance, 43% smaller bundle).
 
@@ -26,7 +28,6 @@ corruption, per-keystroke performance, 43% smaller bundle).
 
 | Item | Size | What the user gets |
 |---|---|---|
-| **A3. Memory-aware Ask AI** | M | Ask AI blends llm-memory recall into answers with distinct "from memory" vs "from notes" citations. The `recall` IPC hook is already wired. |
 | Memory bridge deepening | S–M | Refresh un-edited memory notes when the upstream memory changed; "remember this block" slash command; scheduled auto-import; importance shown on memory notes. |
 | B2. Suggested tags & properties | M | On save, a local model proposes tags/properties as accept-or-ignore chips — never silent writes. |
 | MCP server v2 | S–M | Semantic (vector) search tool + `get_agenda`, so agents get the same recall quality the app has. |
@@ -37,10 +38,8 @@ Note cards made the canvas a thinking surface; these make it a *good* one.
 
 | Item | Size | What the user gets |
 |---|---|---|
-| **Anchored connectors** | M | Arrows that attach to cards and follow them when dragged — edges between ideas that survive rearranging. Today's arrows are free-floating. |
-| Send to canvas | S | "Add to canvas…" on notes (palette + note list context menu) instead of only pulling from inside the canvas. |
 | Promote sticky → note | S | Turn a sketch-phase sticky into a real note (and card) in place; thinking hardens into knowledge without retyping. |
-| Zoom-to-fit + minimap | S | One key to see everything; orientation on large boards. |
+| Minimap | S | Stay oriented on large boards and jump quickly between distant clusters. |
 | Alignment & tidy | S–M | Snap-to-grid, drag alignment guides, "arrange selection" auto-layout. |
 | Groups/frames | M | Labeled frames that move their children together — chapters, clusters, swimlanes. |
 | Canvas export | S | PNG/SVG export of the board (the graph already exports SVG). |

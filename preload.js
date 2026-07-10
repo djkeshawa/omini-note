@@ -199,7 +199,11 @@ contextBridge.exposeInMainWorld('mn', {
     const listener = async (_event, requestId) => {
       try {
         const value = await callback();
-        ipcRenderer.send('mn:flushDirtyNotesResult', requestId, { ok: true, value });
+        ipcRenderer.send('mn:flushDirtyNotesResult', requestId, {
+          ok: value?.ok !== false,
+          value,
+          error: value?.ok === false ? (value.error || 'Could not save all changes before quitting.') : null,
+        });
       } catch (e) {
         ipcRenderer.send('mn:flushDirtyNotesResult', requestId, { ok: false, error: e?.message || String(e) });
       }

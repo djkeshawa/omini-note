@@ -74,6 +74,7 @@ const MN_PANEL_COMPONENTS = window.MN_PANEL_COMPONENTS || {};
 const MN_NOTES_VAULTS_SERVICE = window.MN_NOTES_VAULTS_SERVICE || {};
 const MN_VAULTS_SERVICE = window.MN_VAULTS_SERVICE || {};
 const MN_NOTES_VAULTS_STATE = window.MN_NOTES_VAULTS_STATE || {};
+const MN_MEMORY_ACTIONS = window.MN_MEMORY_ACTIONS || {};
 const {
   HAS_DISK = typeof window !== 'undefined' && !!window.mn,
   MnLaunchScreen,
@@ -679,6 +680,14 @@ function MnApp() {
   // different vaults cannot overwrite each other's pending saves.
   const [dirtyNotes, setDirtyNotes] = useStateA(() => new Map());
   const dirtyNotesRef = useRefA(dirtyNotes);
+  const updateDirtyNotes = useCallbackA((updater) => {
+    const current = dirtyNotesRef.current;
+    const next = typeof updater === 'function' ? updater(current) : updater;
+    if (!(next instanceof Map) || next === current) return current;
+    dirtyNotesRef.current = next;
+    setDirtyNotes(next);
+    return next;
+  }, []);
   const noteDiskStampRef = useRefA(new Map());
   const savingDirtyKeysRef = useRefA(new Set());
   const pendingDirtyKeysRef = useRefA(new Set());
@@ -709,7 +718,7 @@ function MnApp() {
   }, []);
   const markDirty = useCallbackA((id) => {
     if (!id || !activeVaultId) return;
-    setDirtyNotes(s => {
+    updateDirtyNotes(s => {
       const n = new Map(s);
       const key = mnDirtyNoteKey(activeVaultId, id);
       const existing = n.get(key);
@@ -721,7 +730,7 @@ function MnApp() {
       });
       return n;
     });
-  }, [activeVaultId]);
+  }, [activeVaultId, updateDirtyNotes]);
   const tagsDirty = useRefA(false);
   const markTagsDirty = useCallbackA(() => { tagsDirty.current = true; }, []);
 
@@ -731,18 +740,20 @@ function MnApp() {
     nextSelectedId = selectedId,
     forceTags = false
   ) => {
-    if (!HAS_DISK || !vaultId) return;
+    if (!HAS_DISK || !vaultId) return { ok: true, skipped: true };
     const patch = {};
     if (forceTags || tagsDirty.current) patch.tags = nextTags;
     if (nextSelectedId) patch.lastSelectedId = nextSelectedId;
-    if (!Object.keys(patch).length) return;
+    if (!Object.keys(patch).length) return { ok: true, skipped: true };
     try {
       const res = await window.mn.saveVaultMeta(vaultId, patch);
       if (res?.ok === false) throw new Error(res.error || 'Save failed');
       if (patch.tags && vaultId === activeVaultId) tagsDirty.current = false;
+      return { ok: true };
     } catch (e) {
       console.error('saveVaultMeta failed', e);
       showAppNotice('Could not save vault settings', e.message || String(e), 'warn');
+      return { ok: false, error: e.message || String(e) };
     }
   }, [activeVaultId, tags, selectedId, showAppNotice]);
 
@@ -966,15 +977,21 @@ function MnApp() {
   }, [activeVaultId, mnMdToBlocks]);
 
   const saveDirtyNotesNow = useCallbackA(async function saveDirtyNotesNowImpl(entries, currentNotes = notesRef.current, currentVaults = vaultsRef.current) {
-    if (!HAS_DISK || !entries?.length) return;
+    const result = { attempted: 0, saved: 0, deferred: 0, failures: [] };
+    if (!HAS_DISK || !entries?.length) return result;
     for (const entry of entries) {
       const id = entry?.id;
       const vaultId = entry?.vaultId;
       const revision = entry?.revision;
-      if (!id || !vaultId) continue;
+      if (!id || !vaultId) {
+        result.failures.push({ kind: 'note', id: id || null, message: 'Dirty note entry is invalid.' });
+        continue;
+      }
+      result.attempted++;
       const dirtyKey = mnDirtyNoteKey(vaultId, id);
       if (savingDirtyKeysRef.current.has(dirtyKey)) {
         pendingDirtyKeysRef.current.add(dirtyKey);
+        result.deferred++;
         continue;
       }
       savingDirtyKeysRef.current.add(dirtyKey);
@@ -987,6 +1004,7 @@ function MnApp() {
             showAppNotice('Could not autosave note', 'A dirty note could not be matched to its vault. Switch back to the vault or reload before closing.', 'warn');
           }
           console.warn('dirty note could not be matched for autosave', { vaultId, id });
+          result.failures.push({ kind: 'note', id, message: 'Dirty note could not be matched to its vault.' });
           continue;
         }
         dirtyMissingWarnedRef.current.delete(dirtyKey);
@@ -1009,6 +1027,7 @@ function MnApp() {
                 currentModifiedAt: res.currentModifiedAt || null,
                 expectedModifiedAt: res.expectedModifiedAt || expectedModifiedAt,
               });
+              result.failures.push({ kind: 'note', id, code: 'NOTE_CONFLICT', message: res.error || 'The note changed on disk.' });
               continue;
             }
             throw new Error(res.error || 'Save failed');
@@ -1026,7 +1045,7 @@ function MnApp() {
               ? { ...v, notes: updateDiskStamp(v.notes) }
               : v));
           }
-          setDirtyNotes(cur => {
+          updateDirtyNotes(cur => {
             const current = cur.get(dirtyKey);
             if (!current || current.vaultId !== vaultId) return cur;
             if (revision != null && current.revision !== revision) return cur;
@@ -1034,9 +1053,11 @@ function MnApp() {
             next.delete(dirtyKey);
             return next;
           });
+          result.saved++;
         } catch (e) {
           console.error('saveNote failed', id, e);
           showAppNotice('Could not save note', e.message || String(e));
+          result.failures.push({ kind: 'note', id, code: e.code || null, message: e.message || String(e) });
         }
       } finally {
         savingDirtyKeysRef.current.delete(dirtyKey);
@@ -1048,7 +1069,8 @@ function MnApp() {
         }
       }
     }
-  }, [findNotesForVault, activeVaultId, showAppNotice, applyLinkedNoteUpdates]);
+    return result;
+  }, [findNotesForVault, activeVaultId, showAppNotice, applyLinkedNoteUpdates, updateDirtyNotes]);
 
   // ── Persist dirty notes (debounced) ────────────────────────────────────
   useEffectA(() => {
@@ -1071,9 +1093,21 @@ function MnApp() {
     if (!HAS_DISK || !window.mn?.onFlushDirtyNotes) return undefined;
     return window.mn.onFlushDirtyNotes(async () => {
       const entries = [...dirtyNotesRef.current.values()];
-      if (entries.length) await saveDirtyNotesNow(entries);
-      await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
-      return { dirtyRemaining: dirtyNotesRef.current.size };
+      const noteResult = entries.length ? await saveDirtyNotesNow(entries) : { failures: [], deferred: 0 };
+      const metaResult = await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
+      const failures = [...(noteResult.failures || [])];
+      if (noteResult.deferred) {
+        failures.push({ kind: 'note', message: `${noteResult.deferred} save operation${noteResult.deferred === 1 ? ' is' : 's are'} still in progress.` });
+      }
+      if (metaResult?.ok === false) failures.push({ kind: 'metadata', message: metaResult.error || 'Vault settings were not saved.' });
+      const dirtyRemaining = dirtyNotesRef.current.size;
+      const metaDirty = tagsDirty.current;
+      return {
+        ok: failures.length === 0 && dirtyRemaining === 0 && !metaDirty,
+        dirtyRemaining,
+        metaDirty,
+        failures,
+      };
     });
   }, [activeVaultId, tags, selectedId, saveDirtyNotesNow, saveVaultMetaNow]);
 
@@ -1112,7 +1146,7 @@ function MnApp() {
         if (activationSeq !== vaultActivationSeq.current) return { ok: false, stale: true };
       }
 
-      setDirtyNotes(cur => {
+      updateDirtyNotes(cur => {
         let changed = false;
         const next = new Map();
         cur.forEach((entry, key) => {
@@ -1540,7 +1574,7 @@ function MnApp() {
       }
     }
 
-    setDirtyNotes(cur => {
+    updateDirtyNotes(cur => {
       const next = new Map();
       cur.forEach((entry, key) => {
         if (entry.vaultId !== id) next.set(key, entry);
@@ -2567,7 +2601,7 @@ function MnApp() {
     const dirtyKey = mnDirtyNoteKey(activeVaultId, id);
     const previousDirtyEntry = dirtyNotes.get(dirtyKey);
     setDeleteTargetId(null);
-    setDirtyNotes(cur => {
+    updateDirtyNotes(cur => {
       if (!cur.has(dirtyKey)) return cur;
       const next = new Map(cur);
       next.delete(dirtyKey);
@@ -2591,7 +2625,7 @@ function MnApp() {
         setNotes(previousNotes);
         setSelectedId(previousSelectedId);
         if (previousDirtyEntry) {
-          setDirtyNotes(cur => {
+          updateDirtyNotes(cur => {
             const next = new Map(cur);
             next.set(dirtyKey, previousDirtyEntry);
             return next;
@@ -2712,7 +2746,7 @@ function MnApp() {
       setVaults(vs => vs.map(v => v.id === activeVaultId && Array.isArray(v.notes)
         ? { ...v, notes: v.notes.map(n => n.id === restored.id ? restored : n) }
         : v));
-      setDirtyNotes(cur => {
+      updateDirtyNotes(cur => {
         const key = mnDirtyNoteKey(activeVaultId, restored.id);
         if (!cur.has(key)) return cur;
         const next = new Map(cur);
@@ -2745,7 +2779,7 @@ function MnApp() {
       setVaults(vs => vs.map(v => v.id === conflict.vaultId && Array.isArray(v.notes)
         ? { ...v, notes: v.notes.map(n => n.id === conflict.noteId ? diskNote : n) }
         : v));
-      setDirtyNotes(cur => {
+      updateDirtyNotes(cur => {
         const key = mnDirtyNoteKey(conflict.vaultId, conflict.noteId);
         if (!cur.has(key)) return cur;
         const next = new Map(cur);
@@ -3407,32 +3441,29 @@ function MnApp() {
           if (!selectedNote) return { message: 'No note is selected.' };
           const res = await window.mn.memory.remember(activeVaultId, selectedNote.id);
           if (res?.ok === false) throw new Error(res.error || 'Could not store the memory');
+          setConnectionsRefreshToken(token => token + 1);
           return { message: `Stored “${selectedNote.title || 'Untitled'}” as memory ${res?.value?.id ? res.value.id.slice(0, 8) : ''}.` };
         },
       },
       {
         id: 'memory-sync-links',
         label: 'Sync note links to memory graph',
-        description: 'Mirror this vault\'s [[wiki-links]] into the llm-memory knowledge graph as relationships between remembered notes.',
+        description: 'Add or refresh this vault\'s current [[wiki-links]] in the llm-memory graph without overwriting unrelated relationships.',
         section: 'Memory',
         enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
         inputSchema: objectSchema(),
         preview: () => ({
           title: 'Sync note links to memory graph',
-          message: 'VispNote reads the [[wiki-links]] between notes you have remembered and creates matching relationships on the local llm-memory server, so graph-aware recall can follow how your pages connect. Links to heavily-referenced hub notes are down-weighted, reciprocal links are strengthened, and existing relationships are never duplicated.',
-          steps: ['Map remembered notes to their memories', 'Resolve [[wiki-links]] between them', 'Create weighted relationships on 127.0.0.1'],
+          message: 'VispNote adds new relationships and refreshes weights on relationships it previously managed. Unrelated relationships are preserved. Removed wiki-links are reported as stale because the current memory server cannot delete relationships.',
+          steps: ['Map remembered notes within this vault', 'Resolve and weight current [[wiki-links]]', 'Create or refresh VispNote-managed relationships on 127.0.0.1'],
           affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
         }),
         run: async () => {
           const res = await window.mn.memory.syncLinks(activeVaultId);
           if (res?.ok === false) throw new Error(res.error || 'Link sync failed');
           const value = res?.value || {};
-          if (!value.notesRemembered) {
-            return { message: 'No remembered notes yet — run “Remember this note” on a few linked notes first, then sync.' };
-          }
-          const created = value.created || 0;
-          const partial = value.indexTruncated ? ' (partial — this vault has more remembered notes than one sync pass covers)' : '';
-          return { message: `Linked ${created} relationship${created === 1 ? '' : 's'} from ${value.wikiLinks || 0} wiki-link${(value.wikiLinks || 0) === 1 ? '' : 's'} across ${value.notesRemembered} remembered note${value.notesRemembered === 1 ? '' : 's'}.${partial}` };
+          setConnectionsRefreshToken(token => token + 1);
+          return { message: MN_MEMORY_ACTIONS.syncResultMessage(value) };
         },
       },
       {
@@ -3453,16 +3484,7 @@ function MnApp() {
             window.mn.memory.intelligence({ limit: 5 }),
             window.mn.memory.duplicates({ limit: 20 }),
           ]);
-          if (reportRes?.ok === false) throw new Error(reportRes.error || 'Could not load memory insights');
-          const summary = reportRes?.value?.summary || {};
-          const dupCount = Array.isArray(dupRes?.value?.candidates) ? dupRes.value.candidates.length : 0;
-          const parts = [
-            `${summary.total_memories ?? 0} memories`,
-            `${summary.total_relationships ?? 0} relationships`,
-          ];
-          if (summary.active_intents != null) parts.push(`${summary.active_intents} active intents`);
-          parts.push(`${dupCount} duplicate candidate${dupCount === 1 ? '' : 's'}`);
-          return { message: `Memory graph: ${parts.join(' · ')}.` };
+          return { message: MN_MEMORY_ACTIONS.insightsResultMessage(reportRes, dupRes) };
         },
       },
       {

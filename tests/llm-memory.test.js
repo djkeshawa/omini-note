@@ -54,8 +54,14 @@ function startFakeServer(state = {}) {
       }
       if (url.pathname === '/relationships' && req.method === 'POST') {
         state.relationships = state.relationships || [];
-        const created = { id: `rel-${state.relationships.length + 1}`, ...record.body };
-        state.relationships.push(created);
+        const existingIndex = state.relationships.findIndex(rel => (
+          rel.source_id === record.body.source_id
+          && rel.target_id === record.body.target_id
+          && rel.relationship === record.body.relationship
+        ));
+        const created = { id: existingIndex >= 0 ? state.relationships[existingIndex].id : `rel-${state.relationships.length + 1}`, ...record.body };
+        if (existingIndex >= 0) state.relationships[existingIndex] = created;
+        else state.relationships.push(created);
         return respond(200, { ok: true, ...created });
       }
       if (url.pathname === '/reports/memory-intelligence' && req.method === 'GET') {
@@ -197,12 +203,13 @@ test('rememberNote distills title and body with vault metadata', async () => {
   try {
     const created = await llmMemory.rememberNote(fake.config, {
       id: 'n1', title: 'Design call', body: 'Decided to keep vaults flat.', tags: ['work'],
-    }, { vaultName: 'Personal' });
+    }, { vaultId: 'vault-1', vaultName: 'Personal' });
     assert.equal(created.id, 'created123');
     const req = fake.requests.find(r => r.path === '/memories' && r.method === 'POST');
     assert.match(req.body.content, /^# Design call\n\nDecided to keep vaults flat\./);
     assert.deepEqual(req.body.tags, ['work', 'vispnote']);
     assert.equal(req.body.metadata.vispnote_note_id, 'n1');
+    assert.equal(req.body.metadata.vispnote_vault_id, 'vault-1');
     assert.equal(req.body.metadata.vispnote_vault, 'Personal');
   } finally {
     await fake.close();
@@ -339,7 +346,7 @@ test('addRelationship normalizes the type, clamps strength, and rejects self-loo
   }
 });
 
-test('syncNoteLinks is idempotent, skips self-loops, and tolerates per-edge failures', async () => {
+test('syncNoteLinks skips unmanaged existing edges, self-loops, and duplicate input', async () => {
   const fake = await startFakeServer({ relationships: [{ id: 'r0', source_id: 'abc-123', target_id: 'def-456', relationship: 'REFERENCES', strength: 0.9 }] });
   try {
     const first = await llmMemory.syncNoteLinks(fake.config, [
@@ -357,6 +364,36 @@ test('syncNoteLinks is idempotent, skips self-loops, and tolerates per-edge fail
       { sourceMemoryId: 'abc-123', targetMemoryId: 'ghi-789' },
     ]);
     assert.equal(second.created, 0, 're-sync is idempotent');
+  } finally {
+    await fake.close();
+  }
+});
+
+test('syncNoteLinks updates managed edges and reports conflicts, stale edges, and batching', async () => {
+  const fake = await startFakeServer({ relationships: [
+    { id: 'r0', source_id: 'abc-123', target_id: 'def-456', relationship: 'REFERENCES', strength: 0.9, evidence: { source: 'vispnote' } },
+    { id: 'r1', source_id: 'abc-123', target_id: 'manual-1', relationship: 'REFERENCES', strength: 1, evidence: { source: 'manual' } },
+    { id: 'stale', source_id: 'stale-1', target_id: 'stale-2', relationship: 'REFERENCES', strength: 1, evidence: { source: 'vispnote' } },
+  ] });
+  try {
+    const result = await llmMemory.syncNoteLinks(fake.config, [
+      { sourceMemoryId: 'abc-123', targetMemoryId: 'def-456', strength: 0.4 },
+      { sourceMemoryId: 'abc-123', targetMemoryId: 'ghi-789' },
+      { sourceMemoryId: 'abc-123', targetMemoryId: 'manual-1' },
+    ]);
+    assert.equal(result.created, 1);
+    assert.equal(result.updated, 1);
+    assert.equal(result.unmanagedConflicts, 1);
+    assert.equal(result.staleManaged, 1);
+    assert.equal(result.total, 2);
+    assert.equal(fake.requests.find(r => r.path === '/relationships' && r.method === 'POST').body.strength, 0.4);
+
+    const edges = Array.from({ length: 501 }, (_, index) => ({ sourceMemoryId: `source-${index}`, targetMemoryId: `target-${index}` }));
+    const batched = await llmMemory.syncNoteLinks(fake.config, edges);
+    assert.equal(batched.created, 500);
+    assert.equal(batched.remaining, 1);
+    assert.equal(batched.batchLimited, true);
+    assert.equal(batched.eligible, 501);
   } finally {
     await fake.close();
   }
