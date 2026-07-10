@@ -64,6 +64,13 @@ contextBridge.exposeInMainWorld('mn', {
   setPrefs: (patch) => ipcRenderer.invoke('mn:setPrefs', patch),
   importThemeFile: () => ipcRenderer.invoke('mn:importThemeFile'),
   spellcheck: (words) => ipcRenderer.invoke('mn:spellcheck', words),
+  featureUsage: {
+    status: () => ipcRenderer.invoke('mn:featureUsage.status'),
+    record: (feature, action = 'used') => ipcRenderer.invoke('mn:featureUsage.record', feature, action),
+    clear: () => ipcRenderer.invoke('mn:featureUsage.clear'),
+    export: () => ipcRenderer.invoke('mn:featureUsage.export'),
+    share: () => ipcRenderer.invoke('mn:featureUsage.share'),
+  },
 
   // Search / backlinks / tags (SQLite-backed)
   search:      (vaultId, query, limit) => ipcRenderer.invoke('mn:search', vaultId, query, limit),
@@ -199,7 +206,11 @@ contextBridge.exposeInMainWorld('mn', {
     const listener = async (_event, requestId) => {
       try {
         const value = await callback();
-        ipcRenderer.send('mn:flushDirtyNotesResult', requestId, { ok: true, value });
+        ipcRenderer.send('mn:flushDirtyNotesResult', requestId, {
+          ok: value?.ok !== false,
+          value,
+          error: value?.ok === false ? (value.error || 'Could not save all changes before quitting.') : null,
+        });
       } catch (e) {
         ipcRenderer.send('mn:flushDirtyNotesResult', requestId, { ok: false, error: e?.message || String(e) });
       }

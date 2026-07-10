@@ -2,9 +2,6 @@
 
 const SEED_TAGS = [
   { name: 'welcome', hue: 200 },
-  { name: 'project', hue: 168 },
-  { name: 'reading', hue: 290 },
-  { name: 'todo', hue: 32 },
 ];
 
 const SEED_NOTES = [
@@ -17,49 +14,14 @@ const SEED_NOTES = [
     body:
 `# Welcome to VispNote
 
-Use this vault for everyday notes: ideas, meeting notes, tasks, and reading.
+VispNote helps you **write, connect, and act** without setting up a system first.
 
-## Try the basics
-- Link notes with [[Project plan]]
-- Add tags like #project or #reading
-- Track work with checkboxes
+## Start here
+1. **Write:** create a note and put one useful thought in it.
+2. **Connect:** type double square brackets to link that thought to another note.
+3. **Act:** add one Markdown checkbox as a next action, then review it in Today.
 
-Open [[Reading notes]] to see another linked note.`
-  },
-  {
-    id: 'n2',
-    title: 'Project plan',
-    date: '2026-04-17T14:03:00',
-    tags: ['project', 'todo'],
-    body:
-`status:: DOING
-
-## Goal
-Plan a small project from rough idea to next action.
-
-## Next steps
-- [ ] Write the first outline
-- [ ] @remind 2026-06-01 10:00 Review the plan
-- [ ] Link any useful [[Reading notes]]
-
-Back to [[Welcome to VispNote]].`
-  },
-  {
-    id: 'n3',
-    title: 'Reading notes',
-    date: '2026-04-12T20:15:00',
-    tags: ['reading'],
-    body:
-`# Reading notes
-
-Use reading notes for short takeaways, quotes, and questions.
-
-## Template
-- Source:
-- Key idea:
-- Question to revisit:
-
-Related: [[Project plan]]`
+That is enough to begin. Everything else can stay out of the way until you need it.`
   },
 ];
 
@@ -135,15 +97,6 @@ const SEED_VAULTS = [
     tags: SEED_TAGS,
     novelistMode: false,
   },
-  {
-    id: 'v_novel',
-    name: 'Novel',
-    slug: 'novel',
-    path: '~/VispNote/novel',
-    notes: SEED_NOTES_NOVELIST,
-    tags: SEED_TAGS_NOVELIST,
-    novelistMode: true,
-  },
 ];
 
 // Build the link graph by parsing [[wiki-links]]. Extracted targets are
@@ -174,4 +127,4 @@ function buildLinks(notes) {
   return links;
 }
 
-window.MN_DATA = { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks };
+window.MN_DATA = { SEED_TAGS, SEED_NOTES, SEED_VAULTS, SEED_TAGS_NOVELIST, SEED_NOTES_NOVELIST, buildLinks };

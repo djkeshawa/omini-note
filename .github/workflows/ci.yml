@@ -34,6 +34,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Full dependency audit
+        run: npm audit --audit-level=high
+
       - name: Lint and syntax checks
         run: npm run check:main
 
@@ -58,6 +64,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Electron smoke test
+        run: xvfb-run -a npm run smoke:electron
 
       - name: Renderer regression
         run: xvfb-run -a npm run regression:renderer

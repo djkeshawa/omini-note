@@ -133,8 +133,8 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(app, /onboardingMode: onboardingMode \|\| null/);
   assert.match(settings, /const \[newVaultMode, setNewVaultMode\] = useStateS\('general'\)/);
   assert.match(settings, /onboardingMode: newVaultMode/);
-  assert.match(settings, /value: 'daily', label: 'Daily'/);
-  assert.match(settings, /value: 'researcher', label: 'Research'/);
+  assert.match(settings, /writerEnabled && <Segmented/);
+  assert.match(settings, /value: 'general', label: 'Personal'/);
   assert.match(settings, /value: 'writer', label: 'Writer'/);
   assert.match(store, /explicitOnboardingMode/);
   assert.match(store, /buildOnboardingModeSeed/);
@@ -479,7 +479,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(main, /ipcMain\.handle\('mn:getCanvas'/);
   assert.match(preload, /listCanvases: \(vaultId\) => ipcRenderer\.invoke\('mn:listCanvases', vaultId\)/);
   assert.match(preload, /saveCanvas: \(vaultId, canvas\) => ipcRenderer\.invoke\('mn:saveCanvas', vaultId, canvas\)/);
-  assert.match(sidebar, /label="Canvas"/);
+  assert.match(sidebar, /label="Thinking Board"/);
   assert.match(sidebar, /canvasActive/);
   assert.match(app, /const \[canvases, setCanvases\]/);
   assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
@@ -618,12 +618,12 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /<MnNovelImportPreviewDialog/);
   assert.match(app, /onImportNovelFiles=\{importNovelFiles\}/);
   assert.match(sidebar, /label="Novelist"/);
-  assert.match(sidebar, /Novelist vault/);
+  assert.match(sidebar, /featureState\.showWriter/);
   assert.match(settings, /Vault mode/);
   assert.match(settings, /Import novel files/);
   assert.match(settings, /currentVault\?\.novelistMode/);
   assert.match(settings, /onImportNovelFiles/);
-  assert.match(settings, /Novelist vault/);
+  assert.match(settings, /writerEnabled && <Row/);
   assert.match(preload, /importNovelFiles:\(options\) => ipcRenderer\.invoke\('mn:importNovelFiles', options\)/);
   assert.match(main, /ipcMain\.handle\('mn:importNovelFiles'/);
   assert.match(main, /properties: \['openFile', 'multiSelections'\]/);
@@ -784,7 +784,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /todayAiRecap=\{todayAiRecap\}/);
   assert.match(app, /todayAiRecapBusy=\{todayAiRecapBusy\}/);
   assert.match(app, /todayAiRecapError=\{todayAiRecapError\}/);
-  assert.match(app, /onGenerateAiRecap=\{generateTodayAiRecap\}/);
+  assert.match(app, /onGenerateAiRecap=\{featureState\.showAskAi \? generateTodayAiRecap : null\}/);
   assert.match(app, /onOpenAgenda=\{\(\) => \{ navigateView\('calendar'\)/);
   assert.match(app, /view === 'today' \? 'Today'/);
   assert.match(app, /function mnNormalizeStartupView\(value\)/);
@@ -794,7 +794,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /if \(startupView === 'today'\) setView\('today'\)/);
   assert.match(app, /id: 'today'[\s\S]*description: 'Show the Today dashboard\.'/);
   assert.doesNotMatch(app, /Daily rollup/);
-  assert.match(app, /onPlanItem=\{\(\) => \{ navigateView\('calendar'\)/);
+  assert.match(app, /onPlanItem=\{featureState\.showAgenda \? \(\) => \{ navigateView\('calendar'\)/);
   assert.match(app, /view === 'calendar'/);
   assert.match(app, /id: 'calendar'/);
   assert.match(app, /id: 'calendar'[\s\S]*label: 'Open Agenda'[\s\S]*openView\('calendar'\)/);
@@ -920,10 +920,8 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(settings, /<StaticValue T=\{T\}>Always on<\/StaticValue>/);
   assert.doesNotMatch(settings, /Todo layout/);
   assert.doesNotMatch(settings, /setTweak\('todoVariant'/);
-  assert.match(settings, /label="Startup view"/);
-  assert.match(settings, /setTweak\('startupView', v\)/);
-  assert.match(settings, /value: 'notes', label: 'Notes'/);
-  assert.match(settings, /value: 'today', label: 'Today'/);
+  assert.doesNotMatch(settings, /label="Startup view"/);
+  assert.doesNotMatch(settings, /setTweak\('startupView', v\)/);
   assert.match(settings, /label="Today heading format"/);
   assert.match(settings, /label="Show Today previews"/);
   assert.match(settings, /label="Show Today open loops"/);
@@ -1061,11 +1059,11 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(outliner, /function MnSmartViewEmbedFallback/);
   assert.match(outliner, /data-mn-smart-view-embed="rendered"/);
   assert.match(outliner, /smartViewParseEmbedBlock\(content, MN_APP_HELPERS\.currentSmartViewDefinitions \|\| \[\]\)/);
-  assert.match(main, /PREF_TOP_LEVEL_KEYS = new Set\(\['activeVaultId', 'tweaks', 'aiConfig', 'smartViews'\]\)/);
+  assert.match(main, /PREF_TOP_LEVEL_KEYS = new Set\(\[[\s\S]*'enabledPacks'[\s\S]*'localUsageMetrics'[\s\S]*'anonymousUsageSharing'/);
   assert.match(main, /function sanitizeSmartViewsForPrefs/);
   assert.match(main, /clean\.smartViews = sanitizeSmartViewsForPrefs\(value\)/);
   assert.match(store, /smartViews: Array\.isArray\(cfg\.smartViews\) \? cfg\.smartViews : null/);
-  assert.match(store, /new Set\(\['activeVaultId', 'tweaks', 'aiConfig', 'smartViews', 'phase5Metrics'\]\)/);
+  assert.match(store, /const allowed = new Set\(\[[\s\S]*'enabledPacks'[\s\S]*'localUsageMetrics'[\s\S]*'anonymousUsageSharing'/);
   assert.match(store, /Object\.prototype\.hasOwnProperty\.call\(cleanPatch, 'smartViews'\)/);
 });
 
@@ -1119,14 +1117,11 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
     .sort();
   assert.deepEqual(greenTokens, ['success', 'successSoft']);
 
-  assert.match(settings, /Built-in and installed community themes\./);
+  assert.match(settings, /Choose a curated VispNote theme\./);
   assert.match(settings, /<select value=\{tweaks\.theme \|\| 'light'\}/);
   assert.doesNotMatch(settings, /<Segmented T=\{T\} value=\{tweaks\.theme\}/);
-  assert.match(settings, /Install a shared JSON or YAML theme file\./);
-  assert.match(settings, /const \[themeImportPreview, setThemeImportPreview\] = useStateS\(null\)/);
-  assert.match(settings, /setThemeImportPreview\(result\.theme\.preview\)/);
-  assert.match(settings, /Theme preview swatches/);
-  assert.match(settings, /onImportThemeFile/);
+  assert.doesNotMatch(settings, /Install a shared JSON or YAML theme file\./);
+  assert.doesNotMatch(settings, /Theme preview swatches/);
   assert.match(settings, /value: 'light', label: 'Light'/);
   assert.match(settings, /value: 'dark', label: 'Dark'/);
   assert.match(settings, /value: 'pastel', label: 'Pastel'/);
@@ -1145,6 +1140,34 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
   assert.match(themeLib, /Theme contrast is too low/);
   assert.match(themeLib, /already installed/);
   assert.doesNotMatch(settings, /ipcRenderer|require\('electron'\)|package\.json/);
+});
+
+test('Focused product shell and private usage controls are wired end to end', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+
+  assert.match(sidebar, /label="All notes"/);
+  assert.match(sidebar, /label="Today"/);
+  assert.match(sidebar, /label="Pinned"/);
+  assert.match(sidebar, /label="Tags"/);
+  assert.match(sidebar, /featureState\.showAgenda/);
+  assert.match(sidebar, /featureState\.showCanvas/);
+  assert.match(sidebar, /featureState\.showAskAi/);
+  assert.match(sidebar, /label="More"/);
+  assert.match(app, /MN_FEATURES\.deriveFeatureState/);
+  assert.match(settings, /label: 'Data & Privacy'/);
+  assert.match(settings, /label: 'Assistance'/);
+  assert.match(settings, /label: 'Advanced'/);
+  assert.match(settings, /Local feature report/);
+  assert.match(settings, /Anonymous sharing/);
+  assert.match(settings, /Advanced provider settings/);
+  assert.match(preload, /featureUsage: \{/);
+  assert.match(main, /mn:featureUsage\.status/);
+  assert.match(main, /VISPNOTE_TELEMETRY_ENDPOINT/);
+  assert.match(main, /prefs\.anonymousUsageSharing !== true/);
 });
 
 test('Electron installs native edit context menu for right-click copy paste cut', () => {

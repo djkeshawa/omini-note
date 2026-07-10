@@ -4,12 +4,13 @@ const MN_SETTINGS_PLUGINS = window.MN_PLUGINS || {};
 
 function MnSettingsModal({
   tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault,
-  themeOptions,
+  themeOptions = [],
   onCreateVault, onDeleteVault, onSetVaultNovelistMode,
   onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
-  onExportBackup, onImportBackup, onImportThemeFile, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
+  onExportBackup, onImportBackup, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
+  enabledPacks = [], featureState = {}, onSetPack, assistanceEnabled = false, onAssistanceChange,
 }) {
-  const [section, setSection] = useStateS('appearance');
+  const [section, setSection] = useStateS('general');
   const [updateState, setUpdateState] = useStateS(null);
   const [shortcutStatus, setShortcutStatus] = useStateS(null);
 
@@ -31,15 +32,12 @@ function MnSettingsModal({
   }, []);
 
   const sections = [
-    { k: 'appearance', label: 'Appearance', group: 'Workspace', sub: 'Theme, density, fonts', icon: iconAppearance },
-    { k: 'editor', label: 'Editor', group: 'Workspace', sub: 'Writing behavior', icon: iconEditor },
-    { k: 'notes', label: 'Notes & Tags', group: 'Workspace', sub: 'Lists and Today', icon: iconNotes },
-    { k: 'reminders', label: 'Reminders', group: 'Automation', sub: 'Alerts and snooze', icon: iconBell },
-    { k: 'ai', label: 'AI', group: 'Automation', sub: 'Models and providers', icon: iconAI },
-    { k: 'plugins', label: 'Plugins', group: 'Automation', sub: 'Custom actions', icon: iconPlugin },
-    { k: 'data', label: 'Data & Sync', group: 'System', sub: 'Vaults and storage', icon: iconData },
-    { k: 'shortcuts', label: 'Shortcuts', group: 'System', sub: 'Keyboard map', icon: iconKey },
-    { k: 'about', label: 'About', group: 'System', sub: 'Version and stats', icon: iconInfo },
+    { k: 'general', label: 'General', group: 'VispNote', sub: 'A calm default experience', icon: iconAppearance },
+    { k: 'writing', label: 'Writing', group: 'VispNote', sub: 'Editor and note behavior', icon: iconEditor },
+    { k: 'data', label: 'Data & Privacy', group: 'VispNote', sub: 'Vaults, backups, and privacy', icon: iconData },
+    { k: 'assistance', label: 'Assistance', group: 'VispNote', sub: 'Optional local or hosted AI', icon: iconAI },
+    { k: 'advanced', label: 'Advanced', group: 'VispNote', sub: 'Packs and specialist tools', icon: iconPlugin },
+    { k: 'about', label: 'About', group: 'VispNote', sub: 'Version, shortcuts, and stats', icon: iconInfo },
   ];
   const activeSection = sections.find(s => s.k === section) || sections[0];
   const groups = [...new Set(sections.map(s => s.group))];
@@ -188,12 +186,10 @@ function MnSettingsModal({
             padding: '24px 32px',
             background: `linear-gradient(180deg, ${T.bg}, color-mix(in oklab, ${T.bgSub} 38%, ${T.bg}))`,
           }}>
-            {section === 'appearance' && <SectionAppearance tweaks={tweaks} setTweak={setTweak} T={T} themeOptions={themeOptions} onImportThemeFile={onImportThemeFile} />}
-            {section === 'editor' && <SectionEditor tweaks={tweaks} setTweak={setTweak} T={T} />}
-            {section === 'notes' && <SectionNotes tweaks={tweaks} setTweak={setTweak} T={T} stats={stats} />}
-            {section === 'reminders' && <SectionReminders tweaks={tweaks} setTweak={setTweak} T={T} />}
-            {section === 'ai' && <SectionAI T={T} />}
-            {section === 'plugins' && <SectionPlugins tweaks={tweaks} setTweak={setTweak} T={T} />}
+            {section === 'general' && <SectionAppearance tweaks={tweaks} setTweak={setTweak} T={T} themeOptions={themeOptions} />}
+            {section === 'writing' && <><SectionEditor tweaks={tweaks} setTweak={setTweak} T={T} /><SectionNotes tweaks={tweaks} setTweak={setTweak} T={T} stats={stats} /></>}
+            {section === 'assistance' && <SectionAI T={T} assistanceEnabled={assistanceEnabled} onAssistanceChange={onAssistanceChange} />}
+            {section === 'advanced' && <SectionAdvanced tweaks={tweaks} setTweak={setTweak} T={T} enabledPacks={enabledPacks} featureState={featureState} onSetPack={onSetPack} shortcutStatus={shortcutStatus} />}
             {section === 'data' && (
               <SectionData
                 tweaks={tweaks}
@@ -214,10 +210,10 @@ function MnSettingsModal({
                 onImportNovelFiles={onImportNovelFiles}
                 onOpenVaultHealth={onOpenVaultHealth}
                 onRebuildIndex={onRebuildIndex}
+                writerEnabled={featureState.showWriter || enabledPacks.includes('writer')}
               />
             )}
-            {section === 'shortcuts' && <SectionShortcuts T={T} shortcutStatus={shortcutStatus} />}
-            {section === 'about' && <SectionAbout T={T} stats={stats} updateState={updateState} setUpdateState={setUpdateState} />}
+            {section === 'about' && <><SectionAbout T={T} stats={stats} updateState={updateState} setUpdateState={setUpdateState} /><SectionShortcuts T={T} shortcutStatus={shortcutStatus} /></>}
           </div>
         </div>
       </div>
@@ -248,29 +244,21 @@ const {
   } = {},
 } = window.MN_SETTINGS_CONTROLS || {};
 
-function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThemeFile }) {
-  const [themeImporting, setThemeImporting] = useStateS(false);
-  const [themeImportPreview, setThemeImportPreview] = useStateS(null);
-  const options = themeOptions.length ? themeOptions : [
+function SectionAppearance({ tweaks, setTweak, T, themeOptions = [] }) {
+  const builtIns = [
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
     { value: 'pastel', label: 'Pastel' },
   ];
-  const installTheme = async () => {
-    if (!onImportThemeFile || themeImporting) return;
-    setThemeImporting(true);
-    try {
-      const result = await onImportThemeFile();
-      if (result?.theme?.preview) setThemeImportPreview(result.theme.preview);
-    } finally {
-      setThemeImporting(false);
-    }
-  };
+  const currentLegacyTheme = !builtIns.some(option => option.value === tweaks.theme)
+    ? themeOptions.find(option => option.value === tweaks.theme)
+    : null;
+  const options = currentLegacyTheme ? [...builtIns, { ...currentLegacyTheme, label: `${currentLegacyTheme.label} (existing)` }] : builtIns;
   return (
     <div>
-      <H T={T} label="Appearance" sub="Make VispNote look the way you think." />
+      <H T={T} label="General" sub="Comfortable defaults with only the choices that matter every day." />
       <SettingsCard T={T}>
-        <Row T={T} label="Theme" sub="Built-in and installed community themes.">
+        <Row T={T} label="Theme" sub="Choose a curated VispNote theme.">
           <select value={tweaks.theme || 'light'} onChange={(e) => setTweak('theme', e.target.value)} style={{
             padding: '6px 10px',
             borderRadius: 6,
@@ -286,73 +274,12 @@ function SectionAppearance({ tweaks, setTweak, T, themeOptions = [], onImportThe
             {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </Row>
-        <Row T={T} label="Community themes" sub="Install a shared JSON or YAML theme file.">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
-            <button onClick={installTheme} disabled={!onImportThemeFile || themeImporting} style={{
-              border: `1px solid ${T.lineSub}`,
-              background: T.bgSub,
-              color: themeImporting ? T.inkDim : T.ink,
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontFamily: 'var(--mn-ui)',
-              fontSize: 12.5,
-              cursor: !onImportThemeFile || themeImporting ? 'default' : 'pointer',
-              minWidth: 112,
-            }}>
-              {themeImporting ? 'Installing...' : 'Install theme'}
-            </button>
-            {themeImportPreview && (
-              <div style={{
-                border: `1px solid ${T.lineSub}`,
-                background: T.bgSub,
-                borderRadius: 7,
-                padding: 8,
-                minWidth: 220,
-                maxWidth: 320,
-              }}>
-                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 650, color: T.ink }}>
-                  {themeImportPreview.name || themeImportPreview.id}
-                </div>
-                <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, marginTop: 3 }}>
-                  {themeImportPreview.author ? `by ${themeImportPreview.author} - ` : ''}
-                  {themeImportPreview.coverage?.present || 0}/{themeImportPreview.coverage?.required || 0} tokens
-                </div>
-                <div aria-label="Theme preview swatches" style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
-                  {Object.entries(themeImportPreview.swatches || {}).slice(0, 8).map(([name, value]) => (
-                    <span key={name} title={name} style={{
-                      width: 18,
-                      height: 18,
-                      borderRadius: 4,
-                      border: `1px solid ${T.line}`,
-                      background: value,
-                      display: 'inline-block',
-                    }} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </Row>
         <Row T={T} label="Interface density" sub="Tighter rows fit more on screen.">
           <Segmented T={T} value={tweaks.density} onChange={v => setTweak('density', v)}
             options={[{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }]} />
         </Row>
-        <Row T={T} label="Startup view" sub="Choose what opens when VispNote starts.">
-          <Segmented T={T} value={tweaks.startupView === 'today' ? 'today' : 'notes'} onChange={v => setTweak('startupView', v)}
-            options={[{ value: 'notes', label: 'Notes' }, { value: 'today', label: 'Today' }]} />
-        </Row>
-        <Row T={T} label="Typography" sub="Font pairing used across the app.">
-          <Select T={T} value={tweaks.fontChoice} onChange={v => setTweak('fontChoice', v)}
-            options={Object.keys(MN_FONTS)} />
-        </Row>
-        <Row T={T} label="App font size" sub="Scale the surrounding app interface.">
+        <Row T={T} label="App font size" sub="Scale the interface for comfortable reading." last>
           <FontSizeStepper T={T} value={tweaks.appFontSize || 'default'} onChange={v => setTweak('appFontSize', v)} />
-        </Row>
-        <Row T={T} label="Show note list pane" sub="Hide to give the editor full width.">
-          <Toggle T={T} checked={tweaks.showNoteList !== false} onChange={v => setTweak('showNoteList', v)} />
-        </Row>
-        <Row T={T} label="Show sidebar" sub="Tags, Today, Agenda, and Graph shortcuts." last>
-          <Toggle T={T} checked={tweaks.showSidebar !== false} onChange={v => setTweak('showSidebar', v)} />
         </Row>
       </SettingsCard>
     </div>
@@ -405,9 +332,15 @@ function SectionNotes({ tweaks, setTweak, T, stats }) {
             placeholder="ideas, inbox"
             style={mnSettingsInput(T, { minWidth: 190, fontFamily: 'var(--mn-mono)' })} />
         </Row>
-        <Row T={T} label="Show pinned notes first" sub="Pin a note from its toolbar.">
+        <Row T={T} label="Show pinned notes first" sub="Pin a note from its toolbar." last>
           <Toggle T={T} checked={tweaks.pinnedFirst !== false} onChange={v => setTweak('pinnedFirst', v)} />
         </Row>
+      </SettingsCard>
+      <details style={{ marginTop: 12 }}>
+        <summary style={{ cursor: 'pointer', fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkMed, marginBottom: 10 }}>
+          Advanced Today and graph preferences
+        </summary>
+      <SettingsCard T={T}>
         <Row T={T} label="Today heading format" sub="How Today view groups notes.">
           <Segmented T={T} value={tweaks.rollupFormat || 'long'}
             onChange={v => setTweak('rollupFormat', v)}
@@ -440,6 +373,7 @@ function SectionNotes({ tweaks, setTweak, T, stats }) {
             options={[{ value: 'force', label: 'Force' }, { value: 'timeline', label: 'Timeline' }, { value: 'cluster', label: 'Cluster' }]} />
         </Row>
       </SettingsCard>
+      </details>
       <div style={{
         marginTop: 16, padding: '10px 14px', background: T.bgSub,
         border: `1px solid ${T.lineSub}`, borderRadius: 6,
@@ -480,6 +414,36 @@ function SectionReminders({ tweaks, setTweak, T }) {
 }
 
 
+function SectionAdvanced({ tweaks, setTweak, T, enabledPacks = [], featureState = {}, onSetPack }) {
+  const packs = window.MN_FEATURES?.PACKS || [];
+  const inferred = new Set(featureState.inferred || []);
+  const plugins = MN_SETTINGS_PLUGINS.normalizeAll ? MN_SETTINGS_PLUGINS.normalizeAll(tweaks.plugins) : [];
+  return (
+    <div>
+      <H T={T} label="Optional packs" sub="Enable specialist tools only when they support your work." />
+      <SettingsCard T={T}>
+        {packs.map((pack, index) => {
+          const checked = enabledPacks.includes(pack.id) || inferred.has(pack.id);
+          return (
+            <Row key={pack.id} T={T} label={pack.label}
+              sub={`${pack.description}${inferred.has(pack.id) ? ' Detected from existing data.' : ''}`}
+              last={index === packs.length - 1}>
+              <Toggle T={T} checked={checked} disabled={inferred.has(pack.id)}
+                onChange={value => onSetPack?.(pack.id, value)} />
+            </Row>
+          );
+        })}
+      </SettingsCard>
+      {plugins.length > 0 && <SectionPlugins tweaks={tweaks} setTweak={setTweak} T={T} />}
+      {plugins.length === 0 && (
+        <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 7, border: `1px solid ${T.lineSub}`, background: T.bgSub, color: T.inkMed, fontSize: 12.5, lineHeight: 1.5 }}>
+          Legacy no-code action creation is hidden. Quick Capture and templates are built in; Research and Agents are available as packs.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SectionPlugins({ tweaks, setTweak, T }) {
   const types = MN_SETTINGS_PLUGINS.TYPES || [];
   const normalizeAll = MN_SETTINGS_PLUGINS.normalizeAll || (() => []);
@@ -500,11 +464,12 @@ function SectionPlugins({ tweaks, setTweak, T }) {
   const updatePlugin = (id, patch) => savePlugins(plugins.map(plugin => plugin.id === id ? { ...plugin, ...patch } : plugin));
   const updatePluginConfig = (id, patch) => savePlugins(plugins.map(plugin => plugin.id === id ? { ...plugin, config: { ...(plugin.config || {}), ...patch } } : plugin));
   const removePlugin = (id) => savePlugins(plugins.filter(plugin => plugin.id !== id));
+  const allowPluginCreation = tweaks?.legacyPluginCreationEnabled === true;
 
   return (
     <div>
-      <H T={T} label="Plugins" sub="Add no-code plugins that appear as runnable actions in the command palette." />
-      <SettingsCard T={T} style={{ padding: 16, marginBottom: 16 }}>
+      <H T={T} label="Existing integrations and actions" sub="Existing configurations remain editable while new generic plugin creation is deprecated." />
+      {allowPluginCreation && <SettingsCard T={T} style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) minmax(170px, 0.8fr)', gap: 10, marginBottom: 10 }}>
           <input
             value={draft.name}
@@ -562,7 +527,7 @@ function SectionPlugins({ tweaks, setTweak, T }) {
           <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{selectedType.purpose || 'Choose a plugin purpose.'}</div>
           <BtnOutline T={T} disabled={!draft.name.trim()} onClick={addPlugin}>Add plugin</BtnOutline>
         </div>
-      </SettingsCard>
+      </SettingsCard>}
 
       <SettingsCard T={T}>
         {plugins.length === 0 && (
@@ -695,7 +660,7 @@ function mnAiProviderMeta(id) {
   return MN_AI_PROVIDERS.find(p => p.id === id) || MN_AI_PROVIDERS[0];
 }
 
-function SectionAI({ T }) {
+function SectionAI({ T, assistanceEnabled = false, onAssistanceChange }) {
   const [config, setConfig] = useStateS(null);
   const [status, setStatus] = useStateS(null);
   const [busy, setBusy] = useStateS(false);
@@ -706,7 +671,7 @@ function SectionAI({ T }) {
     setBusy(true);
     try {
       const cfg = await window.mn.ai.getConfig();
-      if (cfg.ok) setConfig(cfg.value);
+      if (cfg.ok) setConfig({ ...cfg.value, enabled: assistanceEnabled });
       const st = await window.mn.ai.status();
       if (st.ok) setStatus(st.value);
     } finally {
@@ -722,7 +687,10 @@ function SectionAI({ T }) {
     setMessage('');
     if (!window.mn?.ai) return;
     const res = await window.mn.ai.setConfig(patch);
-    if (res.ok) setConfig(res.value);
+    if (res.ok) {
+      setConfig(res.value);
+      if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) onAssistanceChange?.(res.value?.enabled === true);
+    }
     else setMessage(res.error || 'Could not save AI settings');
     if (refresh) {
       const st = await window.mn.ai.status();
@@ -791,7 +759,7 @@ function SectionAI({ T }) {
 
   return (
     <div>
-      <H T={T} label="AI" sub="Choose the model provider Ask AI uses for answers and note actions." />
+      <H T={T} label="Assistance" sub="Optional AI that works with your notes and stays out of the way when disabled." />
       <SettingsCard T={T} style={{
         padding: 14,
         border: `1px solid ${providerReady ? T.success : T.lineSub}`,
@@ -839,6 +807,21 @@ function SectionAI({ T }) {
         )}
       </SettingsCard>
 
+      <SettingsCard T={T} style={{ marginBottom: 12 }}>
+        <Row T={T} label="Enable assistance" sub="Show Ask AI and allow note-aware assistance.">
+          <Toggle T={T} checked={config?.enabled === true} onChange={v => save({ enabled: v }, false)} />
+        </Row>
+        <Row T={T} label="Where it runs" sub="Local keeps requests on this machine; Hosted uses your configured provider." last>
+          <Segmented T={T} value={provider === 'ollama' ? 'local' : 'hosted'}
+            onChange={value => selectProvider(value === 'local' ? 'ollama' : (provider === 'ollama' ? 'openai' : provider))}
+            options={[{ value: 'local', label: 'Local AI' }, { value: 'hosted', label: 'Hosted AI' }]} />
+        </Row>
+      </SettingsCard>
+
+      <details style={{ marginBottom: 12 }}>
+        <summary style={{ cursor: 'pointer', fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkMed, marginBottom: 10 }}>
+          Advanced provider settings
+        </summary>
       <SettingsCard T={T} style={{ padding: 12, marginBottom: 12 }}>
         <div style={{
           display: 'grid',
@@ -881,7 +864,7 @@ function SectionAI({ T }) {
 
       <SettingsCard T={T}>
         <Row T={T} label="Enable AI" sub="When disabled, Ask AI and embedding jobs will not run.">
-          <Toggle T={T} checked={config?.enabled !== false} onChange={v => save({ enabled: v }, false)} />
+          <Toggle T={T} checked={config?.enabled === true} onChange={v => save({ enabled: v }, false)} />
         </Row>
         <Row T={T} label="PII reduction" sub="Redact common identifiers before hosted or custom AI requests.">
           <Toggle T={T} checked={config?.piiReduction !== false} onChange={v => save({ piiReduction: v }, false)} />
@@ -934,6 +917,7 @@ function SectionAI({ T }) {
           <BtnOutline T={T} onClick={load}>{busy ? 'Refreshing...' : 'Refresh'}</BtnOutline>
         </Row>
       </SettingsCard>
+      </details>
       <div style={{
         marginTop: 14,
         padding: '10px 12px',
@@ -985,11 +969,82 @@ function mnSettingsInput(T, options = {}) {
   };
 }
 
+function SectionUsagePrivacy({ T }) {
+  const [status, setStatus] = useStateS(null);
+  const [previewOpen, setPreviewOpen] = useStateS(false);
+  const [busy, setBusy] = useStateS(false);
+  const [message, setMessage] = useStateS('');
+  const load = async () => {
+    const result = await window.mn?.featureUsage?.status?.();
+    if (result?.ok) setStatus(result.value);
+  };
+  useEffectS(() => { load(); }, []);
+  const setPreference = async (key, value) => {
+    setBusy(true);
+    setMessage('');
+    try {
+      const result = await window.mn?.setPrefs?.({ [key]: value });
+      if (result?.ok === false) throw new Error(result.error || 'Preference could not be saved');
+      await load();
+    } catch (error) {
+      setMessage(error.message || String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const run = async (action, successMessage) => {
+    setBusy(true);
+    setMessage('');
+    try {
+      const result = await action?.();
+      if (result?.ok === false) throw new Error(result.error || 'Action failed');
+      if (result?.value?.canceled) return;
+      setMessage(successMessage);
+      await load();
+    } catch (error) {
+      setMessage(error.message || String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <SettingsCard T={T} style={{ marginTop: 14 }}>
+      <Row T={T} label="Local feature report" sub="Count feature use on this device without note text, titles, searches, paths, IDs, prompts, or secrets.">
+        <Toggle T={T} checked={status?.localUsageMetrics !== false} disabled={busy}
+          onChange={value => setPreference('localUsageMetrics', value)} />
+      </Row>
+      {status?.anonymousUploadAvailable && (
+        <Row T={T} label="Anonymous sharing" sub="Off by default. Shares only aggregate counters, repeat-use days, app version, OS family, and a monthly random ID.">
+          <Toggle T={T} checked={status?.anonymousUsageSharing === true} disabled={busy}
+            onChange={value => setPreference('anonymousUsageSharing', value)} />
+        </Row>
+      )}
+      <Row T={T} label="Your report" sub="Preview, export, or clear the exact on-device report." last>
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <BtnOutline T={T} onClick={() => setPreviewOpen(value => !value)}>{previewOpen ? 'Hide' : 'Preview'}</BtnOutline>
+          <BtnOutline T={T} disabled={busy} onClick={() => run(window.mn?.featureUsage?.export, 'Report exported.')}>Export</BtnOutline>
+          <BtnOutline T={T} danger disabled={busy} onClick={() => run(window.mn?.featureUsage?.clear, 'Local report cleared.')}>Clear</BtnOutline>
+          {status?.anonymousUploadAvailable && status?.anonymousUsageSharing && (
+            <BtnOutline T={T} disabled={busy} onClick={() => run(window.mn?.featureUsage?.share, 'Anonymous aggregates shared.')}>Share now</BtnOutline>
+          )}
+        </div>
+      </Row>
+      {previewOpen && (
+        <pre style={{ margin: '0 16px 16px', padding: 12, maxHeight: 220, overflow: 'auto', borderRadius: 6, background: T.bgSub, border: `1px solid ${T.lineSub}`, color: T.inkMed, fontFamily: 'var(--mn-mono)', fontSize: 10.5, whiteSpace: 'pre-wrap' }}>
+          {JSON.stringify(status?.report || {}, null, 2)}
+        </pre>
+      )}
+      {message && <div style={{ padding: '0 16px 14px', color: T.inkMed, fontSize: 12 }}>{message}</div>}
+    </SettingsCard>
+  );
+}
+
 function SectionData({
   tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault,
   onCreateVault, onDeleteVault, onSetVaultNovelistMode,
   onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
   onExportBackup, onImportBackup, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
+  writerEnabled = false,
 }) {
   const [newVaultName, setNewVaultName] = useStateS('');
   const [newVaultMode, setNewVaultMode] = useStateS('general');
@@ -1081,13 +1136,8 @@ function SectionData({
         </Row>
         <Row T={T} label="Create vault" sub="Start a separate local workspace with its own notes and tags.">
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <Segmented T={T} value={newVaultMode} onChange={setNewVaultMode}
-              options={[
-                { value: 'general', label: 'General' },
-                { value: 'daily', label: 'Daily' },
-                { value: 'researcher', label: 'Research' },
-                { value: 'writer', label: 'Writer' },
-              ]} />
+            {writerEnabled && <Segmented T={T} value={newVaultMode} onChange={setNewVaultMode}
+              options={[{ value: 'general', label: 'Personal' }, { value: 'writer', label: 'Writer' }]} />}
             <input
               value={newVaultName}
               onChange={e => setNewVaultName(e.target.value)}
@@ -1100,7 +1150,7 @@ function SectionData({
             <BtnOutline T={T} disabled={busy || !newVaultName.trim()} onClick={submitCreateVault}>Create</BtnOutline>
           </div>
         </Row>
-        <Row T={T} label="Vault mode" sub="Convert this vault into a focused novel-writing workspace.">
+        {writerEnabled && <Row T={T} label="Vault mode" sub="Convert this vault into a focused long-form writing workspace.">
           <Segmented T={T} value={currentVault?.novelistMode ? 'novelist' : 'notes'}
             onChange={async (mode) => {
               if (!onSetVaultNovelistMode) return;
@@ -1114,7 +1164,7 @@ function SectionData({
               }
             }}
             options={[{ value: 'notes', label: 'Notes vault' }, { value: 'novelist', label: 'Novelist vault' }]} />
-        </Row>
+        </Row>}
         <Row T={T} label="Auto-save" sub="Persist changes to disk as you type.">
           <StaticValue T={T}>Always on</StaticValue>
         </Row>
@@ -1130,13 +1180,13 @@ function SectionData({
             <BtnOutline T={T} disabled={!onImportBackup} onClick={onImportBackup}>Import backup</BtnOutline>
           </div>
         </Row>
-        <Row T={T} label="Import novel files" sub={currentVault?.novelistMode ? "Analyze text files and preview generated novel notes before applying them." : "Switch this vault to Novelist mode before importing novel files."}>
+        {writerEnabled && <Row T={T} label="Import novel files" sub={currentVault?.novelistMode ? "Analyze text files and preview generated novel notes before applying them." : "Switch this vault to Writer mode before importing novel files."}>
           <BtnOutline
             T={T}
             disabled={busy || !currentVault?.novelistMode || !onImportNovelFiles}
             onClick={onImportNovelFiles}
           >Import novel files</BtnOutline>
-        </Row>
+        </Row>}
         <Row T={T} label="Vault health" sub="Check broken links, orphan notes, and search index status.">
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <BtnOutline T={T} disabled={!onOpenVaultHealth} onClick={onOpenVaultHealth}>Open health</BtnOutline>
@@ -1156,6 +1206,7 @@ function SectionData({
           >Delete vault...</BtnOutline>
         </Row>
       </SettingsCard>
+      <SectionUsagePrivacy T={T} />
       <SettingsCard T={T} style={{ marginTop: 14 }}>
         <Row
           T={T}

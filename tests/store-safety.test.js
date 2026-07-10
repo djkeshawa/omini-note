@@ -47,26 +47,20 @@ function buildTestThemeTokens(hue = 260) {
   };
 }
 
-test('First-run seed creates one notes vault and one novelist vault', async () => {
+test('First-run seed creates one focused Personal vault', async () => {
   await withIsolatedStore(async (store) => {
     const vaults = await store.listVaults();
-    assert.equal(vaults.length, 2);
-    assert.deepEqual(vaults.map(v => v.name), ['Personal', 'Novel']);
+    assert.equal(vaults.length, 1);
+    assert.deepEqual(vaults.map(v => v.name), ['Personal']);
 
     const personalVault = vaults.find(v => v.name === 'Personal');
-    const novelVault = vaults.find(v => v.name === 'Novel');
     assert.equal(personalVault.novelistMode, false);
-    assert.equal(novelVault.novelistMode, true);
 
     const personal = await store.loadVault(personalVault.id);
-    const novel = await store.loadVault(novelVault.id);
-
-    assert.equal(personal.notes.length, 3);
-    assert.deepEqual(personal.notes.map(note => note.title).sort(), ['Project plan', 'Reading notes', 'Welcome to VispNote']);
-    assert.equal(novel.notes.length, 3);
-    assert.deepEqual(novel.notes.map(note => note.title).sort(), ['Act 1', 'Chapter 1', 'Scene 1']);
-    assert.match(novel.notes.find(note => note.title === 'Chapter 1').body, /act:: \[\[Act 1\]\]/);
-    assert.match(novel.notes.find(note => note.title === 'Scene 1').body, /::: plot-points/);
+    assert.equal(personal.notes.length, 1);
+    assert.deepEqual(personal.notes.map(note => note.title), ['Welcome to VispNote']);
+    assert.match(personal.notes[0].body, /write, connect, and act/i);
+    assert.match(personal.notes[0].body, /review it in Today/);
   });
 });
 
@@ -114,10 +108,10 @@ test('New vault creation never reuses stale vault folders', async () => {
       'utf8'
     );
     const seeded = await store.listVaults();
-    assert.equal(seeded.find(item => item.name === 'Novel')?.slug, 'novel-2');
+    assert.equal(seeded.some(item => item.slug === 'novel'), false);
 
     const vault = await store.createVault('Novel', { type: 'novelist' });
-    assert.equal(vault.slug, 'novel-3');
+    assert.equal(vault.slug, 'novel-2');
 
     const loaded = await store.loadVault(vault.id);
     assert.equal(loaded.novelistMode, true);
@@ -133,6 +127,7 @@ test('New vault creation never reuses stale vault folders', async () => {
 
 test('Vault registry repairs externally deleted vault folders', async () => {
   await withIsolatedStore(async (store) => {
+    await store.createVault('Second vault');
     const vaults = await store.listVaults();
     assert.ok(vaults.length >= 2);
     const deleted = vaults[0];
@@ -152,6 +147,7 @@ test('Vault registry repairs externally deleted vault folders', async () => {
 
 test('Vault registry creates one fallback vault if every folder is externally deleted', async () => {
   await withIsolatedStore(async (store) => {
+    await store.createVault('Second vault');
     const vaults = await store.listVaults();
     vaults.forEach(v => fs.rmSync(path.join(store.ROOT, v.slug), { recursive: true, force: true }));
 
@@ -420,6 +416,33 @@ test('Local Phase 5 metrics persist safely and reject unsafe keys', async () => 
   });
 });
 
+test('Feature packs and private usage controls persist without arbitrary event data', async () => {
+  await withIsolatedStore(async (store) => {
+    await store.setPrefs({
+      enabledPacks: ['canvas', 'writer', 'canvas', 'unknown'],
+      localUsageMetrics: true,
+      anonymousUsageSharing: false,
+    });
+    let prefs = await store.getPrefs();
+    assert.deepEqual(prefs.enabledPacks, ['canvas', 'writer']);
+    assert.equal(prefs.localUsageMetrics, true);
+    assert.equal(prefs.anonymousUsageSharing, false);
+
+    const report = await store.recordFeatureUsage('canvas', 'opened');
+    assert.equal(report.counters.canvas.opened, 1);
+    await assert.rejects(() => store.recordFeatureUsage('private-note-id', 'used'), /Unsupported/);
+
+    await store.setPrefs({ localUsageMetrics: false });
+    await store.recordFeatureUsage('canvas', 'opened');
+    assert.equal((await store.featureUsageStatus()).report.counters.canvas.opened, 1);
+
+    await store.clearFeatureUsage();
+    assert.deepEqual((await store.featureUsageStatus()).report.counters, {});
+    prefs = await store.getPrefs();
+    assert.equal(prefs.localUsageMetrics, false);
+  });
+});
+
 test('Note saves create restorable versions and reject stale disk writes', async () => {
   await withIsolatedStore(async (store) => {
     const [vault] = await store.listVaults();
@@ -503,6 +526,7 @@ test('Canvas deletes are soft-deleted into the vault trash folder', async () => 
 
 test('Store preserves unreadable metadata and soft-deletes vault folders', async () => {
   await withIsolatedStore(async (store) => {
+    await store.createVault('Second vault');
     const vaults = await store.listVaults();
     const first = vaults[0];
     const second = vaults[1];

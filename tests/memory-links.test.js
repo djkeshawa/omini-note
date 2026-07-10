@@ -30,6 +30,23 @@ test('noteMemoryIndex maps by vispnote_note_id and keeps the newest memory', () 
   assert.equal(noteMemoryIndex(null).size, 0);
 });
 
+test('noteMemoryIndex scopes duplicate note ids by vault and uses only unambiguous legacy mappings', () => {
+  const index = noteMemoryIndex([
+    { id: 'm-v1', createdAt: '2026-07-01T00:00:00Z', metadata: { vispnote_note_id: 'same', vispnote_vault_id: 'v1' } },
+    { id: 'm-v2', createdAt: '2026-07-02T00:00:00Z', metadata: { vispnote_note_id: 'same', vispnote_vault_id: 'v2' } },
+    { id: 'm-legacy', createdAt: '2026-07-03T00:00:00Z', metadata: { vispnote_note_id: 'legacy-only' } },
+    { id: 'm-ambiguous-old', createdAt: '2026-07-03T00:00:00Z', metadata: { vispnote_note_id: 'ambiguous' } },
+    { id: 'm-ambiguous-new', createdAt: '2026-07-04T00:00:00Z', metadata: { vispnote_note_id: 'ambiguous' } },
+  ], { vaultId: 'v1' });
+  assert.equal(index.get('same').memoryId, 'm-v1');
+  assert.equal(index.get('legacy-only').memoryId, 'm-legacy');
+  assert.equal(index.has('ambiguous'), false);
+  assert.equal(index.stats.mappedScoped, 1);
+  assert.equal(index.stats.mappedLegacy, 1);
+  assert.equal(index.stats.ambiguousLegacy, 1);
+  assert.equal(index.stats.skippedOtherVault, 1);
+});
+
 test('buildNoteLinkEdges: base strength 0.75 for a plain remembered link', () => {
   const notes = [
     { id: 'n1', title: 'Alpha', body: 'links [[Beta]]' },

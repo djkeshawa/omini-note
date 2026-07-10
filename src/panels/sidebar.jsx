@@ -20,7 +20,7 @@ function MnVaultIcon({ T, size = 22, active = false }) {
 
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
-  onOpenToday, todayActive, agendaActive, graphActive,
+  onOpenToday, onOpenPinned, todayActive, pinnedActive = false, agendaActive, graphActive,
   onOpenSmartViews, smartViewsActive = false, smartViewCount = 0,
   selectedWorkflow, workflowStates, workflowCounts, workflowTotal,
   onSelectWorkflow, onOpenWorkflowPanel, workflowActive,
@@ -32,12 +32,11 @@ function MnSidebar({
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
-  T, density, theme
+  featureState = {}, T, density, theme
 }) {
   const [vaultOpen, setVaultOpen] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [newName, setNewName] = React.useState('');
-  const [newVaultType, setNewVaultType] = React.useState('notes');
   const [creatingTag, setCreatingTag] = React.useState(false);
   const [newTagName, setNewTagName] = React.useState('');
   const [tagMenu, setTagMenu] = React.useState(null);
@@ -49,13 +48,13 @@ function MnSidebar({
   const [openSections, setOpenSections] = React.useState(() => {
     return window.MN_STORAGE?.getJson?.(sidebarSectionsKey, null) ||
       window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
-      { allnotes: true, vaults: true, workflow: false, tags: true };
+      { allnotes: true, vaults: true, workflow: false, tags: true, more: false };
   });
   React.useEffect(() => {
     setOpenSections(
       window.MN_STORAGE?.getJson?.(sidebarSectionsKey, null) ||
       window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
-      { allnotes: true, vaults: true, workflow: false, tags: true }
+      { allnotes: true, vaults: true, workflow: false, tags: true, more: false }
     );
   }, [sidebarSectionsKey]);
   const toggleSection = (key) => {
@@ -83,6 +82,7 @@ function MnSidebar({
   }, 0), [notes]);
 
   const rollupCount = notes.length;
+  const pinnedCount = notes.filter(note => note.pinned).length;
   const vaultKindLabel = (v) => v?.novelistMode ? 'Novelist' : 'Notes';
   const vaultNoteLabel = (v) => `${v?.noteCount ?? 0} note${(v?.noteCount ?? 0) === 1 ? '' : 's'}`;
   const vaultCanvasLabel = (v) => `${v?.canvasCount ?? 0} canvas${(v?.canvasCount ?? 0) === 1 ? '' : 'es'}`;
@@ -118,9 +118,8 @@ function MnSidebar({
   const submitVault = () => {
     const name = newName.trim();
     if (!name) return;
-    onCreateVault(name, { type: newVaultType });
+    onCreateVault(name, { type: 'notes' });
     setNewName('');
-    setNewVaultType('notes');
     setCreating(false);
     setVaultOpen(false);
   };
@@ -440,7 +439,7 @@ function MnSidebar({
                         if (e.key === 'Enter' && newName.trim()) {
                           submitVault();
                         }
-                        if (e.key === 'Escape') { setCreating(false); setNewName(''); setNewVaultType('notes'); }
+                        if (e.key === 'Escape') { setCreating(false); setNewName(''); }
                       }}
                       style={{
                         flex: 1, border: 'none', outline: 'none', background: 'transparent',
@@ -461,41 +460,6 @@ function MnSidebar({
                         <path d="M3.5 8.5L6.5 11.5L12.5 5" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
                     </button>
-                  </div>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-                    gap: 8,
-                    margin: '7px 0 0',
-                    width: '100%',
-                    boxSizing: 'border-box',
-                  }}>
-                    {[
-                      { id: 'notes', label: 'Notes vault' },
-                      { id: 'novelist', label: 'Novelist vault' },
-                    ].map(type => (
-                      <button
-                        key={type.id}
-                        type="button"
-                        onClick={() => setNewVaultType(type.id)}
-                        style={{
-                          minWidth: 0,
-                          minHeight: 32,
-                          padding: '0 10px',
-                          borderRadius: 6,
-                          border: `1px solid ${newVaultType === type.id ? T.selLine : T.lineSub}`,
-                          background: newVaultType === type.id ? T.accentSoft : T.bg,
-                          color: newVaultType === type.id ? T.accent : T.inkMed,
-                          fontFamily: 'var(--mn-ui)',
-                          fontSize: 11.5,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          textAlign: 'center',
-                          boxSizing: 'border-box',
-                          cursor: 'pointer',
-                        }}>{type.label}</button>
-                    ))}
                   </div>
                 </>
               ) : (
@@ -545,35 +509,49 @@ function MnSidebar({
       {openSections.allnotes && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
-               active={!selectedTag && !selectedWorkflow && !todayActive && !agendaActive && !graphActive && !smartViewsActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
+               active={!selectedTag && !selectedWorkflow && !todayActive && !pinnedActive && !agendaActive && !graphActive && !smartViewsActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
                onClick={() => onSelectTag(null)} />
           <Row icon={iconToday} label="Today" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
-          <Row icon={iconAgenda} label="Agenda" count={agendaCount}
-               active={agendaActive || calendarActive}
-               onClick={onOpenAgenda} accent={T.warn} />
-          <Row icon={iconSmartViews} label="Smart Views" count={smartViewCount}
-               active={smartViewsActive}
-               onClick={onOpenSmartViews} accent={T.focus || T.accent} />
-          <Row icon={iconWorkflow} label="Workflow" count={workflowTotal || 0}
-               active={workflowActive}
-               onClick={onOpenWorkflowPanel} accent={T.accent} />
-          {novelistEnabled && (
+          <Row icon={iconInbox} label="Pinned" count={pinnedCount}
+               active={pinnedActive} onClick={onOpenPinned} />
+          {featureState.showAgenda && (
+            <Row icon={iconAgenda} label="Agenda" count={agendaCount}
+                 active={agendaActive || calendarActive}
+                 onClick={onOpenAgenda} accent={T.warn} />
+          )}
+          {featureState.showWorkflow && (
+            <Row icon={iconWorkflow} label="Workflow" count={workflowTotal || 0}
+                 active={workflowActive}
+                 onClick={onOpenWorkflowPanel} accent={T.accent} />
+          )}
+          {featureState.showWriter && novelistEnabled && (
             <Row icon={iconNovelist} label="Novelist" count={novelistCount}
                  active={novelistActive}
                  onClick={onOpenNovelist} accent={T.accent} />
           )}
+          {featureState.showCanvas && (
+            <Row icon={iconCanvas} label="Thinking Board" count={canvasCount}
+                 active={canvasActive}
+                 onClick={onOpenCanvas} accent={T.accent} />
+          )}
+          {featureState.showAskAi && onOpenAskAI && (
+            <Row icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
+          )}
+        </div>
+      )}
+
+      <div style={{ marginTop: pad.header }}>
+        <SectionHeader label="More" sectionKey="more" />
+      </div>
+      {openSections.more && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
+          <Row icon={iconSmartViews} label="Smart Views" count={smartViewCount}
+               active={smartViewsActive} onClick={onOpenSmartViews} accent={T.focus || T.accent} />
           <Row icon={iconGraph} label="Graph" active={graphActive} onClick={onOpenGraph} />
-          <Row icon={iconCanvas} label="Canvas" count={canvasCount}
-               active={canvasActive}
-               onClick={onOpenCanvas} accent={T.accent} />
           {onOpenTrash && (
             <Row icon={iconTrash} label="Recently deleted" count={trashCount}
-                 active={trashActive}
-                 onClick={onOpenTrash} accent={T.warn || T.danger} />
-          )}
-          {onOpenAskAI && (
-            <Row icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
+                 active={trashActive} onClick={onOpenTrash} accent={T.warn || T.danger} />
           )}
         </div>
       )}
@@ -582,15 +560,13 @@ function MnSidebar({
       <div style={{ borderTop: `1px solid ${T.lineSub}`, margin: '14px 14px 0' }} />
 
       {/* Workflow (collapsible) */}
-      <div style={{ marginTop: pad.header }}>
-        <SectionHeader
-          label="Workflow"
-          sectionKey="workflow"
-          count={workflowTotal || 0}
-        />
-      </div>
+      {featureState.showWorkflow && (
+        <div style={{ marginTop: pad.header }}>
+          <SectionHeader label="Workflow" sectionKey="workflow" count={workflowTotal || 0} />
+        </div>
+      )}
 
-      {openSections.workflow && (
+      {featureState.showWorkflow && openSections.workflow && (
         <div style={{
           display: 'flex', flexDirection: 'column', gap: pad.gap,
           marginTop: 4, marginBottom: 12,

@@ -317,7 +317,7 @@ function MnTodayPanel({
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720, color: T.ink }}>Agenda today</div>
             <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{visibleAgendaItems.length}</div>
             <div style={{ flex: 1 }} />
-            <button type="button" onClick={onOpenAgenda || onPlanItem} style={panelButton(false)}>Open Agenda</button>
+            {(onOpenAgenda || onPlanItem) && <button type="button" onClick={onOpenAgenda || onPlanItem} style={panelButton(false)}>Open Agenda</button>}
           </div>
           {visibleAgendaItems.length === 0 && (
             <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkDim, padding: '3px 0' }}>No agenda items today</div>
@@ -889,8 +889,9 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
   const [title, setTitle] = useStateP('');
   const [body, setBody] = useStateP('');
   const [selected, setSelected] = useStateP([]);
-  const [destinationId, setDestinationId] = useStateP('new');
+  const [destinationId, setDestinationId] = useStateP('today');
   const [templateId, setTemplateId] = useStateP('raw');
+  const [moreOpen, setMoreOpen] = useStateP(false);
   const titleRef = useRefP(null);
   const destinationChoices = destinations.length
     ? destinations
@@ -957,7 +958,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
         </div>
         <div style={{ padding: 16 }}>
           <div style={{
-            display: 'grid',
+            display: moreOpen ? 'grid' : 'none',
             gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
             gap: 8,
             marginBottom: 12,
@@ -1019,7 +1020,12 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
               resize: 'none', padding: 0,
             }} />
 
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 12 }}>
+          <button type="button" onClick={() => setMoreOpen(value => !value)} style={{
+            marginTop: 8, padding: 0, border: 'none', background: 'transparent',
+            color: T.inkDim, fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
+          }}>{moreOpen ? 'Hide options' : 'More options'}</button>
+
+          <div style={{ display: moreOpen ? 'flex' : 'none', gap: 5, flexWrap: 'wrap', marginTop: 12 }}>
             {tags.map(t => {
               const on = selected.includes(t.name);
               return (
@@ -1053,7 +1059,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
             padding: '4px 14px', borderRadius: 5, border: 'none',
             background: T.ink, color: T.bg,
             fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500, cursor: 'pointer',
-          }}>Save note</button>
+          }}>Save{activeDestination?.id === 'today' ? ' to Today' : ''}</button>
         </div>
       </div>
     </div>

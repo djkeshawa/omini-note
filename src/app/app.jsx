@@ -3,6 +3,7 @@
 // seed when running outside Electron (e.g. opened directly in a browser).
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useCallback: useCallbackA, useRef: useRefA } = React;
+const MN_FEATURES = window.MN_FEATURES || {};
 
 const {
   MN_TWEAK_DEFAULTS,
@@ -74,6 +75,7 @@ const MN_PANEL_COMPONENTS = window.MN_PANEL_COMPONENTS || {};
 const MN_NOTES_VAULTS_SERVICE = window.MN_NOTES_VAULTS_SERVICE || {};
 const MN_VAULTS_SERVICE = window.MN_VAULTS_SERVICE || {};
 const MN_NOTES_VAULTS_STATE = window.MN_NOTES_VAULTS_STATE || {};
+const MN_MEMORY_ACTIONS = window.MN_MEMORY_ACTIONS || {};
 const {
   HAS_DISK = typeof window !== 'undefined' && !!window.mn,
   MnLaunchScreen,
@@ -441,6 +443,8 @@ function MnApp() {
   const [bootError, setBootError] = useStateA(null);
 
   const [tweaks, setTweaks] = useStateA(MN_TWEAK_DEFAULTS);
+  const [enabledPacks, setEnabledPacks] = useStateA([]);
+  const [assistanceEnabled, setAssistanceEnabled] = useStateA(false);
   const [customThemes, setCustomThemes] = useStateA([]);
   const [settingsOpen, setSettingsOpen] = useStateA(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useStateA(false);
@@ -679,6 +683,64 @@ function MnApp() {
   // different vaults cannot overwrite each other's pending saves.
   const [dirtyNotes, setDirtyNotes] = useStateA(() => new Map());
   const dirtyNotesRef = useRefA(dirtyNotes);
+  const updateDirtyNotes = useCallbackA((updater) => {
+    const current = dirtyNotesRef.current;
+    const next = typeof updater === 'function' ? updater(current) : updater;
+    if (!(next instanceof Map) || next === current) return current;
+    dirtyNotesRef.current = next;
+    setDirtyNotes(next);
+    return next;
+  }, []);
+
+  const recordFeatureUsage = useCallbackA((feature, action = 'used') => {
+    if (!window.mn?.featureUsage?.record) return;
+    window.mn.featureUsage.record(feature, action)
+      .catch(error => console.warn('Feature usage event ignored', error));
+  }, []);
+
+  const setPackEnabled = useCallbackA((packId, enabled) => {
+    setEnabledPacks(current => {
+      const next = MN_FEATURES.togglePack
+        ? MN_FEATURES.togglePack(current, packId, enabled)
+        : current;
+      if (HAS_DISK && window.mn?.setPrefs) {
+        window.mn.setPrefs({ enabledPacks: next })
+          .then(result => {
+            if (result?.ok === false) showAppNotice('Pack setting not saved', result.error, 'warn');
+          })
+          .catch(error => showAppNotice('Pack setting not saved', error.message || String(error), 'warn'));
+      }
+      const usageFeature = packId === 'labs' ? 'smart_views' : packId;
+      recordFeatureUsage(usageFeature, enabled ? 'enabled' : 'disabled');
+      return next;
+    });
+  }, [recordFeatureUsage, showAppNotice]);
+
+  useEffectA(() => {
+    const featureByView = {
+      today: 'today',
+      ai: 'ask_ai',
+      canvas: 'canvas',
+      graph: 'graph',
+      'smart-views': 'smart_views',
+      workflow: 'planning',
+      calendar: 'planning',
+      novelist: 'writer',
+    };
+    const feature = featureByView[view];
+    if (feature) recordFeatureUsage(feature, 'opened');
+  }, [view, recordFeatureUsage]);
+
+  useEffectA(() => {
+    if (captureOpen) recordFeatureUsage('capture', 'opened');
+  }, [captureOpen, recordFeatureUsage]);
+
+  const searchUsageActiveRef = useRefA(false);
+  useEffectA(() => {
+    const active = Boolean(query.trim());
+    if (active && !searchUsageActiveRef.current) recordFeatureUsage('search', 'used');
+    searchUsageActiveRef.current = active;
+  }, [query, recordFeatureUsage]);
   const noteDiskStampRef = useRefA(new Map());
   const savingDirtyKeysRef = useRefA(new Set());
   const pendingDirtyKeysRef = useRefA(new Set());
@@ -709,7 +771,7 @@ function MnApp() {
   }, []);
   const markDirty = useCallbackA((id) => {
     if (!id || !activeVaultId) return;
-    setDirtyNotes(s => {
+    updateDirtyNotes(s => {
       const n = new Map(s);
       const key = mnDirtyNoteKey(activeVaultId, id);
       const existing = n.get(key);
@@ -721,7 +783,7 @@ function MnApp() {
       });
       return n;
     });
-  }, [activeVaultId]);
+  }, [activeVaultId, updateDirtyNotes]);
   const tagsDirty = useRefA(false);
   const markTagsDirty = useCallbackA(() => { tagsDirty.current = true; }, []);
 
@@ -731,18 +793,20 @@ function MnApp() {
     nextSelectedId = selectedId,
     forceTags = false
   ) => {
-    if (!HAS_DISK || !vaultId) return;
+    if (!HAS_DISK || !vaultId) return { ok: true, skipped: true };
     const patch = {};
     if (forceTags || tagsDirty.current) patch.tags = nextTags;
     if (nextSelectedId) patch.lastSelectedId = nextSelectedId;
-    if (!Object.keys(patch).length) return;
+    if (!Object.keys(patch).length) return { ok: true, skipped: true };
     try {
       const res = await window.mn.saveVaultMeta(vaultId, patch);
       if (res?.ok === false) throw new Error(res.error || 'Save failed');
       if (patch.tags && vaultId === activeVaultId) tagsDirty.current = false;
+      return { ok: true };
     } catch (e) {
       console.error('saveVaultMeta failed', e);
       showAppNotice('Could not save vault settings', e.message || String(e), 'warn');
+      return { ok: false, error: e.message || String(e) };
     }
   }, [activeVaultId, tags, selectedId, showAppNotice]);
 
@@ -825,6 +889,8 @@ function MnApp() {
         const prefsRes = await window.mn.getPrefs();
         if (!prefsRes.ok) throw new Error(prefsRes.error);
         const prefs = prefsRes.value;
+        setEnabledPacks(MN_FEATURES.normalizePacks ? MN_FEATURES.normalizePacks(prefs.enabledPacks) : []);
+        setAssistanceEnabled(prefs.aiConfig?.enabled === true);
         setCustomThemes(mnNormalizeCustomThemesForApp(prefs.customThemes));
         if (prefs.phase5Metrics && MN_APP_HELPERS?.phase5SanitizeMetrics) {
           mnWriteLocalPhase5Metrics(MN_APP_HELPERS.phase5SanitizeMetrics(prefs.phase5Metrics));
@@ -966,15 +1032,21 @@ function MnApp() {
   }, [activeVaultId, mnMdToBlocks]);
 
   const saveDirtyNotesNow = useCallbackA(async function saveDirtyNotesNowImpl(entries, currentNotes = notesRef.current, currentVaults = vaultsRef.current) {
-    if (!HAS_DISK || !entries?.length) return;
+    const result = { attempted: 0, saved: 0, deferred: 0, failures: [] };
+    if (!HAS_DISK || !entries?.length) return result;
     for (const entry of entries) {
       const id = entry?.id;
       const vaultId = entry?.vaultId;
       const revision = entry?.revision;
-      if (!id || !vaultId) continue;
+      if (!id || !vaultId) {
+        result.failures.push({ kind: 'note', id: id || null, message: 'Dirty note entry is invalid.' });
+        continue;
+      }
+      result.attempted++;
       const dirtyKey = mnDirtyNoteKey(vaultId, id);
       if (savingDirtyKeysRef.current.has(dirtyKey)) {
         pendingDirtyKeysRef.current.add(dirtyKey);
+        result.deferred++;
         continue;
       }
       savingDirtyKeysRef.current.add(dirtyKey);
@@ -987,6 +1059,7 @@ function MnApp() {
             showAppNotice('Could not autosave note', 'A dirty note could not be matched to its vault. Switch back to the vault or reload before closing.', 'warn');
           }
           console.warn('dirty note could not be matched for autosave', { vaultId, id });
+          result.failures.push({ kind: 'note', id, message: 'Dirty note could not be matched to its vault.' });
           continue;
         }
         dirtyMissingWarnedRef.current.delete(dirtyKey);
@@ -1009,6 +1082,7 @@ function MnApp() {
                 currentModifiedAt: res.currentModifiedAt || null,
                 expectedModifiedAt: res.expectedModifiedAt || expectedModifiedAt,
               });
+              result.failures.push({ kind: 'note', id, code: 'NOTE_CONFLICT', message: res.error || 'The note changed on disk.' });
               continue;
             }
             throw new Error(res.error || 'Save failed');
@@ -1026,7 +1100,7 @@ function MnApp() {
               ? { ...v, notes: updateDiskStamp(v.notes) }
               : v));
           }
-          setDirtyNotes(cur => {
+          updateDirtyNotes(cur => {
             const current = cur.get(dirtyKey);
             if (!current || current.vaultId !== vaultId) return cur;
             if (revision != null && current.revision !== revision) return cur;
@@ -1034,9 +1108,11 @@ function MnApp() {
             next.delete(dirtyKey);
             return next;
           });
+          result.saved++;
         } catch (e) {
           console.error('saveNote failed', id, e);
           showAppNotice('Could not save note', e.message || String(e));
+          result.failures.push({ kind: 'note', id, code: e.code || null, message: e.message || String(e) });
         }
       } finally {
         savingDirtyKeysRef.current.delete(dirtyKey);
@@ -1048,7 +1124,8 @@ function MnApp() {
         }
       }
     }
-  }, [findNotesForVault, activeVaultId, showAppNotice, applyLinkedNoteUpdates]);
+    return result;
+  }, [findNotesForVault, activeVaultId, showAppNotice, applyLinkedNoteUpdates, updateDirtyNotes]);
 
   // ── Persist dirty notes (debounced) ────────────────────────────────────
   useEffectA(() => {
@@ -1071,9 +1148,21 @@ function MnApp() {
     if (!HAS_DISK || !window.mn?.onFlushDirtyNotes) return undefined;
     return window.mn.onFlushDirtyNotes(async () => {
       const entries = [...dirtyNotesRef.current.values()];
-      if (entries.length) await saveDirtyNotesNow(entries);
-      await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
-      return { dirtyRemaining: dirtyNotesRef.current.size };
+      const noteResult = entries.length ? await saveDirtyNotesNow(entries) : { failures: [], deferred: 0 };
+      const metaResult = await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
+      const failures = [...(noteResult.failures || [])];
+      if (noteResult.deferred) {
+        failures.push({ kind: 'note', message: `${noteResult.deferred} save operation${noteResult.deferred === 1 ? ' is' : 's are'} still in progress.` });
+      }
+      if (metaResult?.ok === false) failures.push({ kind: 'metadata', message: metaResult.error || 'Vault settings were not saved.' });
+      const dirtyRemaining = dirtyNotesRef.current.size;
+      const metaDirty = tagsDirty.current;
+      return {
+        ok: failures.length === 0 && dirtyRemaining === 0 && !metaDirty,
+        dirtyRemaining,
+        metaDirty,
+        failures,
+      };
     });
   }, [activeVaultId, tags, selectedId, saveDirtyNotesNow, saveVaultMetaNow]);
 
@@ -1112,7 +1201,7 @@ function MnApp() {
         if (activationSeq !== vaultActivationSeq.current) return { ok: false, stale: true };
       }
 
-      setDirtyNotes(cur => {
+      updateDirtyNotes(cur => {
         let changed = false;
         const next = new Map();
         cur.forEach((entry, key) => {
@@ -1540,7 +1629,7 @@ function MnApp() {
       }
     }
 
-    setDirtyNotes(cur => {
+    updateDirtyNotes(cur => {
       const next = new Map();
       cur.forEach((entry, key) => {
         if (entry.vaultId !== id) next.set(key, entry);
@@ -1790,6 +1879,7 @@ function MnApp() {
 
   const filteredNotes = useMemoA(() => {
     let ns = [...notesWithBody];
+    if (view === 'pinned') ns = ns.filter(note => note.pinned);
     if (selectedTag) ns = ns.filter(n => n.tags.includes(selectedTag));
     if (selectedWorkflow) {
       const ids = workflowData.noteIdsByState[selectedWorkflow] || new Set();
@@ -1822,7 +1912,7 @@ function MnApp() {
       return new Date(b.modifiedAt || b.date || 0) - new Date(a.modifiedAt || a.date || 0);
     });
     return ns;
-  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHitIds, searchDetails, tweaks.sortBy, tweaks.pinnedFirst]);
+  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHitIds, searchDetails, tweaks.sortBy, tweaks.pinnedFirst, view]);
 
   const graphVisibleNotes = useMemoA(() => {
     if (!activeVault?.novelistMode) return filteredNotes;
@@ -2196,6 +2286,7 @@ function MnApp() {
         setSelectedId(plan.noteId);
         navigateView('notes');
         recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'append' });
+        recordFeatureUsage('capture', 'used');
         return plan.noteId;
       }
       const id = createNote({
@@ -2204,6 +2295,7 @@ function MnApp() {
         tags: tagsForCapture,
       });
       recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'create' });
+      recordFeatureUsage('capture', 'used');
       return id;
     }
 
@@ -2221,6 +2313,7 @@ function MnApp() {
       setSelectedId(activeDestination.noteId);
       navigateView('notes');
       recordPhase5Metric('capture_saves', { destinationId: activeDestination.id, mode: 'append' });
+      recordFeatureUsage('capture', 'used');
       return activeDestination.noteId;
     }
     const id = createNote({
@@ -2229,8 +2322,9 @@ function MnApp() {
       tags: quickCaptureMergeTags(activeDestination?.tags || [], noteTags),
     });
     recordPhase5Metric('capture_saves', { destinationId: activeDestination?.id || 'new', mode: 'create' });
+    recordFeatureUsage('capture', 'used');
     return id;
-  }, [createNote, navigateView, notesWithBody, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, recordPhase5Metric, selectedNote, uniqueNoteTitle, updateNoteBody]);
+  }, [createNote, navigateView, notesWithBody, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, recordFeatureUsage, recordPhase5Metric, selectedNote, uniqueNoteTitle, updateNoteBody]);
 
   const addQuickTodayTask = useCallbackA((text) => {
     const clean = String(text || '').replace(/\s+/g, ' ').trim();
@@ -2567,7 +2661,7 @@ function MnApp() {
     const dirtyKey = mnDirtyNoteKey(activeVaultId, id);
     const previousDirtyEntry = dirtyNotes.get(dirtyKey);
     setDeleteTargetId(null);
-    setDirtyNotes(cur => {
+    updateDirtyNotes(cur => {
       if (!cur.has(dirtyKey)) return cur;
       const next = new Map(cur);
       next.delete(dirtyKey);
@@ -2591,7 +2685,7 @@ function MnApp() {
         setNotes(previousNotes);
         setSelectedId(previousSelectedId);
         if (previousDirtyEntry) {
-          setDirtyNotes(cur => {
+          updateDirtyNotes(cur => {
             const next = new Map(cur);
             next.set(dirtyKey, previousDirtyEntry);
             return next;
@@ -2712,7 +2806,7 @@ function MnApp() {
       setVaults(vs => vs.map(v => v.id === activeVaultId && Array.isArray(v.notes)
         ? { ...v, notes: v.notes.map(n => n.id === restored.id ? restored : n) }
         : v));
-      setDirtyNotes(cur => {
+      updateDirtyNotes(cur => {
         const key = mnDirtyNoteKey(activeVaultId, restored.id);
         if (!cur.has(key)) return cur;
         const next = new Map(cur);
@@ -2745,7 +2839,7 @@ function MnApp() {
       setVaults(vs => vs.map(v => v.id === conflict.vaultId && Array.isArray(v.notes)
         ? { ...v, notes: v.notes.map(n => n.id === conflict.noteId ? diskNote : n) }
         : v));
-      setDirtyNotes(cur => {
+      updateDirtyNotes(cur => {
         const key = mnDirtyNoteKey(conflict.vaultId, conflict.noteId);
         if (!cur.has(key)) return cur;
         const next = new Map(cur);
@@ -3033,6 +3127,27 @@ function MnApp() {
   }, [activeVaultId, showAppNotice]);
 
   const plugins = useMemoA(() => (MN_PLUGIN_API.normalizeAll ? MN_PLUGIN_API.normalizeAll(tweaks.plugins) : []), [tweaks.plugins]);
+  const featureState = useMemoA(() => (
+    MN_FEATURES.deriveFeatureState
+      ? MN_FEATURES.deriveFeatureState({
+        enabledPacks,
+        canvasCount: canvases.length,
+        novelistMode: !!activeVault?.novelistMode,
+        vaults,
+        plugins,
+        workflowTotal: workflowData.total,
+        agendaCount: todayAgendaItems.length,
+        assistanceEnabled,
+      })
+      : {
+        showAgenda: false,
+        showWorkflow: false,
+        showCanvas: canvases.length > 0,
+        showWriter: !!activeVault?.novelistMode,
+        showAskAi: assistanceEnabled,
+        showLabs: false,
+      }
+  ), [activeVault?.novelistMode, assistanceEnabled, canvases.length, enabledPacks, plugins, vaults, workflowData.total, todayAgendaItems.length]);
 
   const runPlugin = useCallbackA(async (plugin) => {
     if (!plugin || plugin.enabled === false) return { ok: false, message: 'Plugin is unavailable.' };
@@ -3407,32 +3522,29 @@ function MnApp() {
           if (!selectedNote) return { message: 'No note is selected.' };
           const res = await window.mn.memory.remember(activeVaultId, selectedNote.id);
           if (res?.ok === false) throw new Error(res.error || 'Could not store the memory');
+          setConnectionsRefreshToken(token => token + 1);
           return { message: `Stored “${selectedNote.title || 'Untitled'}” as memory ${res?.value?.id ? res.value.id.slice(0, 8) : ''}.` };
         },
       },
       {
         id: 'memory-sync-links',
         label: 'Sync note links to memory graph',
-        description: 'Mirror this vault\'s [[wiki-links]] into the llm-memory knowledge graph as relationships between remembered notes.',
+        description: 'Add or refresh this vault\'s current [[wiki-links]] in the llm-memory graph without overwriting unrelated relationships.',
         section: 'Memory',
         enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
         inputSchema: objectSchema(),
         preview: () => ({
           title: 'Sync note links to memory graph',
-          message: 'VispNote reads the [[wiki-links]] between notes you have remembered and creates matching relationships on the local llm-memory server, so graph-aware recall can follow how your pages connect. Links to heavily-referenced hub notes are down-weighted, reciprocal links are strengthened, and existing relationships are never duplicated.',
-          steps: ['Map remembered notes to their memories', 'Resolve [[wiki-links]] between them', 'Create weighted relationships on 127.0.0.1'],
+          message: 'VispNote adds new relationships and refreshes weights on relationships it previously managed. Unrelated relationships are preserved. Removed wiki-links are reported as stale because the current memory server cannot delete relationships.',
+          steps: ['Map remembered notes within this vault', 'Resolve and weight current [[wiki-links]]', 'Create or refresh VispNote-managed relationships on 127.0.0.1'],
           affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
         }),
         run: async () => {
           const res = await window.mn.memory.syncLinks(activeVaultId);
           if (res?.ok === false) throw new Error(res.error || 'Link sync failed');
           const value = res?.value || {};
-          if (!value.notesRemembered) {
-            return { message: 'No remembered notes yet — run “Remember this note” on a few linked notes first, then sync.' };
-          }
-          const created = value.created || 0;
-          const partial = value.indexTruncated ? ' (partial — this vault has more remembered notes than one sync pass covers)' : '';
-          return { message: `Linked ${created} relationship${created === 1 ? '' : 's'} from ${value.wikiLinks || 0} wiki-link${(value.wikiLinks || 0) === 1 ? '' : 's'} across ${value.notesRemembered} remembered note${value.notesRemembered === 1 ? '' : 's'}.${partial}` };
+          setConnectionsRefreshToken(token => token + 1);
+          return { message: MN_MEMORY_ACTIONS.syncResultMessage(value) };
         },
       },
       {
@@ -3453,16 +3565,7 @@ function MnApp() {
             window.mn.memory.intelligence({ limit: 5 }),
             window.mn.memory.duplicates({ limit: 20 }),
           ]);
-          if (reportRes?.ok === false) throw new Error(reportRes.error || 'Could not load memory insights');
-          const summary = reportRes?.value?.summary || {};
-          const dupCount = Array.isArray(dupRes?.value?.candidates) ? dupRes.value.candidates.length : 0;
-          const parts = [
-            `${summary.total_memories ?? 0} memories`,
-            `${summary.total_relationships ?? 0} relationships`,
-          ];
-          if (summary.active_intents != null) parts.push(`${summary.active_intents} active intents`);
-          parts.push(`${dupCount} duplicate candidate${dupCount === 1 ? '' : 's'}`);
-          return { message: `Memory graph: ${parts.join(' · ')}.` };
+          return { message: MN_MEMORY_ACTIONS.insightsResultMessage(reportRes, dupRes) };
         },
       },
       {
@@ -4231,7 +4334,7 @@ function MnApp() {
     return () => clearTimeout(titleUpdateTimerRef.current);
   }, [activeVaultId, vaults, selectedNote]);
 
-  const noteListVisible = view === 'notes' || view === 'graph' || view === 'workflow';
+  const noteListVisible = view === 'notes' || view === 'pinned' || view === 'graph' || view === 'workflow';
   const aiChatListVisible = view === 'ai';
   const reminderCenterTop = view === 'ai' ? 17 : 14;
   const noteListTitle = query.trim()
@@ -4240,7 +4343,7 @@ function MnApp() {
     ? `#${selectedTag}`
     : selectedWorkflow
     ? selectedWorkflow
-    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Today' : 'All notes');
+    : (view === 'pinned' ? 'Pinned' : view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Today' : 'All notes');
   const noteListSubtitle = query.trim()
     ? `${filteredNotes.length} match${filteredNotes.length === 1 ? '' : 'es'}`
     : view === 'workflow'
@@ -4291,12 +4394,14 @@ function MnApp() {
               onOpenNovelist={() => { navigateView('novelist'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
               onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenToday={() => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onOpenPinned={() => { navigateView('pinned'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
               onOpenSmartViews={() => openSmartView()}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenCanvas={openCanvasDashboard}
               onOpenTrash={() => { navigateView('trash'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenAskAI={HAS_DISK ? openAskAi : null}
               todayActive={view === 'today'}
+              pinnedActive={view === 'pinned'}
               agendaActive={view === 'calendar'}
               graphActive={view === 'graph'}
               smartViewsActive={view === 'smart-views'}
@@ -4323,6 +4428,7 @@ function MnApp() {
               onRefreshVaults={refreshVaultRegistry}
               onRenameVault={renameVault}
               onDeleteVault={deleteVault}
+              featureState={featureState}
               T={T} density={tweaks.density} theme={theme}
             />
           )}
@@ -4340,7 +4446,7 @@ function MnApp() {
               selectedId={selectedId}
               onSelect={(id) => {
                 setSelectedId(id);
-                if (view === 'notes') return;
+                if (view === 'notes' || view === 'pinned') return;
               }}
               title={noteListTitle}
               subtitle={noteListSubtitle}
@@ -4382,7 +4488,7 @@ function MnApp() {
             <MnPanelGripPeek onExpand={() => setNoteListHidden(false)} T={T} title="Show AI chats" />
           )}
 
-          {view === 'notes' && selectedNote && (
+          {(view === 'notes' || view === 'pinned') && selectedNote && (
             <MnEditor
               note={selectedNote} notes={notesWithBody} tags={tags} links={links}
               vaultId={activeVaultId}
@@ -4649,9 +4755,9 @@ function MnApp() {
               todayAiRecap={todayAiRecap}
               todayAiRecapBusy={todayAiRecapBusy}
               todayAiRecapError={todayAiRecapError}
-              onGenerateAiRecap={generateTodayAiRecap}
-              onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
-              onPlanItem={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onGenerateAiRecap={featureState.showAskAi ? generateTodayAiRecap : null}
+              onOpenAgenda={featureState.showAgenda ? () => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); } : null}
+              onPlanItem={featureState.showAgenda ? () => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); } : null}
               rollupFormat={tweaks.rollupFormat || 'long'}
               rollupDefaultRange={tweaks.rollupDefaultRange || 'today'}
               rollupGroupBy={tweaks.rollupGroupBy || 'created'}
@@ -4811,6 +4917,11 @@ function MnApp() {
             onImportNovelFiles={importNovelFiles}
             onOpenVaultHealth={() => setVaultHealthOpen(true)}
             onRebuildIndex={rebuildIndex}
+            enabledPacks={enabledPacks}
+            featureState={featureState}
+            onSetPack={setPackEnabled}
+            assistanceEnabled={assistanceEnabled}
+            onAssistanceChange={setAssistanceEnabled}
             onClose={() => setSettingsOpen(false)} />
         )}
         <MnNovelImportPreviewDialog

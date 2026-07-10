@@ -212,17 +212,21 @@ async function run() {
   assert(preserved.body.includes('Human edit.'), 're-import never overwrites human edits');
 
   // Distill the note back into a memory and confirm the round trip.
-  const remembered = await withRetry('rememberNote', () => llmMemory.rememberNote(config, preserved, { vaultName: 'Regression' }));
+  const remembered = await withRetry('rememberNote', () => llmMemory.rememberNote(config, preserved, {
+    vaultId,
+    vaultName: 'Regression',
+  }));
   assert(remembered.id && remembered.id !== created.id, 'rememberNote creates a new memory', remembered);
   const afterRemember = await llmMemory.listMemories(config, {});
   const distilled = afterRemember.find(m => m.id === remembered.id);
   assert(distilled && distilled.tags.includes('vispnote'), 'distilled memory is tagged as coming from vispnote', distilled);
+  assert(distilled?.metadata?.vispnote_vault_id === vaultId, 'distilled memory records the source vault id', distilled);
 
   // No configured project: rememberNote registers a project derived from the
   // note's title and files the memory under it.
   const derived = await withRetry('rememberNote (derived project)', () => llmMemory.rememberNote(derivedConfig, {
     id: 'derived-note', title: DERIVED_NOTE_TITLE, body: `Derived project ${runMarker}.`, tags: [],
-  }, { vaultName: 'Regression' }));
+  }, { vaultId, vaultName: 'Regression' }));
   assert(derived.repoId === DERIVED_REPO_ID, 'missing project is created from the note name', derived);
   const derivedListed = await llmMemory.listMemories({ ...derivedConfig, repoId: DERIVED_REPO_ID }, {});
   assert(derivedListed.some(m => m.id === derived.id), 'derived project contains the distilled memory', { count: derivedListed.length });
