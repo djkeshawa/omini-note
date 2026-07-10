@@ -72,8 +72,8 @@ function rendererStateScript() {
         seededNoteVisible: bodyText.includes('Welcome to VispNote') || bodyText.includes('Project plan') || bodyText.includes('Reading notes'),
         selectedTitle: titleInput?.value || '',
         editorBodyVisible: Boolean(document.querySelector('.mn-block-row')) || bodyText.includes('Try the basics'),
-        quickCaptureOpen: bodyText.includes('Quick capture') && buttons.some(btn => btn.text === 'Save note'),
-        settingsOpen: dialogs.some(text => text.includes('Settings')) || bodyText.includes('Appearance · Theme, density, fonts'),
+        quickCaptureOpen: bodyText.includes('Quick capture') && buttons.some(btn => btn.text.startsWith('Save')),
+        settingsOpen: dialogs.some(text => text.includes('Settings')) || bodyText.includes('General · A calm default experience'),
         commandPaletteOpen: dialogs.some(text => text.includes('Command palette')) || Boolean(document.querySelector('input[placeholder="Run a command or open a note..."]')),
         dialogs,
         buttons,
@@ -367,6 +367,14 @@ async function waitForPersistedNote(win, title, predicate = () => true) {
     const vault = await loadActiveVault(win);
     const note = (vault.notes || []).find(item => item.title === title);
     return { ok: !!note && predicate(note), note };
+  });
+}
+
+async function waitForPersistedBody(win, text) {
+  return await waitFor(win, `persisted capture ${text}`, async () => {
+    const vault = await loadActiveVault(win);
+    const note = (vault.notes || []).find(item => String(item.body || '').includes(text));
+    return { ok: !!note, note };
   });
 }
 
@@ -784,12 +792,12 @@ async function runQuickCaptureSaveScenario(win) {
   });
   await setControlByPlaceholder(win, 'Title', title);
   await setControlByPlaceholder(win, 'Write a note', body);
-  await clickButton(win, { text: 'Save note' });
+  await clickButton(win, { text: 'Save to Today' });
   await waitFor(win, 'quick capture saved and closed', async () => {
     const current = await state(win);
-    return { ok: !current.quickCaptureOpen && current.selectedTitle === title, current };
+    return { ok: !current.quickCaptureOpen, current };
   });
-  await waitForPersistedNote(win, title, note => String(note.body || '').includes('QE quick capture todo'));
+  await waitForPersistedBody(win, 'QE quick capture todo');
 }
 
 async function runSearchAndClearScenario(win) {
@@ -812,12 +820,12 @@ async function runSearchAndClearScenario(win) {
 }
 
 async function runNavigationPanelsScenario(win) {
-  await clickVisibleText(win, 'Agenda');
+  await runCommandPaletteCommand(win, 'open agenda', 'Open Agenda');
   await waitFor(win, 'sidebar agenda opens calendar planner with captured task', async () => {
     const visible = await evaluate(win, `document.body.textContent.includes('Agenda') && document.body.textContent.includes('QE quick capture todo')`);
     return { ok: visible, visible };
   });
-  await clickVisibleText(win, 'Graph');
+  await runCommandPaletteCommand(win, 'open graph', 'Open graph');
   await waitFor(win, 'graph panel opens with visible heading', async () => {
     const current = await state(win);
     return { ok: current.text.includes('Graph'), current };
@@ -825,12 +833,12 @@ async function runNavigationPanelsScenario(win) {
 }
 
 async function runCalendarPlannerScenario(win) {
-  const title = 'QE Quick Capture Task';
   await clickVisibleText(win, 'All notes');
   await waitFor(win, 'note editor visible before calendar toolbar click', async () => {
     const current = await state(win);
     return { ok: current.selectedTitle && current.editorBodyVisible, current };
   });
+  const title = (await state(win)).selectedTitle;
   await clickButton(win, { titleIncludes: 'Agenda' });
   await waitFor(win, 'agenda panel opens from editor toolbar', async () => {
     const visible = await evaluate(win, `document.body.textContent.includes('Agenda') && document.body.textContent.includes('Inbox todos')`);
@@ -867,7 +875,7 @@ async function runCalendarPlannerScenario(win) {
 
 async function runCanvasCreateScenario(win) {
   const title = 'QE Scenario Canvas';
-  await clickVisibleText(win, 'Canvas');
+  await runCommandPaletteCommand(win, 'canvas dashboard', 'Open canvas dashboard');
   await waitFor(win, 'canvas dashboard visible', async () => {
     const current = await state(win);
     return { ok: current.text.includes('Canvas') && current.text.includes('canvas'), current };
@@ -981,10 +989,11 @@ async function runDeleteRestoreScenario(win) {
   await clickButton(win, { titleIncludes: 'Delete' });
   await waitFor(win, 'delete note dialog explains recoverability', async () => {
     const current = await state(win);
-    return { ok: current.dialogs.some(text => text.includes('Delete note')) && current.text.includes('Recently deleted'), current };
+    return { ok: current.dialogs.some(text => text.includes('Delete note') && text.includes('Recently deleted')), current };
   });
   await clickButton(win, { text: 'Move to trash' });
   await waitForDeletedNote(win, title);
+  await clickButton(win, { text: 'More' });
   await clickVisibleText(win, 'Recently deleted');
   await waitFor(win, 'recently deleted view shows deleted note', async () => {
     const current = await state(win);
@@ -1025,6 +1034,18 @@ async function runRegression() {
     };
   });
 
+  await runScenario(win, 'Focus', 'fresh vault exposes only the core navigation', async () => {
+    await waitFor(win, 'minimal default navigation', async () => {
+      const current = await state(win);
+      const text = current.text;
+      return {
+        ok: text.includes('All notes') && text.includes('Today') && text.includes('Pinned') && text.includes('Tags')
+          && !text.includes('Smart Views') && !text.includes('Thinking Board') && !text.includes('Ask AI') && !text.includes('Workflow'),
+        current,
+      };
+    });
+  });
+
   await runScenario(win, 'Notes', 'create, edit, and persist a note', async () => {
     await runNoteCreateEditPersistenceScenario(win);
   });
@@ -1051,7 +1072,7 @@ async function runRegression() {
     await waitFor(win, 'settings open', async () => {
       const current = await state(win);
       return {
-        ok: current.settingsOpen && current.buttons.some(btn => String(btn.text || '').includes('Appearance')),
+        ok: current.settingsOpen && current.buttons.some(btn => String(btn.text || '').includes('General')),
         current,
       };
     });

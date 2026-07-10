@@ -1,8 +1,8 @@
 # VispNote
 
-VispNote is a local-first desktop note app for structured thinking. It combines markdown files, a block-based editor, graph navigation, agenda planning, and optional local AI assistance in an Electron app.
+VispNote is a local-first desktop note app for individual knowledge workers who want to **write, connect, and act** without configuring a productivity system first.
 
-The project is designed around a simple rule: your notes should stay usable as plain files, even if you stop using the app.
+The default experience stays deliberately small: Notes, Today, Pinned, Tags, fast capture, search, and note-level connections. Your notes remain usable as plain files even if you stop using the app.
 
 ## Highlights
 
@@ -17,6 +17,29 @@ The project is designed around a simple rule: your notes should stay usable as p
 - **Local search**: SQLite-backed search and backlink indexes.
 - **Optional local AI**: Ask AI and writing tools can run through Ollama without hosted API keys.
 - **Themed desktop UI**: settings, launch screen, editor toolbar, note list, and dialogs follow the same visual system.
+
+## Product focus
+
+The core loop is intentionally simple:
+
+1. **Write** in local Markdown with a fast block editor and one-step capture to Today.
+2. **Connect** with wiki links, backlinks, unlinked mentions, related notes, and search.
+3. **Act** by reviewing focus, open loops, due items, and resurfaced notes in Today.
+
+Specialist capabilities live in optional packs so they do not become setup work:
+
+| Pack | Purpose |
+|---|---|
+| Planning | Agenda and workflow views when dated tasks or workflow data exist. |
+| Thinking Board | Arrange notes, stickies, and connections spatially. |
+| Research | Zotero-assisted source reading and synthesis. |
+| Writer | Long-form structure, scenes, and novelist-compatible vault metadata. |
+| Agents | MCP and local llm-memory integration. |
+| Labs | Global graph, Smart Views, and experimental specialist tools. |
+
+Activation never changes note content. Existing canvases, novelist vaults, Zotero configuration, and memory configuration are detected automatically. Ask AI is optional and appears only after assistance is enabled.
+
+VispNote can also keep a private, allowlisted feature-usage report on the device. It contains aggregate counters and repeat-use days, never note text, titles, tags, searches, prompts, filenames, paths, vault IDs, or secrets. The report can be previewed, exported, cleared, or disabled. Anonymous aggregate sharing is separately opt-in and appears only in builds configured with `VISPNOTE_TELEMETRY_ENDPOINT`.
 
 ## Tech Stack
 
@@ -146,9 +169,9 @@ VispNote can pair with a local [llm-memory](https://github.com/djkeshawa/llm-mem
 server so your notes and your agents share one memory:
 
 1. Run the llm-memory server locally (`llm-memory serve`).
-2. In VispNote settings, add the **LLM Memory bridge** plugin and set the
-   server URL (localhost only), repository id, and API key if the server
-   requires one.
+2. Enable the **Agents** pack in Advanced settings. Existing LLM Memory bridge
+   configurations remain editable there; set the localhost server URL,
+   repository id, and API key if the server requires one.
 3. From the command palette: **Import memories as notes** materializes
    memories as editable notes tagged `#memory` with provenance properties
    (`memoryId::`, `memoryLayer::`, ...). Imported notes are yours — re-imports
@@ -177,14 +200,16 @@ server.
 
 ## AI Setup
 
-AI features are optional. By default, VispNote is built for local Ollama usage.
+AI features are optional and disabled until enabled in **Settings > Assistance**.
 
 Typical flow:
 
 1. Install and start Ollama.
 2. Pull a chat model, for example `gemma3`.
 3. Pull an embedding model, for example `nomic-embed-text`.
-4. Open VispNote settings and connect the local provider.
+4. Choose **Local AI** in Assistance and connect the local provider. Hosted
+   providers remain available through **Hosted AI**, with URLs and model IDs
+   under Advanced provider settings.
 
 If Ollama is not available, the core note app still works.
 

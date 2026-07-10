@@ -19,6 +19,7 @@ const llmMemory = require('./lib/llmMemory');
 const memoryLinks = require('./lib/memoryLinks');
 const { createMemoryIndexCache } = require('./lib/memoryIndexCache');
 const quitPersistence = require('./lib/quitPersistence');
+const featureUsage = require('./lib/featureUsage');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
 const zotero = require('./lib/zotero');
@@ -80,7 +81,16 @@ const COMMON_SPELL_WORDS = [
   'syntax', 'text', 'their', 'there', 'these', 'this', 'typing', 'with',
   'word', 'words', 'working',
 ];
-const PREF_TOP_LEVEL_KEYS = new Set(['activeVaultId', 'tweaks', 'aiConfig', 'smartViews']);
+const PREF_TOP_LEVEL_KEYS = new Set([
+  'activeVaultId',
+  'tweaks',
+  'aiConfig',
+  'smartViews',
+  'enabledPacks',
+  'localUsageMetrics',
+  'anonymousUsageSharing',
+]);
+const FEATURE_PACK_IDS = new Set(['planning', 'canvas', 'research', 'writer', 'agents', 'labs']);
 const PREF_TWEAK_DEFAULTS = {
   theme: 'light',
   density: 'comfortable',
@@ -391,8 +401,21 @@ function sanitizePrefsPatchFromIpc(patch) {
     if (key === 'tweaks') clean.tweaks = sanitizeTweaksForPrefs(value);
     if (key === 'aiConfig') clean.aiConfig = sanitizeAiConfigForPrefs(value);
     if (key === 'smartViews') clean.smartViews = sanitizeSmartViewsForPrefs(value);
+    if (key === 'enabledPacks') clean.enabledPacks = sanitizeEnabledPacksForPrefs(value);
+    if (key === 'localUsageMetrics' || key === 'anonymousUsageSharing') {
+      if (typeof value !== 'boolean') throw new Error(`Invalid ${key} preference`);
+      clean[key] = value;
+    }
   }
   return clean;
+}
+
+function sanitizeEnabledPacksForPrefs(value) {
+  if (!Array.isArray(value) || value.length > FEATURE_PACK_IDS.size) {
+    throw new Error('Invalid enabled packs preference');
+  }
+  return [...new Set(value.map(item => capString(item, 'enabledPacks', 40)))]
+    .filter(packId => FEATURE_PACK_IDS.has(packId));
 }
 
 async function loadSpellWords() {
@@ -1123,6 +1146,78 @@ async function importThemeFileFromIpc() {
   return { ...installed, canceled: false };
 }
 
+function telemetryEndpoint() {
+  const raw = String(process.env.VISPNOTE_TELEMETRY_ENDPOINT || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+async function featureUsageStatusFromIpc() {
+  const status = await store.featureUsageStatus();
+  return {
+    ...status,
+    report: featureUsage.publicReport(await store.getFeatureUsageData(), {
+      appVersion: app.getVersion(),
+    }),
+    anonymousUploadAvailable: Boolean(telemetryEndpoint()),
+  };
+}
+
+async function exportFeatureUsageFromIpc() {
+  const report = featureUsage.publicReport(await store.getFeatureUsageData(), {
+    appVersion: app.getVersion(),
+  });
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export local feature usage report',
+    defaultPath: `vispnote-feature-usage-${new Date().toISOString().slice(0, 10)}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  try {
+    const targetStat = await fs.promises.lstat(result.filePath);
+    if (targetStat.isSymbolicLink()) throw new Error('Usage report target cannot be a symlink');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  await store.atomicWriteFile(result.filePath, JSON.stringify(report, null, 2), 'utf8');
+  return { canceled: false, filePath: result.filePath };
+}
+
+async function shareFeatureUsageFromIpc() {
+  const endpoint = telemetryEndpoint();
+  if (!endpoint) throw new Error('Anonymous usage sharing is not available in this build');
+  const prefs = await store.getPrefs();
+  if (prefs.anonymousUsageSharing !== true) throw new Error('Anonymous usage sharing is disabled');
+  const rotated = featureUsage.rotateUploadIdentity(await store.getFeatureUsageData());
+  const payload = featureUsage.anonymousSummary(rotated, {
+    appVersion: app.getVersion(),
+    os: process.platform,
+  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Anonymous usage upload failed (${response.status})`);
+    await store.setFeatureUsageData({
+      ...rotated,
+      lastUploadedAt: new Date().toISOString(),
+    });
+    return { shared: true, month: payload.month };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function sanitizeAiAskArgs(vaultId, query) {
   const cleanVaultId = String(vaultId || '').trim();
   if (!IPC_ID_RE.test(cleanVaultId)) throw new Error('Invalid vault id');
@@ -1663,6 +1758,11 @@ ipcMain.handle('mn:getPrefs',       wrap(async () => {
 ipcMain.handle('mn:setPrefs',       wrap(setPrefsFromIpc));
 ipcMain.handle('mn:importThemeFile', wrap(importThemeFileFromIpc));
 ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
+ipcMain.handle('mn:featureUsage.status', wrap(featureUsageStatusFromIpc));
+ipcMain.handle('mn:featureUsage.record', wrap((feature, action) => store.recordFeatureUsage(feature, action)));
+ipcMain.handle('mn:featureUsage.clear', wrap(store.clearFeatureUsage));
+ipcMain.handle('mn:featureUsage.export', wrap(exportFeatureUsageFromIpc));
+ipcMain.handle('mn:featureUsage.share', wrap(shareFeatureUsageFromIpc));
 
 // Search / backlinks / tags (SQLite-backed)
 ipcMain.handle('mn:search',         wrap(async (vaultId, query, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.search(vaultId, query, limit); }));

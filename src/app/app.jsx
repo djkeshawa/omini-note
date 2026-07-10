@@ -3,6 +3,7 @@
 // seed when running outside Electron (e.g. opened directly in a browser).
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useCallback: useCallbackA, useRef: useRefA } = React;
+const MN_FEATURES = window.MN_FEATURES || {};
 
 const {
   MN_TWEAK_DEFAULTS,
@@ -442,6 +443,8 @@ function MnApp() {
   const [bootError, setBootError] = useStateA(null);
 
   const [tweaks, setTweaks] = useStateA(MN_TWEAK_DEFAULTS);
+  const [enabledPacks, setEnabledPacks] = useStateA([]);
+  const [assistanceEnabled, setAssistanceEnabled] = useStateA(false);
   const [customThemes, setCustomThemes] = useStateA([]);
   const [settingsOpen, setSettingsOpen] = useStateA(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useStateA(false);
@@ -688,6 +691,56 @@ function MnApp() {
     setDirtyNotes(next);
     return next;
   }, []);
+
+  const recordFeatureUsage = useCallbackA((feature, action = 'used') => {
+    if (!window.mn?.featureUsage?.record) return;
+    window.mn.featureUsage.record(feature, action)
+      .catch(error => console.warn('Feature usage event ignored', error));
+  }, []);
+
+  const setPackEnabled = useCallbackA((packId, enabled) => {
+    setEnabledPacks(current => {
+      const next = MN_FEATURES.togglePack
+        ? MN_FEATURES.togglePack(current, packId, enabled)
+        : current;
+      if (HAS_DISK && window.mn?.setPrefs) {
+        window.mn.setPrefs({ enabledPacks: next })
+          .then(result => {
+            if (result?.ok === false) showAppNotice('Pack setting not saved', result.error, 'warn');
+          })
+          .catch(error => showAppNotice('Pack setting not saved', error.message || String(error), 'warn'));
+      }
+      const usageFeature = packId === 'labs' ? 'smart_views' : packId;
+      recordFeatureUsage(usageFeature, enabled ? 'enabled' : 'disabled');
+      return next;
+    });
+  }, [recordFeatureUsage, showAppNotice]);
+
+  useEffectA(() => {
+    const featureByView = {
+      today: 'today',
+      ai: 'ask_ai',
+      canvas: 'canvas',
+      graph: 'graph',
+      'smart-views': 'smart_views',
+      workflow: 'planning',
+      calendar: 'planning',
+      novelist: 'writer',
+    };
+    const feature = featureByView[view];
+    if (feature) recordFeatureUsage(feature, 'opened');
+  }, [view, recordFeatureUsage]);
+
+  useEffectA(() => {
+    if (captureOpen) recordFeatureUsage('capture', 'opened');
+  }, [captureOpen, recordFeatureUsage]);
+
+  const searchUsageActiveRef = useRefA(false);
+  useEffectA(() => {
+    const active = Boolean(query.trim());
+    if (active && !searchUsageActiveRef.current) recordFeatureUsage('search', 'used');
+    searchUsageActiveRef.current = active;
+  }, [query, recordFeatureUsage]);
   const noteDiskStampRef = useRefA(new Map());
   const savingDirtyKeysRef = useRefA(new Set());
   const pendingDirtyKeysRef = useRefA(new Set());
@@ -836,6 +889,8 @@ function MnApp() {
         const prefsRes = await window.mn.getPrefs();
         if (!prefsRes.ok) throw new Error(prefsRes.error);
         const prefs = prefsRes.value;
+        setEnabledPacks(MN_FEATURES.normalizePacks ? MN_FEATURES.normalizePacks(prefs.enabledPacks) : []);
+        setAssistanceEnabled(prefs.aiConfig?.enabled === true);
         setCustomThemes(mnNormalizeCustomThemesForApp(prefs.customThemes));
         if (prefs.phase5Metrics && MN_APP_HELPERS?.phase5SanitizeMetrics) {
           mnWriteLocalPhase5Metrics(MN_APP_HELPERS.phase5SanitizeMetrics(prefs.phase5Metrics));
@@ -1824,6 +1879,7 @@ function MnApp() {
 
   const filteredNotes = useMemoA(() => {
     let ns = [...notesWithBody];
+    if (view === 'pinned') ns = ns.filter(note => note.pinned);
     if (selectedTag) ns = ns.filter(n => n.tags.includes(selectedTag));
     if (selectedWorkflow) {
       const ids = workflowData.noteIdsByState[selectedWorkflow] || new Set();
@@ -1856,7 +1912,7 @@ function MnApp() {
       return new Date(b.modifiedAt || b.date || 0) - new Date(a.modifiedAt || a.date || 0);
     });
     return ns;
-  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHitIds, searchDetails, tweaks.sortBy, tweaks.pinnedFirst]);
+  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHitIds, searchDetails, tweaks.sortBy, tweaks.pinnedFirst, view]);
 
   const graphVisibleNotes = useMemoA(() => {
     if (!activeVault?.novelistMode) return filteredNotes;
@@ -2230,6 +2286,7 @@ function MnApp() {
         setSelectedId(plan.noteId);
         navigateView('notes');
         recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'append' });
+        recordFeatureUsage('capture', 'used');
         return plan.noteId;
       }
       const id = createNote({
@@ -2238,6 +2295,7 @@ function MnApp() {
         tags: tagsForCapture,
       });
       recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'create' });
+      recordFeatureUsage('capture', 'used');
       return id;
     }
 
@@ -2255,6 +2313,7 @@ function MnApp() {
       setSelectedId(activeDestination.noteId);
       navigateView('notes');
       recordPhase5Metric('capture_saves', { destinationId: activeDestination.id, mode: 'append' });
+      recordFeatureUsage('capture', 'used');
       return activeDestination.noteId;
     }
     const id = createNote({
@@ -2263,8 +2322,9 @@ function MnApp() {
       tags: quickCaptureMergeTags(activeDestination?.tags || [], noteTags),
     });
     recordPhase5Metric('capture_saves', { destinationId: activeDestination?.id || 'new', mode: 'create' });
+    recordFeatureUsage('capture', 'used');
     return id;
-  }, [createNote, navigateView, notesWithBody, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, recordPhase5Metric, selectedNote, uniqueNoteTitle, updateNoteBody]);
+  }, [createNote, navigateView, notesWithBody, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, recordFeatureUsage, recordPhase5Metric, selectedNote, uniqueNoteTitle, updateNoteBody]);
 
   const addQuickTodayTask = useCallbackA((text) => {
     const clean = String(text || '').replace(/\s+/g, ' ').trim();
@@ -3067,6 +3127,27 @@ function MnApp() {
   }, [activeVaultId, showAppNotice]);
 
   const plugins = useMemoA(() => (MN_PLUGIN_API.normalizeAll ? MN_PLUGIN_API.normalizeAll(tweaks.plugins) : []), [tweaks.plugins]);
+  const featureState = useMemoA(() => (
+    MN_FEATURES.deriveFeatureState
+      ? MN_FEATURES.deriveFeatureState({
+        enabledPacks,
+        canvasCount: canvases.length,
+        novelistMode: !!activeVault?.novelistMode,
+        vaults,
+        plugins,
+        workflowTotal: workflowData.total,
+        agendaCount: todayAgendaItems.length,
+        assistanceEnabled,
+      })
+      : {
+        showAgenda: false,
+        showWorkflow: false,
+        showCanvas: canvases.length > 0,
+        showWriter: !!activeVault?.novelistMode,
+        showAskAi: assistanceEnabled,
+        showLabs: false,
+      }
+  ), [activeVault?.novelistMode, assistanceEnabled, canvases.length, enabledPacks, plugins, vaults, workflowData.total, todayAgendaItems.length]);
 
   const runPlugin = useCallbackA(async (plugin) => {
     if (!plugin || plugin.enabled === false) return { ok: false, message: 'Plugin is unavailable.' };
@@ -4253,7 +4334,7 @@ function MnApp() {
     return () => clearTimeout(titleUpdateTimerRef.current);
   }, [activeVaultId, vaults, selectedNote]);
 
-  const noteListVisible = view === 'notes' || view === 'graph' || view === 'workflow';
+  const noteListVisible = view === 'notes' || view === 'pinned' || view === 'graph' || view === 'workflow';
   const aiChatListVisible = view === 'ai';
   const reminderCenterTop = view === 'ai' ? 17 : 14;
   const noteListTitle = query.trim()
@@ -4262,7 +4343,7 @@ function MnApp() {
     ? `#${selectedTag}`
     : selectedWorkflow
     ? selectedWorkflow
-    : (view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Today' : 'All notes');
+    : (view === 'pinned' ? 'Pinned' : view === 'workflow' ? 'Workflow notes' : view === 'todos' ? 'Todos' : view === 'today' ? 'Today' : 'All notes');
   const noteListSubtitle = query.trim()
     ? `${filteredNotes.length} match${filteredNotes.length === 1 ? '' : 'es'}`
     : view === 'workflow'
@@ -4313,12 +4394,14 @@ function MnApp() {
               onOpenNovelist={() => { navigateView('novelist'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
               onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenToday={() => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onOpenPinned={() => { navigateView('pinned'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
               onOpenSmartViews={() => openSmartView()}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenCanvas={openCanvasDashboard}
               onOpenTrash={() => { navigateView('trash'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenAskAI={HAS_DISK ? openAskAi : null}
               todayActive={view === 'today'}
+              pinnedActive={view === 'pinned'}
               agendaActive={view === 'calendar'}
               graphActive={view === 'graph'}
               smartViewsActive={view === 'smart-views'}
@@ -4345,6 +4428,7 @@ function MnApp() {
               onRefreshVaults={refreshVaultRegistry}
               onRenameVault={renameVault}
               onDeleteVault={deleteVault}
+              featureState={featureState}
               T={T} density={tweaks.density} theme={theme}
             />
           )}
@@ -4362,7 +4446,7 @@ function MnApp() {
               selectedId={selectedId}
               onSelect={(id) => {
                 setSelectedId(id);
-                if (view === 'notes') return;
+                if (view === 'notes' || view === 'pinned') return;
               }}
               title={noteListTitle}
               subtitle={noteListSubtitle}
@@ -4404,7 +4488,7 @@ function MnApp() {
             <MnPanelGripPeek onExpand={() => setNoteListHidden(false)} T={T} title="Show AI chats" />
           )}
 
-          {view === 'notes' && selectedNote && (
+          {(view === 'notes' || view === 'pinned') && selectedNote && (
             <MnEditor
               note={selectedNote} notes={notesWithBody} tags={tags} links={links}
               vaultId={activeVaultId}
@@ -4671,9 +4755,9 @@ function MnApp() {
               todayAiRecap={todayAiRecap}
               todayAiRecapBusy={todayAiRecapBusy}
               todayAiRecapError={todayAiRecapError}
-              onGenerateAiRecap={generateTodayAiRecap}
-              onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
-              onPlanItem={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
+              onGenerateAiRecap={featureState.showAskAi ? generateTodayAiRecap : null}
+              onOpenAgenda={featureState.showAgenda ? () => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); } : null}
+              onPlanItem={featureState.showAgenda ? () => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); } : null}
               rollupFormat={tweaks.rollupFormat || 'long'}
               rollupDefaultRange={tweaks.rollupDefaultRange || 'today'}
               rollupGroupBy={tweaks.rollupGroupBy || 'created'}
@@ -4833,6 +4917,11 @@ function MnApp() {
             onImportNovelFiles={importNovelFiles}
             onOpenVaultHealth={() => setVaultHealthOpen(true)}
             onRebuildIndex={rebuildIndex}
+            enabledPacks={enabledPacks}
+            featureState={featureState}
+            onSetPack={setPackEnabled}
+            assistanceEnabled={assistanceEnabled}
+            onAssistanceChange={setAssistanceEnabled}
             onClose={() => setSettingsOpen(false)} />
         )}
         <MnNovelImportPreviewDialog
