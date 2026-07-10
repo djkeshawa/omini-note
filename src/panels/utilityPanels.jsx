@@ -4,7 +4,7 @@ const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: u
 
 function MnTodayPanel({
   notes = [], tags = [], tasks = [], reminders = [], todayNote = null, agendaItems = [],
-  staleTasks = [], unlinkedNotes = [],
+  staleTasks = [], unlinkedNotes = [], resurfacedNotes = [],
   onOpen, onOpenOrCreateDailyNote, onAddQuickTask, onAddReflection, onEndDayRecap, onOpenAgenda, onPlanItem, T, theme, rollupFormat = 'long',
   rollupDefaultRange = 'today', rollupGroupBy = 'created', rollupShowPreviews = true,
   rollupShowTasks = true, rollupShowReminders = true, rollupCollapseOlder = true,
@@ -43,11 +43,21 @@ function MnTodayPanel({
       : []
   ), [notes, groupBy, weekStart]);
 
-  const visibleTasks = useMemoP(() => (
-    rollupShowTasks && helpers.rollupFilterTaskItems
+  const visibleAgendaItems = useMemoP(() => (
+    helpers.digestUniqueActionItems
+      ? helpers.digestUniqueActionItems(agendaItems, { limit: 5 })
+      : (agendaItems || []).slice(0, 5)
+  ), [agendaItems]);
+  const agendaKeys = useMemoP(() => new Set(visibleAgendaItems.map(item => helpers.digestActionItemKey?.(item)).filter(Boolean)), [visibleAgendaItems]);
+
+  const visibleTasks = useMemoP(() => {
+    const items = rollupShowTasks && helpers.rollupFilterTaskItems
       ? helpers.rollupFilterTaskItems(tasks, notes, { range, groupBy, weekStart })
-      : []
-  ), [rollupShowTasks, tasks, notes, range, groupBy, weekStart]);
+      : [];
+    return helpers.digestUniqueActionItems
+      ? helpers.digestUniqueActionItems(items, { excludeKeys: [...agendaKeys] })
+      : items;
+  }, [rollupShowTasks, tasks, notes, range, groupBy, weekStart, agendaKeys]);
 
   const todayTasks = useMemoP(() => (
     helpers.rollupFilterTaskItems
@@ -72,7 +82,6 @@ function MnTodayPanel({
   const todayKey = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
   const dailyNote = todayNote || (notes || []).find(note => String(note.title || '').trim() === todayKey) || null;
   const noteById = useMemoP(() => new Map((notes || []).map(note => [note.id, note])), [notes]);
-  const visibleAgendaItems = useMemoP(() => (agendaItems || []).slice(0, 5), [agendaItems]);
   const reminderGroups = useMemoP(() => ([
     { key: 'overdue', label: 'Overdue', items: visibleReminders.filter(item => item.rollupStatus === 'overdue') },
     { key: 'due-today', label: 'Due today', items: visibleReminders.filter(item => item.rollupStatus === 'due-today') },
@@ -392,6 +401,35 @@ function MnTodayPanel({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {resurfacedNotes.length > 0 && (
+          <div style={{
+            border: `1px solid ${T.lineSub}`,
+            borderRadius: 8,
+            background: T.bgSub,
+            padding: 12,
+            marginBottom: 16,
+          }}>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720, color: T.ink, marginBottom: 3 }}>
+              Worth revisiting
+            </div>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkDim, marginBottom: 8 }}>
+              Useful context from the last few weeks
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {resurfacedNotes.map(note => (
+                <button key={note.id} type="button" onClick={() => onOpen?.(note.id)} aria-label={`Open ${note.title}`} style={{
+                  border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bg, color: T.ink,
+                  padding: '7px 10px', cursor: 'pointer', textAlign: 'left',
+                  display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10,
+                }}>
+                  <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note.title}</span>
+                  <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim, flexShrink: 0 }}>{note.reason}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

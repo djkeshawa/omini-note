@@ -20,6 +20,7 @@ const memoryLinks = require('./lib/memoryLinks');
 const { createMemoryIndexCache } = require('./lib/memoryIndexCache');
 const quitPersistence = require('./lib/quitPersistence');
 const featureUsage = require('./lib/featureUsage');
+const { createVaultWatcher } = require('./lib/vaultWatcher');
 const idx = require('./lib/index');
 const ai = require('./lib/ai');
 const zotero = require('./lib/zotero');
@@ -69,6 +70,24 @@ let spellWords = null;
 let spellWordsPromise = null;
 let spellWordBuckets = null;
 let spellDictionaryAvailable = false;
+const vaultWatcher = process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE === '1'
+  ? { refresh() {}, close() {}, markInternal() {} }
+  : createVaultWatcher({
+    onChange: event => {
+      Promise.resolve(indexReadyPromise).then(async () => {
+        const data = await store.loadVault(event.vaultId);
+        await withIndexVaultLock(event.vaultId, async () => runOptionalSearchIndexTask(
+          'rescan externally changed vault',
+          () => idx.rescanVault(event.vaultId, data.notes)
+        ));
+        const noteId = path.basename(event.fileName || '', path.extname(event.fileName || ''));
+        const note = data.notes.find(item => item.id === noteId);
+        if (note) ai.scheduleEmbed(event.vaultId, note);
+      }).catch(error => console.error('external vault refresh failed', event.vaultId, error));
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+      mainWindow.webContents.send('mn:vaultFilesChanged', event);
+    },
+  });
 const spellSuggestionCache = new Map();
 let appHtmlRealPath = null;
 
@@ -1484,6 +1503,8 @@ registerNotesVaultHandlers(ipcMain, {
   ai,
   withIndexVaultLock,
   runOptionalSearchIndexTask,
+  onBeforeVaultMutation: vaultId => vaultWatcher.markInternal(vaultId),
+  onVaultRegistryChange: async () => vaultWatcher.refresh(await store.listVaults()),
 });
 
 ipcMain.handle('mn:listVaults',     wrap(store.listVaults));
@@ -1492,6 +1513,7 @@ ipcMain.handle('mn:createVault',    wrap(async (name, options) => {
   // Index the seeded welcome note
   const data = await store.loadVault(v.id);
   await withIndexVaultLock(v.id, async () => runOptionalSearchIndexTask('rescan created vault', () => idx.rescanVault(v.id, data.notes)));
+  vaultWatcher.refresh(await store.listVaults());
   return v;
 }));
 ipcMain.handle('mn:renameVault',    wrap(store.renameVault));
@@ -1499,6 +1521,7 @@ ipcMain.handle('mn:deleteVault',    wrap(async (vaultId) => {
   return await withIndexVaultLock(vaultId, async () => {
     const result = await store.deleteVault(vaultId);
     runOptionalSearchIndexTask('remove vault from index', () => idx.removeVault(vaultId));
+    vaultWatcher.refresh(await store.listVaults());
     return result;
   });
 }));
@@ -1507,6 +1530,7 @@ ipcMain.handle('mn:setActiveVault', wrap(store.setActiveVault));
 // Notes
 ipcMain.handle('mn:loadVault',      wrap(store.loadVault));
 ipcMain.handle('mn:saveNote',       wrap(async (vaultId, note, options) => {
+  vaultWatcher.markInternal(vaultId);
   return await withIndexVaultLock(vaultId, async () => {
     const previousNote = note?.id ? await store.getNote(vaultId, note.id).catch(() => null) : null;
     const saved = await store.saveNote(vaultId, note, options || {});
@@ -1532,6 +1556,7 @@ ipcMain.handle('mn:saveNote',       wrap(async (vaultId, note, options) => {
   });
 }));
 ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId, noteSnapshot) => {
+  vaultWatcher.markInternal(vaultId);
   return await withIndexVaultLock(vaultId, async () => {
     const result = await store.deleteNote(vaultId, noteId, noteSnapshot);
     runOptionalSearchIndexTask('remove note from index', () => idx.removeNote(vaultId, noteId));
@@ -1721,6 +1746,7 @@ ipcMain.handle('mn:saveAttachment', wrap(async (vaultId, payload) => {
 }));
 ipcMain.handle('mn:listDeletedNotes', wrap(store.listDeletedNotes));
 ipcMain.handle('mn:restoreDeletedNote', wrap(async (vaultId, trashId) => {
+  vaultWatcher.markInternal(vaultId);
   return await withIndexVaultLock(vaultId, async () => {
     const note = await store.restoreDeletedNote(vaultId, trashId);
     const indexed = runOptionalSearchIndexTask('index restored note', () => idx.indexNote(vaultId, note));
@@ -1730,7 +1756,9 @@ ipcMain.handle('mn:restoreDeletedNote', wrap(async (vaultId, trashId) => {
 }));
 ipcMain.handle('mn:purgeDeletedNote', wrap(store.purgeDeletedNote));
 ipcMain.handle('mn:listNoteVersions', wrap(store.listNoteVersions));
+ipcMain.handle('mn:getNoteVersion', wrap(store.getNoteVersion));
 ipcMain.handle('mn:restoreNoteVersion', wrap(async (vaultId, noteId, versionId) => {
+  vaultWatcher.markInternal(vaultId);
   return await withIndexVaultLock(vaultId, async () => {
     const note = await store.restoreNoteVersion(vaultId, noteId, versionId);
     const indexed = runOptionalSearchIndexTask('index restored note version', () => idx.indexNote(vaultId, note));
@@ -1942,6 +1970,7 @@ if (singleInstanceLock) app.whenReady().then(async () => {
   if (process.platform === 'darwin') app.dock?.setIcon(createAppIcon());
   try {
     await store.loadConfig();   // ensures the vault folder, seeds on first run
+    vaultWatcher.refresh(await store.listVaults());
     const prefs = await store.getPrefs();
     if (prefs.aiConfig) {
       try {
@@ -1980,5 +2009,6 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  vaultWatcher.close();
   idx.close();
 });

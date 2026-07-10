@@ -1294,6 +1294,26 @@ function MnApp() {
     };
   }, [bootState, refreshVaultRegistry]);
 
+  useEffectA(() => {
+    if (!HAS_DISK || bootState !== 'ready' || !window.mn?.onVaultFilesChanged) return undefined;
+    return window.mn.onVaultFilesChanged(event => {
+      if (!event?.vaultId) return;
+      const activeHasDirtyNotes = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
+      if (event.vaultId === activeVaultId && (activeHasDirtyNotes || tagsDirty.current)) {
+        showAppNotice(
+          'File changed outside VispNote',
+          'Your unsaved edits are still open. Save them to review the conflict, or reopen the vault to use the disk version.',
+          'warn'
+        );
+        return;
+      }
+      refreshVaultRegistry({
+        reloadActive: event.vaultId === activeVaultId,
+        reason: 'external-file-change',
+      });
+    });
+  }, [bootState, dirtyNotes, activeVaultId, refreshVaultRegistry, showAppNotice]);
+
   // Listen for host tweak-mode messages (still supported)
   useEffectA(() => {
     const handler = (e) => {
@@ -1999,11 +2019,13 @@ function MnApp() {
 
   const todayAgendaItems = useMemoA(() => {
     const today = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
-    return (calendarTaskItems || [])
+    const items = (calendarTaskItems || [])
       .filter(item => !(MN_APP_HELPERS.agendaIsDeferred && MN_APP_HELPERS.agendaIsDeferred(item)))
       .filter(item => item?.remindAt?.date === today)
-      .sort((a, b) => String(a.remindAt?.time || '').localeCompare(String(b.remindAt?.time || '')) || String(a.label || a.text || '').localeCompare(String(b.label || b.text || '')))
-      .slice(0, 5);
+      .sort((a, b) => String(a.remindAt?.time || '').localeCompare(String(b.remindAt?.time || '')) || String(a.label || a.text || '').localeCompare(String(b.label || b.text || '')));
+    return MN_APP_HELPERS.digestUniqueActionItems
+      ? MN_APP_HELPERS.digestUniqueActionItems(items, { limit: 5 })
+      : items.slice(0, 5);
   }, [calendarTaskItems]);
 
   const todayAiContext = useMemoA(() => (
@@ -2023,12 +2045,23 @@ function MnApp() {
   // notes that never got linked into the vault. Only computed while the
   // Today view is visible.
   const todayDigest = useMemoA(() => {
-    if (view !== 'today' || !MN_APP_HELPERS.digestStaleTodoItems) return { staleTodos: [], unlinkedNotes: [] };
+    if (view !== 'today' || !MN_APP_HELPERS.digestStaleTodoItems) return { staleTodos: [], unlinkedNotes: [], resurfacedNotes: [] };
+    const excludeIds = new Set([
+      ...todayAgendaItems.map(item => item.noteId),
+      ...(todayAiContext?.notes || []).map(note => note.id),
+    ].filter(Boolean));
+    const staleTodos = MN_APP_HELPERS.digestStaleTodoItems(calendarTaskItems, notesWithBody, { limit: 5 });
+    const unlinkedNotes = MN_APP_HELPERS.digestUnlinkedRecentNotes(notesWithBody, links, { limit: 5 });
+    staleTodos.forEach(item => item.noteId && excludeIds.add(item.noteId));
+    unlinkedNotes.forEach(note => note.id && excludeIds.add(note.id));
     return {
-      staleTodos: MN_APP_HELPERS.digestStaleTodoItems(calendarTaskItems, notesWithBody, { limit: 5 }),
-      unlinkedNotes: MN_APP_HELPERS.digestUnlinkedRecentNotes(notesWithBody, links, { limit: 5 }),
+      staleTodos,
+      unlinkedNotes,
+      resurfacedNotes: MN_APP_HELPERS.digestResurfacedNotes
+        ? MN_APP_HELPERS.digestResurfacedNotes(notesWithBody, links, { limit: 5, excludeIds: [...excludeIds] })
+        : [],
     };
-  }, [view, calendarTaskItems, notesWithBody, links]);
+  }, [view, calendarTaskItems, notesWithBody, links, todayAgendaItems, todayAiContext]);
 
   const generateTodayAiRecap = useCallbackA(async () => {
     if (!todayAiContext || !MN_APP_HELPERS.contextualAiBuildTodayRecapPrompt || !MN_APP_HELPERS.contextualAiBuildTodayRecapResult) {
@@ -2236,6 +2269,18 @@ function MnApp() {
     }));
     markDirty(id);
   }, [markDirty, mnMdToBlocks, mnBlocksToMd]);
+
+  const acceptSuggestedConnection = useCallbackA((item) => {
+    if (!selectedNote?.id || !window.MN_CONNECTIONS_MODEL?.appendConnectionMarkdown) return false;
+    const targetId = String(item?.noteId || item?.id || '');
+    const target = notesWithBody.find(note => note.id === targetId);
+    const title = String(item?.title || target?.title || '').trim();
+    if (!title || targetId === selectedNote.id) return false;
+    updateNoteBody(selectedNote.id, body => window.MN_CONNECTIONS_MODEL.appendConnectionMarkdown(body, title));
+    recordFeatureUsage('connections', 'used');
+    showAppNotice('Connection added', `Linked to ${title}.`, 'success');
+    return true;
+  }, [selectedNote?.id, notesWithBody, updateNoteBody, recordFeatureUsage, showAppNotice]);
 
   const quickCaptureMergeTags = useCallbackA((...groups) => {
     const seen = new Set();
@@ -4492,6 +4537,7 @@ function MnApp() {
             <MnEditor
               note={selectedNote} notes={notesWithBody} tags={tags} links={links}
               vaultId={activeVaultId}
+              searchQuery={query}
               connectionsRefreshToken={connectionsRefreshToken}
               memoryEnabled={HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory')}
               canvases={canvases}
@@ -4515,6 +4561,7 @@ function MnApp() {
                 markDirty(mentionNoteId);
                 return true;
               }}
+              onAcceptSuggestedConnection={acceptSuggestedConnection}
               onCreateLinkedNote={(title) => {
                 const cleanTitle = String(title || '').trim();
                 if (!cleanTitle) return null;
@@ -4747,6 +4794,7 @@ function MnApp() {
               agendaItems={todayAgendaItems}
               staleTasks={todayDigest.staleTodos}
               unlinkedNotes={todayDigest.unlinkedNotes}
+              resurfacedNotes={todayDigest.resurfacedNotes}
               onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
               onOpenOrCreateDailyNote={createDailyNote}
               onAddQuickTask={addQuickTodayTask}

@@ -464,6 +464,9 @@ test('Note saves create restorable versions and reject stale disk writes', async
     const versions = await store.listNoteVersions(vault.id, note.id);
     assert.ok(versions.length >= 2);
     assert.match(versions[0].versionId, /^ver_/);
+    const preview = await store.getNoteVersion(vault.id, note.id, versions[0].versionId);
+    assert.equal(preview.noteId, note.id);
+    assert.ok(typeof preview.body === 'string');
 
     await assert.rejects(
       () => store.saveNote(vault.id, {

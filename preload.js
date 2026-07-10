@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('mn', {
   restoreDeletedNote: (vaultId, trashId) => ipcRenderer.invoke('mn:restoreDeletedNote', vaultId, trashId),
   purgeDeletedNote: (vaultId, trashId) => ipcRenderer.invoke('mn:purgeDeletedNote', vaultId, trashId),
   listNoteVersions: (vaultId, noteId) => ipcRenderer.invoke('mn:listNoteVersions', vaultId, noteId),
+  getNoteVersion: (vaultId, noteId, versionId) => ipcRenderer.invoke('mn:getNoteVersion', vaultId, noteId, versionId),
   restoreNoteVersion: (vaultId, noteId, versionId) => ipcRenderer.invoke('mn:restoreNoteVersion', vaultId, noteId, versionId),
   listCanvases: (vaultId) => ipcRenderer.invoke('mn:listCanvases', vaultId),
   getCanvas: (vaultId, canvasId) => ipcRenderer.invoke('mn:getCanvas', vaultId, canvasId),
@@ -200,6 +201,12 @@ contextBridge.exposeInMainWorld('mn', {
     const listener = () => { try { callback(); } catch (e) { console.error('onOpenQuickCapture handler', e); } };
     ipcRenderer.on('mn:openQuickCapture', listener);
     return () => ipcRenderer.removeListener('mn:openQuickCapture', listener);
+  },
+  onVaultFilesChanged: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, value) => { try { callback(value || {}); } catch (e) { console.error('onVaultFilesChanged handler', e); } };
+    ipcRenderer.on('mn:vaultFilesChanged', listener);
+    return () => ipcRenderer.removeListener('mn:vaultFilesChanged', listener);
   },
   onFlushDirtyNotes: (callback) => {
     if (typeof callback !== 'function') return () => {};

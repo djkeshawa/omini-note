@@ -74,10 +74,11 @@ function mnMemoryNodeTitle(node) {
 
 function MnEditor({
   note, notes, tags, links, vaultId,
+  searchQuery = '',
   connectionsRefreshToken = 0,
   memoryEnabled = false,
   canvases = [], onOpenCanvas, onCreateCanvas,
-  onOpen, onCreateLinkedNote, onOpenTag, onLinkMention,
+  onOpen, onCreateLinkedNote, onOpenTag, onLinkMention, onAcceptSuggestedConnection,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
   onEndNoteMetadataEdit, onUndoNoteEdit, onRedoNoteEdit,
   onPinToggle, onDuplicate, onDelete, onOpenVersions, onOpenGraph, onOpenCalendar, onBack,
@@ -95,6 +96,8 @@ function MnEditor({
   const [zoomBlockId, setZoomBlockId] = useStateE(null);
   const [toast, setToast] = useStateE(null);
   const toastTimerRef = useRefE(null);
+  const editorSearchScopeRef = useRefE(null);
+  const [searchMatch, setSearchMatch] = useStateE({ count: 0, activeIndex: 0 });
   const propertySplit = useMemoE(
     () => mnEditorSplitPropertyBlocks(note.blocks || []),
     [note.blocks]
@@ -111,6 +114,29 @@ function MnEditor({
 
   // Reset zoom when note changes
   useEffectE(() => { setZoomBlockId(null); }, [note.id]);
+  useEffectE(() => { setSearchMatch({ count: 0, activeIndex: 0 }); }, [note.id, searchQuery]);
+
+  useEffectE(() => {
+    const search = window.MN_EDITOR_SEARCH;
+    if (!search?.applyEditorSearchHighlights) return undefined;
+    const handle = requestAnimationFrame(() => {
+      const result = search.applyEditorSearchHighlights(
+        editorSearchScopeRef.current,
+        searchQuery,
+        searchMatch.activeIndex
+      );
+      setSearchMatch(current => (
+        current.count === result.count && current.activeIndex === Math.max(0, result.activeIndex)
+          ? current
+          : { count: result.count, activeIndex: Math.max(0, result.activeIndex) }
+      ));
+      result.targets?.[result.activeIndex]?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    });
+    return () => {
+      cancelAnimationFrame(handle);
+      search.clearEditorSearchHighlights?.();
+    };
+  }, [note.id, note.blocks, searchQuery, searchMatch.activeIndex]);
 
   const onShowToast = (msg) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -223,6 +249,43 @@ function MnEditor({
     }, 400);
     return () => { cancelled = true; clearTimeout(handle); };
   }, [vaultId, note.id]);
+
+  const ignoredConnectionsKey = `mn:ignoredConnections:${vaultId || 'local'}:${note.id}`;
+  const [ignoredConnectionIds, setIgnoredConnectionIds] = useStateE(() => (
+    window.MN_STORAGE?.getJson?.(ignoredConnectionsKey, []) || []
+  ));
+  useEffectE(() => {
+    setIgnoredConnectionIds(window.MN_STORAGE?.getJson?.(ignoredConnectionsKey, []) || []);
+  }, [ignoredConnectionsKey]);
+  const suggestedConnections = useMemoE(() => (
+    window.MN_CONNECTIONS_MODEL?.suggestedConnections?.({
+      noteId: note.id,
+      related: related.items,
+      links,
+      ignoredIds: ignoredConnectionIds,
+      limit: 4,
+    }) || []
+  ), [note.id, related.items, links, ignoredConnectionIds]);
+  const suggestedConnectionIds = useMemoE(
+    () => new Set(suggestedConnections.map(item => String(item.noteId || item.id || ''))),
+    [suggestedConnections]
+  );
+  const passiveRelatedItems = useMemoE(
+    () => related.items.filter(item => !suggestedConnectionIds.has(String(item.noteId || item.id || ''))),
+    [related.items, suggestedConnectionIds]
+  );
+  const ignoreSuggestedConnection = (item) => {
+    const id = window.MN_CONNECTIONS_MODEL?.connectionNoteId?.(item) || item?.noteId || item?.id;
+    if (!id) return;
+    setIgnoredConnectionIds(current => {
+      const next = [...new Set([...(current || []), String(id)])];
+      window.MN_STORAGE?.setJson?.(ignoredConnectionsKey, next);
+      return next;
+    });
+  };
+  const acceptSuggestedConnection = (item) => {
+    if (onAcceptSuggestedConnection?.(item) !== false) ignoreSuggestedConnection(item);
+  };
 
   // Connected memories: this note's neighbors in the llm-memory knowledge graph.
   // Only runs when the bridge is enabled; a disabled/unreachable server or an
@@ -479,7 +542,7 @@ function MnEditor({
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 clamp(18px, 4.5vw, 56px) 44px' }}>
-        <div style={{
+        <div ref={editorSearchScopeRef} style={{
           maxWidth: editorWidth === 'narrow' ? 720
                   : editorWidth === 'wide' ? 1280
                   : editorWidth === 'full' ? 'none'
@@ -528,6 +591,31 @@ function MnEditor({
               padding: 0,
             }}
           />
+
+          {!!String(searchQuery || '').trim() && (
+            <div data-mn-search-toolbar="true" role="group" aria-label="Search matches in this note" style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6,
+              margin: '-3px 0 13px', fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkDim,
+            }}>
+              <span aria-live="polite">
+                {searchMatch.count ? `${searchMatch.activeIndex + 1} of ${searchMatch.count}` : 'No matches in this note'}
+              </span>
+              <button type="button" aria-label="Previous search match" disabled={!searchMatch.count} onClick={() => {
+                setSearchMatch(current => ({ ...current, activeIndex: current.count ? (current.activeIndex - 1 + current.count) % current.count : 0 }));
+              }} style={iconBtn(T)}>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                  <path d="M2.5 7.5L6 4L9.5 7.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <button type="button" aria-label="Next search match" disabled={!searchMatch.count} onClick={() => {
+                setSearchMatch(current => ({ ...current, activeIndex: current.count ? (current.activeIndex + 1) % current.count : 0 }));
+              }} style={iconBtn(T)}>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                  <path d="M2.5 4.5L6 8L9.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          )}
 
           <div style={{
             display: 'flex', gap: 6, marginBottom: 9, alignItems: 'center', flexWrap: 'wrap'
@@ -751,10 +839,40 @@ function MnEditor({
             T={T}
           />
 
+          {(suggestedConnections.length > 0 || backlinks.length > 0 || mentions.length > 0 || passiveRelatedItems.length > 0 || connected.items.length > 0) && (
+            <div style={{ marginTop: 40, paddingTop: 20, borderTop: `1px solid ${T.lineSub}` }}>
+              <div style={{
+                fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 720,
+                color: T.ink, marginBottom: suggestedConnections.length ? 10 : 2,
+              }}>Connections</div>
+              {suggestedConnections.length > 0 && (
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.inkDim, marginBottom: 7 }}>
+                    Suggested links
+                  </div>
+                  {suggestedConnections.map(item => (
+                    <div key={item.noteId || item.id} style={{
+                      display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', gap: 6, alignItems: 'center',
+                      padding: '9px 10px', marginBottom: 6, borderRadius: 6,
+                      background: T.bgSub, border: `1px solid ${T.lineSub}`,
+                    }}>
+                      <button type="button" onClick={() => onOpen(item.noteId || item.id)} style={{
+                        minWidth: 0, border: 0, background: 'transparent', color: T.ink,
+                        textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--mn-ui)', fontSize: 12.5,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>{item.title || 'Untitled'}</button>
+                      <button type="button" aria-label={`Accept connection to ${item.title || 'note'}`} onClick={() => acceptSuggestedConnection(item)} style={mnConnectionActionStyle(T, true)}>Accept</button>
+                      <button type="button" aria-label={`Ignore connection to ${item.title || 'note'}`} onClick={() => ignoreSuggestedConnection(item)} style={mnConnectionActionStyle(T, false)}>Ignore</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {backlinks.length > 0 && (
             <div style={{
-              marginTop: 40, paddingTop: 20,
-              borderTop: `1px solid ${T.lineSub}`,
+              marginTop: 18,
             }}>
               <div style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 10,
@@ -784,9 +902,7 @@ function MnEditor({
 
           {mentions.length > 0 && (
             <div style={{
-              marginTop: backlinks.length > 0 ? 28 : 40,
-              paddingTop: 20,
-              borderTop: `1px solid ${T.lineSub}`,
+              marginTop: 18,
             }}>
               <div style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 10,
@@ -828,11 +944,9 @@ function MnEditor({
             </div>
           )}
 
-          {related.items.length > 0 && (
+          {passiveRelatedItems.length > 0 && (
             <div style={{
-              marginTop: (backlinks.length > 0 || mentions.length > 0) ? 28 : 40,
-              paddingTop: 20,
-              borderTop: `1px solid ${T.lineSub}`,
+              marginTop: 18,
             }}>
               <div style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 10,
@@ -840,7 +954,7 @@ function MnEditor({
                 color: T.inkDim, marginBottom: 10,
                 display: 'flex', alignItems: 'center', gap: 8,
               }}>
-                <span>≈ {related.items.length} related</span>
+                <span>≈ {passiveRelatedItems.length} related</span>
                 {related.mode && (
                   <span style={{
                     fontSize: 9, letterSpacing: '0.1em',
@@ -848,7 +962,7 @@ function MnEditor({
                   }}>{related.mode === 'semantic' ? 'semantic' : 'keyword'}</span>
                 )}
               </div>
-              {related.items.map(r => (
+              {passiveRelatedItems.map(r => (
                 <div key={r.noteId} onClick={() => onOpen(r.noteId)} style={{
                   padding: '10px 12px', marginBottom: 6, borderRadius: 6,
                   background: T.bgSub, border: `1px solid ${T.lineSub}`,
@@ -872,9 +986,7 @@ function MnEditor({
           )}
           {connected.items.length > 0 && (
             <div style={{
-              marginTop: (backlinks.length > 0 || mentions.length > 0 || related.items.length > 0) ? 28 : 40,
-              paddingTop: 20,
-              borderTop: `1px solid ${T.lineSub}`,
+              marginTop: 18,
             }}>
               <div style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 10,
@@ -937,6 +1049,12 @@ function MnEditor({
           pointerEvents: 'none',
         }}>{toast}</div>
       )}
+      <style>{`
+        ::highlight(mn-search-all) { background: color-mix(in oklab, ${T.accent} 30%, transparent); }
+        ::highlight(mn-search-active) { background: color-mix(in oklab, ${T.accent} 58%, transparent); color: ${T.ink}; }
+        [data-mn-search-match="true"] { background: color-mix(in oklab, ${T.accent} 18%, transparent); border-radius: 4px; }
+        [data-mn-search-active="true"] { box-shadow: 0 0 0 2px color-mix(in oklab, ${T.accent} 50%, transparent); }
+      `}</style>
     </div>
   );
 }
@@ -954,6 +1072,20 @@ function iconBtn(T, active) {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+  };
+}
+
+function mnConnectionActionStyle(T, primary = false) {
+  return {
+    border: `1px solid ${primary ? T.accent : T.lineSub}`,
+    borderRadius: 6,
+    background: primary ? T.accentSoft : T.bg,
+    color: primary ? T.accent : T.inkDim,
+    cursor: 'pointer',
+    fontFamily: 'var(--mn-ui)',
+    fontSize: 11,
+    fontWeight: 650,
+    padding: '4px 8px',
   };
 }
 

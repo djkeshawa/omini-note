@@ -2049,6 +2049,62 @@
       .map(note => ({ id: note.id, title: note.title || 'Untitled', modifiedAt: note.modifiedAt || note.date || '' }));
   }
 
+  function digestActionItemKey(item = {}) {
+    const label = contextualAiActionLabel(item).toLowerCase().replace(/\s+/g, ' ');
+    const when = [item?.remindAt?.date, item?.remindAt?.time, item?.rollupDateKey].filter(Boolean).join(':');
+    return [item?.noteId || '', label, when].join('|');
+  }
+
+  function digestUniqueActionItems(items = [], { limit = 50, excludeKeys = [] } = {}) {
+    const excluded = new Set(excludeKeys || []);
+    const seen = new Set();
+    const out = [];
+    for (const item of items || []) {
+      const key = digestActionItemKey(item);
+      if (!item || excluded.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+      if (out.length >= Math.max(1, Number(limit) || 50)) break;
+    }
+    return out;
+  }
+
+  // A small resurfacing queue for Today. This intentionally favors useful
+  // unfinished context over random old notes and explains why each note is
+  // shown, so resurfacing never feels mysterious.
+  function digestResurfacedNotes(notes = [], links = [], { now = new Date(), minDays = 2, maxDays = 45, limit = 5, excludeIds = [] } = {}) {
+    const nowTime = now.getTime();
+    const newest = nowTime - Math.max(1, minDays) * 24 * 60 * 60 * 1000;
+    const oldest = nowTime - Math.max(minDays + 1, maxDays) * 24 * 60 * 60 * 1000;
+    const excluded = new Set(excludeIds || []);
+    const connectionCount = new Map();
+    (links || []).forEach(link => {
+      if (link?.source) connectionCount.set(link.source, (connectionCount.get(link.source) || 0) + 1);
+      if (link?.target) connectionCount.set(link.target, (connectionCount.get(link.target) || 0) + 1);
+    });
+    return (notes || [])
+      .filter(note => {
+        if (!note?.id || excluded.has(note.id) || rollupTitleDateKey(note)) return false;
+        const touched = Date.parse(note.modifiedAt || note.date || '') || 0;
+        return touched >= oldest && touched <= newest;
+      })
+      .map(note => {
+        const body = String(note.body || '');
+        const openLoop = /^\s*[-*]\s+\[ \]\s+/m.test(body);
+        const connections = connectionCount.get(note.id) || 0;
+        const reason = note.pinned ? 'Pinned'
+          : openLoop ? 'Open loop'
+          : connections ? 'Connected context'
+          : 'Recently changed';
+        const score = (note.pinned ? 100 : 0) + (openLoop ? 60 : 0) + Math.min(30, connections * 5)
+          + ((Date.parse(note.modifiedAt || note.date || '') || 0) / 1e13);
+        return { id: note.id, title: note.title || 'Untitled', reason, score, modifiedAt: note.modifiedAt || note.date || '' };
+      })
+      .sort((a, b) => b.score - a.score || (Date.parse(b.modifiedAt || '') || 0) - (Date.parse(a.modifiedAt || '') || 0))
+      .slice(0, Math.max(1, Number(limit) || 5))
+      .map(({ score, ...note }) => note);
+  }
+
   function contextualAiBuildTodayRecapContext({ notes = [], tasks = [], reminders = [], agendaItems = [], links = [], now = new Date(), weekStart = 'monday', limit = 6 } = {}) {
     const today = todayIsoDate(now);
     const maxItems = Math.max(1, Math.min(Number(limit) || 6, 12));
@@ -3066,6 +3122,9 @@
     contextualAiBuildTodayRecapPrompt,
     digestStaleTodoItems,
     digestUnlinkedRecentNotes,
+    digestActionItemKey,
+    digestUniqueActionItems,
+    digestResurfacedNotes,
     contextualAiBuildTodayRecapResult,
     reminderDisplayDate,
     reminderStatusLabel,
