@@ -5,7 +5,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 
-const llmMemory = require('../lib/llmMemory.js');
+const llmMemory = require('../lib/integrations/memory/client.js');
 
 function startFakeServer(state = {}) {
   const requests = [];

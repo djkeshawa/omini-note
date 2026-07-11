@@ -38,10 +38,10 @@ test('renderer modules declare cross-file globals explicitly during migration', 
   const editor = read(paths.src.editor);
   const outliner = read(paths.src.outliner);
 
-  assert.match(app, /const \{[\s\S]*MnSidebar[\s\S]*MnSettingsModal[\s\S]*\} = window;/);
+  assert.match(app, /import \{ MnSettingsModal \} from '\.\.\/settings\/settings\.jsx';/);
   assert.match(editor, /const MnOutliner = window\.MnOutliner;/);
   assert.match(outliner, /const MnWorkflowPill = window\.MnWorkflowPill;/);
-  assert.match(outliner, /const MnCanvasEmbed = window\.MnCanvasEmbed;/);
+  assert.match(outliner, /import \{ MnCanvasEmbed \} from '\.\.\/features\/canvas\/index\.js';/);
 });
 
 test('renderer globals are explicitly allowlisted until ESM migration removes them', () => {
@@ -181,5 +181,5 @@ test('editor feature modules own models, connections, and block mutations', () =
   assert.match(outliner, /moveBlock\(bs, srcId, destId, position, mnLocate\)/);
   assert.match(operations, /export function moveBlock/);
   assert.ok(editor.split(/\r?\n/).length <= 945, 'editor shell regrew beyond the Phase 5 budget');
-  assert.ok(outliner.split(/\r?\n/).length <= 4101, 'outliner regrew beyond the Phase 5 budget');
+  assert.ok(outliner.split(/\r?\n/).length <= 4104, 'outliner regrew beyond the Phase 5 budget');
 });

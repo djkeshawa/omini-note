@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const usage = require('../lib/featureUsage');
+const usage = require('../lib/integrations/telemetry/featureUsage');
 
 test('feature usage records only allowlisted aggregate counters and repeat days', () => {
   let report = usage.recordFeatureUsage(null, 'capture', 'used', { now: '2026-07-01T10:00:00Z' });

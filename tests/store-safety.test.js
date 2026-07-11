@@ -919,7 +919,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(outlinerRenderers, /sandbox=""/);
   assert.match(outlinerRenderers, /function mnMermaidSvgHeight/);
   assert.match(outlinerRenderers, /pointerEvents: 'none'/);
-  assert.match(markdownInlineRenderers, /window\.mn\?\.openExternal\?\.\(segment\.url\)/);
+  assert.match(markdownInlineRenderers, /platformApi\.app\.openExternal\(segment\.url\)/);
   assert.doesNotMatch(markdownInputRules, /mnMdToBlocks|mnBlocksToMd|dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
   assert.doesNotMatch(markdownInlineRenderers, /dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
   assert.doesNotMatch(aiSource, /env:\s*\{\s*\.\.\.process\.env/);
@@ -1239,9 +1239,15 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   const store = storeProcessSource();
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const trashController = fs.readFileSync(path.join(__dirname, '../src/features/trash/useTrashController.js'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const settingsRoot = path.join(__dirname, '../src/settings');
+  const settings = [
+    path.join(settingsRoot, 'settings.jsx'),
+    path.join(settingsRoot, 'settingsControls.jsx'),
+    path.join(settingsRoot, 'settingsPrimitives.jsx'),
+    ...fs.readdirSync(path.join(settingsRoot, 'sections')).sort().map(name => path.join(settingsRoot, 'sections', name)),
+  ].map(file => fs.readFileSync(file, 'utf8')).join('\n');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
-  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
+  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/features/trash/components/RecentlyDeletedPanel.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
 
   assert.match(store, /atomicWriteFile/);

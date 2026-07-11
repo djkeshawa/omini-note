@@ -5,12 +5,18 @@
 import { ReferencePane as MnReferencePane, useReferencePaneController } from '../features/reference/index.js';
 import { useAiSessionsController } from '../features/ai/index.js';
 import { useSearchController } from '../features/search/index.js';
-import { useCanvasController } from '../features/canvas/index.js';
+import { MnCanvasPanel, useCanvasController } from '../features/canvas/index.js';
 import { useNavigationController } from '../features/navigation/index.js';
 import { useOverlayController } from '../features/overlays/index.js';
-import { useTrashController } from '../features/trash/index.js';
+import { MnRecentlyDeletedPanel, useTrashController } from '../features/trash/index.js';
 import { useBootController } from '../features/boot/index.js';
-import { useTodayController } from '../features/today/index.js';
+import { MnTodayPanel, useTodayController } from '../features/today/index.js';
+import { MnQuickCapture } from '../features/capture/index.js';
+import { MnReminderToast } from '../features/reminders/index.js';
+import { MnPanelGrip, MnPanelGripPeek } from '../shared/layout/PanelGrips.jsx';
+import { MnSettingsModal } from '../settings/settings.jsx';
+import { MnSidebar } from '../panels/sidebar.jsx';
+import { MnAskAI } from '../ai/ai.jsx';
 import {
   calendarCleanTaskText as mnCalendarCleanTaskText,
   calendarTaskContent as mnCalendarTaskContent,
@@ -25,7 +31,9 @@ import {
   novelImportConsolidationPrompt as mnNovelImportConsolidationPrompt,
   novelImportToolArgs as mnNovelImportToolArgs,
   NovelImportPreviewDialog as MnNovelImportPreviewDialog,
+  MnNovelistPanel,
 } from '../features/writer/index.js';
+import { MnWorkflowPanel } from '../features/workflow/index.js';
 import {
   PHASE5_METRICS_STORAGE_KEY as MN_PHASE5_METRICS_STORAGE_KEY,
   normalizeCustomThemes as mnNormalizeCustomThemesForApp,
@@ -39,6 +47,17 @@ import {
 } from '../features/preferences/index.js';
 import { desktopBridge, hasDesktopBridge } from '../platform/index.js';
 import { useAppActionRegistry } from './actions/index.js';
+import {
+  MnLaunchScreen,
+  MnDeleteNoteDialog,
+  MnAppNoticeDialog,
+  MnSaveConflictDialog,
+  MnVersionHistoryDialog,
+  MnReminderCenter,
+  MnAiNotice,
+  MnCommandPalette,
+  MnVaultHealthDialog,
+} from './appShell.jsx';
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useCallback: useCallbackA, useRef: useRefA } = React;
 const MN_FEATURES = window.MN_FEATURES || {};
@@ -108,48 +127,24 @@ const {
   mnPlayReminderSound,
 } = window.MN_APP_RUNTIME || {};
 
-const MN_APP_SHELL = window.MN_APP_SHELL || {};
 const MN_PANEL_COMPONENTS = window.MN_PANEL_COMPONENTS || {};
 const MN_NOTES_VAULTS_SERVICE = window.MN_NOTES_VAULTS_SERVICE || {};
 const MN_VAULTS_SERVICE = window.MN_VAULTS_SERVICE || {};
 const MN_NOTES_VAULTS_STATE = window.MN_NOTES_VAULTS_STATE || {};
 const MN_MEMORY_ACTIONS = window.MN_MEMORY_ACTIONS || {};
-const {
-  HAS_DISK = hasDesktopBridge(),
-  MnLaunchScreen,
-  MnDeleteNoteDialog,
-  MnAppNoticeDialog,
-  MnSaveConflictDialog,
-  MnVersionHistoryDialog,
-  MnReminderCenter,
-  MnAiNotice,
-  MnCommandPalette,
-  MnVaultHealthDialog,
-} = MN_APP_SHELL;
+const HAS_DISK = hasDesktopBridge();
 const MnQuickSwitcher = window.MnQuickSwitcher;
 const MN_QUICK_SWITCHER_MODEL = window.MN_QUICK_SWITCHER_MODEL || {};
 const {
   MnSmartViewsPanel,
 } = MN_PANEL_COMPONENTS;
 const {
-  MnSidebar,
-  MnPanelGrip,
-  MnPanelGripPeek,
   MnNoteList,
   MnAiChatHistory,
   MnEditor,
-  MnAskAI,
   MnGraph,
   MnTodosPanel,
   MnCalendarPanel,
-  MnWorkflowPanel,
-  MnNovelistPanel,
-  MnTodayPanel,
-  MnRecentlyDeletedPanel,
-  MnCanvasPanel,
-  MnQuickCapture,
-  MnReminderToast,
-  MnSettingsModal,
 } = window;
 
 function MnApp() {

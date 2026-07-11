@@ -46,7 +46,7 @@ const platformApi = Object.freeze({
   notes: methodGroup([
     'loadVault', 'saveNote', 'deleteNote', 'listDeletedNotes',
     'restoreDeletedNote', 'purgeDeletedNote', 'listNoteVersions',
-    'getNoteVersion', 'restoreNoteVersion', 'exportNote',
+    'getNoteVersion', 'restoreNoteVersion', 'exportNote', 'saveAttachment',
   ]),
   vaults: methodGroup([
     'listVaults', 'createVault', 'renameVault', 'deleteVault',
@@ -61,9 +61,12 @@ const platformApi = Object.freeze({
     'listDeletedCanvases', 'restoreDeletedCanvas', 'purgeDeletedCanvas',
   ]),
   preferences: methodGroup(['getPrefs', 'setPrefs', 'importThemeFile']),
-  app: methodGroup(['openExternal', 'setTitle', 'spellcheck']),
+  app: methodGroup(['openExternal', 'setTitle', 'spellcheck', 'shortcutStatus']),
   get ai() {
     return currentBridge().ai || EMPTY_BRIDGE;
+  },
+  get updates() {
+    return currentBridge().updates || EMPTY_BRIDGE;
   },
   get integrations() {
     return Object.freeze({

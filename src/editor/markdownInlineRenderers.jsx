@@ -1,5 +1,7 @@
 // Inline markdown and annotation renderers for outliner text.
 
+import { platformApi } from '../platform/index.js';
+
 const MnInline = window.MnInline;
 const MN_MARKDOWN_INPUT_RULES = window.MN_MARKDOWN_INPUT_RULES || {};
 
@@ -176,7 +178,7 @@ function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, rende
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                window.mn?.openExternal?.(segment.url);
+                platformApi.app.openExternal(segment.url);
               }}
               style={{
                 color: T.accent,

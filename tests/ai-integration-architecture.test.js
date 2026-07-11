@@ -45,11 +45,16 @@ test('AI tool schemas sanitize nested contracts and tool calls', () => {
   assert.equal(toolSchemas.sanitizeAiTools([{ name: 'unsafe name' }]).length, 0);
 });
 
-test('external clients live under integrations with compatibility facades', () => {
+test('external clients live under integrations without compatibility facades', () => {
   const root = path.join(__dirname, '..');
   const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
   const ai = fs.readFileSync(path.join(root, 'lib/ai.js'), 'utf8');
-  const rendererAi = fs.readFileSync(path.join(root, 'src/ai/ai.jsx'), 'utf8');
+  const rendererAiRoot = path.join(root, 'src/ai');
+  const rendererAi = fs.readdirSync(rendererAiRoot)
+    .filter(name => name === 'ai.jsx' || /^(?:ai.+|AskAi.+|create.+)\.(?:js|jsx)$/.test(name))
+    .sort()
+    .map(name => fs.readFileSync(path.join(rendererAiRoot, name), 'utf8'))
+    .join('\n');
 
   assert.match(main, /lib\/integrations\/memory\/client/);
   assert.match(main, /lib\/integrations\/telemetry\/featureUsage/);
@@ -57,7 +62,7 @@ test('external clients live under integrations with compatibility facades', () =
   assert.match(ai, /integrations\/ai\/providerTransport/);
   assert.match(ai, /integrations\/ai\/toolSchemas/);
   assert.match(rendererAi, /features\/ai\/index\.js/);
-  assert.match(fs.readFileSync(path.join(root, 'lib/zotero.js'), 'utf8'), /integrations\/zotero\/client/);
-  assert.match(fs.readFileSync(path.join(root, 'lib/llmMemory.js'), 'utf8'), /integrations\/memory\/client/);
-  assert.match(fs.readFileSync(path.join(root, 'lib/featureUsage.js'), 'utf8'), /integrations\/telemetry\/featureUsage/);
+  assert.equal(fs.existsSync(path.join(root, 'lib/zotero.js')), false);
+  assert.equal(fs.existsSync(path.join(root, 'lib/llmMemory.js')), false);
+  assert.equal(fs.existsSync(path.join(root, 'lib/featureUsage.js')), false);
 });

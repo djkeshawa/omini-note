@@ -33,6 +33,7 @@ import {
   useOutlinerKeyboardShortcuts,
 } from '../features/editor/outliner/index.js';
 import { platformApi } from '../platform/index.js';
+import { MnCanvasEmbed } from '../features/canvas/index.js';
 
 const { useState: useStateOE, useRef: useRefOE, useEffect: useEffectOE,
         useMemo: useMemoOE, useLayoutEffect: useLayoutEffectOE } = React;
@@ -44,7 +45,6 @@ const MnWorkflowPill = window.MnWorkflowPill;
 const MnPropertyRow = window.MnPropertyRow;
 const MnPageEmbed = window.MnPageEmbed;
 const MnBlockEmbed = window.MnBlockEmbed;
-const MnCanvasEmbed = window.MnCanvasEmbed;
 const MnBlockContextMenu = window.MnBlockContextMenu;
 const MnZoomBar = window.MnZoomBar;
 const {
@@ -689,7 +689,10 @@ function MnBlockRow({
   const insertImageMarkdown = async (files, start, end) => {
     const api = window.MN_IMAGE_ATTACHMENTS;
     if (!api) return;
-    const { markdowns, errors } = await api.mnSaveImageAttachments(files);
+    const { markdowns, errors } = await api.mnSaveImageAttachments(files, {
+      bridge: { saveAttachment: platformApi.notes.saveAttachment },
+      vaultId,
+    });
     for (const message of errors) console.error('image attachment failed:', message);
     if (!markdowns.length) return;
     const value = latestContentRef.current;

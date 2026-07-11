@@ -1216,7 +1216,10 @@ test('Novelist order and note-level status properties drive visible workflow', (
     'act:: [[Arc 1]]\n## Acts'
   );
 
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
+  const panels = [
+    '../src/features/writer/NovelistPanel.jsx',
+    '../src/features/writer/NovelistSections.jsx',
+  ].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const metadataModel = fs.readFileSync(path.join(__dirname, '../src/features/editor/metadata/model.js'), 'utf8');
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
