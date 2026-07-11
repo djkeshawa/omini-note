@@ -191,7 +191,12 @@ function MnSettingsModal({
             background: `linear-gradient(180deg, ${T.bg}, color-mix(in oklab, ${T.bgSub} 38%, ${T.bg}))`,
           }}>
             {section === 'general' && <SectionAppearance tweaks={tweaks} setTweak={setTweak} T={T} themeOptions={themeOptions} />}
-            {section === 'writing' && <><SectionEditor tweaks={tweaks} setTweak={setTweak} T={T} /><SectionNotes tweaks={tweaks} setTweak={setTweak} T={T} stats={stats} /></>}
+            {section === 'writing' && (
+              <div style={{ display: 'grid', gap: 36 }}>
+                <SectionEditor tweaks={tweaks} setTweak={setTweak} T={T} />
+                <SectionNotes tweaks={tweaks} setTweak={setTweak} T={T} stats={stats} />
+              </div>
+            )}
             {section === 'assistance' && <SectionAI T={T} assistanceEnabled={assistanceEnabled} onAssistanceChange={onAssistanceChange} />}
             {section === 'advanced' && <SectionAdvanced tweaks={tweaks} setTweak={setTweak} T={T} enabledPacks={enabledPacks} featureState={featureState} onSetPack={onSetPack} shortcutStatus={shortcutStatus} />}
             {section === 'data' && (
@@ -217,7 +222,12 @@ function MnSettingsModal({
                 writerEnabled={featureState.showWriter || enabledPacks.includes('writer')}
               />
             )}
-            {section === 'about' && <><SectionAbout T={T} stats={stats} updateState={updateState} setUpdateState={setUpdateState} /><SectionShortcuts T={T} shortcutStatus={shortcutStatus} /></>}
+            {section === 'about' && (
+              <div style={{ display: 'grid', gap: 40 }}>
+                <SectionAbout T={T} stats={stats} updateState={updateState} setUpdateState={setUpdateState} />
+                <SectionShortcuts T={T} shortcutStatus={shortcutStatus} />
+              </div>
+            )}
           </div>
         </div>
       </div>

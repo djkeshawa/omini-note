@@ -81,55 +81,57 @@ export function useConnectionsController({
     setMentions(items => items.filter(item => item.id !== mention.id));
   };
 
-  const [related, setRelated] = useState({ items: [], mode: null, loading: false });
+  const [related, setRelated] = useState({ noteId: '', items: [], mode: null, loading: false });
   useEffect(() => {
     if (!hasDisk || !vaultId || !note.id) {
-      setRelated({ items: [], mode: null, loading: false });
+      setRelated({ noteId: note.id || '', items: [], mode: null, loading: false });
       return undefined;
     }
     let cancelled = false;
-    setRelated(previous => ({ ...previous, loading: true }));
+    setRelated({ noteId: note.id, items: [], mode: null, loading: true });
     const handle = setTimeout(async () => {
       try {
         const response = await platformApi.ai.related(vaultId, note.id, { limit: 6 });
         if (cancelled) return;
         if (response?.ok && response.value?.ok) {
-          setRelated({ items: response.value.items || [], mode: response.value.mode, loading: false });
+          setRelated({ noteId: note.id, items: response.value.items || [], mode: response.value.mode, loading: false });
         } else {
-          setRelated({ items: [], mode: null, loading: false });
+          setRelated({ noteId: note.id, items: [], mode: null, loading: false });
         }
       } catch (_error) {
-        if (!cancelled) setRelated({ items: [], mode: null, loading: false });
+        if (!cancelled) setRelated({ noteId: note.id, items: [], mode: null, loading: false });
       }
     }, 400);
     return () => { cancelled = true; clearTimeout(handle); };
   }, [hasDisk, note.id, vaultId]);
 
   const ignoredKey = `mn:ignoredConnections:${vaultId || 'local'}:${note.id}`;
-  const [ignoredIds, setIgnoredIds] = useState(() => storage.getJson(ignoredKey, []) || []);
-  useEffect(() => setIgnoredIds(storage.getJson(ignoredKey, []) || []), [ignoredKey]);
-  const suggested = useMemo(() => connectionsModel.suggestedConnections?.({
+  const [ignored, setIgnored] = useState(() => ({ noteId: note.id, ids: storage.getJson(ignoredKey, []) || [] }));
+  useEffect(() => setIgnored({ noteId: note.id, ids: storage.getJson(ignoredKey, []) || [] }), [ignoredKey, note.id]);
+  const relatedForNote = related.noteId === note.id ? related : { noteId: note.id, items: [], mode: null, loading: true };
+  const suggestionsReady = ignored.noteId === note.id;
+  const suggested = useMemo(() => suggestionsReady ? connectionsModel.suggestedConnections?.({
     noteId: note.id,
     currentNote: note,
     notes,
-    related: related.items,
-    mode: related.mode,
+    related: relatedForNote.items,
+    mode: relatedForNote.mode,
     links,
-    ignoredIds,
+    ignoredIds: ignored.ids,
     limit: 4,
-  }) || [], [ignoredIds, links, note, notes, related.items, related.mode]);
+  }) || [] : [], [ignored.ids, links, note, notes, relatedForNote.items, relatedForNote.mode, suggestionsReady]);
   const suggestedIds = useMemo(() => new Set(suggested.map(item => String(item.noteId || item.id || ''))), [suggested]);
   const passiveRelated = useMemo(
-    () => related.items.filter(item => !suggestedIds.has(String(item.noteId || item.id || ''))),
-    [related.items, suggestedIds]
+    () => relatedForNote.items.filter(item => !suggestedIds.has(String(item.noteId || item.id || ''))),
+    [relatedForNote.items, suggestedIds]
   );
   const ignoreSuggested = (item) => {
     const id = connectionsModel.connectionNoteId?.(item) || item?.noteId || item?.id;
     if (!id) return;
-    setIgnoredIds(current => {
-      const next = [...new Set([...(current || []), String(id)])];
+    setIgnored(current => {
+      const next = [...new Set([...(current.noteId === note.id ? current.ids : []), String(id)])];
       storage.setJson(ignoredKey, next);
-      return next;
+      return { noteId: note.id, ids: next };
     });
     onIgnoreSuggestedConnection?.(item);
   };
@@ -179,7 +181,7 @@ export function useConnectionsController({
     backlinks,
     mentions,
     linkMention,
-    related,
+    related: relatedForNote,
     suggestedConnections: suggested,
     passiveRelatedItems: passiveRelated,
     ignoreSuggestedConnection: ignoreSuggested,
