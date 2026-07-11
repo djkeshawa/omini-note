@@ -27,6 +27,20 @@ function mainProcessSource() {
   return files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
 }
 
+function storeProcessSource() {
+  const files = [path.join(__dirname, '../lib/store.js')];
+  const root = path.join(__dirname, '../lib/storage');
+  const visit = dir => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const target = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(target);
+      else if (entry.name.endsWith('.js')) files.push(target);
+    }
+  };
+  visit(root);
+  return files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+}
+
 function buildTestThemeTokens(hue = 260) {
   return {
     bgOuter: `oklch(0.97 0.02 ${hue})`,
@@ -818,7 +832,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const markdownInlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
   const markdownInputRules = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const storeSource = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const storeSource = storeProcessSource();
   const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
   const releaseWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
@@ -1221,7 +1235,7 @@ test('Native file dialog IPC paths report cancel and skipped work explicitly', (
 test('Data safety wiring exposes trash, versions, and save conflict recovery', () => {
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const store = storeProcessSource();
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
