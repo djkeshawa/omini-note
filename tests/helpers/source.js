@@ -20,4 +20,13 @@ function appSource(testDir) {
   ].join('\n');
 }
 
-module.exports = { appSource, outlinerSource };
+function appHelpersSource(testDir) {
+  const appRoot = path.join(testDir, '../src/app');
+  return [
+    fs.readFileSync(path.join(appRoot, 'appHelpers.js'), 'utf8'),
+    ...fs.readdirSync(path.join(appRoot, 'helpers')).sort()
+      .map(name => fs.readFileSync(path.join(appRoot, 'helpers', name), 'utf8')),
+  ].join('\n');
+}
+
+module.exports = { appHelpersSource, appSource, outlinerSource };

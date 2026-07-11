@@ -5,7 +5,6 @@
   },
   "directBridgeFiles": [],
   "lineBudgets": {
-    "src/app/appHelpers.js": 3174,
     "lib/ai.js": 2811
   }
 }

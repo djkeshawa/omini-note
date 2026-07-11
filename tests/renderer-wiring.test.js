@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { appSource, outlinerSource } = require('./helpers/source.js');
+const { appHelpersSource, appSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 
 const ops = require('../src/editor/editorOps.js');
@@ -615,7 +615,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
-  const helpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
+  const helpers = appHelpersSource(__dirname);
   const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/app/appNovelist.js'), 'utf8');
   const panelHelpersSource = fs.readFileSync(path.join(__dirname, '../src/panels/panelHelpers.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
@@ -838,7 +838,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const calendarModel = fs.readFileSync(path.join(__dirname, '../src/features/planning/calendarModel.js'), 'utf8');
   const bootController = fs.readFileSync(path.join(__dirname, '../src/features/boot/useBootController.js'), 'utf8');
   const todayController = fs.readFileSync(path.join(__dirname, '../src/features/today/useTodayController.js'), 'utf8');
-  const appHelpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
+  const appHelpers = appHelpersSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
   const outliner = outlinerSource(__dirname);
@@ -1063,17 +1063,13 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function smartViewParseDefinitionText/);
   assert.match(appHelpers, /function smartViewParseEmbedBlock/);
   assert.match(appHelpers, /function smartViewUpsertSavedDefinition/);
-  assert.match(appHelpers, /^    SMART_VIEW_FORMAT,$/m);
-  assert.match(appHelpers, /^    smartViewNormalizeDefinition,$/m);
-  assert.match(appHelpers, /^    smartViewMatchesNote,$/m);
-  assert.match(appHelpers, /^    smartViewQueryNotes,$/m);
-  assert.match(appHelpers, /^    smartViewQueryActions,$/m);
-  assert.match(appHelpers, /^    smartViewQuery,$/m);
-  assert.match(appHelpers, /^    smartViewValidateSavedDefinition,$/m);
-  assert.match(appHelpers, /^    smartViewSerializeDefinition,$/m);
-  assert.match(appHelpers, /^    smartViewParseDefinitionText,$/m);
-  assert.match(appHelpers, /^    smartViewParseEmbedBlock,$/m);
-  assert.match(appHelpers, /^    smartViewUpsertSavedDefinition,$/m);
+  assert.match(appHelpers, /"SMART_VIEW_FORMAT"/);
+  for (const name of [
+    'smartViewNormalizeDefinition', 'smartViewMatchesNote', 'smartViewQueryNotes',
+    'smartViewQueryActions', 'smartViewQuery', 'smartViewValidateSavedDefinition',
+    'smartViewSerializeDefinition', 'smartViewParseDefinitionText',
+    'smartViewParseEmbedBlock', 'smartViewUpsertSavedDefinition',
+  ]) assert.match(appHelpers, new RegExp(`"${name}"`));
   assert.match(appHelpers, /function agendaActionStatus/);
   assert.match(appHelpers, /function agendaActionDetail/);
   assert.match(appHelpers, /function agendaFilterActionItems/);
@@ -1082,10 +1078,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function agendaIsDeferred/);
   assert.match(appHelpers, /function agendaBodyHasActionText/);
   assert.match(appHelpers, /function agendaReplaceUniqueSourceText/);
-  assert.match(appHelpers, /^    agendaBuildTaskContent,$/m);
-  assert.match(appHelpers, /^    agendaIsDeferred,$/m);
+  assert.match(appHelpers, /"agendaBuildTaskContent"/);
+  assert.match(appHelpers, /"agendaIsDeferred"/);
   assert.match(appHelpers, /function agendaParseScheduleInput/);
-  assert.match(appHelpers, /^    agendaParseScheduleInput,$/m);
+  assert.match(appHelpers, /"agendaParseScheduleInput"/);
   assert.match(appHelpers, /Review notes from \$\{today\} for decisions to keep\./);
   assert.match(appRuntime, /"startupView": "notes"/);
   assert.match(appRuntime, /"rollupDefaultRange": "today"/);
@@ -1603,7 +1599,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
   const ai = rendererAiSource();
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
-  const helpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
+  const helpers = appHelpersSource(__dirname);
 
   assert.match(helpers, /workflowArchived: !!note\.workflowArchived/);
   assert.match(helpers, /if \(note\.workflowArchived\) \{/);
