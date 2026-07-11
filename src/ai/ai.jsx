@@ -1,6 +1,8 @@
 // Ask AI: query -> RAG over your notes via local Ollama or configured providers.
 // Renders as the main AI workspace and can still run as a compact overlay.
 
+import { AI_REPORT_TARGETS, reportAiOutput } from '../features/ai/index.js';
+
 const { useState: useStateAI, useEffect: useEffectAI, useRef: useRefAI } = React;
 
 const MN_ASK_EDIT_ACTIONS = {
@@ -45,32 +47,7 @@ const MN_AI_CHAT_TIMEOUT_MS = 45000;
 const MN_AI_NOTES_TIMEOUT_MS = 90000;
 const MN_AI_VIRTUAL_WRITE_TOOLS = new Set(['edit-current-page', 'edit-supporting-notes']);
 
-const MN_AI_REPORT_TARGETS = {
-  openai: {
-    label: 'OpenAI',
-    url: 'https://help.openai.com/en/articles/10245791-reporting-content-in-chatgpt-and-openai-platforms',
-  },
-  openrouter: {
-    label: 'OpenRouter',
-    url: 'https://openrouter.ai/docs/guides/overview/report-feedback',
-  },
-  anthropic: {
-    label: 'Anthropic',
-    url: 'mailto:usersafety@anthropic.com?subject=AI%20safety%20feedback',
-  },
-  gemini: {
-    label: 'Gemini',
-    url: 'https://support.google.com/gemini/answer/13275746',
-  },
-  ollama: {
-    label: 'Ollama or local model provider',
-    url: 'https://github.com/ollama/ollama/issues',
-  },
-  custom: {
-    label: 'Custom provider',
-    url: '',
-  },
-};
+const MN_AI_REPORT_TARGETS = AI_REPORT_TARGETS;
 
 const MN_AI_VIRTUAL_TOOLS = [
   {
@@ -155,51 +132,7 @@ const MN_AI_VIRTUAL_TOOLS = [
   },
 ];
 
-async function mnAiProviderReportInfo() {
-  let config = null;
-  try {
-    const status = await window.mn?.ai?.status?.();
-    config = status?.value?.config || null;
-  } catch (e) {}
-  if (!config) {
-    try {
-      const res = await window.mn?.ai?.getConfig?.();
-      config = res?.value || null;
-    } catch (e) {}
-  }
-  const provider = String(config?.provider || 'ollama').toLowerCase();
-  const target = MN_AI_REPORT_TARGETS[provider] || MN_AI_REPORT_TARGETS.custom;
-  let url = target.url;
-  if (!url && provider === 'custom') {
-    try {
-      const base = new URL(String(config?.customBaseUrl || '').trim());
-      url = base.origin;
-    } catch (e) {}
-  }
-  return {
-    provider,
-    label: target.label,
-    model: config?.chatModel || '',
-    url,
-  };
-}
-
-async function mnReportAiOutput({ prompt = '', output = '', scope = 'AI output' } = {}) {
-  const info = await mnAiProviderReportInfo();
-  const report = [
-    `Provider: ${info.label}`,
-    info.model ? `Model: ${info.model}` : null,
-    `Scope: ${scope}`,
-    prompt ? `Prompt:\n${String(prompt).slice(0, 4000)}` : null,
-    output ? `Generated output:\n${String(output).slice(0, 8000)}` : null,
-  ].filter(Boolean).join('\n\n');
-  try { await navigator.clipboard?.writeText(report); } catch (e) {}
-  if (info.url && window.mn?.openExternal) {
-    const res = await window.mn.openExternal(info.url);
-    if (res && res.ok === false) throw new Error(res.error || 'Could not open provider report page');
-  }
-  return info;
-}
+const mnReportAiOutput = reportAiOutput;
 
 window.MN_AI_REPORT = { report: mnReportAiOutput, targets: MN_AI_REPORT_TARGETS };
 
