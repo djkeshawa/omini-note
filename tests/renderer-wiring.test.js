@@ -49,16 +49,17 @@ function appCompositionSource() {
 
 test('AI menu buttons open option menus instead of running Improve directly', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
 
   assert.match(outliner, /if \(scope === 'section-menu'\)[\s\S]*setAiMenu\(\{ scope: 'section'/);
   assert.match(outliner, /onOpenAiMenu && onOpenAiMenu\(e\)/);
   assert.match(outliner, /if \(e\.key === 'ArrowDown'\)[\s\S]*setActiveIdx/);
   assert.match(outliner, /document\.addEventListener\('mousedown', onDown\)/);
-  assert.match(outliner, /window\.addEventListener\('keydown', onKey, true\)/);
-  assert.match(outliner, /undoActionRef\.current && undoActionRef\.current\(\)/);
+  assert.match(keyboard, /window\.addEventListener\('keydown', onKey, true\)/);
+  assert.match(keyboard, /undoActionRef\.current\?\.\(\)/);
   assert.match(outliner, /if \(!undoStack\.current\.length\) return false/);
   assert.match(outliner, /if \(!redoStack\.current\.length\) return false/);
-  assert.match(outliner, /stopImmediatePropagation/);
+  assert.match(keyboard, /stopImmediatePropagation/);
   assert.match(outliner, /const \[aiPrompt, setAiPrompt\]/);
   assert.match(outliner, /title: scope === 'page' \? 'Write on this page'/);
   assert.doesNotMatch(outliner, /window\.prompt/);
@@ -70,19 +71,20 @@ test('Advertised keyboard shortcuts are wired to handlers', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
 
   assert.match(app, /const isBackslashKey = key === '\\\\' \|\| key === '\|'/);
   assert.match(app, /e\.code === 'Backslash'/);
-  assert.match(outliner, /const isBlockZoom = isMod && key === 'Enter'/);
-  assert.match(outliner, /const isBlockMoveUp = e\.altKey && !isMod && key === 'ArrowUp'/);
-  assert.match(outliner, /const isBlockMoveDown = e\.altKey && !isMod && key === 'ArrowDown'/);
-  assert.match(outliner, /const isBlockDuplicate = isMod && lowerKey === 'd'/);
-  assert.match(outliner, /const isBlockDelete = isMod && \(key === 'Backspace' \|\| key === 'Delete'\) && !isFormField/);
-  assert.match(outliner, /moveBlockRef\.current && moveBlockRef\.current\(activeBlockId\(\), activeBlockId\(\), 'up'\)/);
-  assert.match(outliner, /duplicateBlockRef\.current && duplicateBlockRef\.current\(activeBlockId\(\)\)/);
-  assert.match(outliner, /deleteBlockRef\.current && deleteBlockRef\.current\(activeBlockId\(\)\)/);
-  assert.match(outliner, /zoomBlockRef\.current && zoomBlockRef\.current\(activeBlockId\(\)\)/);
+  assert.match(keyboard, /const isBlockZoom = isMod && key === 'Enter'/);
+  assert.match(keyboard, /const isBlockMoveUp = event\.altKey && !isMod && key === 'ArrowUp'/);
+  assert.match(keyboard, /const isBlockMoveDown = event\.altKey && !isMod && key === 'ArrowDown'/);
+  assert.match(keyboard, /const isBlockDuplicate = isMod && lowerKey === 'd'/);
+  assert.match(keyboard, /const isBlockDelete = isMod && \(key === 'Backspace' \|\| key === 'Delete'\) && !isFormField/);
+  assert.match(keyboard, /moveBlockRef\.current\?\.\(activeBlockId\(\), activeBlockId\(\), 'up'\)/);
+  assert.match(keyboard, /duplicateBlockRef\.current\?\.\(activeBlockId\(\)\)/);
+  assert.match(keyboard, /deleteBlockRef\.current\?\.\(activeBlockId\(\)\)/);
+  assert.match(keyboard, /zoomBlockRef\.current\?\.\(activeBlockId\(\)\)/);
   assert.match(outliner, /if \(srcId === destId && position !== 'up' && position !== 'down'\) return/);
   assert.match(settings, /⌘ K/);
   assert.match(settings, /⌘ Z/);
@@ -503,6 +505,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas/canvas.jsx'), 'utf8');
 
   assert.match(html, /src="build\/renderer\/app\.js"/);
@@ -531,7 +534,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(app, /view === 'canvas'/);
   assert.match(app, /<MnCanvasPanel/);
   assert.match(editor, /allCanvases=\{canvases\}/);
-  assert.match(outliner, /id: 'canvas'/);
+  assert.match(slashCommands, /id: 'canvas'/);
   assert.match(outliner, /\{\{canvas/);
   assert.match(outliner, /<MnCanvasPicker/);
   assert.match(outliner, /<MnCanvasEmbed/);
@@ -778,6 +781,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const todosPanel = fs.readFileSync(path.join(__dirname, '../src/panels/todosPanel.jsx'), 'utf8');
   const calendarPanel = fs.readFileSync(path.join(__dirname, '../src/panels/calendarPanel.jsx'), 'utf8');
@@ -849,7 +853,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(outliner, /indentGuides && Array\.from/);
   assert.match(outliner, /autoLink \? before\.match/);
   assert.match(outliner, /collapseByDefault && cmd\.kind === 'heading'/);
-  assert.match(outliner, /window\.MN_REMIND\?\.defaultText/);
+  assert.match(slashCommands, /window\.MN_REMIND\?\.defaultText/);
   assert.doesNotMatch(outliner, /@remind\(tomorrow 9am\)/);
 
   assert.match(markdown, /window\.MN_REMIND/);
@@ -1493,6 +1497,7 @@ test('Fallback spell checker underlines misspellings and offers replacements', (
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const spellcheck = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/spellcheck.jsx'), 'utf8');
 
   assert.match(main, /function spellcheckWords/);
   assert.match(main, /SPELL_DICTIONARY_PATHS/);
@@ -1505,10 +1510,10 @@ test('Fallback spell checker underlines misspellings and offers replacements', (
   assert.match(main, /if \(!spellDictionaryAvailable\) return \{\}/);
   assert.match(main, /spellSuggestions\(word, dictionary\)/);
   assert.match(preload, /spellcheck: \(words\) => ipcRenderer\.invoke\('mn:spellcheck', words\)/);
-  assert.match(outliner, /function mnRenderSpellCheckedText/);
-  assert.match(outliner, /textDecorationStyle: 'wavy'/);
+  assert.match(spellcheck, /function renderSpellCheckedText/);
+  assert.match(spellcheck, /textDecorationStyle: 'wavy'/);
   assert.match(outliner, /MnSpellSuggestionMenu/);
-  assert.match(outliner, /window\.mn\.spellcheck\(words\)/);
+  assert.match(outliner, /platformApi\.app\.spellcheck\(words\)/);
   assert.match(outliner, /applySpellSuggestion/);
 });
 
@@ -1523,6 +1528,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
   const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
@@ -1610,9 +1616,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.doesNotMatch(panels, /textDecoration: isClosedState\(state\) \? 'line-through' : 'none'/);
   assert.doesNotMatch(panels, /textDecoration:[\s\S]{0,80}line-through[\s\S]{0,80}No preview/);
   assert.doesNotMatch(panels, /state\.id === 'DONE' \|\| state\.id === 'CANCELLED'/);
-  assert.match(outliner, /function mnWorkflowSlashCommands/);
-  assert.match(outliner, /MN_NOVELIST_SLASH_CMDS/);
-  assert.match(outliner, /options\.novelistMode \? MN_NOVELIST_SLASH_CMDS : \[\]/);
+  assert.match(slashCommands, /function workflowSlashCommands/);
+  assert.match(slashCommands, /NOVELIST_SLASH_COMMANDS/);
+  assert.match(slashCommands, /options\.novelistMode \? NOVELIST_SLASH_COMMANDS : \[\]/);
   assert.match(outliner, /plot-points/);
   assert.match(outliner, /One plot point per line/);
   assert.match(outliner, /updateBeatsText/);
@@ -1647,7 +1653,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /Linked context pages/);
   assert.match(outliner, /kind: 'insert-after'/);
   assert.match(outliner, /insertBlocksAfter\(preview\.target\.blockId, parseAiBlocks\(preview\.text\)\)/);
-  assert.match(outliner, /window\.mn\.ai\.editStream/);
+  assert.match(outliner, /platformApi\.ai\.editStream/);
   assert.match(preload, /editStream:\(payload = \{\}, onChunk\)/);
   assert.match(main, /mn:ai\.editStream/);
   assert.match(aiSource, /async function editTextStream/);
@@ -1692,6 +1698,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
   const store = storeProcessSource();
@@ -1727,7 +1734,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
 
   assert.match(outliner, /const \[aiPrompt, setAiPrompt\]/);
   assert.match(outliner, /role="dialog"/);
-  assert.match(outliner, /Marker: \$\{state\.id\}/);
+  assert.match(slashCommands, /Marker: \$\{state\.id\}/);
   assert.doesNotMatch(outliner, /window\.prompt/);
   assert.match(blockFeatures, /Block marker/);
 
@@ -1794,12 +1801,13 @@ test('Markdown input rules preserve paste, slash menu, and selection formatting 
 test('Markdown inline rendering is preserved when spellcheck issues are present', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
+  const spellcheck = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/spellcheck.jsx'), 'utf8');
 
   assert.match(inlineRenderers, /function mnRenderMarkdownInlineText\(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0\)/);
   assert.match(inlineRenderers, /renderPlainText\(segment\.text, textOffset\)/);
   assert.match(inlineRenderers, /mnRenderMarkdownInlineText\(sub, T, onOpen, onTagClick, allNotes, renderPlainText, seg\.s\)/);
-  assert.match(outliner, /function mnRenderSpellCheckedText\(text, issues, T, onOpenMenu, offset = 0\)/);
-  assert.match(outliner, /start: baseOffset \+ start/);
+  assert.match(spellcheck, /function renderSpellCheckedText\(text, issues, theme, onOpenMenu, offset = 0\)/);
+  assert.match(spellcheck, /start: baseOffset \+ start/);
   assert.match(outliner, /const renderSpellText = spellCheck && Object\.keys\(spellIssues \|\| \{\}\)\.length/);
   assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText\)/);
   assert.doesNotMatch(outliner, /return mnRenderSpellCheckedText\(content, spellIssues, T, setSpellMenu\)/);

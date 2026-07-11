@@ -198,17 +198,18 @@ test('Markdown table rows round-trip through table helpers', () => {
 
 test('Block area selection can delete as one undoable operation and redo it', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
 
   assert.match(outliner, /selectedBlockIds/);
   assert.match(outliner, /selectedAsArea/);
   assert.match(outliner, /const deleteSelection = \(\) =>/);
-  assert.match(outliner, /const currentSelection = selectionRef\.current/);
-  assert.match(outliner, /const isTextDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && currentSelection\?\.kind === 'text' && !isMod/);
-  assert.match(outliner, /const isAreaDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && currentSelection\?\.kind === 'blocks' && !isMod/);
-  assert.doesNotMatch(outliner, /const isAreaDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && selectionRef\.current && !isMod/);
-  assert.match(outliner, /if \(\(isTextDelete \|\| isBlockShortcut \|\| isBlockEditCommand \|\| isOutlinerSelectAll\) && !insideOutliner && !activeInsideOutliner\) return/);
-  assert.doesNotMatch(outliner, /if \(\(isAreaDelete \|\| isBlockShortcut \|\| isBlockEditCommand \|\| isOutlinerSelectAll\) && !insideOutliner && !activeInsideOutliner\) return/);
-  assert.match(outliner, /if \(isTextDelete \|\| isAreaDelete\) deleteSelectionRef\.current && deleteSelectionRef\.current\(\)/);
+  assert.match(keyboard, /const currentSelection = selectionRef\.current/);
+  assert.match(keyboard, /const isTextDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && currentSelection\?\.kind === 'text' && !isMod/);
+  assert.match(keyboard, /const isAreaDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && currentSelection\?\.kind === 'blocks' && !isMod/);
+  assert.doesNotMatch(keyboard, /const isAreaDelete = \(key === 'Backspace' \|\| key === 'Delete'\) && selectionRef\.current && !isMod/);
+  assert.match(keyboard, /if \(\(isTextDelete \|\| isBlockShortcut \|\| isBlockEditCommand \|\| isOutlinerSelectAll\) && !insideOutliner && !activeInsideOutliner\) return/);
+  assert.doesNotMatch(keyboard, /if \(\(isAreaDelete \|\| isBlockShortcut \|\| isBlockEditCommand \|\| isOutlinerSelectAll\) && !insideOutliner && !activeInsideOutliner\) return/);
+  assert.match(keyboard, /if \(isTextDelete \|\| isAreaDelete\) deleteSelectionRef\.current\?\.\(\)/);
   assert.match(outliner, /onUndo=\{undo\}/);
   assert.match(outliner, /onRedo=\{redo\}/);
 });
@@ -258,9 +259,10 @@ test('Clicking rendered text enters edit mode at the clicked caret offset', () =
 
 test('Visible block context menu options are wired to real operations', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const operations = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/blockOperations.js'), 'utf8');
 
-  assert.match(outliner, /position === 'up'/);
-  assert.match(outliner, /position === 'down'/);
+  assert.match(operations, /position === 'up'/);
+  assert.match(operations, /position === 'down'/);
   assert.match(outliner, /loc\.arr\.splice\(loc\.idx \+ 1, 0, clone\)/);
 });
 
@@ -269,13 +271,14 @@ test('Table blocks are parsed, rendered, copied, and pasted as formatted markdow
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
 
   assert.match(html, /src="build\/renderer\/app\.js"/);
   assert.match(rendererEntry, /import '\.\/editor\/tableOps\.js';/);
   assert.match(outline, /readMarkdownTable\(lines, i\)/);
   assert.match(outline, /kind: 'table'/);
   assert.match(outline, /b\.kind === 'table'/);
-  assert.match(outliner, /id: 'table'/);
+  assert.match(slashCommands, /id: 'table'/);
   assert.match(outliner, /const handlePaste = \(e\) =>/);
   assert.match(outliner, /mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable\(e\)/);
   assert.match(outliner, /const handleCopy = \(e\) =>/);
@@ -322,6 +325,7 @@ test('Selection toolbar closes on outside click and keeps overflow actions in Mo
 test('Block clipboard preserves multi-block formatting for copy cut paste', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
+  const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
 
   assert.match(outliner, /MN_BLOCK_CLIPBOARD_TYPE/);
   assert.match(outliner, /mnNormalizeClipboardMarkdown/);
@@ -334,11 +338,11 @@ test('Block clipboard preserves multi-block formatting for copy cut paste', () =
   assert.match(outliner, /parseClipboardBlocks\?\.\(e\.clipboardData, \{ allowSingle: false \}\)/);
   assert.match(outliner, /if \(e\.button === 2\) return/);
   assert.match(outliner, /keyboardEditActionsRef/);
-  assert.match(outliner, /const isBlockEditCommand = currentSelection\?\.kind === 'blocks' && \(isCopy \|\| isCut \|\| isPaste\)/);
-  assert.match(outliner, /keyboardEditActionsRef\.current\?\.copySelectedBlocks\?\.\(\)/);
-  assert.match(outliner, /keyboardEditActionsRef\.current\?\.cutSelectedBlocks\?\.\(\)/);
-  assert.match(outliner, /keyboardEditActionsRef\.current\?\.pasteForKeyboard\?\.\(\)/);
-  assert.match(outliner, /keyboardEditActionsRef\.current\?\.selectAllBlocks\?\.\(\)/);
+  assert.match(keyboard, /const isBlockEditCommand = currentSelection\?\.kind === 'blocks' && \(isCopy \|\| isCut \|\| isPaste\)/);
+  assert.match(keyboard, /keyboardEditActionsRef\.current\?\.copySelectedBlocks\?\.\(\)/);
+  assert.match(keyboard, /keyboardEditActionsRef\.current\?\.cutSelectedBlocks\?\.\(\)/);
+  assert.match(keyboard, /keyboardEditActionsRef\.current\?\.pasteForKeyboard\?\.\(\)/);
+  assert.match(keyboard, /keyboardEditActionsRef\.current\?\.selectAllBlocks\?\.\(\)/);
   assert.match(outliner, /replaceSelectedBlocksWith/);
   assert.match(outliner, /onCopyBlock=\{\(\) => copyContextBlocks\(ctxBlock\.id\)\}/);
   assert.match(outliner, /onCutBlock=\{\(\) => cutContextBlocks\(ctxBlock\.id\)\}/);

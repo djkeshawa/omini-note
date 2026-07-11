@@ -1,75 +1,25 @@
 // Editor pane: VispNote block outliner. Shows note title, date, tags, backlinks.
 
+import {
+  cleanPropertyKey,
+  createPropertyBlock,
+  splitPropertyBlocks,
+  useConnectionsController,
+} from '../features/editor/index.js';
+
 const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useEffectE } = React;
 const { mkBlock } = window.MN_OUTLINE || {};
 const MnOutliner = window.MnOutliner;
 
-function mnEditorPropertyParts(content = '') {
-  const match = String(content || '').match(/^\s*([a-zA-Z][a-zA-Z0-9_-]*)::\s*(.*)$/);
-  return match ? { key: match[1], value: match[2] || '' } : null;
-}
-
-function mnEditorSplitPropertyBlocks(blocks = []) {
-  const safeBlocks = Array.isArray(blocks) ? blocks : [];
-  let index = 0;
-  const propertyBlocks = [];
-  while (index < safeBlocks.length) {
-    const block = safeBlocks[index];
-    const prop = block?.kind === 'paragraph' ? mnEditorPropertyParts(block.content) : null;
-    if (!prop) break;
-    propertyBlocks.push(block);
-    index++;
-  }
-  return {
-    propertyBlocks,
-    contentBlocks: safeBlocks.slice(index),
-    properties: propertyBlocks.map(block => ({
-      ...mnEditorPropertyParts(block.content),
-      block,
-    })),
-  };
-}
-
-function mnEditorCleanPropertyKey(raw = '') {
-  return String(raw || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9_-]+/g, '')
-    .replace(/^[^a-z]+/, '')
-    .slice(0, 40);
-}
-
-function mnEditorCreatePropertyBlock(key = '', value = '') {
-  const content = `${key}:: ${value || ''}`.trimEnd();
-  if (typeof mkBlock === 'function') return mkBlock({ kind: 'paragraph', content });
-  return {
-    id: `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    kind: 'paragraph',
-    content,
-    level: 0,
-    checked: null,
-    children: [],
-    collapsed: false,
-    annotations: [],
-    workflow: null,
-    language: '',
-  };
-}
+const mnEditorSplitPropertyBlocks = splitPropertyBlocks;
+const mnEditorCleanPropertyKey = cleanPropertyKey;
+const mnEditorCreatePropertyBlock = (key, value) => createPropertyBlock(key, value, mkBlock);
 
 function mnRenderMentionSnippet(snippet, T) {
   const parts = String(snippet || '').split(/<mark>|<\/mark>/);
   return parts.map((part, index) => index % 2
     ? <mark key={index} style={{ background: 'transparent', color: T.accent, fontWeight: 600 }}>{part}</mark>
     : <React.Fragment key={index}>{part}</React.Fragment>);
-}
-
-function mnMemoryNodeTitle(node) {
-  const firstLine = String(node?.content || '')
-    .split('\n')
-    .map(line => line.replace(/^[#>\-*\s]+/, '').trim())
-    .find(Boolean) || '';
-  return firstLine.slice(0, 80) || node?.category || 'Memory';
 }
 
 function MnEditor({
@@ -91,7 +41,6 @@ function MnEditor({
   workflowStates = [], workflowStatus = '', onSetWorkflowStatus,
   theme, T,
 }) {
-  const HAS_DISK_E = typeof window !== 'undefined' && !!window.mn;
   const [showTags, setShowTags] = useStateE(false);
   const [tagDraft, setTagDraft] = useStateE('');
   const [zoomBlockId, setZoomBlockId] = useStateE(null);
@@ -161,178 +110,28 @@ function MnEditor({
   });
   const timeText = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-  // Backlinks: prefer SQLite-backed lookup; fall back to in-memory scan
-  // when running outside Electron (no window.mn).
-  const inMemoryBacklinks = useMemoE(() => {
-    // Electron always uses the SQLite result below; skip the full-vault
-    // regex scan (it would otherwise run per keystroke and be discarded).
-    if (HAS_DISK_E) return [];
-    const re = new RegExp(`\\[\\[${note.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\]`, 'i');
-    return notes.filter(n => {
-      if (n.id === note.id) return false;
-      const body = n.body || mnBlocksToMd(n.blocks || []);
-      return re.test(body);
-    }).map(n => {
-      const body = n.body || mnBlocksToMd(n.blocks || []);
-      const line = body.split('\n').find(l =>
-        l.toLowerCase().includes(`[[${note.title.toLowerCase()}]]`));
-      return { id: n.id, title: n.title, context: line || '' };
-    });
-  }, [note, notes]);
-
-  const [diskBacklinks, setDiskBacklinks] = useStateE(null);
-  useEffectE(() => {
-    if (!HAS_DISK_E || !vaultId) { setDiskBacklinks(null); return; }
-    let cancelled = false;
-    // Small debounce so live edits don't spam IPC mid-typing
-    const handle = setTimeout(async () => {
-      try {
-        const res = await window.mn.backlinks(vaultId, note.title);
-        if (!cancelled && res.ok) setDiskBacklinks(res.value);
-      } catch (e) { console.error('backlinks failed', e); }
-    }, 200);
-    return () => { cancelled = true; clearTimeout(handle); };
-    // Backlinks come from OTHER notes' bodies; editing this note's blocks
-    // cannot change them, so blocks are deliberately not a dependency. The
-    // refresh token bumps when a rename rewrites other notes on disk.
-  }, [vaultId, note.id, note.title, connectionsRefreshToken]);
-
-  const backlinks = diskBacklinks != null ? diskBacklinks : inMemoryBacklinks;
-
-  // Unlinked mentions: notes whose text mentions this title without linking
-  // to it. Debounced like backlinks; rows are removed optimistically when the
-  // user links one.
-  const [mentions, setMentions] = useStateE([]);
-  useEffectE(() => {
-    if (!HAS_DISK_E || !vaultId || !window.mn.unlinkedMentions || !String(note.title || '').trim()) {
-      setMentions([]);
-      return;
-    }
-    let cancelled = false;
-    const handle = setTimeout(async () => {
-      try {
-        const res = await window.mn.unlinkedMentions(vaultId, note.title, 8);
-        if (!cancelled && res.ok) setMentions(res.value || []);
-      } catch (e) { console.error('unlinked mentions failed', e); }
-    }, 250);
-    return () => { cancelled = true; clearTimeout(handle); };
-  }, [vaultId, note.id, note.title, connectionsRefreshToken]);
-
-  const linkMention = (mention) => {
-    if (!onLinkMention) return;
-    onLinkMention(mention.id);
-    // Remove the row either way: on success the mention became a link; on
-    // failure the indexed mention no longer exists in the note's current
-    // (unsaved) text, so leaving a dead row with a silent button is worse.
-    setMentions(items => items.filter(item => item.id !== mention.id));
-  };
-
-  // Related notes via embeddings (semantic) with FTS top-up. Debounced so the
-  // IPC fires once the note settles, and re-runs on note id only — content
-  // edits don't move similarity meaningfully on every keystroke.
-  const [related, setRelated] = useStateE({ items: [], mode: null, loading: false });
-  useEffectE(() => {
-    if (!HAS_DISK_E || !vaultId || !note.id) {
-      setRelated({ items: [], mode: null, loading: false });
-      return;
-    }
-    let cancelled = false;
-    setRelated(prev => ({ ...prev, loading: true }));
-    const handle = setTimeout(async () => {
-      try {
-        const res = await window.mn.ai.related(vaultId, note.id, { limit: 6 });
-        if (cancelled) return;
-        if (res?.ok && res.value?.ok) setRelated({ items: res.value.items || [], mode: res.value.mode, loading: false });
-        else setRelated({ items: [], mode: null, loading: false });
-      } catch (e) {
-        if (!cancelled) setRelated({ items: [], mode: null, loading: false });
-      }
-    }, 400);
-    return () => { cancelled = true; clearTimeout(handle); };
-  }, [vaultId, note.id]);
-
-  const ignoredConnectionsKey = `mn:ignoredConnections:${vaultId || 'local'}:${note.id}`;
-  const [ignoredConnectionIds, setIgnoredConnectionIds] = useStateE(() => (
-    window.MN_STORAGE?.getJson?.(ignoredConnectionsKey, []) || []
-  ));
-  useEffectE(() => {
-    setIgnoredConnectionIds(window.MN_STORAGE?.getJson?.(ignoredConnectionsKey, []) || []);
-  }, [ignoredConnectionsKey]);
-  const suggestedConnections = useMemoE(() => (
-    window.MN_CONNECTIONS_MODEL?.suggestedConnections?.({
-      noteId: note.id,
-      currentNote: note,
-      notes,
-      related: related.items,
-      mode: related.mode,
-      links,
-      ignoredIds: ignoredConnectionIds,
-      limit: 4,
-    }) || []
-  ), [note.id, note.title, note.tags, notes, related.items, related.mode, links, ignoredConnectionIds]);
-  const suggestedConnectionIds = useMemoE(
-    () => new Set(suggestedConnections.map(item => String(item.noteId || item.id || ''))),
-    [suggestedConnections]
-  );
-  const passiveRelatedItems = useMemoE(
-    () => related.items.filter(item => !suggestedConnectionIds.has(String(item.noteId || item.id || ''))),
-    [related.items, suggestedConnectionIds]
-  );
-  const ignoreSuggestedConnection = (item) => {
-    const id = window.MN_CONNECTIONS_MODEL?.connectionNoteId?.(item) || item?.noteId || item?.id;
-    if (!id) return;
-    setIgnoredConnectionIds(current => {
-      const next = [...new Set([...(current || []), String(id)])];
-      window.MN_STORAGE?.setJson?.(ignoredConnectionsKey, next);
-      return next;
-    });
-    onIgnoreSuggestedConnection?.(item);
-  };
-  const acceptSuggestedConnection = (item) => {
-    if (onAcceptSuggestedConnection?.(item) !== false) ignoreSuggestedConnection(item);
-  };
-
-  // Connected memories: this note's neighbors in the llm-memory knowledge graph.
-  // Only runs when the bridge is enabled; a disabled/unreachable server or an
-  // un-remembered note degrades to an empty panel (no error surfaced). The seed
-  // node and low-relevance neighbors are filtered so the panel stays a signal,
-  // not a firehose.
-  const [connected, setConnected] = useStateE({ items: [], explanation: '', via: '', loading: false });
-  useEffectE(() => {
-    if (!HAS_DISK_E || !memoryEnabled || !vaultId || !note.id || !window.mn.memory?.connected) {
-      setConnected({ items: [], explanation: '', via: '', loading: false });
-      return;
-    }
-    let cancelled = false;
-    setConnected(prev => ({ ...prev, loading: true }));
-    const handle = setTimeout(async () => {
-      try {
-        const res = await window.mn.memory.connected(vaultId, note.id, { limit: 8 });
-        if (cancelled) return;
-        const value = res?.ok ? res.value : null;
-        const neighbors = value?.neighbors;
-        if (!neighbors || !Array.isArray(neighbors.nodes) || !neighbors.nodes.length) {
-          setConnected({ items: [], explanation: '', via: '', loading: false });
-          return;
-        }
-        const items = neighbors.nodes
-          .filter(n => n.id && n.id !== value.memoryId)
-          .filter(n => n.relevanceScore == null || n.relevanceScore >= 0.2)
-          .slice(0, 6)
-          .map(n => ({
-            id: n.id,
-            title: mnMemoryNodeTitle(n),
-            content: String(n.content || '').replace(/\s+/g, ' ').trim(),
-            snippet: String(n.content || '').replace(/\s+/g, ' ').trim().slice(0, 160),
-            category: n.category || '',
-          }));
-        setConnected({ items, explanation: String(neighbors.explanation || ''), via: value.via || '', loading: false });
-      } catch (e) {
-        if (!cancelled) setConnected({ items: [], explanation: '', via: '', loading: false });
-      }
-    }, 500);
-    return () => { cancelled = true; clearTimeout(handle); };
-  }, [vaultId, note.id, memoryEnabled, connectionsRefreshToken]);
+  const {
+    backlinks,
+    mentions,
+    linkMention,
+    related,
+    suggestedConnections,
+    passiveRelatedItems,
+    ignoreSuggestedConnection,
+    acceptSuggestedConnection,
+    connected,
+  } = useConnectionsController({
+    note,
+    notes,
+    links,
+    vaultId,
+    memoryEnabled,
+    connectionsRefreshToken,
+    blocksToMarkdown: mnBlocksToMd,
+    onLinkMention,
+    onAcceptSuggestedConnection,
+    onIgnoreSuggestedConnection,
+  });
 
   // Word count from blocks
   const wordCount = useMemoE(() => {

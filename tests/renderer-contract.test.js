@@ -167,3 +167,19 @@ test('trash state mutations stay behind the feature controller', () => {
   assert.match(app, /onListDeletedNotes=\{listDeletedItems\}/);
   assert.match(controller, /return \{ items, loading, error, list, refresh, restore, purge, prepend \}/);
 });
+
+test('editor feature modules own models, connections, and block mutations', () => {
+  const editor = read(path.join(paths.srcRoot, 'editor/editor.jsx'));
+  const outliner = read(path.join(paths.srcRoot, 'editor/outliner.jsx'));
+  const connections = read(path.join(paths.srcRoot, 'features/editor/connections/useConnectionsController.js'));
+  const operations = read(path.join(paths.srcRoot, 'features/editor/outliner/blockOperations.js'));
+
+  assert.match(editor, /useConnectionsController/);
+  assert.doesNotMatch(editor, /window\.mn/);
+  assert.match(connections, /platformApi\.search\.backlinks/);
+  assert.match(connections, /platformApi\.integrations\.memory/);
+  assert.match(outliner, /moveBlock\(bs, srcId, destId, position, mnLocate\)/);
+  assert.match(operations, /export function moveBlock/);
+  assert.ok(editor.split(/\r?\n/).length <= 945, 'editor shell regrew beyond the Phase 5 budget');
+  assert.ok(outliner.split(/\r?\n/).length <= 4101, 'outliner regrew beyond the Phase 5 budget');
+});

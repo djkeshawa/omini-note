@@ -7,6 +7,33 @@
 // - Selection toolbar: appears on text selection, applies annotations.
 // - Slash menu: type "/" at start of an empty block (or after space) to convert.
 
+import {
+  BASE_SLASH_COMMANDS,
+  BLOCK_CLIPBOARD_TYPE,
+  changeBlockKind,
+  deleteBlock,
+  findSlashCommandTrigger,
+  indentBlock,
+  insertBlocksAt,
+  isClipboardBlock,
+  looksLikeBlockMarkdown,
+  mergeBlockWithPrevious,
+  moveBlock,
+  normalizeClipboardMarkdown,
+  outdentBlock,
+  reidBlocks,
+  renderSpellCheckedText,
+  slashCommandScore,
+  slashCommands,
+  SpellSuggestionMenu,
+  splitBlockAt,
+  spellWords,
+  toggleBlockCheck,
+  toggleBlockCollapse,
+  useOutlinerKeyboardShortcuts,
+} from '../features/editor/outliner/index.js';
+import { platformApi } from '../platform/index.js';
+
 const { useState: useStateOE, useRef: useRefOE, useEffect: useEffectOE,
         useMemo: useMemoOE, useLayoutEffect: useLayoutEffectOE } = React;
 const {
@@ -54,133 +81,9 @@ const {
   MnMermaidBlock,
 } = window.MN_OUTLINER_RENDERERS || {};
 
-function mnSpellWords(text) {
-  return Array.from(new Set(String(text || '')
-    .match(/[A-Za-z][A-Za-z']{2,}/g) || []))
-    .filter(word => !/[A-Z][a-z]+[A-Z]/.test(word))
-    .slice(0, 120);
-}
-
-function mnRenderSpellCheckedText(text, issues, T, onOpenMenu, offset = 0) {
-  const value = String(text || '');
-  const issueMap = issues || {};
-  const baseOffset = Math.max(0, Number(offset) || 0);
-  const out = [];
-  const re = /[A-Za-z][A-Za-z']{2,}/g;
-  let last = 0, match, key = 0;
-  while ((match = re.exec(value))) {
-    if (match.index > last) out.push(<span key={key++}>{value.slice(last, match.index)}</span>);
-    const word = match[0];
-    const normalized = word.toLowerCase();
-    const start = match.index;
-    const end = start + word.length;
-    if (issueMap[normalized]) {
-      out.push(
-        <span
-          key={key++}
-          title="Spelling suggestion"
-          onContextMenu={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onOpenMenu && onOpenMenu({
-              word,
-              normalized,
-              start: baseOffset + start,
-              end: baseOffset + end,
-              suggestions: issueMap[normalized] || [],
-              x: e.clientX,
-              y: e.clientY,
-            });
-          }}
-          style={{
-            textDecorationLine: 'underline',
-            textDecorationStyle: 'wavy',
-            textDecorationColor: T.danger || '#d94841',
-            textDecorationThickness: '1.2px',
-            textUnderlineOffset: 3,
-          }}>{word}</span>
-      );
-    } else {
-      out.push(<span key={key++}>{word}</span>);
-    }
-    last = end;
-  }
-  if (last < value.length) out.push(<span key={key++}>{value.slice(last)}</span>);
-  return out;
-}
-
-function MnSpellSuggestionMenu({ menu, onPick, onAdd, onClose, T }) {
-  if (!menu) return null;
-  const suggestions = menu.suggestions || [];
-  return (
-    <div
-      className="mn-spell-menu"
-      onMouseDown={(e) => e.preventDefault()}
-      style={{
-        position: 'fixed',
-        top: menu.y,
-        left: menu.x,
-        zIndex: 12000,
-        width: 190,
-        background: T.bg,
-        border: `1px solid ${T.line}`,
-        borderRadius: 7,
-        boxShadow: `0 12px 34px color-mix(in oklab, ${T.ink} 18%, transparent)`,
-        padding: 5,
-      }}>
-      {suggestions.length ? suggestions.map(suggestion => (
-        <button
-          key={suggestion}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            onPick && onPick(suggestion);
-          }}
-          style={mnSpellMenuButton(T, true)}>
-          {suggestion}
-        </button>
-      )) : (
-        <div style={{
-          padding: '7px 8px',
-          fontFamily: 'var(--mn-ui)',
-          fontSize: 12,
-          color: T.inkDim,
-        }}>No suggestions</div>
-      )}
-      <div style={{ height: 1, background: T.lineSub, margin: '4px 3px' }} />
-      <button
-        onMouseDown={(e) => {
-          e.preventDefault();
-          onAdd && onAdd(menu.normalized);
-        }}
-        style={mnSpellMenuButton(T, false)}>
-        Ignore word
-      </button>
-      <button
-        onMouseDown={(e) => {
-          e.preventDefault();
-          onClose && onClose();
-        }}
-        style={mnSpellMenuButton(T, false)}>
-        Close
-      </button>
-    </div>
-  );
-}
-
-function mnSpellMenuButton(T, strong) {
-  return {
-    width: '100%',
-    border: 'none',
-    background: 'transparent',
-    color: strong ? T.ink : T.inkMed,
-    borderRadius: 5,
-    padding: '6px 8px',
-    textAlign: 'left',
-    cursor: 'pointer',
-    fontFamily: strong ? 'var(--mn-mono)' : 'var(--mn-ui)',
-    fontSize: strong ? 12 : 12.5,
-  };
-}
+const mnSpellWords = spellWords;
+const mnRenderSpellCheckedText = renderSpellCheckedText;
+const MnSpellSuggestionMenu = SpellSuggestionMenu;
 
 function MnCanvasPicker({ canvases = [], onPick, onCreate, onClose, T }) {
   useEffectOE(() => {
@@ -312,81 +215,11 @@ function MnDisclosure({ open, hasChildren, onClick, T, padTop }) {
 }
 
 // ── Slash command catalog ─────────────────────────────────────────────
-const MN_SLASH_CMDS = [
-  { id: 'h1',     label: 'Heading 1',  hint: 'Large section title',  kbd: '#',   icon: 'H1', kind: 'heading', level: 1 },
-  { id: 'h2',     label: 'Heading 2',  hint: 'Medium section title', kbd: '##',  icon: 'H2', kind: 'heading', level: 2 },
-  { id: 'h3',     label: 'Heading 3',  hint: 'Subsection',           kbd: '###', icon: 'H3', kind: 'heading', level: 3 },
-  { id: 'p',      label: 'Paragraph',  hint: 'Plain text',           kbd: '',    icon: '¶',  kind: 'paragraph' },
-  { id: 'bullet', label: 'Bullet',     hint: 'List item',            kbd: '-',   icon: '•',  kind: 'bullet' },
-  { id: 'todo',   label: 'To-do',      hint: 'Task with checkbox',   kbd: '[ ]', icon: '☐',  kind: 'todo', checked: false },
-  { id: 'quote',  label: 'Quote',      hint: 'Blockquote',           kbd: '>',   icon: '❝',  kind: 'quote' },
-  { id: 'code',   label: 'Code block', hint: 'Monospaced fenced',    kbd: '```', icon: '{}', kind: 'code' },
-  { id: 'table',  label: 'Table',      hint: 'Markdown table',       kbd: '|',   icon: '▦',  kind: 'table', content: '| Column 1 | Column 2 |\n| --- | --- |\n|  |  |' },
-  { id: 'div',    label: 'Divider',    hint: 'Horizontal rule',      kbd: '---', icon: '—',  kind: 'divider' },
-  { id: 'canvas', label: 'Attach canvas', hint: 'Embed an existing or new canvas', kbd: '/canvas', icon: '□', canvasAction: true },
-  { id: 'link',   label: 'Link to note', hint: 'Wiki-link to a note', kbd: '[[', icon: '⇉', insert: '[[' },
-  { id: 'tag',    label: 'Tag',        hint: 'Categorize',           kbd: '#tag', icon: '#', insert: '#' },
-  { id: 'block-label', label: 'Label',  hint: 'Add attention label to this block', kbd: '/label', icon: 'Lbl', blockLabelAction: true },
-  { id: 'date',   label: "Today's date", hint: 'Insert YYYY-MM-DD',  kbd: '@today', icon: '☉',
-    insertFn: () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }},
-  { id: 'remind', label: 'Reminder',   hint: 'Schedule reminder',   kbd: '@remind', icon: '⏰', insertFn: () => window.MN_REMIND?.defaultText?.() || '@remind YYYY-MM-DD 09:00 ' },
-  { id: 'ai-improve-page', label: 'AI: Improve writing on this page', hint: 'Rewrite the whole page body', kbd: '/ai improve', icon: '✦', aiAction: 'improve', aiScope: 'page' },
-  { id: 'ai-format-page', label: 'AI: Format this page', hint: 'Clean up the whole page body', kbd: '/ai format', icon: 'AI', aiAction: 'format', aiScope: 'page' },
-  { id: 'ai-summarize-page', label: 'AI: Summarize this page', hint: 'Replace page body with a summary', kbd: '/ai summary', icon: 'Σ', aiAction: 'summarize', aiScope: 'page' },
-  { id: 'ai-concise-page', label: 'AI: Make this page concise', hint: 'Shorten the whole page body', kbd: '/ai concise', icon: '↘', aiAction: 'concise', aiScope: 'page' },
-  { id: 'ai-fix-page', label: 'AI: Fix spelling on this page', hint: 'Correct the whole page body', kbd: '/ai fix', icon: '✓', aiAction: 'fix', aiScope: 'page' },
-  { id: 'ai-write-section', label: 'AI: Write in this section', hint: 'Preview generated text before applying', kbd: '/ai write', icon: '+', aiAction: 'write', aiScope: 'section' },
-];
+const MN_SLASH_CMDS = BASE_SLASH_COMMANDS;
 
-const MN_NOVELIST_SLASH_CMDS = [
-  { id: 'plot-points', label: 'Plot Points', hint: 'Scene beats and context', kbd: '/plot points', icon: '~', kind: 'plot-points', content: 'Plot Points', beats: ['Opening beat'], contexts: [] },
-];
-
-function mnWorkflowSlashCommands() {
-  const states = window.MN_LOGSEQ?.WORKFLOW_STATES || [];
-  return states.map(state => ({
-    id: `wf-${String(state.id || '').toLowerCase()}`,
-    label: `Marker: ${state.id}`,
-    hint: `Add a block marker for ${state.id.toLowerCase()}`,
-    kbd: `/${state.id}`,
-    icon: String(state.id || '?').slice(0, 1),
-    workflow: state.id,
-  }));
-}
-
-function mnSlashCommands(options = {}) {
-  return [
-    ...MN_SLASH_CMDS,
-    ...(options.novelistMode ? MN_NOVELIST_SLASH_CMDS : []),
-    ...mnWorkflowSlashCommands(),
-  ];
-}
-
-function mnFindSlashCommandTrigger(text, cursor) {
-  const before = text.slice(0, cursor);
-  const match = before.match(/(^|[^A-Za-z0-9_])\/([A-Za-z0-9-]*)$/);
-  if (!match) return null;
-  const slashStart = before.length - match[2].length - 1;
-  return {
-    query: match[2],
-    start: slashStart,
-    end: cursor,
-  };
-}
-
-function mnSlashCommandScore(cmd, query) {
-  const q = (query || '').toLowerCase();
-  if (!q) return 100;
-  const label = cmd.label.toLowerCase();
-  const id = cmd.id.toLowerCase();
-  const hint = cmd.hint.toLowerCase();
-  const kbd = (cmd.kbd || '').replace(/^\//, '').toLowerCase();
-  if (label === q || id === q || kbd === q) return 0;
-  if (label.startsWith(q) || id.startsWith(q) || kbd.startsWith(q)) return 10;
-  if (hint.includes(q)) return 50;
-  if (label.includes(q) || id.includes(q)) return 60;
-  return Infinity;
-}
+const mnSlashCommands = slashCommands;
+const mnFindSlashCommandTrigger = findSlashCommandTrigger;
+const mnSlashCommandScore = slashCommandScore;
 
 const MN_BLOCK_LABEL_COLORS = [
   { id: 'yellow', label: 'Yellow', bg: 'oklch(0.96 0.08 95)', border: 'oklch(0.78 0.13 85)', ink: 'oklch(0.38 0.09 75)' },
@@ -409,44 +242,11 @@ function mnCreateBlockLabel() {
   };
 }
 
-const MN_BLOCK_CLIPBOARD_TYPE = 'application/x-omininote-blocks';
-const MN_BLOCK_KINDS = new Set(['paragraph', 'heading', 'bullet', 'todo', 'quote', 'code', 'table', 'divider', 'plot-points']);
-
-function mnIsClipboardBlock(value) {
-  return !!value
-    && typeof value === 'object'
-    && typeof value.content === 'string'
-    && (!value.kind || MN_BLOCK_KINDS.has(value.kind))
-    && (!value.children || Array.isArray(value.children));
-}
-
-function mnReidBlocks(blocks) {
-  let seq = 0;
-  const nextId = () => `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}_${seq++}`;
-  const next = mnCloneBlocks(blocks || []);
-  const reid = (b) => {
-    b.id = nextId();
-    (b.children || []).forEach(reid);
-  };
-  next.forEach(reid);
-  return next;
-}
-
-function mnNormalizeClipboardMarkdown(text) {
-  return String(text || '')
-    .replace(/\r\n?/g, '\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-function mnLooksLikeBlockMarkdown(text) {
-  const normalized = mnNormalizeClipboardMarkdown(text);
-  const lines = normalized.split('\n').filter(line => line.trim());
-  if (lines.length < 2) return false;
-  if (/\n\s*\n/.test(normalized)) return true;
-  return lines.some(line => /^(#{1,3}\s+|>\s+|---+$|\s*-\s+|\|.+\|)/.test(line));
-}
+const MN_BLOCK_CLIPBOARD_TYPE = BLOCK_CLIPBOARD_TYPE;
+const mnIsClipboardBlock = isClipboardBlock;
+const mnReidBlocks = blocks => reidBlocks(blocks, mnCloneBlocks);
+const mnNormalizeClipboardMarkdown = normalizeClipboardMarkdown;
+const mnLooksLikeBlockMarkdown = looksLikeBlockMarkdown;
 
 // ── Selection toolbar (floats above selected text) ────────────────────
 function MnSelectionToolbar({ rect, selectionKind, onApply, onOpenAiMenu, onDelete, onUndo, onRedo, onClose, T }) {
@@ -645,7 +445,7 @@ function MnBlockRow({
   }, [block.content, editing]);
 
   useEffectOE(() => {
-    if (!spellCheck || editing || block.kind === 'code' || block.kind === 'table' || !window.mn?.spellcheck) {
+    if (!spellCheck || editing || block.kind === 'code' || block.kind === 'table' || !platformApi.available) {
       setSpellIssues({});
       setSpellMenu(null);
       return;
@@ -658,7 +458,7 @@ function MnBlockRow({
     let cancelled = false;
     const handle = setTimeout(async () => {
       try {
-        const res = await window.mn.spellcheck(words);
+        const res = await platformApi.app.spellcheck(words);
         if (!cancelled) setSpellIssues(res?.ok ? (res.value || {}) : {});
       } catch (e) {
         if (!cancelled) setSpellIssues({});
@@ -2937,61 +2737,18 @@ function MnOutliner({
   selectionRef.current = selection;
   focusIdRef.current = focusId;
 
-  useEffectOE(() => {
-    const onKey = (e) => {
-      const isMod = e.metaKey || e.ctrlKey;
-      const key = e.key || '';
-      const lowerKey = key.toLowerCase();
-      const target = e.target;
-      const tag = target?.tagName;
-      const isFormField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
-      const currentSelection = selectionRef.current;
-      const isUndo = isMod && lowerKey === 'z' && !e.shiftKey;
-      const isRedo = (isMod && e.shiftKey && lowerKey === 'z') || (isMod && lowerKey === 'y');
-      const isCopy = isMod && lowerKey === 'c' && !e.altKey && !e.shiftKey;
-      const isCut = isMod && lowerKey === 'x' && !e.altKey && !e.shiftKey;
-      const isPaste = isMod && lowerKey === 'v' && !e.altKey && !e.shiftKey;
-      const isSelectAll = isMod && lowerKey === 'a' && !e.altKey && !e.shiftKey;
-      const isBlockEditCommand = currentSelection?.kind === 'blocks' && (isCopy || isCut || isPaste);
-      const isOutlinerSelectAll = isSelectAll && !isFormField;
-      const isTextDelete = (key === 'Backspace' || key === 'Delete') && currentSelection?.kind === 'text' && !isMod;
-      const isAreaDelete = (key === 'Backspace' || key === 'Delete') && currentSelection?.kind === 'blocks' && !isMod;
-      const isBlockZoom = isMod && key === 'Enter';
-      const isBlockMoveUp = e.altKey && !isMod && key === 'ArrowUp';
-      const isBlockMoveDown = e.altKey && !isMod && key === 'ArrowDown';
-      const isBlockDuplicate = isMod && lowerKey === 'd';
-      const isBlockDelete = isMod && (key === 'Backspace' || key === 'Delete') && !isFormField;
-      const isBlockShortcut = isBlockZoom || isBlockMoveUp || isBlockMoveDown || isBlockDuplicate || isBlockDelete;
-      if (!isUndo && !isRedo && !isTextDelete && !isAreaDelete && !isBlockShortcut && !isBlockEditCommand && !isOutlinerSelectAll) return;
-      if ((isUndo || isRedo) && isFormField && !target.closest?.('.mn-block-row')) return;
-      const insideOutliner = !!target.closest?.('.mn-outliner');
-      const activeInsideOutliner = !!document.activeElement?.closest?.('.mn-outliner');
-      if ((isTextDelete || isBlockShortcut || isBlockEditCommand || isOutlinerSelectAll) && !insideOutliner && !activeInsideOutliner) return;
-      const activeBlockId = () => {
-        const currentSelection = selectionRef.current;
-        if (currentSelection?.kind === 'blocks' && currentSelection.blockIds?.length) return currentSelection.blockIds[0];
-        return focusIdRef.current;
-      };
-      if (isBlockShortcut && !activeBlockId()) return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation && e.stopImmediatePropagation();
-      if (isTextDelete || isAreaDelete) deleteSelectionRef.current && deleteSelectionRef.current();
-      else if (isCopy) keyboardEditActionsRef.current?.copySelectedBlocks?.();
-      else if (isCut) keyboardEditActionsRef.current?.cutSelectedBlocks?.();
-      else if (isPaste) keyboardEditActionsRef.current?.pasteForKeyboard?.();
-      else if (isSelectAll) keyboardEditActionsRef.current?.selectAllBlocks?.();
-      else if (isUndo) undoActionRef.current && undoActionRef.current();
-      else if (isRedo) redoActionRef.current && redoActionRef.current();
-      else if (isBlockZoom) zoomBlockRef.current && zoomBlockRef.current(activeBlockId());
-      else if (isBlockMoveUp) moveBlockRef.current && moveBlockRef.current(activeBlockId(), activeBlockId(), 'up');
-      else if (isBlockMoveDown) moveBlockRef.current && moveBlockRef.current(activeBlockId(), activeBlockId(), 'down');
-      else if (isBlockDuplicate) duplicateBlockRef.current && duplicateBlockRef.current(activeBlockId());
-      else if (isBlockDelete) deleteBlockRef.current && deleteBlockRef.current(activeBlockId());
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, []);
+  useOutlinerKeyboardShortcuts({
+    selectionRef,
+    focusIdRef,
+    deleteSelectionRef,
+    keyboardEditActionsRef,
+    undoActionRef,
+    redoActionRef,
+    zoomBlockRef,
+    moveBlockRef,
+    duplicateBlockRef,
+    deleteBlockRef,
+  });
 
   const onChange = (id, content) => {
     const grouped = contentEditHistoryRef.current.blockId === id;
@@ -3013,129 +2770,41 @@ function MnOutliner({
     contentEditHistoryRef.current = { blockId: null, armed: false };
   };
 
-  const onChangeKind = (id, patch) => mutate(bs => {
-    const loc = mnLocate(bs, id);
-    if (!loc) return;
-    if (Object.prototype.hasOwnProperty.call(patch, 'content')) {
-      mnUpdateBlockContent(loc.block, patch.content);
-      const { content, ...rest } = patch;
-      Object.assign(loc.block, rest);
-      return;
-    }
-    Object.assign(loc.block, patch);
-  });
+  const onChangeKind = (id, patch) => mutate(bs => changeBlockKind(bs, id, patch, {
+    locate: mnLocate,
+    updateContent: mnUpdateBlockContent,
+  }));
 
-  const onToggleCollapse = (id) => mutate(bs => {
-    const loc = mnLocate(bs, id);
-    if (loc) loc.block.collapsed = !loc.block.collapsed;
-  });
-
-  const onToggleCheck = (id) => mutate(bs => {
-    const loc = mnLocate(bs, id);
-    if (loc && loc.block.kind === 'todo') loc.block.checked = !loc.block.checked;
-  });
-
-  const onIndent = (id) => mutate(bs => {
-    const loc = mnLocate(bs, id);
-    if (!loc || loc.idx === 0) return;
-    const prev = loc.arr[loc.idx - 1];
-    // Any block can be a parent except dividers.
-    if (prev.kind === 'divider') return;
-    loc.arr.splice(loc.idx, 1);
-    prev.children.push(loc.block);
-    prev.collapsed = false;
-  });
-
-  const onOutdent = (id) => mutate(bs => {
-    const loc = mnLocate(bs, id);
-    if (!loc || !loc.parent) return;
-    const parentLoc = mnLocate(bs, loc.parent.id);
-    if (!parentLoc) return;
-    loc.arr.splice(loc.idx, 1);
-    parentLoc.arr.splice(parentLoc.idx + 1, 0, loc.block);
-  });
+  const onToggleCollapse = (id) => mutate(bs => toggleBlockCollapse(bs, id, mnLocate));
+  const onToggleCheck = (id) => mutate(bs => toggleBlockCheck(bs, id, mnLocate));
+  const onIndent = (id) => mutate(bs => indentBlock(bs, id, mnLocate));
+  const onOutdent = (id) => mutate(bs => outdentBlock(bs, id, mnLocate));
 
   const onSplit = (id, cursor, nextProps) => {
     const nb = mkBlock({ ...nextProps });
-    mutate(bs => {
-      const loc = mnLocate(bs, id);
-      if (!loc) return;
-      mnSplitBlock(loc.block, cursor, nb);
-      loc.arr.splice(loc.idx + 1, 0, nb);
-    });
+    mutate(bs => splitBlockAt(bs, id, cursor, nb, { locate: mnLocate, splitBlock: mnSplitBlock }));
     setFocusId(nb.id);
   };
 
   const onInsertBlocksAt = (id, start, end, insertedBlocks) => {
     const firstInserted = insertedBlocks && insertedBlocks[0];
-    mutate(bs => {
-      const loc = mnLocate(bs, id);
-      if (!loc || !insertedBlocks?.length) return;
-      const text = String(loc.block.content || '');
-      const safeStart = Math.max(0, Math.min(text.length, Number(start) || 0));
-      const safeEnd = Math.max(safeStart, Math.min(text.length, Number(end) || safeStart));
-      const beforeSplit = mnSplitAnnotations(loc.block.annotations || [], safeStart, text.length);
-      const afterSplit = mnSplitAnnotations(loc.block.annotations || [], safeEnd, text.length);
-      const tailText = text.slice(safeEnd);
-      const blocksToInsert = mnCloneBlocks(insertedBlocks);
-      const tailBlocks = tailText
-        ? [mkBlock({
-            kind: loc.block.kind,
-            level: loc.block.level || 0,
-            checked: loc.block.checked,
-            content: tailText,
-            annotations: afterSplit.after,
-            workflow: loc.block.workflow || null,
-            language: loc.block.language || '',
-            children: safeStart === 0 ? (loc.block.children || []) : [],
-          })]
-        : [];
-      if (safeStart === 0) {
-        loc.arr.splice(loc.idx, 1, ...blocksToInsert, ...tailBlocks);
-        return;
-      }
-      loc.block.content = text.slice(0, safeStart);
-      loc.block.annotations = beforeSplit.before;
-      loc.arr.splice(loc.idx + 1, 0, ...blocksToInsert, ...tailBlocks);
-    });
+    mutate(bs => insertBlocksAt(bs, id, start, end, insertedBlocks, {
+      locate: mnLocate,
+      splitAnnotations: mnSplitAnnotations,
+      cloneBlocks: mnCloneBlocks,
+      createBlock: mkBlock,
+    }));
     if (firstInserted) setFocusId(firstInserted.id);
   };
 
   const onMergePrev = (id) => mutate(bs => {
-    const loc = mnLocate(bs, id);
-    if (!loc || loc.idx === 0) return;
-    const prev = loc.arr[loc.idx - 1];
-    // Find deepest end of prev's tree
-    let target = prev;
-    while (target.children.length && !target.collapsed) target = target.children[target.children.length - 1];
-    // Merging text into a divider would silently destroy it (dividers render as
-    // an empty <hr> and serialize to '---'). Instead, delete the divider and
-    // keep the current block in place.
-    if (target.kind === 'divider') {
-      const tLoc = mnLocate(bs, target.id);
-      if (tLoc) tLoc.arr.splice(tLoc.idx, 1, ...(target.children || []));
-      setFocusId(loc.block.id);
-      return;
-    }
-    mnMergeBlockContent(target, loc.block);
-    // Move children of deleted block to target's children
-    target.children = target.children.concat(loc.block.children || []);
-    loc.arr.splice(loc.idx, 1);
-    setFocusId(target.id);
+    const nextFocusId = mergeBlockWithPrevious(bs, id, { locate: mnLocate, mergeContent: mnMergeBlockContent });
+    if (nextFocusId) setFocusId(nextFocusId);
   });
 
   const onDelete = (id) => mutate(bs => {
-    const loc = mnLocate(bs, id);
-    if (!loc) return;
-    if (loc.idx > 0) {
-      const prev = loc.arr[loc.idx - 1];
-      let target = prev;
-      while (target.children.length && !target.collapsed) target = target.children[target.children.length - 1];
-      setFocusId(target.id);
-    } else if (loc.parent) {
-      setFocusId(loc.parent.id);
-    }
-    loc.arr.splice(loc.idx, 1);
+    const nextFocusId = deleteBlock(bs, id, mnLocate);
+    if (nextFocusId) setFocusId(nextFocusId);
   });
 
   const deleteSelection = () => {
@@ -3193,49 +2862,7 @@ function MnOutliner({
   // Move srcId to position relative to destId. position: 'before' | 'after' | 'child'
   const onMove = (srcId, destId, position = 'after') => {
     if (srcId === destId && position !== 'up' && position !== 'down') return;
-    mutate(bs => {
-      const srcLoc = mnLocate(bs, srcId);
-      if (!srcLoc) return;
-      if (position === 'up') {
-        if (srcLoc.idx > 0) {
-          const [block] = srcLoc.arr.splice(srcLoc.idx, 1);
-          srcLoc.arr.splice(srcLoc.idx - 1, 0, block);
-        }
-        return;
-      }
-      if (position === 'down') {
-        if (srcLoc.idx < srcLoc.arr.length - 1) {
-          const [block] = srcLoc.arr.splice(srcLoc.idx, 1);
-          srcLoc.arr.splice(srcLoc.idx + 1, 0, block);
-        }
-        return;
-      }
-      // Prevent moving a block into its own descendant
-      const isDescendant = (parent, targetId) => {
-        if (!parent) return false;
-        if (parent.id === targetId) return true;
-        return (parent.children || []).some(c => isDescendant(c, targetId));
-      };
-      if (isDescendant(srcLoc.block, destId)) return;
-      const block = srcLoc.block;
-      // Remove from current position
-      srcLoc.arr.splice(srcLoc.idx, 1);
-      // Re-locate destination after removal
-      const destLoc = mnLocate(bs, destId);
-      if (!destLoc) {
-        // destination missing — restore
-        srcLoc.arr.splice(srcLoc.idx, 0, block);
-        return;
-      }
-      if (position === 'child') {
-        destLoc.block.children.push(block);
-        destLoc.block.collapsed = false;
-      } else if (position === 'before') {
-        destLoc.arr.splice(destLoc.idx, 0, block);
-      } else {
-        destLoc.arr.splice(destLoc.idx + 1, 0, block);
-      }
-    });
+    mutate(bs => moveBlock(bs, srcId, destId, position, mnLocate));
   };
 
   // Annotation operations on selection
@@ -3644,7 +3271,7 @@ function MnOutliner({
   const requestAiEdit = async (actionId, scope, sourceText, instructionOverride, options = {}) => {
     const action = mnAiAction(actionId);
     const novelConfig = readNovelistAiConfig();
-    if (!window.mn?.ai?.edit) throw new Error('AI editing is not available');
+    if (!platformApi.ai?.edit) throw new Error('AI editing is not available');
 	    const payload = {
 	      text: sourceText,
 	      instruction: instructionOverride || action.instruction,
@@ -3652,9 +3279,9 @@ function MnOutliner({
 	      vaultId,
 	      useNovelistConfig: !!novelConfig,
 	    };
-    const res = options.onToken && window.mn.ai.editStream
-      ? await window.mn.ai.editStream(payload, options.onToken)
-      : await window.mn.ai.edit(payload);
+    const res = options.onToken && platformApi.ai.editStream
+      ? await platformApi.ai.editStream(payload, options.onToken)
+      : await platformApi.ai.edit(payload);
     if (!res.ok) throw new Error(res.error || 'AI edit failed');
     if (res.value && !res.value.ok) throw new Error(res.value.error || 'AI edit failed');
     return res.value.text;
