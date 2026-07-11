@@ -2,12 +2,16 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { configureIsolatedUserData, scheduleTempCleanupAfterExit } = require('./test-temp-home');
 
 process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE = '1';
 process.env.VISPNOTE_DISABLE_GLOBAL_SHORTCUTS = '1';
 process.env.VISPNOTE_EPHEMERAL_SESSION = '1';
-const smokeHome = process.env.VISPNOTE_HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-smoke-'));
+const suppliedSmokeHome = process.env.VISPNOTE_HOME;
+const ownsSmokeHome = !suppliedSmokeHome;
+const smokeHome = suppliedSmokeHome || fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-smoke-'));
 process.env.VISPNOTE_HOME = smokeHome;
+configureIsolatedUserData(app, smokeHome);
 require('../main');
 
 function wait(ms) {
@@ -64,24 +68,9 @@ async function waitForRenderer(win, timeoutMs = 30000) {
 }
 
 async function removeSmokeHome() {
-  if (process.env.VISPNOTE_KEEP_SMOKE_HOME) return;
-  // Release the FTS index DB handle before deleting; on Windows an open
-  // SQLite file blocks removal of the temp home with EPERM.
+  if (process.env.VISPNOTE_KEEP_SMOKE_HOME || !ownsSmokeHome) return;
   try { require('../lib/index').close(); } catch {}
-  let lastError = null;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    try {
-      fs.rmSync(smokeHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-      lastError = null;
-      break;
-    } catch (error) {
-      lastError = error;
-      await wait(250);
-    }
-  }
-  if (lastError) {
-    console.warn(`Could not remove smoke temp home ${smokeHome}: ${lastError?.message || String(lastError)}`);
-  }
+  scheduleTempCleanupAfterExit(smokeHome);
 }
 
 app.whenReady().then(async () => {

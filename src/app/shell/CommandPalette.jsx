@@ -55,7 +55,12 @@ function MnCommandPalette({ open, commands, onClose, onNaturalAction, T }) {
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
       padding: '9vh 18px 18px',
     }}>
-      <div role="dialog" aria-modal="true" aria-label="Command palette" onClick={e => e.stopPropagation()} style={{
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        data-mn-available-command-ids={(commands || []).filter(command => command.enabled !== false).map(command => command.id).join(' ')}
+        onClick={e => e.stopPropagation()} style={{
         width: 'min(720px, 100%)',
         background: T.bg,
         color: T.ink,
@@ -91,6 +96,7 @@ function MnCommandPalette({ open, commands, onClose, onNaturalAction, T }) {
           {items.map((cmd, index) => (
             <button
               key={cmd.id}
+              data-mn-command-id={cmd.id}
               onMouseEnter={() => setActive(index)}
               onClick={() => run(cmd)}
               style={{

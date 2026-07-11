@@ -527,17 +527,17 @@ function MnSidebar({
       </div>
       {openSections.more && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
-          <Row icon={iconSmartViews} label="Smart Views" count={smartViewCount}
-               active={smartViewsActive} onClick={onOpenSmartViews} accent={T.focus || T.accent} />
-          <Row icon={iconGraph} label="Graph" active={graphActive} onClick={onOpenGraph} />
+          {featureState.showLabs && <>
+            <Row icon={iconSmartViews} label="Smart Views" count={smartViewCount}
+                 active={smartViewsActive} onClick={onOpenSmartViews} accent={T.focus || T.accent} />
+            <Row icon={iconGraph} label="Graph" active={graphActive} onClick={onOpenGraph} />
+          </>}
           {onOpenTrash && (
             <Row icon={iconTrash} label="Recently deleted" count={trashCount}
                  active={trashActive} onClick={onOpenTrash} accent={T.warn || T.danger} />
           )}
         </div>
       )}
-
-      {/* Divider */}
       <div style={{ borderTop: `1px solid ${T.lineSub}`, margin: '14px 14px 0' }} />
 
       {/* Workflow (collapsible) */}

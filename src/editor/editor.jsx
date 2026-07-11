@@ -25,6 +25,7 @@ function MnEditor({
   searchQuery = '',
   connectionsRefreshToken = 0,
   memoryEnabled = false,
+  aiEnabled = false,
   canvases = [], onOpenCanvas, onCreateCanvas,
   onOpen, onCreateLinkedNote, onOpenTag, onLinkMention, onAcceptSuggestedConnection, onIgnoreSuggestedConnection,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
@@ -311,12 +312,12 @@ function MnEditor({
             <path d="M6 8L2.5 11.5" strokeLinecap="round"/>
           </svg>
         </button>
-        <button onClick={onOpenGraph} title="Graph (⌘G)" style={iconBtn(T)}>
+        {onOpenGraph && <button onClick={onOpenGraph} title="Graph (⌘G)" style={iconBtn(T)}>
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
             <circle cx="4" cy="4" r="1.6"/><circle cx="12" cy="4" r="1.6"/><circle cx="8" cy="12" r="1.6"/>
             <path d="M5.5 5L10.5 5M5.3 5.8L6.8 10.4M10.7 5.8L9.2 10.4"/>
           </svg>
-        </button>
+        </button>}
         {onOpenCalendar && (
           <button onClick={onOpenCalendar} title="Agenda" aria-label="Agenda" style={iconBtn(T)}>
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
@@ -566,6 +567,8 @@ function MnEditor({
             autoLink={autoLink}
             collapseByDefault={collapseByDefault}
             novelistMode={novelistMode}
+            aiEnabled={aiEnabled}
+            workflowEnabled={workflowStates.length > 0}
             T={T}
           />
 

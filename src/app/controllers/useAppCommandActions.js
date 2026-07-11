@@ -1,26 +1,37 @@
 function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS, MN_APP_MUTATIONS, MN_FEATURES, MN_MEMORY_ACTIONS, MN_NOTE_TEMPLATES, MN_PLUGIN_API, activeCanvas, activeVault, activeVaultId, addNoteToCanvas, addTag, appNotice, assistanceEnabled, blockingOverlayOpen, bootState, canvasTextEditing, canvases, clearInterval, closeReferencePane, commandPaletteOpen, conflictNotice, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, deleteTargetId, desktopBridge, dismissedReminderKeys, duplicateNote, enabledPacks, exportBackup, importBackup, markDirty, mnCollectReminderItems, mnMdToBlocks, mnNormalizeNoteStatus, mnPlayReminderSound, mnReadSnoozedReminders, navigateView, normalizeNotes, normalizeTagName, notesWithBody, notesWithBodyRef, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, quickSwitcherOpen, quietedReminderKeys, rebuildIndex, recordPhase5Metric, referencePaneOpen, reminderCenterOpen, renameNoteTitle, restoreDeletedNote, selectVault, selectedNote, setAppNotice, setCaptureOpen, setCommandPaletteOpen, setConflictNotice, setConnectionsRefreshToken, setDeleteTargetId, setInterval, setNoteListHidden, setNotes, setQuickSwitcherOpen, setReminderCenterOpen, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setSidebarHidden, setToast, setVaultHealthOpen, setVersionTargetId, settingsOpen, showAppNotice, smartViewDefinitions, titleUpdateTimerRef, toast, toastRef, todayAgendaItems, tweaks, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, useAppActionRegistry, useCallbackA, useEffectA, useMemoA, vaultHealthOpen, vaults, vaultsForSidebar, versionTargetId, view, workflowData, workflowStates }) {
   const plugins = useMemoA(() => (MN_PLUGIN_API.normalizeAll ? MN_PLUGIN_API.normalizeAll(tweaks.plugins) : []), [tweaks.plugins]);
-    const featureState = useMemoA(() => (
-      MN_FEATURES.deriveFeatureState
-        ? MN_FEATURES.deriveFeatureState({
-          enabledPacks,
-          canvasCount: canvases.length,
-          novelistMode: !!activeVault?.novelistMode,
-          vaults,
-          plugins,
-          workflowTotal: workflowData.total,
-          agendaCount: todayAgendaItems.length,
-          assistanceEnabled,
-        })
-        : {
-          showAgenda: false,
-          showWorkflow: false,
-          showCanvas: canvases.length > 0,
-          showWriter: !!activeVault?.novelistMode,
-          showAskAi: assistanceEnabled,
-          showLabs: false,
-        }
-    ), [activeVault?.novelistMode, assistanceEnabled, canvases.length, enabledPacks, plugins, vaults, workflowData.total, todayAgendaItems.length]);
+  const featureArtifacts = useMemoA(() => (
+    MN_FEATURES.detectFeatureArtifacts ? MN_FEATURES.detectFeatureArtifacts(notesWithBody) : {}
+  ), [notesWithBody]);
+  const featureState = useMemoA(() => (
+    MN_FEATURES.deriveFeatureState
+      ? MN_FEATURES.deriveFeatureState({
+        enabledPacks,
+        canvasCount: canvases.length,
+        ...featureArtifacts,
+        novelistMode: !!activeVault?.novelistMode,
+        vaults,
+        plugins,
+        workflowTotal: workflowData.total,
+        agendaCount: todayAgendaItems.length,
+        assistanceEnabled,
+      })
+      : {
+        showAgenda: false,
+        showWorkflow: false,
+        showCanvas: canvases.length > 0,
+        showWriter: !!activeVault?.novelistMode,
+        showAskAi: assistanceEnabled,
+        showLabs: false,
+      }
+  ), [activeVault?.novelistMode, assistanceEnabled, canvases.length, enabledPacks, featureArtifacts, plugins, vaults, workflowData.total, todayAgendaItems.length]);
+
+  useEffectA(() => {
+    if (!MN_FEATURES.isViewAvailable || MN_FEATURES.isViewAvailable(view, featureState)) return;
+    navigateView('notes');
+    setSelectedTag(null);
+    setSelectedWorkflow(null);
+  }, [featureState, navigateView, view]);
   
     const runPlugin = useCallbackA(async (plugin) => {
       if (!plugin || plugin.enabled === false) return { ok: false, message: 'Plugin is unavailable.' };
@@ -132,6 +143,8 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
       normalizeNoteStatus: mnNormalizeNoteStatus,
       pluginApi: MN_PLUGIN_API,
       noteTemplates: MN_NOTE_TEMPLATES,
+      featureRegistry: MN_FEATURES,
+      featureState,
     });
   
     useEffectA(() => {
@@ -152,24 +165,26 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
     }, [showAppNotice]);
   
     const commands = useMemoA(() => {
-      return appActionRegistry.list({ includeHidden: false }).map(action => ({
-        id: action.id,
-        title: action.title || action.label,
-        section: action.section,
-        shortcut: action.shortcut,
-        keywords: action.keywords || action.description,
-        enabled: action.enabled,
-        risk: action.risk,
-        run: async () => {
-          try {
-            const result = await appActionRegistry.run(action.id, {}, { confirmed: action.risk === 'external' });
-            handleAppActionResult(result);
-          } catch (e) {
-            showAppNotice('Command failed', e.message || String(e));
-          }
-        },
-      }));
-    }, [appActionRegistry, handleAppActionResult, showAppNotice]);
+      return appActionRegistry.list({ includeHidden: false })
+        .filter(action => !MN_FEATURES.isActionAvailable || MN_FEATURES.isActionAvailable(action.id, featureState))
+        .map(action => ({
+          id: action.id,
+          title: action.title || action.label,
+          section: action.section,
+          shortcut: action.shortcut,
+          keywords: action.keywords || action.description,
+          enabled: action.enabled,
+          risk: action.risk,
+          run: async () => {
+            try {
+              const result = await appActionRegistry.run(action.id, {}, { confirmed: action.risk === 'external' });
+              handleAppActionResult(result);
+            } catch (e) {
+              showAppNotice('Command failed', e.message || String(e));
+            }
+          },
+        }));
+    }, [appActionRegistry, featureState, handleAppActionResult, showAppNotice]);
   
     const runNaturalCommand = useCallbackA(async (plan) => {
       if (!plan?.steps?.length) return;
@@ -200,11 +215,11 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
           e.preventDefault(); setCaptureOpen(true);
         } else if (isMod && lowerKey === 'n' && !e.shiftKey) {
           e.preventDefault(); createNote();
-        } else if (isMod && lowerKey === 'g') {
+        } else if (isMod && lowerKey === 'g' && (!MN_FEATURES.isActionAvailable || MN_FEATURES.isActionAvailable('graph', featureState))) {
           e.preventDefault();
           navigateView(view === 'graph' ? 'notes' : 'graph');
           setSelectedTag(null); setSelectedWorkflow(null);
-        } else if (isMod && e.shiftKey && lowerKey === 'k') {
+        } else if (isMod && e.shiftKey && lowerKey === 'k' && (!MN_FEATURES.isActionAvailable || MN_FEATURES.isActionAvailable('ask-ai', featureState))) {
           e.preventDefault();
           openAskAi();
         } else if (isMod && lowerKey === 'k') {
@@ -238,7 +253,7 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
       };
       window.addEventListener('keydown', h);
       return () => window.removeEventListener('keydown', h);
-    }, [appNotice, blockingOverlayOpen, closeReferencePane, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, navigateView, openAskAi, openReferencePane, referencePaneOpen, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
+    }, [appNotice, blockingOverlayOpen, closeReferencePane, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, featureState, navigateView, openAskAi, openReferencePane, referencePaneOpen, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
   
     useEffectA(() => {
       if (!toast?.key) return;

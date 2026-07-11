@@ -1,5 +1,5 @@
 function MnOutlinerView({ model }) {
-  const { MnAiActionMenu, MnAiIcon, MnAiPreviewDialog, MnBlockContextMenu, MnInlineAiPreview, MnOutlineTree, MnSelectionToolbar, MnZoomBar, T, aiBusy, aiMenu, aiPreview, aiPrompt, aiTarget, allCanvases, allNotes, appendPageBlocks, applyAiPreview, applyAnnotation, applyBlocksReplacement, applyPageReplacement, applySectionReplacement, applyTextReplacement, autoLink, beginBlockSelection, blockClipboardPayload, blockIdsInVerticalRange, blocks, blocksForClipboardIds, cancelAiPreview, clipboardHandlersRef, collapseByDefault, contentEditHistoryRef, contextClipboardIds, copyContextBlocks, ctxBlock, ctxMenu, currentAiTarget, currentNoteId, cutContextBlocks, deleteBlockRef, deleteSelection, deleteSelectionRef, dismissedAiPreviewRef, duplicateBlockRef, extendBlockSelection, findPath, focusId, focusIdRef, focusScopeBlocks, fontSize, handlers, historyRef, indentGuides, inlinePreviewKey, insertBlocksAfter, isPreviewForCurrentNote, keyboardEditActionsRef, localClipboardRef, makeAiPreview, mnAiAction, mnAiLiveDot, mnAiPagePulse, mnAiPulse, mnAiTextShimmer, mnCreateBlockLabel, mnInlineAiPreviewPulse, mnLocate, mnNormalizeBlockLabels, moveBlockRef, mutate, noteId, noteIdRef, noteTags, noteTitle, novelistMode, onBeginContentEdit, onChange, onChangeKind, onContextMenu, onCreateCanvas, onDelete, onDuplicate, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onShowToast, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, onZoomBlock, orderedBlockIds, pageContinuationInstruction, parseAiBlocks, parseClipboardBlocks, pasteContextBlocksAfter, plotPointsContextText, plotPointsInstruction, previewForCurrentNote, readNovelistAiConfig, redo, redoActionRef, redoStack, renderBlocks, replaceAllBlocks, replaceSelectedBlocksWith, requestAiEdit, runAiAction, selectDragRef, selectedBlockIds, selection, selectionRectForBlocks, selectionRef, setAiBusy, setAiMenu, setAiPreview, setAiPrompt, setAiTarget, setBlocks, setCtxMenu, setFocusId, setSelection, snapshotBlocks, spellCheck, topLevelSelectedIds, undo, undoActionRef, undoStack, vaultId, writeBlocksToClipboard, writeBlocksToSystemClipboard, writeInstruction, zoomBlock, zoomBlockId, zoomBlockRef, zoomLoc } = model;
+  const { MnAiActionMenu, MnAiIcon, MnAiPreviewDialog, MnBlockContextMenu, MnInlineAiPreview, MnOutlineTree, MnSelectionToolbar, MnZoomBar, T, aiBusy, aiEnabled, aiMenu, aiPreview, aiPrompt, aiTarget, allCanvases, allNotes, appendPageBlocks, applyAiPreview, applyAnnotation, applyBlocksReplacement, applyPageReplacement, applySectionReplacement, applyTextReplacement, autoLink, beginBlockSelection, blockClipboardPayload, blockIdsInVerticalRange, blocks, blocksForClipboardIds, cancelAiPreview, clipboardHandlersRef, collapseByDefault, contentEditHistoryRef, contextClipboardIds, copyContextBlocks, ctxBlock, ctxMenu, currentAiTarget, currentNoteId, cutContextBlocks, deleteBlockRef, deleteSelection, deleteSelectionRef, dismissedAiPreviewRef, duplicateBlockRef, extendBlockSelection, findPath, focusId, focusIdRef, focusScopeBlocks, fontSize, handlers, historyRef, indentGuides, inlinePreviewKey, insertBlocksAfter, isPreviewForCurrentNote, keyboardEditActionsRef, localClipboardRef, makeAiPreview, mnAiAction, mnAiLiveDot, mnAiPagePulse, mnAiPulse, mnAiTextShimmer, mnCreateBlockLabel, mnInlineAiPreviewPulse, mnLocate, mnNormalizeBlockLabels, moveBlockRef, mutate, noteId, noteIdRef, noteTags, noteTitle, novelistMode, onBeginContentEdit, onChange, onChangeKind, onContextMenu, onCreateCanvas, onDelete, onDuplicate, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onShowToast, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, onZoomBlock, orderedBlockIds, pageContinuationInstruction, parseAiBlocks, parseClipboardBlocks, pasteContextBlocksAfter, plotPointsContextText, plotPointsInstruction, previewForCurrentNote, readNovelistAiConfig, redo, redoActionRef, redoStack, renderBlocks, replaceAllBlocks, replaceSelectedBlocksWith, requestAiEdit, runAiAction, selectDragRef, selectedBlockIds, selection, selectionRectForBlocks, selectionRef, setAiBusy, setAiMenu, setAiPreview, setAiPrompt, setAiTarget, setBlocks, setCtxMenu, setFocusId, setSelection, snapshotBlocks, spellCheck, topLevelSelectedIds, undo, undoActionRef, undoStack, vaultId, workflowEnabled, writeBlocksToClipboard, writeBlocksToSystemClipboard, writeInstruction, zoomBlock, zoomBlockId, zoomBlockRef, zoomLoc } = model;
     return (
       <div className="mn-outliner" style={{ color: T.ink, position: 'relative' }}>
         <style>{`
@@ -168,15 +168,16 @@ function MnOutlinerView({ model }) {
             onDelete={deleteSelection}
             onUndo={undo}
             onRedo={redo}
-            onOpenAiMenu={(e) => setAiMenu({
+            aiEnabled={aiEnabled}
+            onOpenAiMenu={aiEnabled ? (e) => setAiMenu({
               scope: 'selection',
               x: e.clientX,
               y: e.clientY,
-            })}
+            }) : null}
             onClose={() => setSelection(null)}
             T={T} />
         )}
-        {aiMenu && (
+        {aiEnabled && aiMenu && (
           <MnAiActionMenu
             scope={aiMenu.scope === 'selection' && selection?.kind === 'blocks' ? 'selection-blocks' : aiMenu.scope}
             x={aiMenu.x}
@@ -187,7 +188,7 @@ function MnOutlinerView({ model }) {
             T={T}
           />
         )}
-        {aiPrompt && (
+        {aiEnabled && aiPrompt && (
           <div
             onMouseDown={(e) => e.stopPropagation()}
             style={{
@@ -311,7 +312,7 @@ function MnOutlinerView({ model }) {
             </div>
           </div>
         )}
-        {previewForCurrentNote && !['insert-after', 'append-page'].includes(previewForCurrentNote.target?.kind) && (
+        {aiEnabled && previewForCurrentNote && !['insert-after', 'append-page'].includes(previewForCurrentNote.target?.kind) && (
           <MnAiPreviewDialog
             preview={previewForCurrentNote}
             onCancel={() => setAiPreview(null)}
@@ -353,6 +354,7 @@ function MnOutlinerView({ model }) {
             })}
             onDelete={() => onDelete(ctxBlock.id)}
             onSetWorkflow={(state) => onChangeKind(ctxBlock.id, { workflow: state })}
+            workflowEnabled={workflowEnabled}
             onChangeKind={(patch) => onChangeKind(ctxBlock.id, patch)}
             T={T}
           />

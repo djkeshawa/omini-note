@@ -1,4 +1,4 @@
-import { platformApi } from '../platform/index.js';
+import { optionalPlatformCall, platformApi } from '../platform/index.js';
 import { iconAppearance, iconEditor, iconAI, iconPlugin, iconData, iconInfo } from './settingsControls.jsx';
 import { SectionAppearance, SectionEditor, SectionNotes, SectionAdvanced } from './sections/GeneralSections.jsx';
 import { SectionAI } from './sections/AssistanceSection.jsx';
@@ -20,12 +20,12 @@ function MnSettingsModal({
 
   useEffectS(() => {
     let alive = true;
-    platformApi.updates.status?.().then(res => {
+    optionalPlatformCall(() => platformApi.updates.status?.()).then(res => {
       if (alive && res?.ok) setUpdateState(res.value);
-    }).catch(() => {});
-    platformApi.app.shortcutStatus().then(res => {
+    });
+    optionalPlatformCall(() => platformApi.app.shortcutStatus()).then(res => {
       if (alive && res?.ok) setShortcutStatus(res.value);
-    }).catch(() => {});
+    });
     const off = platformApi.updates.onState?.(state => {
       if (alive) setUpdateState(state);
     });
@@ -219,7 +219,7 @@ function MnSettingsModal({
                 onImportNovelFiles={onImportNovelFiles}
                 onOpenVaultHealth={onOpenVaultHealth}
                 onRebuildIndex={onRebuildIndex}
-                writerEnabled={featureState.showWriter || enabledPacks.includes('writer')}
+                writerEnabled={featureState.writerAvailable || enabledPacks.includes('writer')}
               />
             )}
             {section === 'about' && (

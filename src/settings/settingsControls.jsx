@@ -81,11 +81,18 @@ function Segmented({ T, value, onChange, options }) {
   );
 }
 
-function Toggle({ T, checked, onChange }) {
+function Toggle({ T, checked, onChange, disabled = false, label = '', dataId = '' }) {
   return (
-    <button onClick={() => onChange(!checked)} style={{
+    <button
+      type="button"
+      aria-label={label || undefined}
+      aria-pressed={checked}
+      data-mn-pack-id={dataId || undefined}
+      disabled={disabled}
+      onClick={() => onChange(!checked)} style={{
       width: 34, height: 20, borderRadius: 10, border: 'none', padding: 0,
-      background: checked ? T.accent : T.line, cursor: 'pointer',
+      background: checked ? T.accent : T.line, cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.65 : 1,
       position: 'relative', transition: 'background 140ms',
     }}>
       <span style={{

@@ -16,6 +16,7 @@ export function useAppActionRegistry(ctx) {
     setSettingsOpen, setVaultHealthOpen, normalizeNotes, markdownToBlocks,
     setConnectionsRefreshToken, memoryActions, renameNoteTitle, setSelectedId, addTag,
     normalizeTagName, normalizeNoteStatus, pluginApi, noteTemplates,
+    featureRegistry, featureState,
   } = ctx;
   const MN_APP_ACTIONS_FACTORY = appActionsFactory;
   const MN_APP_HELPERS = appHelpers;
@@ -23,6 +24,7 @@ export function useAppActionRegistry(ctx) {
   const MN_MEMORY_ACTIONS = memoryActions;
   const MN_PLUGIN_API = pluginApi;
   const MN_NOTE_TEMPLATES = noteTemplates;
+  const MN_FEATURES = featureRegistry;
   const HAS_DISK = hasDisk;
   const desktopBridge = platform;
   const mnMdToBlocks = markdownToBlocks;
@@ -779,6 +781,9 @@ export function useAppActionRegistry(ctx) {
         integerArg,
       }),
     ];
-    return makeRegistry(actions);
-  }, [activeCanvas, activeVault?.name, activeVaultId, addNoteToCanvas, canvases, closeReferencePane, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, plugins, rebuildIndex, recordPhase5Metric, referencePaneOpen, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+    const availableActions = MN_FEATURES?.isActionAvailable
+      ? actions.filter(action => MN_FEATURES.isActionAvailable(action.id, featureState))
+      : actions;
+    return makeRegistry(availableActions);
+  }, [activeCanvas, activeVault?.name, activeVaultId, addNoteToCanvas, canvases, closeReferencePane, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, featureState, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, plugins, rebuildIndex, recordPhase5Metric, referencePaneOpen, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
 }

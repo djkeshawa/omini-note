@@ -303,7 +303,7 @@ function MnBlockEmbed({ refId, allNotes, T, onOpenBlock }) {
 function MnBlockContextMenu({
   block, x, y, onClose, onCopyRef, onCopyEmbed, onCopyBlock, onCutBlock,
   onPasteAfter, onZoom, onIndent, onOutdent, onMoveUp, onMoveDown,
-  onDelete, onDuplicate, onAddLabel, onSetWorkflow, onChangeKind, T
+  onDelete, onDuplicate, onAddLabel, onSetWorkflow, onChangeKind, workflowEnabled = false, T
 }) {
   React.useEffect(() => {
     const onDown = (e) => {
@@ -397,31 +397,35 @@ function MnBlockContextMenu({
             checked: opt.kind === 'todo' ? false : null,
           })} />
       ))}
-      <Item divider />
-      <div style={{
-        padding: '4px 10px 4px',
-        fontFamily: 'var(--mn-mono)', fontSize: 9, color: T.inkDim,
-        letterSpacing: '0.1em', textTransform: 'uppercase',
-      }}>Block marker</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '0 10px 6px' }}>
-        {MN_WORKFLOW_STATES.map(s => (
-          <button key={s.id}
-            onMouseDown={(e) => { e.preventDefault(); onSetWorkflow(s.id); onClose(); }}
-            style={{
-              fontFamily: 'var(--mn-mono)', fontSize: 9.5, fontWeight: 700,
-              padding: '2px 5px', borderRadius: 3,
-              color: s.color, background: s.bg, border: 'none', cursor: 'pointer',
-              letterSpacing: '0.06em',
-            }}>{s.id}</button>
-        ))}
-        <button
-          onMouseDown={(e) => { e.preventDefault(); onSetWorkflow(null); onClose(); }}
-          style={{
-            fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-            padding: '2px 5px', borderRadius: 3,
-            color: T.inkDim, background: T.bgSub, border: `1px solid ${T.line}`, cursor: 'pointer',
-          }}>clear</button>
-      </div>
+      {workflowEnabled && (
+        <>
+          <Item divider />
+          <div style={{
+            padding: '4px 10px 4px',
+            fontFamily: 'var(--mn-mono)', fontSize: 9, color: T.inkDim,
+            letterSpacing: '0.1em', textTransform: 'uppercase',
+          }}>Block marker</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '0 10px 6px' }}>
+            {MN_WORKFLOW_STATES.map(s => (
+              <button key={s.id}
+                onMouseDown={(e) => { e.preventDefault(); onSetWorkflow(s.id); onClose(); }}
+                style={{
+                  fontFamily: 'var(--mn-mono)', fontSize: 9.5, fontWeight: 700,
+                  padding: '2px 5px', borderRadius: 3,
+                  color: s.color, background: s.bg, border: 'none', cursor: 'pointer',
+                  letterSpacing: '0.06em',
+                }}>{s.id}</button>
+            ))}
+            <button
+              onMouseDown={(e) => { e.preventDefault(); onSetWorkflow(null); onClose(); }}
+              style={{
+                fontFamily: 'var(--mn-mono)', fontSize: 9.5,
+                padding: '2px 5px', borderRadius: 3,
+                color: T.inkDim, background: T.bgSub, border: `1px solid ${T.line}`, cursor: 'pointer',
+              }}>clear</button>
+          </div>
+        </>
+      )}
       <Item divider />
       <Item icon="🗑" label="Delete block"          kbd="⌘⌫"  onClick={onDelete} danger />
     </div>

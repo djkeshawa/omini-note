@@ -4,6 +4,8 @@
 //
 // Seamless by default: if no server is reachable the run is skipped with exit
 // code 0, so `npm run test:all` stays green on machines without the container.
+// A secured server is also skipped when no API key was supplied; an unrelated
+// authenticated localhost service must not make the optional gate fail.
 // Set VISPNOTE_MEMORY_REQUIRED=1 to turn an unreachable server into a failure
 // (for environments where the container is guaranteed, e.g. CI with services).
 //
@@ -19,6 +21,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { shouldSkipOptionalSecuredServer } = require('./memory-regression-policy');
 
 const REGRESSION_REPO_ID = 'vispnote_regression';
 
@@ -112,7 +115,21 @@ async function run() {
     console.log('# skip - start the server (e.g. the llm-memory Docker container) to run this regression');
     return;
   }
-  pass('server is reachable');
+  try {
+    await llmMemory.listMemories(config, { limit: 1 });
+  } catch (error) {
+    if (shouldSkipOptionalSecuredServer({
+      error,
+      apiKey: config.apiKey,
+      required: process.env.VISPNOTE_MEMORY_REQUIRED === '1',
+    })) {
+      console.log(`# skip - llm-memory server requires authentication (${error.message})`);
+      console.log('# skip - set VISPNOTE_MEMORY_API_KEY to run this optional live regression');
+      return;
+    }
+    throw error;
+  }
+  pass('server is reachable and authorized');
 
   const swept = await sweepRepo(config) + await sweepRepo({ ...derivedConfig, repoId: DERIVED_REPO_ID });
   if (swept > 0) console.log(`  # swept ${swept} leftover memories from a previous run`);
@@ -252,10 +269,9 @@ function cleanupHome() {
 run()
   .then(() => {
     cleanupHome();
-    process.exit(0);
   })
   .catch(error => {
     cleanupHome();
     console.error(`# fail - ${error.message}`);
-    process.exit(1);
+    process.exitCode = 1;
   });
