@@ -175,6 +175,9 @@ test('Note tag picker can create new tags from the editor', () => {
 test('Note metadata edits participate in undo and redo', () => {
   const app = appSource(__dirname);
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const connections = fs.readFileSync(path.join(__dirname, '../src/features/editor/connections/useConnectionsController.js'), 'utf8');
+  const properties = fs.readFileSync(path.join(__dirname, '../src/features/editor/metadata/PropertiesPanel.jsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
 
   assert.match(app, /noteMetadataHistoryRef/);
   assert.match(app, /recordNoteMetadataHistory\(n, options\.historyKey\)/);
@@ -188,6 +191,15 @@ test('Note metadata edits participate in undo and redo', () => {
   assert.match(editor, /onUndoNoteEdit/);
   assert.match(editor, /onRedoNoteEdit/);
   assert.match(editor, /onEndNoteMetadataEdit/);
+  assert.match(editor, /<PropertiesPanel/);
+  assert.match(properties, />Properties</);
+  assert.match(properties, /function panelStyle/);
+  assert.match(properties, /function rowStyle/);
+  assert.match(settings, /section === 'writing'[\s\S]*display: 'grid', gap: 36/);
+  assert.match(settings, /section === 'about'[\s\S]*display: 'grid', gap: 40/);
+  assert.match(connections, /related\.noteId === note\.id/);
+  assert.match(connections, /ignored\.noteId === note\.id/);
+  assert.match(connections, /suggestionsReady \?/);
 });
 
 test('Vaults can be created and deleted from settings with backend cleanup', () => {

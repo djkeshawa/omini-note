@@ -1226,15 +1226,16 @@ test('Novelist order and note-level status properties drive visible workflow', (
   ].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const metadataModel = fs.readFileSync(path.join(__dirname, '../src/features/editor/metadata/model.js'), 'utf8');
+  const propertiesPanel = fs.readFileSync(path.join(__dirname, '../src/features/editor/metadata/PropertiesPanel.jsx'), 'utf8');
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   assert.doesNotMatch(panels, /## Chapters\\n- '\s*}/);
   assert.doesNotMatch(panels, /## Scenes\\n- '\s*}/);
   assert.doesNotMatch(panels, /body: '# (Story Root|Act|Chapter|Scene|Character|Location|Plot Thread|Research|Revision Note)/);
   assert.match(metadataModel, /function splitPropertyBlocks/);
   assert.match(editor, /blocks=\{contentBlocks\}/);
-  assert.match(editor, /status::/);
+  assert.match(propertiesPanel, /status::/);
   assert.match(metadataModel, /function cleanPropertyKey/);
-  assert.match(editor, /\+ property/);
+  assert.match(propertiesPanel, /Add property/);
   assert.match(editor, /removeMetadataProperty/);
   assert.doesNotMatch(editor, /borderTop: `1px solid \$\{T\.lineSub\}`,[\s\S]*borderBottom: `1px solid \$\{T\.lineSub\}`/);
   const outliner = outlinerSource(__dirname);

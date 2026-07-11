@@ -4,6 +4,7 @@ import {
   cleanPropertyKey,
   ConnectionsSection,
   createPropertyBlock,
+  PropertiesPanel,
   propertyParts,
   splitPropertyBlocks,
   useConnectionsController,
@@ -54,13 +55,17 @@ function MnEditor({
   const visibleMetadataProperties = metadataProperties.filter(prop => String(prop.key || '').toLowerCase() !== 'status');
   const hasStatusProperty = metadataProperties.some(prop => String(prop.key || '').toLowerCase() === 'status');
   const hasStatusRow = workflowStates.length > 0 || hasStatusProperty;
-  const hasMetadataRows = hasStatusRow || visibleMetadataProperties.length > 0;
   const [addingProperty, setAddingProperty] = useStateE(false);
   const [propertyKeyDraft, setPropertyKeyDraft] = useStateE('');
   const [propertyValueDraft, setPropertyValueDraft] = useStateE('');
 
   // Reset zoom when note changes
   useEffectE(() => { setZoomBlockId(null); }, [note.id]);
+  useEffectE(() => {
+    setAddingProperty(false);
+    setPropertyKeyDraft('');
+    setPropertyValueDraft('');
+  }, [note.id]);
   useEffectE(() => { setSearchMatch({ count: 0, activeIndex: 0 }); }, [note.id, searchQuery]);
 
   useEffectE(() => {
@@ -505,109 +510,25 @@ function MnEditor({
             </div>
           </div>
 
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(72px, max-content) minmax(150px, 360px) 22px',
-            columnGap: 8,
-            rowGap: 3,
-            alignItems: 'center',
-            margin: hasMetadataRows || addingProperty ? '0 0 18px' : '-2px 0 18px',
-            padding: hasMetadataRows || addingProperty ? '10px 12px' : 0,
-            width: 'fit-content',
-            maxWidth: '100%',
-            border: hasMetadataRows || addingProperty ? `1px solid ${T.lineSub}` : 'none',
-            borderRadius: hasMetadataRows || addingProperty ? 8 : 0,
-            background: hasMetadataRows || addingProperty ? T.bgSub : 'transparent',
-          }}>
-            {hasStatusRow && (
-              <>
-                <div style={mnMetadataKeyStyle(T)}>status::</div>
-                <select
-                  value={workflowStatus || ''}
-                  onChange={(e) => onSetWorkflowStatus && onSetWorkflowStatus(e.target.value || null)}
-                  spellCheck={false}
-                  style={{
-                    ...mnMetadataValueStyle(T),
-                    width: 'auto',
-                    minWidth: 110,
-                    maxWidth: 180,
-                    border: `1px solid ${T.lineSub}`,
-                    borderRadius: 4,
-                    padding: '2px 24px 2px 6px',
-                    color: T.inkMed,
-                  }}>
-                  <option value="">None</option>
-                  {workflowStates.map(state => <option key={state.id} value={state.id}>{state.id}</option>)}
-                </select>
-                <button
-                  onClick={() => removeMetadataProperty('status')}
-                  title="Remove status"
-                  style={mnMetadataIconButton(T)}>x</button>
-              </>
-            )}
-            {visibleMetadataProperties.map(prop => (
-              <React.Fragment key={`${prop.block.id}:${prop.key}`}>
-                <div style={mnMetadataKeyStyle(T)}>{prop.key}::</div>
-                <input
-                  value={prop.value || ''}
-                  onChange={(e) => updateMetadataProperty(prop.key, e.target.value)}
-                  spellCheck={spellCheck}
-                  style={mnMetadataValueStyle(T)}
-                />
-                <button
-                  onClick={() => removeMetadataProperty(prop.key)}
-                  title={`Remove ${prop.key}`}
-                  style={mnMetadataIconButton(T)}>x</button>
-              </React.Fragment>
-            ))}
-            {addingProperty && (
-              <>
-                <input
-                  value={propertyKeyDraft}
-                  onChange={(e) => setPropertyKeyDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); addMetadataProperty(); }
-                    if (e.key === 'Escape') { e.preventDefault(); setAddingProperty(false); setPropertyKeyDraft(''); setPropertyValueDraft(''); }
-                  }}
-                  autoFocus
-                  placeholder="property"
-                  spellCheck={false}
-                  style={{ ...mnMetadataValueStyle(T), color: T.inkDim }}
-                />
-                <input
-                  value={propertyValueDraft}
-                  onChange={(e) => setPropertyValueDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); addMetadataProperty(); }
-                    if (e.key === 'Escape') { e.preventDefault(); setAddingProperty(false); setPropertyKeyDraft(''); setPropertyValueDraft(''); }
-                  }}
-                  placeholder="value"
-                  spellCheck={spellCheck}
-                  style={mnMetadataValueStyle(T)}
-                />
-                <button
-                  onClick={addMetadataProperty}
-                  disabled={!mnEditorCleanPropertyKey(propertyKeyDraft)}
-                  title="Add property"
-                  style={mnMetadataIconButton(T)}>+</button>
-              </>
-            )}
-            {!addingProperty && (
-              <button
-                onClick={() => setAddingProperty(true)}
-                style={{
-                  gridColumn: '1 / span 2',
-                  width: 'fit-content',
-                  border: 'none',
-                  background: 'transparent',
-                  color: T.inkDim,
-                  cursor: 'pointer',
-                  fontFamily: 'var(--mn-mono)',
-                  fontSize: 10.5,
-                  padding: '2px 0',
-                }}>+ property</button>
-            )}
-          </div>
+          <PropertiesPanel
+            T={T}
+            visibleProperties={visibleMetadataProperties}
+            hasStatusRow={hasStatusRow}
+            workflowStatus={workflowStatus}
+            workflowStates={workflowStates}
+            onSetWorkflowStatus={onSetWorkflowStatus}
+            removeProperty={removeMetadataProperty}
+            updateProperty={updateMetadataProperty}
+            spellCheck={spellCheck}
+            addingProperty={addingProperty}
+            setAddingProperty={setAddingProperty}
+            propertyKeyDraft={propertyKeyDraft}
+            setPropertyKeyDraft={setPropertyKeyDraft}
+            propertyValueDraft={propertyValueDraft}
+            setPropertyValueDraft={setPropertyValueDraft}
+            addProperty={addMetadataProperty}
+            cleanPropertyKey={mnEditorCleanPropertyKey}
+          />
 
           {/* Outliner */}
           <MnOutliner
@@ -702,45 +623,6 @@ function iconBtn(T, active) {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-  };
-}
-
-function mnMetadataKeyStyle(T) {
-  return {
-    fontFamily: 'var(--mn-mono)',
-    fontSize: 10.5,
-    color: T.inkDim,
-    textTransform: 'lowercase',
-    padding: '2px 0',
-  };
-}
-
-function mnMetadataValueStyle(T) {
-  return {
-    minWidth: 0,
-    border: 'none',
-    outline: 'none',
-    background: 'transparent',
-    color: T.inkMed,
-    fontFamily: 'var(--mn-mono)',
-    fontSize: 11.5,
-    padding: '2px 0',
-  };
-}
-
-function mnMetadataIconButton(T) {
-  return {
-    width: 20,
-    height: 20,
-    border: `1px solid transparent`,
-    borderRadius: 5,
-    background: 'transparent',
-    color: T.inkDim,
-    cursor: 'pointer',
-    fontFamily: 'var(--mn-mono)',
-    fontSize: 11,
-    lineHeight: 1,
-    padding: 0,
   };
 }
 
