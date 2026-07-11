@@ -27,7 +27,7 @@ const REGRESSION_REPO_ID = 'vispnote_regression';
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-memory-regression-'));
 process.env.VISPNOTE_HOME = tmpHome;
 
-const llmMemory = require('../lib/llmMemory.js');
+const llmMemory = require('../lib/integrations/memory/client.js');
 const store = require('../lib/store.js');
 
 const config = llmMemory.normalizeMemoryConfig({

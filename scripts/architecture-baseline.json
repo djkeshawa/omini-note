@@ -11,7 +11,7 @@
     "src/settings/settings.jsx"
   ],
   "lineBudgets": {
-    "src/ai/ai.jsx": 3135,
+    "src/ai/ai.jsx": 3068,
     "src/app/app.jsx": 3433,
     "src/app/appHelpers.js": 3174,
     "src/app/appShell.jsx": 1083,
@@ -22,6 +22,6 @@
     "src/panels/sidebar.jsx": 820,
     "src/panels/utilityPanels.jsx": 1295,
     "src/settings/settings.jsx": 1630,
-    "lib/ai.js": 3064
+    "lib/ai.js": 2811
   }
 }
