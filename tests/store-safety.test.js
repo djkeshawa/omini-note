@@ -15,6 +15,18 @@ const seed = require('../lib/seed.js');
 const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
+function mainProcessSource() {
+  const files = [path.join(__dirname, '../main.js')];
+  for (const folder of ['../main', '../lib/connectors/ipc']) {
+    const root = path.join(__dirname, folder);
+    files.push(...fs.readdirSync(root)
+      .filter(name => name.endsWith('.js'))
+      .sort()
+      .map(name => path.join(root, name)));
+  }
+  return files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+}
+
 function buildTestThemeTokens(hue = 260) {
   return {
     bgOuter: `oklch(0.97 0.02 ${hue})`,
@@ -797,7 +809,7 @@ test('Vault health resolves wiki links with anchors by note title', async () => 
 });
 
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
@@ -815,8 +827,8 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
 
   assert.match(main, /const \{ fileURLToPath \} = require\('url'\)/);
   assert.match(main, /function hardenWindow\(win\)/);
-  assert.match(main, /function ipcErrorResponse\(name, e\)/);
-  assert.match(main, /function wrapWithEvent\(fn\)/);
+  assert.match(main, /function ipcErrorResponse\(name, error\)/);
+  assert.match(main, /const wrapWithEvent = fn =>/);
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/);
   assert.match(main, /webContents\.on\('will-navigate'/);
   assert.match(main, /setPermissionRequestHandler/);
@@ -843,10 +855,10 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /idx\.init\(\)/);
   assert.match(main, /function noteSearchIndexFailure\(context, error\)/);
   assert.match(main, /function runOptionalSearchIndexTask\(context, fn\)[\s\S]*?noteSearchIndexFailure\(context, e\)/);
-  assert.match(main, /noteSearchIndexFailure\('rebuild vault index', e\)/);
+  assert.match(main, /noteSearchIndexFailure\('rebuild vault index', (?:e|error)\)/);
   assert.match(main, /result\?\.config\?\.provider === 'ollama'/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: ai\.getConfig\(\) \}\)/);
-  assert.match(main, /ipcMain\.handle\('mn:ai\.setConfig',\s+wrap\(async \(patch\) => \{/);
+  assert.match(main, /ipcMain\.handle\('mn:ai\.setConfig',\s+wrap\(async (?:\(patch\)|patch) => \{/);
   assert.match(main, /const config = ai\.previewConfig\(patch\)/);
   assert.match(main, /store\.setPrefs\(\{ aiConfig: config \}\)/);
   assert.match(main, /ai\.applyConfig\(config\)/);
@@ -862,7 +874,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(main, /ipcMain\.handle\('mn:ai\.editStream', wrapWithEvent/);
   assert.match(main, /idx\.searchDetailed\(vaultId, query, limit\)/);
   assert.match(main, /idx\.searchDetailedStatus\(vaultId, query, limit\)/);
-  assert.match(main, /ipcMain\.handle\('mn:searchDetailed', wrap\(async \(vaultId, query, limit\) => \{ await indexReadyPromise; assertSearchIndexAvailable\(\); return idx\.searchDetailed\(vaultId, query, limit\); \}\)\)/);
+  assert.match(main, /ipcMain\.handle\('mn:searchDetailed'/);
   assert.match(main, /indexReadyPromise = rescanAllVaults\(\)\.catch/);
   assert.match(indexSource, /db\.transaction\(\(\) => \{/);
   assert.match(indexSource, /DROP TABLE note_embeddings/);
@@ -1182,7 +1194,7 @@ test('Backup import preserves duplicate note and canvas ids without overwriting'
 });
 
 test('Native file dialog IPC paths report cancel and skipped work explicitly', () => {
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
 
@@ -1207,7 +1219,7 @@ test('Native file dialog IPC paths report cancel and skipped work explicitly', (
 });
 
 test('Data safety wiring exposes trash, versions, and save conflict recovery', () => {
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');

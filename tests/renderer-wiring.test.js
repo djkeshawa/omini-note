@@ -14,6 +14,18 @@ const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 const projectPaths = require('./helpers/paths.js');
 
+function mainProcessSource() {
+  const files = [path.join(__dirname, '../main.js')];
+  for (const folder of ['../main', '../lib/connectors/ipc']) {
+    const root = path.join(__dirname, folder);
+    files.push(...fs.readdirSync(root)
+      .filter(name => name.endsWith('.js'))
+      .sort()
+      .map(name => path.join(root, name)));
+  }
+  return files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+}
+
 test('AI menu buttons open option menus instead of running Improve directly', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
@@ -107,7 +119,7 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
   const seed = fs.readFileSync(path.join(__dirname, '../lib/seed.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 
   assert.match(store, /async function deleteVault\(id\)/);
@@ -184,7 +196,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
   const aiRuntime = fs.readFileSync(path.join(__dirname, '../src/ai/aiRuntime.js'), 'utf8');
   const aiUi = fs.readFileSync(path.join(__dirname, '../src/ai/aiUi.jsx'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const aiLib = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
   const aiRegression = fs.readFileSync(path.join(__dirname, '../scripts/ai-regression-electron.js'), 'utf8');
@@ -458,7 +470,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
@@ -511,7 +523,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
 
 test('Novelist mode is a vault type with settings, templates, workflow, and dashboard wiring', () => {
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
@@ -746,7 +758,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
 
   assert.match(app, /tweaks\.sortBy/);
   assert.match(app, /tweaks\.pinnedFirst/);
@@ -995,7 +1007,7 @@ test('Smart Views panel renders shared result presentations', () => {
   const smartViewsPanel = fs.readFileSync(path.join(__dirname, '../src/panels/smartViewsPanel.jsx'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
 
   assert.match(panels, /import '\.\/smartViewsPanel\.jsx';/);
@@ -1071,7 +1083,7 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
   const themeSource = fs.readFileSync(path.join(__dirname, '../src/shared/theme.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const themeLib = fs.readFileSync(path.join(__dirname, '../lib/themes.js'), 'utf8');
   const sandbox = { window: {} };
@@ -1147,7 +1159,7 @@ test('Focused product shell and private usage controls are wired end to end', ()
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
 
   assert.match(sidebar, /label="All notes"/);
   assert.match(sidebar, /label="Today"/);
@@ -1188,7 +1200,7 @@ test('Reference pane and bounded note list stay optional and keyboard accessible
 });
 
 test('Electron installs native edit context menu for right-click copy paste cut', () => {
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const builder = fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8');
   const linuxAfterInstall = fs.readFileSync(path.join(__dirname, '../scripts/linux-after-install.sh'), 'utf8');
@@ -1199,19 +1211,19 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(main, /const APP_NAME = 'VispNote'/);
   assert.match(main, /app\.setName\(APP_NAME\)/);
   assert.match(main, /app\.setDesktopName\('vispnote\.desktop'\)/);
-  assert.match(main, /label: visible \? `Hide \$\{APP_NAME\}` : `Show \$\{APP_NAME\}`/);
-  assert.match(main, /label: `Quit \$\{APP_NAME\}`/);
-  assert.match(main, /tray\.setToolTip\(APP_NAME\)/);
-  assert.match(main, /title: APP_NAME/);
+  assert.match(main, /label: visible \? `Hide \$\{appName\}` : `Show \$\{appName\}`/);
+  assert.match(main, /label: `Quit \$\{appName\}`/);
+  assert.match(main, /tray\.setToolTip\(appName\)/);
+  assert.match(main, /title: appName/);
   assert.match(main, /const fs = require\('fs'\)/);
   assert.match(main, /function createAppIcon\(\)/);
   assert.match(main, /function createFallbackIcon\(\)/);
   assert.match(main, /if \(!image\.isEmpty\(\)\) return image/);
-  assert.match(main, /nativeImage\.createFromPath\(APP_ICON_PATH\)/);
+  assert.match(main, /nativeImage\.createFromPath\(iconPath\)/);
   assert.match(main, /nativeImage\.createFromDataURL/);
   assert.match(main, /new Tray\(createAppIcon\(\)\)/);
   assert.match(main, /icon: createAppIcon\(\)/);
-  assert.match(main, /app\.dock\?\.setIcon\(createAppIcon\(\)\)/);
+  assert.match(main, /app\.dock\?\.setIcon\(windowLifecycle\.createAppIcon\(\)\)/);
   assert.match(main, /function attachEditContextMenu\(win\)/);
   assert.match(main, /webContents\.on\('context-menu'/);
   assert.match(main, /params\.isEditable/);
@@ -1221,7 +1233,7 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(main, /spellcheck: true/);
   assert.match(main, /setSpellCheckerEnabled\(true\)/);
   assert.match(main, /availableSpellCheckerLanguages/);
-  assert.match(main, /setSpellCheckerLanguages\(\[spellLanguage \|\| 'en-US'\]\)/);
+  assert.match(main, /setSpellCheckerLanguages\(\[language \|\| 'en-US'\]\)/);
   assert.match(main, /ipcMain\.handle\('mn:spellcheck'/);
   assert.match(main, /role: 'cut'/);
   assert.match(main, /role: 'copy'/);
@@ -1291,7 +1303,7 @@ test('Plugin ids normalize to AI-safe action names', () => {
 
 test('Main-process prefs sanitizer accepts every renderer plugin type', () => {
   const pluginsSource = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const sandbox = { window: {} };
   vm.runInNewContext(pluginsSource, sandbox);
 
@@ -1315,7 +1327,7 @@ test('Zotero reader is wired as a read-only AI app action', () => {
   const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
   const runtime = fs.readFileSync(path.join(__dirname, '../src/ai/aiRuntime.js'), 'utf8');
   const appActions = fs.readFileSync(path.join(__dirname, '../src/app/appActions.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 
   assert.match(plugins, /id: 'zotero-reader'/);
@@ -1443,7 +1455,7 @@ test('Vault switcher uses VispNote icon instead of letter tiles', () => {
 });
 
 test('Fallback spell checker underlines misspellings and offers replacements', () => {
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
@@ -1471,7 +1483,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
@@ -1647,7 +1659,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
   const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
+  const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 
   assert.match(appShell, /function MnAppNoticeDialog/);
@@ -1684,7 +1696,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(blockFeatures, /Block marker/);
 
   assert.match(store, /novelistAiConfig/);
-  assert.match(main, /flushRendererDirtyNotes/);
+  assert.match(main, /function flushDirtyNotes/);
   assert.match(preload, /onFlushDirtyNotes/);
   assert.match(app, /onNew=\{\(\) => createNote\(\)\}/);
   assert.match(app, /const baseThemeMap = window\.MN_THEMES \|\| \{\}/);
