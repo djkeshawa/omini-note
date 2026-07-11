@@ -9,7 +9,35 @@
     return String(item?.noteId || item?.id || '').trim();
   }
 
-  function suggestedConnections({ noteId = '', related = [], links = [], ignoredIds = [], limit = 4 } = {}) {
+  const STOP_WORDS = new Set(['about', 'after', 'before', 'from', 'into', 'note', 'notes', 'that', 'the', 'this', 'with', 'your']);
+
+  function connectionTitleTokens(value) {
+    return [...new Set(String(value || '').toLowerCase().split(/[^a-z0-9_-]+/).filter(token => token.length >= 3 && !STOP_WORDS.has(token)))];
+  }
+
+  function connectionCandidateScore(currentNote, candidate, relatedRank = -1, mode = '') {
+    const currentTags = new Set((currentNote?.tags || []).map(tag => String(tag).toLowerCase()));
+    const sharedTags = (candidate?.tags || []).map(tag => String(tag).toLowerCase()).filter(tag => currentTags.has(tag));
+    const currentTokens = new Set(connectionTitleTokens(currentNote?.title));
+    const sharedTitleTokens = connectionTitleTokens(candidate?.title).filter(token => currentTokens.has(token));
+    let score = 0;
+    let reason = '';
+    if (relatedRank >= 0) {
+      score += 100 - Math.min(60, relatedRank * 4);
+      reason = mode === 'semantic' ? 'Semantically related' : 'Similar wording';
+    }
+    if (sharedTags.length) {
+      score += 38 + Math.min(24, sharedTags.length * 8);
+      reason = `Shares #${sharedTags[0]}`;
+    }
+    if (sharedTitleTokens.length) {
+      score += 24 + Math.min(18, sharedTitleTokens.length * 6);
+      if (!reason) reason = `Shared topic: ${sharedTitleTokens[0]}`;
+    }
+    return { score, reason, sharedTags, sharedTitleTokens };
+  }
+
+  function suggestedConnections({ noteId = '', currentNote = null, notes = [], related = [], mode = '', links = [], ignoredIds = [], limit = 4, candidateLimit = 800 } = {}) {
     const currentId = String(noteId || '');
     const ignored = new Set((ignoredIds || []).map(String));
     const connected = new Set();
@@ -17,13 +45,31 @@
       if (String(link?.source || '') === currentId && link?.target) connected.add(String(link.target));
       if (String(link?.target || '') === currentId && link?.source) connected.add(String(link.source));
     });
-    const seen = new Set();
-    return (related || []).filter(item => {
+    const relatedRank = new Map((related || []).map((item, index) => [connectionNoteId(item), index]));
+    const noteById = new Map((notes || []).map(note => [String(note?.id || ''), note]));
+    const candidates = new Map();
+    (related || []).forEach(item => {
       const id = connectionNoteId(item);
-      if (!id || id === currentId || ignored.has(id) || connected.has(id) || seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    }).slice(0, Math.max(1, Number(limit) || 4));
+      if (id) candidates.set(id, { ...(noteById.get(id) || {}), ...item, noteId: id });
+    });
+    const deterministicPool = (notes || []).length > candidateLimit
+      ? (notes || []).slice(-candidateLimit)
+      : (notes || []);
+    deterministicPool.forEach(note => {
+      const id = connectionNoteId(note);
+      if (id && !candidates.has(id)) candidates.set(id, { ...note, noteId: id });
+    });
+    const ranked = [];
+    for (const item of candidates.values()) {
+      const id = connectionNoteId(item);
+      if (!id || id === currentId || ignored.has(id) || connected.has(id)) continue;
+      const signal = connectionCandidateScore(currentNote, item, relatedRank.has(id) ? relatedRank.get(id) : -1, mode);
+      if (signal.score <= 0) continue;
+      ranked.push({ ...item, noteId: id, reason: signal.reason, connectionScore: signal.score });
+    }
+    return ranked
+      .sort((a, b) => b.connectionScore - a.connectionScore || String(a.title || '').localeCompare(String(b.title || '')))
+      .slice(0, Math.max(1, Number(limit) || 4));
   }
 
   function appendConnectionMarkdown(body = '', title = '') {
@@ -44,5 +90,5 @@
     return `${source}${source ? '\n\n' : ''}## Connections\n${line}`;
   }
 
-  return { connectionNoteId, suggestedConnections, appendConnectionMarkdown };
+  return { connectionNoteId, connectionTitleTokens, connectionCandidateScore, suggestedConnections, appendConnectionMarkdown };
 });

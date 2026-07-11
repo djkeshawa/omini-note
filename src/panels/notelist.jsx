@@ -98,12 +98,14 @@ function MnNoteList({
   onDuplicateNote,
   onDeleteNote,
   onAddToCanvas = null,
+  onOpenReference = null,
   tags, theme, density, T,
 }) {
   const [collapsed, setCollapsed] = useStateL({});
   const [menu, setMenu] = useStateL(null);
   const [renameId, setRenameId] = useStateL(null);
   const [renameValue, setRenameValue] = useStateL('');
+  const [visibleLimit, setVisibleLimit] = useStateL(160);
   const tagHue = useMemoL(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
@@ -173,6 +175,9 @@ function MnNoteList({
     };
   }, [menu]);
 
+  useEffectL(() => { setVisibleLimit(160); }, [notes.length, query]);
+  const visibleNotes = novelistStructure ? notes : (notes || []).slice(0, visibleLimit);
+
   const startRename = (note) => {
     if (!note) return;
     setMenu(null);
@@ -194,6 +199,9 @@ function MnNoteList({
     return (
       <div
         key={n.id}
+        role="option"
+        aria-selected={active}
+        tabIndex={0}
         draggable
         onDragStart={(e) => {
           const payload = JSON.stringify({ noteId: n.id });
@@ -202,11 +210,16 @@ function MnNoteList({
           e.dataTransfer.effectAllowed = 'copyMove';
         }}
         onClick={() => { if (!isRenaming) onSelect(n.id); }}
+        onKeyDown={(e) => {
+          if (!isRenaming && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            onSelect(n.id);
+          }
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
           setMenu({ x: e.clientX, y: e.clientY, note: n });
-          onSelect(n.id);
         }}
         style={{
         padding: density === 'compact' || compact ? '9px 13px' : '13px 15px',
@@ -516,7 +529,7 @@ function MnNoteList({
       </div>
 
       {/* List */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '10px 0 12px' }}>
+      <div role="listbox" aria-label={`${title} notes`} style={{ flex: 1, overflow: 'auto', padding: '10px 0 12px' }}>
         {notes.length === 0 && (
           <div style={{
             padding: '40px 20px', textAlign: 'center',
@@ -584,7 +597,14 @@ function MnNoteList({
             )}
             {novelistList.other.map(n => <NoteRow key={n.id} n={n} />)}
           </>
-        ) : notes.map(n => <NoteRow key={n.id} n={n} />)}
+        ) : visibleNotes.map(n => <NoteRow key={n.id} n={n} />)}
+        {!novelistList && visibleLimit < notes.length && (
+          <button type="button" onClick={() => setVisibleLimit(limit => limit + 160)} style={{
+            width: 'calc(100% - 16px)', margin: '4px 8px 8px', padding: '9px 10px',
+            border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bg,
+            color: T.inkMed, cursor: 'pointer', fontFamily: 'var(--mn-ui)', fontSize: 12,
+          }}>Show 160 more · {notes.length - visibleLimit} remaining</button>
+        )}
       </div>
       {menu && (
         <div
@@ -605,6 +625,7 @@ function MnNoteList({
           {[
             { label: 'Rename', action: () => startRename(menu.note) },
             { label: 'Duplicate', action: () => { setMenu(null); onDuplicateNote && onDuplicateNote(menu.note?.id); } },
+            ...(onOpenReference ? [{ label: 'Open as reference', action: () => { setMenu(null); onOpenReference(menu.note?.id); } }] : []),
             ...(onAddToCanvas ? [{ label: 'Add to canvas', action: () => { setMenu(null); onAddToCanvas(menu.note?.id); } }] : []),
             { label: 'Delete', danger: true, action: () => { setMenu(null); onDeleteNote && onDeleteNote(menu.note?.id); } },
           ].map(item => (
@@ -630,7 +651,7 @@ function MnNoteList({
               onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               <span style={{ width: 14, color: item.danger ? (T.danger || T.warn) : T.inkDim }}>
-                {item.label === 'Rename' ? 'R' : item.label === 'Duplicate' ? '+' : item.label === 'Add to canvas' ? '▦' : 'x'}
+                {item.label === 'Rename' ? 'R' : item.label === 'Duplicate' ? '+' : item.label === 'Open as reference' ? 'O' : item.label === 'Add to canvas' ? 'C' : 'x'}
               </span>
               <span>{item.label}</span>
             </button>
