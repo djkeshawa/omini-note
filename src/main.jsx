@@ -13,7 +13,6 @@ import './editor/outline.jsx';
 import './editor/editorOps.js';
 import './editor/searchNavigation.js';
 import './editor/connectionsModel.js';
-import './editor/referencePane.jsx';
 import './editor/markdownInputRules.js';
 import './editor/imageAttachments.js';
 import './editor/markdownInlineRenderers.jsx';
@@ -55,7 +54,7 @@ import './app/versionDiff.js';
 import './app/appShell.jsx';
 import './app/quickSwitcherModel.js';
 import './app/quickSwitcher.jsx';
-import './app/app.jsx';
+import { MnApp } from './app/app.jsx';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(window.MnApp));
+root.render(React.createElement(MnApp));
