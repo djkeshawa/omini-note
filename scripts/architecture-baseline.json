@@ -1,10 +1,9 @@
 {
   "legacyGlobalAssignments": 73,
   "softLimitExceptions": {
-    "lib/store.js": "Temporary compatibility facade retained until Phase 7 while callers migrate to storage repositories."
+    "lib/store.js": "Storage composition root wires validated repositories into the stable persistence API."
   },
   "directBridgeFiles": [],
   "lineBudgets": {
-    "lib/ai.js": 2811
   }
 }

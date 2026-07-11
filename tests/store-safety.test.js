@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { appSource, outlinerSource } = require('./helpers/source.js');
+const { appSource, backendAiSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 
 const ops = require('../src/editor/editorOps.js');
@@ -836,7 +836,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const storeSource = storeProcessSource();
   const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
-  const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const aiSource = backendAiSource(__dirname);
   const releaseWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
   const store = require('../lib/store');
   const ai = require('../lib/ai');

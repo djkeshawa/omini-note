@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { appHelpersSource, appSource, outlinerSource } = require('./helpers/source.js');
+const { appHelpersSource, appSource, backendAiSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 
 const ops = require('../src/editor/editorOps.js');
@@ -282,7 +282,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   const aiReporting = fs.readFileSync(path.join(__dirname, '../src/features/ai/reporting/aiReporting.js'), 'utf8');
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const aiLib = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const aiLib = backendAiSource(__dirname);
   const aiToolSchemas = fs.readFileSync(path.join(__dirname, '../lib/integrations/ai/toolSchemas.js'), 'utf8');
   const aiIntegrationSource = `${aiLib}\n${aiToolSchemas}`;
   const aiRegression = fs.readFileSync(path.join(__dirname, '../scripts/ai-regression-electron.js'), 'utf8');
@@ -1472,7 +1472,7 @@ test('Release metadata targets renamed VispNote repository', () => {
   const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '../package-lock.json'), 'utf8'));
   const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
   const settings = settingsSource();
-  const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const aiSource = backendAiSource(__dirname);
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
 
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
@@ -1596,7 +1596,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
-  const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const aiSource = backendAiSource(__dirname);
   const ai = rendererAiSource();
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
   const helpers = appHelpersSource(__dirname);

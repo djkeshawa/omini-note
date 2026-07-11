@@ -29,4 +29,13 @@ function appHelpersSource(testDir) {
   ].join('\n');
 }
 
-module.exports = { appHelpersSource, appSource, outlinerSource };
+function backendAiSource(testDir) {
+  const libRoot = path.join(testDir, '../lib');
+  return [
+    fs.readFileSync(path.join(libRoot, 'ai.js'), 'utf8'),
+    ...fs.readdirSync(path.join(libRoot, 'ai')).sort()
+      .map(name => fs.readFileSync(path.join(libRoot, 'ai', name), 'utf8')),
+  ].join('\n');
+}
+
+module.exports = { appHelpersSource, appSource, backendAiSource, outlinerSource };

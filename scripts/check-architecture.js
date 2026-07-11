@@ -41,7 +41,7 @@ for (const file of checkedFiles) {
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).length;
   if (lines > 500) {
     const reason = baseline.softLimitExceptions?.[name];
-    warnings.push(reason ? `${name}: ${lines} lines (temporary exception: ${reason})` : `${name}: ${lines} lines`);
+    warnings.push(reason ? `${name}: ${lines} lines (documented exception: ${reason})` : `${name}: ${lines} lines`);
   }
   if (lines <= 800) continue;
   const allowance = baseline.lineBudgets[name];

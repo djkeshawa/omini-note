@@ -48,7 +48,11 @@ test('AI tool schemas sanitize nested contracts and tool calls', () => {
 test('external clients live under integrations without compatibility facades', () => {
   const root = path.join(__dirname, '..');
   const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
-  const ai = fs.readFileSync(path.join(root, 'lib/ai.js'), 'utf8');
+  const aiRoot = path.join(root, 'lib/ai');
+  const ai = [
+    fs.readFileSync(path.join(root, 'lib/ai.js'), 'utf8'),
+    ...fs.readdirSync(aiRoot).sort().map(name => fs.readFileSync(path.join(aiRoot, name), 'utf8')),
+  ].join('\n');
   const rendererAiRoot = path.join(root, 'src/ai');
   const rendererAi = fs.readdirSync(rendererAiRoot)
     .filter(name => name === 'ai.jsx' || /^(?:ai.+|AskAi.+|create.+)\.(?:js|jsx)$/.test(name))
