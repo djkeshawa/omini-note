@@ -788,7 +788,8 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(editor, /vaultId=\{vaultId\}/);
   assert.match(outliner, /noteTags = \[\]/);
   assert.match(outliner, /vaultId = ''/);
-  assert.match(outliner, /window\.mnReadNovelistAiConfig\?\.\(vaultId\)/);
+  assert.match(outliner, /import \{ mnReadNovelistAiConfig \} from '\.\.\/panels\/panelHelpers\.js'/);
+  assert.match(outliner, /mnReadNovelistAiConfig\(vaultId\)/);
   assert.match(outliner, /defaultPromptId: config\.defaultPromptId/);
   assert.match(outliner, /Target length: up to \$\{novelConfig\.wordLimit\} words/);
   assert.match(outliner, /Novelist writing prompt \(\$\{activePrompt\.name \|\| 'Default'\}\):/);
