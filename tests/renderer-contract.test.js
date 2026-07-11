@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const paths = require('./helpers/paths.js');
+const { outlinerSource } = require('./helpers/source.js');
 
 function read(file) {
   return fs.readFileSync(file, 'utf8');
@@ -36,10 +37,10 @@ test('renderer bundle entry and HTML shell contract stay stable', () => {
 test('renderer modules declare cross-file globals explicitly during migration', () => {
   const app = read(paths.src.app);
   const editor = read(paths.src.editor);
-  const outliner = read(paths.src.outliner);
+  const outliner = outlinerSource(__dirname);
 
   assert.match(app, /import \{ MnSettingsModal \} from '\.\.\/settings\/settings\.jsx';/);
-  assert.match(editor, /const MnOutliner = window\.MnOutliner;/);
+  assert.match(editor, /import \{ MnOutliner \} from '\.\/outliner\.jsx';/);
   assert.match(outliner, /const MnWorkflowPill = window\.MnWorkflowPill;/);
   assert.match(outliner, /import \{ MnCanvasEmbed \} from '\.\.\/features\/canvas\/index\.js';/);
 });
@@ -170,7 +171,7 @@ test('trash state mutations stay behind the feature controller', () => {
 
 test('editor feature modules own models, connections, and block mutations', () => {
   const editor = read(path.join(paths.srcRoot, 'editor/editor.jsx'));
-  const outliner = read(path.join(paths.srcRoot, 'editor/outliner.jsx'));
+  const outliner = outlinerSource(__dirname);
   const connections = read(path.join(paths.srcRoot, 'features/editor/connections/useConnectionsController.js'));
   const operations = read(path.join(paths.srcRoot, 'features/editor/outliner/blockOperations.js'));
 
@@ -181,5 +182,11 @@ test('editor feature modules own models, connections, and block mutations', () =
   assert.match(outliner, /moveBlock\(bs, srcId, destId, position, mnLocate\)/);
   assert.match(operations, /export function moveBlock/);
   assert.ok(editor.split(/\r?\n/).length <= 945, 'editor shell regrew beyond the Phase 5 budget');
-  assert.ok(outliner.split(/\r?\n/).length <= 4104, 'outliner regrew beyond the Phase 5 budget');
+  const outlinerFiles = [
+    path.join(paths.srcRoot, 'editor/outliner.jsx'),
+    ...fs.readdirSync(path.join(paths.srcRoot, 'editor/outliner')).map(name => path.join(paths.srcRoot, 'editor/outliner', name)),
+  ];
+  for (const file of outlinerFiles) {
+    assert.ok(read(file).split(/\r?\n/).length <= 800, `${path.basename(file)} exceeds the outliner hard limit`);
+  }
 });

@@ -7,10 +7,10 @@ import {
   splitPropertyBlocks,
   useConnectionsController,
 } from '../features/editor/index.js';
+import { MnOutliner } from './outliner.jsx';
 
 const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useEffectE } = React;
 const { mkBlock } = window.MN_OUTLINE || {};
-const MnOutliner = window.MnOutliner;
 
 const mnEditorSplitPropertyBlocks = splitPropertyBlocks;
 const mnEditorCleanPropertyKey = cleanPropertyKey;

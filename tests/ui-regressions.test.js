@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 
 const ops = require('../src/editor/editorOps.js');
@@ -224,7 +225,7 @@ test('App and editor font size settings use stepper controls', () => {
   const settingsControls = fs.readFileSync(path.join(__dirname, '../src/settings/settingsControls.jsx'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
 
   assert.match(settingsControls, /function FontSizeStepper/);
   assert.match(settings, /label="App font size"/);

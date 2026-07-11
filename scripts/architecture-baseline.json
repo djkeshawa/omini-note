@@ -7,7 +7,6 @@
   "lineBudgets": {
     "src/app/app.jsx": 3433,
     "src/app/appHelpers.js": 3174,
-    "src/editor/outliner.jsx": 4104,
     "lib/ai.js": 2811
   }
 }

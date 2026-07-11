@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 
 const ops = require('../src/editor/editorOps.js');
@@ -100,7 +101,7 @@ function appCompositionSource() {
 }
 
 test('AI menu buttons open option menus instead of running Improve directly', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
 
   assert.match(outliner, /if \(scope === 'section-menu'\)[\s\S]*setAiMenu\(\{ scope: 'section'/);
@@ -122,7 +123,7 @@ test('AI menu buttons open option menus instead of running Improve directly', ()
 test('Advertised keyboard shortcuts are wired to handlers', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
   const settings = settingsSource();
 
@@ -242,7 +243,7 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const appShell = appShellSource();
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const utilityPanels = [
     '../src/features/today/components/TodayPanel.jsx',
     '../src/features/trash/components/RecentlyDeletedPanel.jsx',
@@ -564,7 +565,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const canvasModel = fs.readFileSync(path.join(__dirname, '../src/canvas/canvasModel.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const canvas = canvasSource();
 
@@ -621,7 +622,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   const settings = settingsSource();
   const panels = specialistPanelsSource();
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const graph = fs.readFileSync(path.join(__dirname, '../src/panels/graph.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
   const ai = rendererAiSource();
@@ -840,7 +841,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const appHelpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const todosPanel = fs.readFileSync(path.join(__dirname, '../src/panels/todosPanel.jsx'), 'utf8');
@@ -1107,7 +1108,7 @@ test('Smart Views panel renders shared result presentations', () => {
   const panels = specialistPanelsSource();
   const smartViewsPanel = fs.readFileSync(path.join(__dirname, '../src/panels/smartViewsPanel.jsx'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const main = mainProcessSource();
   const store = storeProcessSource();
 
@@ -1564,7 +1565,7 @@ test('Vault switcher uses VispNote icon instead of letter tiles', () => {
 test('Fallback spell checker underlines misspellings and offers replacements', () => {
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const spellcheck = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/spellcheck.jsx'), 'utf8');
 
   assert.match(main, /function spellcheckWords/);
@@ -1595,7 +1596,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
@@ -1765,7 +1766,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   const panels = specialistPanelsSource();
@@ -1820,7 +1821,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
 
 test('Markdown input rules load before outliner modules and stay renderer-scoped', () => {
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const renderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
   const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
@@ -1830,7 +1831,7 @@ test('Markdown input rules load before outliner modules and stay renderer-scoped
   assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') > entryIndex('editor/markdownInputRules.js'));
   assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') < entryIndex('editor/outlinerRenderers.jsx'));
   assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/outlinerRenderers.jsx'));
-  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/outliner.jsx'));
+  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/editor.jsx'));
 
   assert.match(helper, /MN_MARKDOWN_INPUT_RULES/);
   assert.match(inlineRenderers, /window\.MN_MARKDOWN_INLINE_RENDERERS/);
@@ -1848,7 +1849,7 @@ test('Markdown input rules load before outliner modules and stay renderer-scoped
 });
 
 test('Markdown input rules preserve paste, slash menu, and selection formatting hooks', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const handlePasteIndex = outliner.indexOf('const handlePaste = (e) =>');
   const inputRuleIndex = outliner.indexOf('MN_MARKDOWN_INPUT_RULES.findBlockStarterConversion');
   const slashIndex = outliner.indexOf('const sm = mnFindSlashCommandTrigger(v, pos)');
@@ -1867,7 +1868,7 @@ test('Markdown input rules preserve paste, slash menu, and selection formatting 
 });
 
 test('Markdown inline rendering is preserved when spellcheck issues are present', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
   const spellcheck = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/spellcheck.jsx'), 'utf8');
 
@@ -1882,7 +1883,7 @@ test('Markdown inline rendering is preserved when spellcheck issues are present'
 });
 
 test('Structural markdown blocks edit with markdown source prefixes', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
 

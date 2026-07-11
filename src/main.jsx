@@ -19,7 +19,6 @@ import './editor/markdownInlineRenderers.jsx';
 import './editor/codeHighlighter.jsx';
 import './editor/outlinerHistory.js';
 import './editor/outlinerRenderers.jsx';
-import './editor/outliner.jsx';
 import './panels/graph.jsx';
 import './panels/notelist.jsx';
 import './editor/editor.jsx';
