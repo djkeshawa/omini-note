@@ -976,6 +976,7 @@ function createWindow() {
     icon: createAppIcon(),
     title: APP_NAME,
     webPreferences: {
+      ...(process.env.VISPNOTE_EPHEMERAL_SESSION === '1' ? { partition: `vispnote-test-${process.pid}` } : {}),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

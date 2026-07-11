@@ -1,6 +1,9 @@
 // Main App — composes sidebar, note list, editor, panels, overlays.
-// Disk-backed via window.mn (Electron preload IPC). Falls back to in-memory
+// Disk-backed through the renderer platform adapter. Falls back to in-memory
 // seed when running outside Electron (e.g. opened directly in a browser).
+
+import { ReferencePane as MnReferencePane } from '../features/reference/index.js';
+import { desktopBridge, hasDesktopBridge } from '../platform/index.js';
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useCallback: useCallbackA, useRef: useRefA } = React;
 const MN_FEATURES = window.MN_FEATURES || {};
@@ -77,7 +80,7 @@ const MN_VAULTS_SERVICE = window.MN_VAULTS_SERVICE || {};
 const MN_NOTES_VAULTS_STATE = window.MN_NOTES_VAULTS_STATE || {};
 const MN_MEMORY_ACTIONS = window.MN_MEMORY_ACTIONS || {};
 const {
-  HAS_DISK = typeof window !== 'undefined' && !!window.mn,
+  HAS_DISK = hasDesktopBridge(),
   MnLaunchScreen,
   MnDeleteNoteDialog,
   MnAppNoticeDialog,
@@ -100,7 +103,6 @@ const {
   MnNoteList,
   MnAiChatHistory,
   MnEditor,
-  MnReferencePane,
   MnAskAI,
   MnGraph,
   MnTodosPanel,
@@ -537,8 +539,8 @@ function MnApp() {
   // (Ctrl/Cmd+Shift+N) and pushes an IPC event when it fires. We mirror the
   // existing in-app keybinding by opening Quick Capture.
   useEffectA(() => {
-    if (typeof window === 'undefined' || !window.mn?.onOpenQuickCapture) return;
-    return window.mn.onOpenQuickCapture(() => setCaptureOpen(true));
+    if (typeof window === 'undefined' || !desktopBridge?.onOpenQuickCapture) return;
+    return desktopBridge.onOpenQuickCapture(() => setCaptureOpen(true));
   }, []);
 
   useEffectA(() => {
@@ -588,8 +590,8 @@ function MnApp() {
     try {
       const next = MN_APP_HELPERS.phase5RecordMetric(mnReadLocalPhase5Metrics(), key, details);
       mnWriteLocalPhase5Metrics(next);
-      if (window.mn?.recordPhase5Metric) {
-        window.mn.recordPhase5Metric(key, details).catch(e => console.warn('recordPhase5Metric failed', e));
+      if (desktopBridge?.recordPhase5Metric) {
+        desktopBridge.recordPhase5Metric(key, details).catch(e => console.warn('recordPhase5Metric failed', e));
       }
       return next;
     } catch (e) {
@@ -697,8 +699,8 @@ function MnApp() {
   }, []);
 
   const recordFeatureUsage = useCallbackA((feature, action = 'used') => {
-    if (!window.mn?.featureUsage?.record) return;
-    window.mn.featureUsage.record(feature, action)
+    if (!desktopBridge?.featureUsage?.record) return;
+    desktopBridge.featureUsage.record(feature, action)
       .catch(error => console.warn('Feature usage event ignored', error));
   }, []);
 
@@ -707,8 +709,8 @@ function MnApp() {
       const next = MN_FEATURES.togglePack
         ? MN_FEATURES.togglePack(current, packId, enabled)
         : current;
-      if (HAS_DISK && window.mn?.setPrefs) {
-        window.mn.setPrefs({ enabledPacks: next })
+      if (HAS_DISK && desktopBridge?.setPrefs) {
+        desktopBridge.setPrefs({ enabledPacks: next })
           .then(result => {
             if (result?.ok === false) showAppNotice('Pack setting not saved', result.error, 'warn');
           })
@@ -803,7 +805,7 @@ function MnApp() {
     if (nextSelectedId) patch.lastSelectedId = nextSelectedId;
     if (!Object.keys(patch).length) return { ok: true, skipped: true };
     try {
-      const res = await window.mn.saveVaultMeta(vaultId, patch);
+      const res = await desktopBridge.saveVaultMeta(vaultId, patch);
       if (res?.ok === false) throw new Error(res.error || 'Save failed');
       if (patch.tags && vaultId === activeVaultId) tagsDirty.current = false;
       return { ok: true };
@@ -815,7 +817,7 @@ function MnApp() {
   }, [activeVaultId, tags, selectedId, showAppNotice]);
 
   const loadVaultBundle = useCallbackA(async (vaultId) => {
-    const vaultRes = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, vaultId);
+    const vaultRes = await MN_NOTES_VAULTS_SERVICE.loadVault(desktopBridge, vaultId);
     if (!vaultRes.ok) throw new Error(vaultRes.error);
     const vault = vaultRes.value || vaultRes.data?.vault;
     if (Array.isArray(vault.warnings) && vault.warnings.length) {
@@ -823,7 +825,7 @@ function MnApp() {
     }
     let loadedCanvases = [];
     try {
-      const canvasRes = await window.mn.listCanvases(vaultId);
+      const canvasRes = await desktopBridge.listCanvases(vaultId);
       if (canvasRes.ok) loadedCanvases = canvasRes.value || [];
     } catch (e) {
       console.error('listCanvases failed', vaultId, e);
@@ -890,7 +892,7 @@ function MnApp() {
           return;
         }
 
-        const prefsRes = await window.mn.getPrefs();
+        const prefsRes = await desktopBridge.getPrefs();
         if (!prefsRes.ok) throw new Error(prefsRes.error);
         const prefs = prefsRes.value;
         setEnabledPacks(MN_FEATURES.normalizePacks ? MN_FEATURES.normalizePacks(prefs.enabledPacks) : []);
@@ -901,8 +903,8 @@ function MnApp() {
         }
         const nextSmartViews = mnNormalizeSmartViewsForApp(prefs.smartViews);
         setSavedSmartViews(nextSmartViews);
-        if (!Array.isArray(prefs.smartViews) && window.mn?.setPrefs) {
-          window.mn.setPrefs({ smartViews: nextSmartViews }).catch(e => console.warn('Could not initialize Smart Views preferences', e));
+        if (!Array.isArray(prefs.smartViews) && desktopBridge?.setPrefs) {
+          desktopBridge.setPrefs({ smartViews: nextSmartViews }).catch(e => console.warn('Could not initialize Smart Views preferences', e));
         }
         let startupView = 'notes';
         if (prefs.tweaks) {
@@ -913,7 +915,7 @@ function MnApp() {
           setTweaks(t => ({ ...t, ...prefs.tweaks, startupView }));
         }
 
-        const vlistRes = await MN_NOTES_VAULTS_SERVICE.listVaults(window.mn);
+        const vlistRes = await MN_NOTES_VAULTS_SERVICE.listVaults(desktopBridge);
         if (!vlistRes.ok) throw new Error(vlistRes.error);
         const vlist = vlistRes.value || vlistRes.data?.vaults || [];
         if (!vlist.length) throw new Error('No vaults found');
@@ -933,7 +935,7 @@ function MnApp() {
         setCanvases(loaded.canvases);
         setSelectedId(loaded.lastSelectedId || loaded.notes[0]?.id || null);
         if (startupView === 'today') setView('today');
-        if (prefs.activeVaultId !== activeId) window.mn.setPrefs({ activeVaultId: activeId });
+        if (prefs.activeVaultId !== activeId) desktopBridge.setPrefs({ activeVaultId: activeId });
         setBootState('ready');
       } catch (e) {
         console.error('Bootstrap failed', e);
@@ -948,7 +950,7 @@ function MnApp() {
   useEffectA(() => {
     if (!HAS_DISK) return;
     if (!tweakInitialized.current) { tweakInitialized.current = true; return; }
-    window.mn.setPrefs({ tweaks }).then(res => {
+    desktopBridge.setPrefs({ tweaks }).then(res => {
       if (res && res.ok === false) showAppNotice('Settings not saved', res.error || 'Preferences could not be saved.', 'warn');
     }).catch(() => {});
   }, [tweaks]);
@@ -1072,7 +1074,7 @@ function MnApp() {
         const expectedModifiedAt = saveOptions.expectedModifiedAt;
         try {
           const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
-            window.mn,
+            desktopBridge,
             vaultId,
             noteForDisk(n, mnBlocksToMd),
             saveOptions
@@ -1149,8 +1151,8 @@ function MnApp() {
   }, [dirtyNotes, saveDirtyNotesNow]);
 
   useEffectA(() => {
-    if (!HAS_DISK || !window.mn?.onFlushDirtyNotes) return undefined;
-    return window.mn.onFlushDirtyNotes(async () => {
+    if (!HAS_DISK || !desktopBridge?.onFlushDirtyNotes) return undefined;
+    return desktopBridge.onFlushDirtyNotes(async () => {
       const entries = [...dirtyNotesRef.current.values()];
       const noteResult = entries.length ? await saveDirtyNotesNow(entries) : { failures: [], deferred: 0 };
       const metaResult = await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
@@ -1188,7 +1190,7 @@ function MnApp() {
   const refreshVaultRegistry = useCallbackA(async ({ reloadActive = false, reason = '' } = {}) => {
     if (!HAS_DISK) return { ok: true };
     try {
-      const res = await MN_NOTES_VAULTS_SERVICE.listVaults(window.mn);
+      const res = await MN_NOTES_VAULTS_SERVICE.listVaults(desktopBridge);
       if (!res.ok) throw new Error(res.error);
       const metas = res.value || res.data?.vaults || [];
       if (!metas.length) throw new Error('No vaults found');
@@ -1266,7 +1268,7 @@ function MnApp() {
           setSelectedWorkflow(null);
           setQuery('');
           navigateView('notes');
-          window.mn.setPrefs({ activeVaultId: nextActiveId });
+          desktopBridge.setPrefs({ activeVaultId: nextActiveId });
         } else {
           // Same-vault reload: keep the current selection unless the note vanished
           // from disk (e.g. deleted externally), then fall back like a vault switch.
@@ -1299,8 +1301,8 @@ function MnApp() {
   }, [bootState, refreshVaultRegistry]);
 
   useEffectA(() => {
-    if (!HAS_DISK || bootState !== 'ready' || !window.mn?.onVaultFilesChanged) return undefined;
-    return window.mn.onVaultFilesChanged(event => {
+    if (!HAS_DISK || bootState !== 'ready' || !desktopBridge?.onVaultFilesChanged) return undefined;
+    return desktopBridge.onVaultFilesChanged(event => {
       if (!event?.vaultId) return;
       const activeHasDirtyNotes = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
       if (event.vaultId === activeVaultId && (activeHasDirtyNotes || tagsDirty.current)) {
@@ -1339,13 +1341,13 @@ function MnApp() {
   }, []);
 
   const importThemeFile = useCallbackA(async () => {
-    if (!window.mn?.importThemeFile) {
+    if (!desktopBridge?.importThemeFile) {
       const error = 'This build does not expose theme import.';
       showAppNotice('Theme import unavailable', error, 'warn');
       return { ok: false, error };
     }
     try {
-      const res = await window.mn.importThemeFile();
+      const res = await desktopBridge.importThemeFile();
       if (!res?.ok) throw new Error(res?.error || 'Could not install theme.');
       const value = res.value || {};
       if (value.canceled) return { ok: true, canceled: true };
@@ -1404,7 +1406,7 @@ function MnApp() {
     let targetCanvases = target.canvases;
     if (!targetNotes && HAS_DISK) {
       try {
-        const res = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, id);
+        const res = await MN_NOTES_VAULTS_SERVICE.loadVault(desktopBridge, id);
         if (!res.ok) throw new Error(res.error);
         const loadedVault = res.value || res.data?.vault;
         if (Array.isArray(loadedVault.warnings) && loadedVault.warnings.length) {
@@ -1426,7 +1428,7 @@ function MnApp() {
     }
     if (!targetCanvases && HAS_DISK) {
       try {
-        const res = await window.mn.listCanvases(id);
+        const res = await desktopBridge.listCanvases(id);
         if (res.ok) targetCanvases = res.value || [];
       } catch (e) { console.error('listCanvases failed', id, e); }
     }
@@ -1448,8 +1450,8 @@ function MnApp() {
     setTrashError('');
     setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
     if (HAS_DISK) {
-      const selected = await MN_VAULTS_SERVICE.selectVault(window.mn, id);
-      if (!selected.ok) window.mn.setPrefs({ activeVaultId: id });
+      const selected = await MN_VAULTS_SERVICE.selectVault(desktopBridge, id);
+      if (!selected.ok) desktopBridge.setPrefs({ activeVaultId: id });
     }
   }, [activeVaultId, vaults, notes, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, refreshVaultRegistry, navigateView, showAppNotice]);
 
@@ -1469,9 +1471,9 @@ function MnApp() {
       : mnBuildNovelistStarterNotes(normalizedSourceNotes, mnMdToBlocks, vaultId);
     const nextNotes = [...starterNotes, ...normalizedSourceNotes];
     if (HAS_DISK && vaultId) {
-      await window.mn.saveVaultMeta(vaultId, { tags: nextTags, novelistMode: true, workflowStates: nextWorkflowStates });
+      await desktopBridge.saveVaultMeta(vaultId, { tags: nextTags, novelistMode: true, workflowStates: nextWorkflowStates });
       for (const note of nextNotes) {
-        const res = await MN_NOTES_VAULTS_SERVICE.saveNote(window.mn, vaultId, noteForDisk(note, mnBlocksToMd));
+        const res = await MN_NOTES_VAULTS_SERVICE.saveNote(desktopBridge, vaultId, noteForDisk(note, mnBlocksToMd));
         if (!res.ok) throw new Error(res.error);
       }
     }
@@ -1527,7 +1529,7 @@ function MnApp() {
       return;
     }
     try {
-      const res = await MN_VAULTS_SERVICE.createVault(window.mn, name, {
+      const res = await MN_VAULTS_SERVICE.createVault(desktopBridge, name, {
         type: vaultType,
         onboardingMode: onboardingMode || null,
         workflowStates: vaultType === 'novelist' ? MN_NOVELIST_WORKFLOW_STATES : null,
@@ -1537,7 +1539,7 @@ function MnApp() {
 
       // Load first, then switch atomically. This prevents the previous vault's
       // notes from appearing under the newly-created vault if disk IO is slow.
-      const loadRes = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, v.id);
+      const loadRes = await MN_NOTES_VAULTS_SERVICE.loadVault(desktopBridge, v.id);
       if (!loadRes.ok) throw new Error(loadRes.error);
       const loaded = loadRes.value || loadRes.data?.vault;
       let loadedNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
@@ -1563,8 +1565,8 @@ function MnApp() {
           .map(x => x.id === activeVaultId ? { ...x, notes, tags, lastSelectedId: selectedId, canvases } : x),
         { ...v, notes: loadedNotes, tags: loadedTags, lastSelectedId: loaded.lastSelectedId || loadedNotes[0]?.id || null, canvases: [], workflowStates: loaded.workflowStates || null, novelistAiConfig: loaded.novelistAiConfig || null, novelistMode: vaultType === 'novelist' },
       ]);
-      const selected = await MN_VAULTS_SERVICE.selectVault(window.mn, v.id);
-      if (!selected.ok) window.mn.setPrefs({ activeVaultId: v.id });
+      const selected = await MN_VAULTS_SERVICE.selectVault(desktopBridge, v.id);
+      if (!selected.ok) desktopBridge.setPrefs({ activeVaultId: v.id });
       if (onboardingMode) recordPhase5Metric('onboarding_mode_selections', { onboardingMode });
     } catch (e) {
       console.error('createVault failed', e);
@@ -1592,7 +1594,7 @@ function MnApp() {
     }
 
     try {
-      if (HAS_DISK) await window.mn.saveVaultMeta(activeVaultId, { novelistMode: false, workflowStates: null });
+      if (HAS_DISK) await desktopBridge.saveVaultMeta(activeVaultId, { novelistMode: false, workflowStates: null });
       setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, novelistMode: false, workflowStates: null } : v));
       if (view === 'novelist') navigateView('notes');
       return { ok: true };
@@ -1609,7 +1611,7 @@ function MnApp() {
     setVaults(vs => vs.map(v => v.id === id ? { ...v, name: cleanName } : v));
     if (HAS_DISK) {
       try {
-        const res = await MN_VAULTS_SERVICE.renameVault(window.mn, id, cleanName);
+        const res = await MN_VAULTS_SERVICE.renameVault(desktopBridge, id, cleanName);
         if (!res.ok) throw new Error(res.error);
       }
       catch (e) {
@@ -1640,7 +1642,7 @@ function MnApp() {
 
     if (HAS_DISK) {
       try {
-        const res = await MN_VAULTS_SERVICE.deleteVault(window.mn, id);
+        const res = await MN_VAULTS_SERVICE.deleteVault(desktopBridge, id);
         if (!res.ok) throw new Error(res.error);
         nextVaults = (res.value?.vaults || localRemaining).map(meta => {
           const cached = localRemaining.find(v => v.id === meta.id) || {};
@@ -1675,7 +1677,7 @@ function MnApp() {
     let nextSelectedId = nextMeta.lastSelectedId || null;
     if (HAS_DISK) {
       try {
-        const loadRes = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, nextMeta.id);
+        const loadRes = await MN_NOTES_VAULTS_SERVICE.loadVault(desktopBridge, nextMeta.id);
         if (!loadRes.ok) throw new Error(loadRes.error);
         const loaded = loadRes.value || loadRes.data?.vault;
         nextNotes = normalizeNotes(loaded.notes, mnMdToBlocks);
@@ -1684,7 +1686,7 @@ function MnApp() {
         nextMeta.novelistMode = !!loaded.novelistMode;
         nextMeta.workflowStates = loaded.workflowStates || nextMeta.workflowStates || null;
         nextMeta.novelistAiConfig = loaded.novelistAiConfig || nextMeta.novelistAiConfig || null;
-        const canvasRes = await window.mn.listCanvases(nextMeta.id);
+        const canvasRes = await desktopBridge.listCanvases(nextMeta.id);
         nextCanvases = canvasRes.ok ? (canvasRes.value || []) : [];
       } catch (e) {
         console.error('loadVault after delete failed', e);
@@ -1707,8 +1709,8 @@ function MnApp() {
     tagsDirty.current = false;
     navigateView('notes');
     if (HAS_DISK) {
-      const selected = await MN_VAULTS_SERVICE.selectVault(window.mn, nextMeta.id);
-      if (!selected.ok) window.mn.setPrefs({ activeVaultId: nextMeta.id });
+      const selected = await MN_VAULTS_SERVICE.selectVault(desktopBridge, nextMeta.id);
+      if (!selected.ok) desktopBridge.setPrefs({ activeVaultId: nextMeta.id });
     }
     return { ok: true };
   }, [activeVaultId, vaults, notes, tags, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks]);
@@ -1725,7 +1727,7 @@ function MnApp() {
     window.mnWriteNovelistAiConfig?.(config || null, activeVaultId);
     setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, novelistAiConfig: config || null } : v));
     if (HAS_DISK) {
-      window.mn.saveVaultMeta(activeVaultId, { novelistAiConfig: config || null })
+      desktopBridge.saveVaultMeta(activeVaultId, { novelistAiConfig: config || null })
         .catch(e => {
           console.error('save novelist AI config failed', e);
           showAppNotice('Could not save novelist AI configuration', e.message || String(e));
@@ -1814,7 +1816,7 @@ function MnApp() {
     if (activeVault?.novelistMode && activeVaultId) {
       setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, workflowStates: next } : v));
       if (HAS_DISK) {
-        window.mn.saveVaultMeta(activeVaultId, { workflowStates: next })
+        desktopBridge.saveVaultMeta(activeVaultId, { workflowStates: next })
           .catch(e => console.error('save novelist workflow states failed', e));
       }
       return;
@@ -1879,7 +1881,7 @@ function MnApp() {
     }
     const handle = setTimeout(async () => {
       try {
-        const api = window.mn.searchDetailed || window.mn.search;
+        const api = desktopBridge.searchDetailed || desktopBridge.search;
         const res = await api(activeVaultId, q, 100);
         if (seq !== searchSeq.current) return;
         if (res.ok) {
@@ -2113,7 +2115,7 @@ function MnApp() {
       setTodayAiRecapError('Today AI recap is unavailable in this build.');
       return null;
     }
-    if (!window.mn?.ai?.chat) {
+    if (!desktopBridge?.ai?.chat) {
       setTodayAiRecapError('AI chat is unavailable in this build.');
       return null;
     }
@@ -2122,13 +2124,13 @@ function MnApp() {
     try {
       let status = null;
       try {
-        const statusResult = await window.mn.ai.status?.();
+        const statusResult = await desktopBridge.ai.status?.();
         if (statusResult?.ok) status = statusResult.value;
       } catch (e) {
         status = null;
       }
       const prompt = MN_APP_HELPERS.contextualAiBuildTodayRecapPrompt(todayAiContext);
-      const response = await window.mn.ai.chat({
+      const response = await desktopBridge.ai.chat({
         messages: [
           {
             role: 'system',
@@ -2764,7 +2766,7 @@ function MnApp() {
     });
     if (HAS_DISK && activeVaultId) {
       try {
-        const res = await MN_NOTES_VAULTS_SERVICE.deleteNote(window.mn, activeVaultId, id, noteForDisk(n, mnBlocksToMd));
+        const res = await MN_NOTES_VAULTS_SERVICE.deleteNote(desktopBridge, activeVaultId, id, noteForDisk(n, mnBlocksToMd));
         if (res && res.ok === false) throw new Error(res.error);
         if (res?.value?.trashId) {
           setTrashItems(items => [res.value, ...items.filter(item => item.trashId !== res.value.trashId)]);
@@ -2793,8 +2795,8 @@ function MnApp() {
   const listDeletedNotes = useCallbackA(async () => {
     if (!HAS_DISK || !activeVaultId) return [];
     const [noteRes, canvasRes] = await Promise.all([
-      window.mn.listDeletedNotes(activeVaultId),
-      window.mn.listDeletedCanvases ? window.mn.listDeletedCanvases(activeVaultId) : Promise.resolve({ ok: true, value: [] }),
+      desktopBridge.listDeletedNotes(activeVaultId),
+      desktopBridge.listDeletedCanvases ? desktopBridge.listDeletedCanvases(activeVaultId) : Promise.resolve({ ok: true, value: [] }),
     ]);
     if (!noteRes.ok) throw new Error(noteRes.error || 'Could not load deleted notes');
     if (!canvasRes.ok) throw new Error(canvasRes.error || 'Could not load deleted canvases');
@@ -2825,7 +2827,7 @@ function MnApp() {
     if (!HAS_DISK || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
     try {
       if (sourceType === 'canvas') {
-        const res = await window.mn.restoreDeletedCanvas(activeVaultId, trashId);
+        const res = await desktopBridge.restoreDeletedCanvas(activeVaultId, trashId);
         if (!res.ok) throw new Error(res.error || 'Could not restore canvas');
         const restored = summarizeCanvas(res.value);
         setCanvases(current => upsertCanvasList(current, restored));
@@ -2837,7 +2839,7 @@ function MnApp() {
         setTrashItems(items => items.filter(item => item.trashId !== trashId));
         return { ok: true, canvas: res.value };
       }
-      const res = await window.mn.restoreDeletedNote(activeVaultId, trashId);
+      const res = await desktopBridge.restoreDeletedNote(activeVaultId, trashId);
       if (!res.ok) throw new Error(res.error || 'Could not restore note');
       const restored = normalizeRuntimeNote(res.value);
       if (!restored) throw new Error('Restored note could not be loaded');
@@ -2863,9 +2865,9 @@ function MnApp() {
     const sourceType = typeof itemOrTrashId === 'object' ? itemOrTrashId?.sourceType : 'note';
     if (!HAS_DISK || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
     try {
-      const res = sourceType === 'canvas' && window.mn.purgeDeletedCanvas
-        ? await window.mn.purgeDeletedCanvas(activeVaultId, trashId)
-        : await window.mn.purgeDeletedNote(activeVaultId, trashId);
+      const res = sourceType === 'canvas' && desktopBridge.purgeDeletedCanvas
+        ? await desktopBridge.purgeDeletedCanvas(activeVaultId, trashId)
+        : await desktopBridge.purgeDeletedNote(activeVaultId, trashId);
       if (!res.ok) throw new Error(res.error || `Could not permanently delete ${sourceType === 'canvas' ? 'canvas' : 'note'}`);
       setTrashItems(items => items.filter(item => item.trashId !== trashId));
       return { ok: true };
@@ -2888,7 +2890,7 @@ function MnApp() {
   const restoreNoteVersion = useCallbackA(async (noteId, versionId) => {
     if (!HAS_DISK || !activeVaultId || !noteId || !versionId) return { ok: false, error: 'No active vault.' };
     try {
-      const res = await window.mn.restoreNoteVersion(activeVaultId, noteId, versionId);
+      const res = await desktopBridge.restoreNoteVersion(activeVaultId, noteId, versionId);
       if (!res.ok) throw new Error(res.error || 'Could not restore note version');
       const restored = normalizeRuntimeNote(res.value);
       if (!restored) throw new Error('Restored version could not be loaded');
@@ -2917,7 +2919,7 @@ function MnApp() {
     const conflict = conflictNotice;
     if (!conflict?.vaultId || !conflict?.noteId) return;
     try {
-      const res = await MN_NOTES_VAULTS_SERVICE.loadVault(window.mn, conflict.vaultId);
+      const res = await MN_NOTES_VAULTS_SERVICE.loadVault(desktopBridge, conflict.vaultId);
       if (!res.ok) throw new Error(res.error || 'Could not reload note');
       const vault = res.value || res.data?.vault;
       const loaded = normalizeNotes(vault.notes || [], mnMdToBlocks);
@@ -2984,7 +2986,7 @@ function MnApp() {
     activeCanvas,
     canvases,
     hasDisk: HAS_DISK,
-    mn: window.mn,
+    mn: desktopBridge,
     newCanvas: window.mnNewCanvas,
     upsertCanvasList,
     setCanvases,
@@ -3045,7 +3047,7 @@ function MnApp() {
       if (!doc) return { ok: false, message: 'Could not create a canvas.' };
     } else if (HAS_DISK && activeVaultId) {
       try {
-        const res = await window.mn.getCanvas(activeVaultId, target.id);
+        const res = await desktopBridge.getCanvas(activeVaultId, target.id);
         if (!res.ok) throw new Error(res.error);
         doc = res.value;
       } catch (e) {
@@ -3068,9 +3070,9 @@ function MnApp() {
   }, [notesWithBody, canvases, createCanvas, saveCanvas, activeVaultId]);
 
   const exportBackup = useCallbackA(async () => {
-    if (!window.mn?.exportBackup) return showAppNotice('Backup unavailable', 'This build does not expose backup export.');
+    if (!desktopBridge?.exportBackup) return showAppNotice('Backup unavailable', 'This build does not expose backup export.');
     try {
-      const res = await window.mn.exportBackup({});
+      const res = await desktopBridge.exportBackup({});
       if (!res.ok) throw new Error(res.error);
       if (!res.value?.canceled) showAppNotice('Backup exported', `${res.value.vaultCount || 0} vault${res.value.vaultCount === 1 ? '' : 's'} saved.`, 'info');
     } catch (e) {
@@ -3079,9 +3081,9 @@ function MnApp() {
   }, [showAppNotice]);
 
   const importBackup = useCallbackA(async () => {
-    if (!window.mn?.importBackup) return showAppNotice('Import unavailable', 'This build does not expose backup import.');
+    if (!desktopBridge?.importBackup) return showAppNotice('Import unavailable', 'This build does not expose backup import.');
     try {
-      const res = await window.mn.importBackup({ activate: true });
+      const res = await desktopBridge.importBackup({ activate: true });
       if (!res.ok) throw new Error(res.error);
       if (res.value?.canceled) return;
       await refreshVaultRegistry({ reloadActive: true, reason: 'import-backup' });
@@ -3092,7 +3094,7 @@ function MnApp() {
   }, [refreshVaultRegistry, showAppNotice]);
 
   const analyzeNovelImportFiles = useCallbackA(async (files, skipped = [], importSeq = 0) => {
-    if (!window.mn?.ai?.toolPlan) throw new Error('AI tool planning is unavailable in this build.');
+    if (!desktopBridge?.ai?.toolPlan) throw new Error('AI tool planning is unavailable in this build.');
     const chunks = mnNovelImportChunks(files);
     if (!chunks.length) throw new Error('No readable text was selected for import.');
     const existingSummary = mnNovelImportExistingSummary(notesWithBody);
@@ -3103,7 +3105,7 @@ function MnApp() {
       setNovelImportDialog(current => current
         && current.seq === importSeq ? { ...current, phase: 'analyzing', progress: `Analyzing ${chunk.fileName} (${index + 1}/${chunks.length})...` }
         : current);
-      const response = await window.mn.ai.toolPlan({
+      const response = await desktopBridge.ai.toolPlan({
         jobId,
         timeoutMs: 180000,
         maxTokens: 2600,
@@ -3126,7 +3128,7 @@ function MnApp() {
         && current.seq === importSeq ? { ...current, phase: 'analyzing', progress: 'Consolidating extracted notes...' }
         : current);
       try {
-        const response = await window.mn.ai.toolPlan({
+        const response = await desktopBridge.ai.toolPlan({
           jobId,
           timeoutMs: 180000,
           maxTokens: 3200,
@@ -3151,11 +3153,11 @@ function MnApp() {
 
   const importNovelFiles = useCallbackA(async () => {
     if (!activeVault?.novelistMode) return showAppNotice('Novelist vault required', 'Switch this vault to Novelist mode before importing novel files.', 'warn');
-    if (!window.mn?.importNovelFiles) return showAppNotice('Novel import unavailable', 'This build does not expose novel file import.');
-    if (!window.mn?.ai?.toolPlan) return showAppNotice('AI unavailable', 'Novel import needs AI tool planning to classify structure and support notes.');
+    if (!desktopBridge?.importNovelFiles) return showAppNotice('Novel import unavailable', 'This build does not expose novel file import.');
+    if (!desktopBridge?.ai?.toolPlan) return showAppNotice('AI unavailable', 'Novel import needs AI tool planning to classify structure and support notes.');
     let importSeq = 0;
     try {
-      const res = await window.mn.importNovelFiles({});
+      const res = await desktopBridge.importNovelFiles({});
       if (!res.ok) throw new Error(res.error || 'Could not import novel files.');
       if (res.value?.canceled) return;
       const files = res.value?.files || [];
@@ -3206,9 +3208,9 @@ function MnApp() {
   }, []);
 
   const rebuildIndex = useCallbackA(async () => {
-    if (!activeVaultId || !window.mn?.rebuildIndex) return;
+    if (!activeVaultId || !desktopBridge?.rebuildIndex) return;
     try {
-      const res = await window.mn.rebuildIndex(activeVaultId);
+      const res = await desktopBridge.rebuildIndex(activeVaultId);
       if (!res.ok) throw new Error(res.error);
       showAppNotice('Index rebuilt', `${res.value.indexed || 0} notes indexed.`, 'info');
     } catch (e) {
@@ -3261,8 +3263,8 @@ function MnApp() {
         return { ok: false, message };
       }
       try {
-        if (window.mn?.openExternal) {
-          const res = await window.mn.openExternal(url);
+        if (desktopBridge?.openExternal) {
+          const res = await desktopBridge.openExternal(url);
           if (res && res.ok === false) throw new Error(res.error || 'Could not open external URL');
         } else {
           window.open(url, '_blank', 'noopener,noreferrer');
@@ -3275,8 +3277,8 @@ function MnApp() {
       }
     }
     if (plugin.type === 'zotero-reader') {
-      if (!window.mn?.zotero?.status) return { ok: false, message: 'Zotero integration is unavailable.' };
-      const res = await window.mn.zotero.status();
+      if (!desktopBridge?.zotero?.status) return { ok: false, message: 'Zotero integration is unavailable.' };
+      const res = await desktopBridge.zotero.status();
       if (!res.ok) return { ok: false, message: res.error || 'Could not check Zotero.' };
       const reachable = !!res.value?.reachable;
       const message = reachable ? 'Zotero Desktop is reachable.' : (res.value?.error || 'Zotero Desktop is not reachable.');
@@ -3414,9 +3416,9 @@ function MnApp() {
       const cleanQuery = String(query || '').trim();
       const max = Math.max(1, Math.min(Number(limit) || 8, 30));
       if (!cleanQuery) return [];
-      if (HAS_DISK && activeVaultId && window.mn?.searchDetailedStatus) {
+      if (HAS_DISK && activeVaultId && desktopBridge?.searchDetailedStatus) {
         try {
-          const res = await window.mn.searchDetailedStatus(activeVaultId, cleanQuery, max);
+          const res = await desktopBridge.searchDetailedStatus(activeVaultId, cleanQuery, max);
           const value = res?.value;
           const rows = Array.isArray(value?.results) ? value.results
             : Array.isArray(value?.value?.results) ? value.value.results
@@ -3585,7 +3587,7 @@ function MnApp() {
         }),
         run: async () => {
           if (!selectedNote) return { message: 'No note is selected.' };
-          const res = await window.mn.exportNote(activeVaultId, selectedNote.id, format);
+          const res = await desktopBridge.exportNote(activeVaultId, selectedNote.id, format);
           if (res?.ok === false) throw new Error(res.error || 'Export failed');
           return { message: res?.value?.canceled ? 'Export cancelled.' : `Note exported to ${res?.value?.filePath || 'file'}.` };
         },
@@ -3604,7 +3606,7 @@ function MnApp() {
           affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
         }),
         run: async () => {
-          const res = await window.mn.memory.import(activeVaultId);
+          const res = await desktopBridge.memory.import(activeVaultId);
           if (res?.ok === false) throw new Error(res.error || 'Memory import failed');
           const value = res?.value || {};
           const created = Array.isArray(value.notes) ? normalizeNotes(value.notes, mnMdToBlocks) : [];
@@ -3628,7 +3630,7 @@ function MnApp() {
         }),
         run: async () => {
           if (!selectedNote) return { message: 'No note is selected.' };
-          const res = await window.mn.memory.remember(activeVaultId, selectedNote.id);
+          const res = await desktopBridge.memory.remember(activeVaultId, selectedNote.id);
           if (res?.ok === false) throw new Error(res.error || 'Could not store the memory');
           setConnectionsRefreshToken(token => token + 1);
           return { message: `Stored “${selectedNote.title || 'Untitled'}” as memory ${res?.value?.id ? res.value.id.slice(0, 8) : ''}.` };
@@ -3648,7 +3650,7 @@ function MnApp() {
           affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
         }),
         run: async () => {
-          const res = await window.mn.memory.syncLinks(activeVaultId);
+          const res = await desktopBridge.memory.syncLinks(activeVaultId);
           if (res?.ok === false) throw new Error(res.error || 'Link sync failed');
           const value = res?.value || {};
           setConnectionsRefreshToken(token => token + 1);
@@ -3670,8 +3672,8 @@ function MnApp() {
         }),
         run: async () => {
           const [reportRes, dupRes] = await Promise.all([
-            window.mn.memory.intelligence({ limit: 5 }),
-            window.mn.memory.duplicates({ limit: 20 }),
+            desktopBridge.memory.intelligence({ limit: 5 }),
+            desktopBridge.memory.duplicates({ limit: 20 }),
           ]);
           return { message: MN_MEMORY_ACTIONS.insightsResultMessage(reportRes, dupRes) };
         },
@@ -3704,7 +3706,7 @@ function MnApp() {
         enabled: HAS_DISK,
         inputSchema: objectSchema(),
         run: async () => {
-          const res = await window.mn?.ai?.backfill?.(activeVaultId);
+          const res = await desktopBridge?.ai?.backfill?.(activeVaultId);
           if (res && !res.ok) throw new Error(res.error || 'AI index backfill failed');
           const value = res?.value || {};
           const embedded = Number(value.embedded || 0);
@@ -4074,8 +4076,8 @@ function MnApp() {
           inputSchema: objectSchema({ limit: integerArg(20) }),
           outputSchema: { type: 'object', additionalProperties: true },
           run: async (args) => {
-            if (!window.mn?.zotero?.list) return { ok: false, message: 'Zotero integration is unavailable.' };
-            const res = await window.mn.zotero.list({ limit: args.limit || 20 });
+            if (!desktopBridge?.zotero?.list) return { ok: false, message: 'Zotero integration is unavailable.' };
+            const res = await desktopBridge.zotero.list({ limit: args.limit || 20 });
             if (!res.ok) return { ok: false, message: res.error || 'Could not list Zotero papers.' };
             const results = res.value?.results || [];
             return {
@@ -4097,8 +4099,8 @@ function MnApp() {
           inputSchema: objectSchema({ query: stringArg(300), limit: integerArg(8) }, ['query']),
           outputSchema: { type: 'object', additionalProperties: true },
           run: async (args) => {
-            if (!window.mn?.zotero?.search) return { ok: false, message: 'Zotero integration is unavailable.' };
-            const res = await window.mn.zotero.search({ query: args.query, limit: args.limit || 8 });
+            if (!desktopBridge?.zotero?.search) return { ok: false, message: 'Zotero integration is unavailable.' };
+            const res = await desktopBridge.zotero.search({ query: args.query, limit: args.limit || 8 });
             if (!res.ok) return { ok: false, message: res.error || 'Could not search Zotero.' };
             const results = res.value?.results || [];
             return {
@@ -4120,8 +4122,8 @@ function MnApp() {
           inputSchema: objectSchema({ itemKey: stringArg(80), includeFullText: { type: 'boolean', default: true } }, ['itemKey']),
           outputSchema: { type: 'object', additionalProperties: true },
           run: async (args) => {
-            if (!window.mn?.zotero?.read) return { ok: false, message: 'Zotero integration is unavailable.' };
-            const res = await window.mn.zotero.read({ itemKey: args.itemKey, includeFullText: args.includeFullText !== false });
+            if (!desktopBridge?.zotero?.read) return { ok: false, message: 'Zotero integration is unavailable.' };
+            const res = await desktopBridge.zotero.read({ itemKey: args.itemKey, includeFullText: args.includeFullText !== false });
             if (!res.ok) return { ok: false, message: res.error || 'Could not read Zotero item.' };
             const value = res.value || {};
             const item = value.item || {};
@@ -4168,15 +4170,15 @@ function MnApp() {
                 affected: noteAffected(existing),
               };
             }
-            if (!window.mn?.zotero?.status || !window.mn?.zotero?.read) {
+            if (!desktopBridge?.zotero?.status || !desktopBridge?.zotero?.read) {
               return { ok: false, message: 'Zotero integration is unavailable.' };
             }
-            const status = await window.mn.zotero.status();
+            const status = await desktopBridge.zotero.status();
             if (!status.ok) return { ok: false, message: status.error || 'Could not check Zotero.' };
             if (!status.value?.reachable) {
               return { ok: false, message: status.value?.error || 'Zotero Desktop is not reachable.' };
             }
-            const res = await window.mn.zotero.read({ itemKey, includeFullText: args.includeFullText !== false });
+            const res = await desktopBridge.zotero.read({ itemKey, includeFullText: args.includeFullText !== false });
             if (!res.ok) return { ok: false, message: res.error || 'Could not read Zotero item.' };
             const plan = MN_APP_HELPERS.zoteroBuildSourceNotePlan
               ? MN_APP_HELPERS.zoteroBuildSourceNotePlan({ readResult: res.value, itemKey, notes: notesWithBody })
@@ -4441,7 +4443,7 @@ function MnApp() {
     const t = [vname, nname].filter(Boolean).join(' — ') || 'VispNote';
     clearTimeout(titleUpdateTimerRef.current);
     titleUpdateTimerRef.current = setTimeout(() => {
-      window.mn.setTitle(t === 'VispNote' ? t : `${t} — VispNote`);
+      desktopBridge.setTitle(t === 'VispNote' ? t : `${t} — VispNote`);
     }, 80);
     return () => clearTimeout(titleUpdateTimerRef.current);
   }, [activeVaultId, vaults, selectedNote]);
@@ -5102,4 +5104,4 @@ function MnApp() {
   );
 }
 
-window.MnApp = MnApp;
+export { MnApp };

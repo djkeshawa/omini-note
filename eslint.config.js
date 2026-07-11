@@ -65,4 +65,10 @@ module.exports = [
       'preserve-caught-error': 'off',
     },
   },
+  {
+    files: ['src/platform/**/*.js', 'src/features/**/*.js'],
+    languageOptions: {
+      sourceType: 'module',
+    },
+  },
 ];

@@ -30,7 +30,7 @@ test('renderer bundle entry and HTML shell contract stay stable', () => {
   assert.match(buildRenderer, /esbuild\.buildSync\(\{/);
   assert.match(buildRenderer, /bundle: true/);
   assert.match(html, /<script src="build\/renderer\/app\.js"><\/script>/);
-  assert.match(entry, /import '\.\/app\/app\.jsx';/);
+  assert.match(entry, /import \{ MnApp \} from '\.\/app\/app\.jsx';/);
 });
 
 test('renderer modules declare cross-file globals explicitly during migration', () => {
@@ -70,7 +70,6 @@ test('renderer globals are explicitly allowlisted until ESM migration removes th
     'MN_SETTINGS_CONTROLS',
     'MN_THEMES',
     'MnAiChatHistory',
-    'MnApp',
     'MnAskAI',
     'MnBlockContextMenu',
     'MnBlockEmbed',
@@ -94,7 +93,6 @@ test('renderer globals are explicitly allowlisted until ESM migration removes th
     'MnPanelGripPeek',
     'MnPropertyRow',
     'MnQuickCapture',
-    'MnReferencePane',
     'MnRecentlyDeletedPanel',
     'MnReminderToast',
     'MnSettingsModal',
@@ -133,7 +131,7 @@ test('renderer globals are explicitly allowlisted until ESM migration removes th
 
   const unexpected = [...assignedGlobals].filter(name => !allowedGlobals.has(name)).sort();
   assert.deepEqual(unexpected, []);
-  assert.ok(assignedGlobals.has('MnApp'));
+  assert.ok(!assignedGlobals.has('MnApp'));
   assert.ok(assignedGlobals.has('MN_AI_REPORT'));
 });
 

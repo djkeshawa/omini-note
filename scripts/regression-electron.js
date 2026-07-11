@@ -5,6 +5,7 @@ const path = require('path');
 
 process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE = '1';
 process.env.VISPNOTE_DISABLE_GLOBAL_SHORTCUTS = '1';
+process.env.VISPNOTE_EPHEMERAL_SESSION = '1';
 const regressionHome = process.env.VISPNOTE_HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-regression-'));
 process.env.VISPNOTE_HOME = regressionHome;
 

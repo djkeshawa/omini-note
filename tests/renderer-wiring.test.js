@@ -220,7 +220,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(app, /id: 'add-todo-to-note'/);
   assert.match(app, /id: 'add-reminder-to-note'/);
   assert.match(app, /id: 'link-note'/);
-  assert.match(app, /window\.mn\?\.searchDetailedStatus/);
+  assert.match(app, /desktopBridge\?\.searchDetailedStatus/);
 
   assert.match(ai, /const aiSession = session \|\| localSession/);
   assert.match(ai, /window\.MN_AI_ACTIONS\?\.classifyPrompt/);
@@ -483,7 +483,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(sidebar, /canvasActive/);
   assert.match(app, /const \[canvases, setCanvases\]/);
   assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
-  assert.match(app, /window\.mn\.listCanvases\(vaultId\)/);
+  assert.match(app, /desktopBridge\.listCanvases\(vaultId\)/);
   assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
   assert.match(app, /MN_APP_CANVAS_ACTIONS\.openCanvas\(canvasId, canvasActionContext\(\)\)/);
   assert.match(app, /MN_APP_CANVAS_ACTIONS\.createCanvas\(title, options, canvasActionContext\(\)\)/);
@@ -553,7 +553,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /noteDiskStampRef\.current\.set\(dirtyKey, diskModifiedAt\)/);
   assert.match(app, /revision: \+\+dirtyRevisionRef\.current/);
   assert.match(app, /current\.revision !== revision/);
-  assert.match(app, /window\.mn\.onFlushDirtyNotes/);
+  assert.match(app, /desktopBridge\.onFlushDirtyNotes/);
   assert.match(app, /entry\.vaultId === activeVaultId/);
   assert.match(app, /notes: targetNotes, tags: targetTags/);
   assert.match(app, /saveVaultMeta\(activeVaultId, \{ novelistMode: false, workflowStates: null \}\)/);
@@ -613,8 +613,8 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /novelistStructure=\{activeVault\?\.novelistMode/);
   assert.match(app, /onSetVaultNovelistMode=\{setActiveVaultNovelistMode\}/);
   assert.match(app, /const importNovelFiles = useCallbackA/);
-  assert.match(app, /window\.mn\.importNovelFiles/);
-  assert.match(app, /window\.mn\.ai\.toolPlan/);
+  assert.match(app, /desktopBridge\.importNovelFiles/);
+  assert.match(app, /desktopBridge\.ai\.toolPlan/);
   assert.match(app, /<MnNovelImportPreviewDialog/);
   assert.match(app, /onImportNovelFiles=\{importNovelFiles\}/);
   assert.match(sidebar, /label="Novelist"/);
@@ -773,7 +773,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /todayAiContext/);
   assert.match(app, /generateTodayAiRecap/);
   assert.match(app, /contextualAiBuildTodayRecapPrompt\(todayAiContext\)/);
-  assert.match(app, /window\.mn\.ai\.chat/);
+  assert.match(app, /desktopBridge\.ai\.chat/);
   assert.match(app, /addQuickTodayTask/);
   assert.match(app, /addTodayReflection/);
   assert.match(app, /addTodayEndDayRecap/);
@@ -1029,7 +1029,7 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(app, /const \[savedSmartViews, setSavedSmartViews\]/);
   assert.match(app, /const \[activeSmartViewId, setActiveSmartViewId\]/);
   assert.match(app, /setSavedSmartViews\(nextSmartViews\)/);
-  assert.match(app, /window\.mn\.setPrefs\(\{ smartViews: nextSmartViews \}\)/);
+  assert.match(app, /desktopBridge\.setPrefs\(\{ smartViews: nextSmartViews \}\)/);
   assert.match(app, /const openSmartView = useCallbackA/);
   assert.match(app, /const smartViewDefinitions = useMemoA/);
   assert.match(app, /MN_APP_HELPERS\.currentSmartViewDefinitions = smartViewDefinitions/);
@@ -1129,7 +1129,7 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
   assert.match(app, /setCustomThemes\(mnNormalizeCustomThemesForApp\(prefs\.customThemes\)\)/);
   assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
   assert.match(app, /for \(const item of customThemes\) next\[item\.id\] = item\.tokens/);
-  assert.match(app, /window\.mn\.importThemeFile\(\)/);
+  assert.match(app, /desktopBridge\.importThemeFile\(\)/);
   assert.match(preload, /importThemeFile: \(\) => ipcRenderer\.invoke\('mn:importThemeFile'\)/);
   assert.match(main, /async function importThemeFileFromIpc\(\)/);
   assert.match(main, /filters: \[\{ name: 'VispNote Theme', extensions: \['json', 'yaml', 'yml'\] \}\]/);
@@ -1174,8 +1174,10 @@ test('Reference pane and bounded note list stay optional and keyboard accessible
   const app = fs.readFileSync(projectPaths.src.app, 'utf8');
   const editor = fs.readFileSync(projectPaths.src.editor, 'utf8');
   const noteList = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
+  const reference = fs.readFileSync(path.join(__dirname, '../src/features/reference/components/ReferencePane.jsx'), 'utf8');
   const entry = fs.readFileSync(projectPaths.src.main, 'utf8');
-  assert.match(entry, /referencePane\.jsx/);
+  assert.match(app, /from '\.\.\/features\/reference\/index\.js'/);
+  assert.match(reference, /function ReferencePane/);
   assert.match(app, /id: 'reference-pane'/);
   assert.match(app, /recordFeatureUsage\('reference_pane', 'opened'\)/);
   assert.match(app, /isMod && e\.shiftKey && lowerKey === 'r'/);
@@ -1255,7 +1257,7 @@ test('URL plugins follow the external URL security policy and surface failures',
   assert.match(app, /const runPlugin = useCallbackA\(async \(plugin\) =>/);
   assert.ok(app.includes("if (!/^(https:\\/\\/|mailto:)/i.test(url)) {"));
   assert.match(app, /must start with https:\/\/ or mailto:/);
-  assert.match(app, /const res = await window\.mn\.openExternal\(url\)/);
+  assert.match(app, /const res = await desktopBridge\.openExternal\(url\)/);
   assert.match(app, /if \(res && res\.ok === false\) throw new Error/);
   assert.match(app, /showAppNotice\('Could not open link'/);
   assert.doesNotMatch(app, /must start with http:\/\/ or https:\/\//);
@@ -1328,9 +1330,9 @@ test('Zotero reader is wired as a read-only AI app action', () => {
   assert.match(app, /label: 'Create Zotero source note'/);
   assert.match(app, /idempotent: true/);
   assert.match(app, /readOnly: true/);
-  assert.match(app, /window\.mn\.zotero\.search/);
-  assert.match(app, /window\.mn\.zotero\.read/);
-  assert.match(app, /window\.mn\.zotero\.status/);
+  assert.match(app, /desktopBridge\.zotero\.search/);
+  assert.match(app, /desktopBridge\.zotero\.read/);
+  assert.match(app, /desktopBridge\.zotero\.status/);
   assert.match(app, /zoteroFindSourceNote\(notesWithBody, itemKey\)/);
   assert.match(app, /zoteroBuildSourceNotePlan/);
   assert.match(app, /Created Zotero source note/);
@@ -1389,7 +1391,8 @@ test('Release metadata targets renamed VispNote repository', () => {
   const rendererBuild = fs.readFileSync(path.join(__dirname, '../scripts/build-renderer.js'), 'utf8');
   assert.match(rendererBuild, /esbuild\.buildSync/);
   assert.match(rendererBuild, /bundle: true/);
-  assert.match(rendererEntry, /React\.createElement\(window\.MnApp\)/);
+  assert.match(rendererEntry, /import \{ MnApp \} from '\.\/app\/app\.jsx'/);
+  assert.match(rendererEntry, /React\.createElement\(MnApp\)/);
   assert.match(fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8'), /beforePack: scripts\/before-pack\.js/);
   assert.match(fs.readFileSync(path.join(__dirname, '../scripts/before-pack.js'), 'utf8'), /Refusing to package/);
   assert.match(fs.readFileSync(path.join(__dirname, '../scripts/verify-packaged-renderer.js'), 'utf8'), /Wrong-platform better-sqlite3 native module/);
@@ -1649,7 +1652,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
 
   assert.match(appShell, /function MnAppNoticeDialog/);
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  const entryIndex = source => rendererEntry.indexOf(`import './${source}';`);
+  const entryIndex = source => rendererEntry.indexOf(source);
   assert.ok(entryIndex('app/appHelpers.js') < entryIndex('app/app.jsx'));
   assert.ok(entryIndex('app/appHelpers.js') < entryIndex('app/appMutations.js'));
   assert.ok(entryIndex('app/appMutations.js') < entryIndex('app/app.jsx'));
