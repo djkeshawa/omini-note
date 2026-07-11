@@ -721,7 +721,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /setTags\(ts => ts\.filter\(t => t\.name !== clean\)\)/);
   assert.match(app, /onCreateTag=\{addTag\}/);
   assert.match(app, /onRemoveSupportingType=\{removeNovelistSupportingType\}/);
-  assert.match(app, /novelistPath=\{activeVault\?\.novelistMode/);
+  assert.match(app, /novelistPath=\{featureState\.showWriter && activeVault\?\.novelistMode/);
   assert.match(app, /novelistStructure=\{activeVault\?\.novelistMode/);
   assert.match(app, /onSetVaultNovelistMode=\{setActiveVaultNovelistMode\}/);
   assert.match(app, /const importNovelFiles = useCallbackA/);
@@ -1276,10 +1276,13 @@ test('Focused product shell and private usage controls are wired end to end', ()
   assert.match(sidebar, /label="Pinned"/);
   assert.match(sidebar, /label="Tags"/);
   assert.match(sidebar, /featureState\.showAgenda/);
+  assert.match(sidebar, /featureState\.showWorkflow/);
   assert.match(sidebar, /featureState\.showCanvas/);
   assert.match(sidebar, /featureState\.showAskAi/);
+  assert.match(sidebar, /featureState\.showLabs/);
   assert.match(sidebar, /label="More"/);
   assert.match(app, /MN_FEATURES\.deriveFeatureState/);
+  assert.match(app, /featureState\.showAgenda && view === 'todos'/);
   assert.match(settings, /label: 'Data & Privacy'/);
   assert.match(settings, /label: 'Assistance'/);
   assert.match(settings, /label: 'Advanced'/);

@@ -190,6 +190,8 @@ function SectionAdvanced({ tweaks, setTweak, T, enabledPacks = [], featureState 
               sub={`${pack.description}${inferred.has(pack.id) ? ' Detected from existing data.' : ''}`}
               last={index === packs.length - 1}>
               <Toggle T={T} checked={checked} disabled={inferred.has(pack.id)}
+                label={`${checked ? 'Disable' : 'Enable'} ${pack.label} pack`}
+                dataId={pack.id}
                 onChange={value => onSetPack?.(pack.id, value)} />
             </Row>
           );

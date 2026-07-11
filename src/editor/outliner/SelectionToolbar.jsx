@@ -1,17 +1,17 @@
 import { MnAiIcon } from '../outlinerRenderers.jsx';
 
-function MnSelectionToolbar({ rect, selectionKind, onApply, onOpenAiMenu, onDelete, onUndo, onRedo, onClose, T }) {
+function MnSelectionToolbar({ rect, selectionKind, aiEnabled = false, onApply, onOpenAiMenu, onDelete, onUndo, onRedo, onClose, T }) {
   const [moreOpen, setMoreOpen] = React.useState(false);
   if (!rect) return null;
   const primaryGroups = [
-    [
+    ...(aiEnabled ? [[
       {
         id: '_ai_menu',
         aiMenu: true,
         icon: <MnAiIcon size={13} />,
         hint: selectionKind === 'blocks' ? 'AI options for selected blocks' : 'AI options for selected text',
       },
-    ],
+    ]] : []),
     ...(selectionKind === 'text' ? [
       [
         { id: 'bold',   icon: <span style={{fontWeight: 700}}>B</span>, hint: 'Bold' },

@@ -63,4 +63,13 @@ function hasDesktopBridge() {
   return currentBridge() !== EMPTY_BRIDGE;
 }
 
-export { hasDesktopBridge, platformApi };
+async function optionalPlatformCall(call) {
+  if (typeof call !== 'function') return null;
+  try {
+    return await call();
+  } catch {
+    return null;
+  }
+}
+
+export { hasDesktopBridge, optionalPlatformCall, platformApi };

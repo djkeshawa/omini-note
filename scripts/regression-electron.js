@@ -2,12 +2,16 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { configureIsolatedUserData, scheduleTempCleanupAfterExit } = require('./test-temp-home');
 
 process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE = '1';
 process.env.VISPNOTE_DISABLE_GLOBAL_SHORTCUTS = '1';
 process.env.VISPNOTE_EPHEMERAL_SESSION = '1';
-const regressionHome = process.env.VISPNOTE_HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-regression-'));
+const suppliedRegressionHome = process.env.VISPNOTE_HOME;
+const ownsRegressionHome = !suppliedRegressionHome;
+const regressionHome = suppliedRegressionHome || fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-regression-'));
 process.env.VISPNOTE_HOME = regressionHome;
+configureIsolatedUserData(app, regressionHome);
 
 require('../main');
 
@@ -334,6 +338,103 @@ async function runCommandPaletteCommand(win, query, resultText) {
     const current = await state(win);
     return { ok: !current.commandPaletteOpen, current };
   });
+}
+
+async function availableCommandIds(win) {
+  await pressAccelerator(win, 'K', ['control']);
+  await waitFor(win, 'command palette open for availability audit', async () => {
+    const ids = await evaluate(win, `
+      document.querySelector('[data-mn-available-command-ids]')?.getAttribute('data-mn-available-command-ids') || ''
+    `);
+    return { ok: Boolean(ids), ids };
+  });
+  const ids = await evaluate(win, `
+    (document.querySelector('[data-mn-available-command-ids]')?.getAttribute('data-mn-available-command-ids') || '')
+      .split(/\\s+/)
+      .filter(Boolean)
+  `);
+  await pressAccelerator(win, 'Escape');
+  await waitFor(win, 'command palette closed after availability audit', async () => {
+    const current = await state(win);
+    return { ok: !current.commandPaletteOpen, current };
+  });
+  return ids;
+}
+
+async function setPackEnabledForRegression(win, packId, enabled) {
+  await clickButton(win, { titleIncludes: 'Settings' });
+  await waitFor(win, `settings open for ${packId}`, async () => {
+    const current = await state(win);
+    return { ok: current.settingsOpen, current };
+  });
+  await clickVisibleText(win, 'Advanced');
+  await waitFor(win, `${packId} pack toggle visible`, async () => {
+    const current = await evaluate(win, `
+      (() => {
+        const toggle = document.querySelector('[data-mn-pack-id=${JSON.stringify(packId)}]');
+        return toggle ? { found: true, pressed: toggle.getAttribute('aria-pressed') === 'true', disabled: toggle.disabled } : { found: false };
+      })()
+    `);
+    return { ok: current.found && !current.disabled, current };
+  });
+  await evaluate(win, `
+    (() => {
+      const toggle = document.querySelector('[data-mn-pack-id=${JSON.stringify(packId)}]');
+      const next = ${enabled ? 'true' : 'false'};
+      if (toggle && (toggle.getAttribute('aria-pressed') === 'true') !== next) toggle.click();
+    })()
+  `);
+  await waitFor(win, `${packId} pack ${enabled ? 'enabled' : 'disabled'}`, async () => {
+    const pressed = await evaluate(win, `document.querySelector('[data-mn-pack-id=${JSON.stringify(packId)}]')?.getAttribute('aria-pressed') === 'true'`);
+    return { ok: pressed === enabled, pressed };
+  });
+  await clickButton(win, { aria: 'Close settings' });
+  await waitFor(win, `settings closed after ${packId}`, async () => {
+    const current = await state(win);
+    return { ok: !current.settingsOpen, current };
+  });
+}
+
+async function runPackIsolationScenario(win) {
+  const cases = [
+    { id: 'planning', commands: ['calendar', 'set-workflow-status', 'template-project'], labels: ['Agenda', 'Workflow'] },
+    { id: 'canvas', commands: ['canvas', 'create-canvas'], labels: ['Thinking Board'] },
+    { id: 'research', commands: ['template-reading'], labels: [] },
+    { id: 'writer', commands: ['template-novel-scene'], labels: [] },
+    { id: 'agents', commands: [], labels: [] },
+    { id: 'labs', commands: ['graph', 'smart-views'], labels: ['Smart Views', 'Graph'], expand: 'More' },
+  ];
+  const specialistCommands = new Set(cases.flatMap(item => item.commands));
+  const specialistLabels = [...new Set(cases.flatMap(item => item.labels))];
+
+  for (const item of cases) {
+    await setPackEnabledForRegression(win, item.id, true);
+    const ids = await availableCommandIds(win);
+    for (const commandId of item.commands) {
+      if (!ids.includes(commandId)) throw new Error(`${item.id} pack did not expose ${commandId}: ${JSON.stringify(ids)}`);
+    }
+    for (const commandId of specialistCommands) {
+      if (!item.commands.includes(commandId) && ids.includes(commandId)) {
+        throw new Error(`${item.id} pack leaked ${commandId}`);
+      }
+    }
+    if (item.expand) await clickButton(win, { text: item.expand });
+    const bodyText = await evaluate(win, `document.body?.textContent || ''`);
+    for (const label of item.labels) {
+      if (!bodyText.includes(label)) throw new Error(`${item.id} pack did not expose ${label}`);
+    }
+    for (const label of specialistLabels) {
+      if (!item.labels.includes(label) && bodyText.includes(label)) {
+        throw new Error(`${item.id} pack leaked ${label}`);
+      }
+    }
+    await setPackEnabledForRegression(win, item.id, false);
+  }
+
+  const finalIds = await availableCommandIds(win);
+  for (const commandId of specialistCommands) {
+    if (finalIds.includes(commandId)) throw new Error(`disabled packs left ${commandId} available`);
+  }
 }
 
 async function activeVaultId(win) {
@@ -996,7 +1097,10 @@ async function runDeleteRestoreScenario(win) {
   });
   await clickButton(win, { text: 'Move to trash' });
   await waitForDeletedNote(win, title);
-  await clickButton(win, { text: 'More' });
+  const trashLinkVisible = await evaluate(win, `
+    [...document.querySelectorAll('div, span')].some(element => (element.textContent || '').trim() === 'Recently deleted')
+  `);
+  if (!trashLinkVisible) await clickButton(win, { text: 'More' });
   await clickVisibleText(win, 'Recently deleted');
   await waitFor(win, 'recently deleted view shows deleted note', async () => {
     const current = await state(win);
@@ -1046,10 +1150,32 @@ async function runRegression() {
       const text = current.text;
       return {
         ok: text.includes('All notes') && text.includes('Today') && text.includes('Pinned') && text.includes('Tags')
-          && !text.includes('Smart Views') && !text.includes('Thinking Board') && !text.includes('Ask AI') && !text.includes('Workflow'),
+          && !text.includes('Smart Views') && !text.includes('Thinking Board') && !text.includes('Ask AI')
+          && !text.includes('Workflow') && !text.includes('Graph') && !text.includes('Agenda'),
         current,
       };
     });
+    const controls = await evaluate(win, `
+      [...document.querySelectorAll('button')]
+        .map(button => button.getAttribute('title') || button.getAttribute('aria-label') || '')
+        .filter(Boolean)
+    `);
+    for (const specialistControl of ['AI actions for this section', 'Graph', 'Agenda']) {
+      if (controls.some(label => label.includes(specialistControl))) {
+        throw new Error(`default surface exposed ${specialistControl}`);
+      }
+    }
+    const ids = await availableCommandIds(win);
+    for (const commandId of [
+      'graph', 'smart-views', 'calendar', 'set-workflow-status', 'canvas',
+      'create-canvas', 'template-reading', 'template-novel-scene', 'memory-import', 'ask-ai',
+    ]) {
+      if (ids.includes(commandId)) throw new Error(`default command surface exposed ${commandId}`);
+    }
+  });
+
+  await runScenario(win, 'Focus', 'each optional pack stays isolated when enabled alone', async () => {
+    await runPackIsolationScenario(win);
   });
 
   await runScenario(win, 'Notes', 'create, edit, and persist a note', async () => {
@@ -1104,12 +1230,15 @@ async function runRegression() {
     await runSearchAndClearScenario(win);
   });
   await runScenario(win, 'Navigation', 'sidebar opens agenda planner and graph panels', async () => {
+    await setPackEnabledForRegression(win, 'planning', true);
+    await setPackEnabledForRegression(win, 'labs', true);
     await runNavigationPanelsScenario(win);
   });
   await runScenario(win, 'Agenda', 'agenda creates dated reminders and todos', async () => {
     await runCalendarPlannerScenario(win);
   });
   await runScenario(win, 'Canvas', 'create, draw, move, undo, and redo a canvas object', async () => {
+    await setPackEnabledForRegression(win, 'canvas', true);
     await runCanvasCreateScenario(win);
   });
   await runScenario(win, 'Trash', 'delete explains recoverability and restore returns the note', async () => {
@@ -1195,24 +1324,9 @@ async function closeWindowsBeforeCleanup() {
 
 async function cleanupAndExit(code) {
   await closeWindowsBeforeCleanup();
-  if (!process.env.VISPNOTE_KEEP_REGRESSION_HOME) {
-    // Release the FTS index DB handle before deleting; on Windows an open
-    // SQLite file blocks removal of the temp home with EPERM.
+  if (!process.env.VISPNOTE_KEEP_REGRESSION_HOME && ownsRegressionHome) {
     try { require('../lib/index').close(); } catch {}
-    let lastError = null;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      try {
-        fs.rmSync(regressionHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error;
-        await wait(250);
-      }
-    }
-    if (lastError) {
-      console.warn(`Could not remove regression temp home ${regressionHome}: ${lastError?.message || String(lastError)}`);
-    }
+    scheduleTempCleanupAfterExit(regressionHome);
   }
   app.exit(code);
 }

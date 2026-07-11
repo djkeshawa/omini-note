@@ -1,1 +1,1 @@
-export { hasDesktopBridge, platformApi } from './desktopBridge.js';
+export { hasDesktopBridge, optionalPlatformCall, platformApi } from './desktopBridge.js';

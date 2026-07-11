@@ -118,6 +118,7 @@ function MnOutliner({
   blocks, setBlocks, allNotes, allCanvases = [], onOpen, onTagClick, onOpenCanvas, onCreateCanvas, T, zoomBlockId,
   onZoomBlock, onShowToast, noteId = '', noteTitle, noteTags = [], vaultId = '', fontSize,
   indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false, novelistMode = false,
+  aiEnabled = false, workflowEnabled = false,
 }) {
   const [focusId, setFocusId] = useStateOE(null);
   const [selection, setSelection] = useStateOE(null); // { blockId, start, end, rect }
@@ -708,11 +709,13 @@ function MnOutliner({
     onFocusNext, onFocusPrev, onOpen, onTagClick,
     onMove,
     onContextMenu, onZoom,
-    onAiAction: runAiAction,
-    aiPreview: previewForCurrentNote,
+    onAiAction: aiEnabled ? runAiAction : null,
+    aiEnabled,
+    workflowEnabled,
+    aiPreview: aiEnabled ? previewForCurrentNote : null,
     onApplyAiPreview: applyAiPreview,
     onCancelAiPreview: cancelAiPreview,
-    aiTarget: (!aiTarget?.noteId || !noteId || aiTarget.noteId === noteId) ? aiTarget : null,
+    aiTarget: aiEnabled && (!aiTarget?.noteId || !noteId || aiTarget.noteId === noteId) ? aiTarget : null,
     focusId, setFocusId, T, allNotes, allCanvases, onOpenCanvas, onCreateCanvas,
     onSelectionChange: setSelection,
     onBlockMouseDown: beginBlockSelection,
@@ -736,8 +739,8 @@ function MnOutliner({
   // and its children become the editable list.
   const renderBlocks = zoomBlock ? (zoomBlock.children || []) : blocks;
   const ctxBlock = ctxMenu ? mnLocate(blocks, ctxMenu.blockId)?.block : null;
-  const currentAiTarget = (!aiTarget?.noteId || !noteId || aiTarget.noteId === noteId) ? aiTarget : null;
+  const currentAiTarget = aiEnabled && (!aiTarget?.noteId || !noteId || aiTarget.noteId === noteId) ? aiTarget : null;
 
-  return <MnOutlinerView model={{ MnAiActionMenu, MnAiIcon, MnAiPreviewDialog, MnBlockContextMenu, MnInlineAiPreview, MnOutlineTree, MnSelectionToolbar, MnZoomBar, T, aiBusy, aiMenu, aiPreview, aiPrompt, aiTarget, allCanvases, allNotes, appendPageBlocks, applyAiPreview, applyAnnotation, applyBlocksReplacement, applyPageReplacement, applySectionReplacement, applyTextReplacement, autoLink, beginBlockSelection, blockClipboardPayload, blockIdsInVerticalRange, blocks, blocksForClipboardIds, cancelAiPreview, clipboardHandlersRef, collapseByDefault, contentEditHistoryRef, contextClipboardIds, copyContextBlocks, ctxBlock, ctxMenu, currentAiTarget, currentNoteId, cutContextBlocks, deleteBlockRef, deleteSelection, deleteSelectionRef, dismissedAiPreviewRef, duplicateBlockRef, extendBlockSelection, findPath, focusId, focusIdRef, focusScopeBlocks, fontSize, handlers, historyRef, indentGuides, inlinePreviewKey, insertBlocksAfter, isPreviewForCurrentNote, keyboardEditActionsRef, localClipboardRef, makeAiPreview, mnAiAction, mnAiLiveDot, mnAiPagePulse, mnAiPulse, mnAiTextShimmer, mnCreateBlockLabel, mnInlineAiPreviewPulse, mnLocate, mnNormalizeBlockLabels, moveBlockRef, mutate, noteId, noteIdRef, noteTags, noteTitle, novelistMode, onBeginContentEdit, onChange, onChangeKind, onContextMenu, onCreateCanvas, onDelete, onDuplicate, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onShowToast, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, onZoomBlock, orderedBlockIds, pageContinuationInstruction, parseAiBlocks, parseClipboardBlocks, pasteContextBlocksAfter, plotPointsContextText, plotPointsInstruction, previewForCurrentNote, readNovelistAiConfig, redo, redoActionRef, redoStack, renderBlocks, replaceAllBlocks, replaceSelectedBlocksWith, requestAiEdit, runAiAction, selectDragRef, selectedBlockIds, selection, selectionRectForBlocks, selectionRef, setAiBusy, setAiMenu, setAiPreview, setAiPrompt, setAiTarget, setBlocks, setCtxMenu, setFocusId, setSelection, snapshotBlocks, spellCheck, topLevelSelectedIds, undo, undoActionRef, undoStack, vaultId, writeBlocksToClipboard, writeBlocksToSystemClipboard, writeInstruction, zoomBlock, zoomBlockId, zoomBlockRef, zoomLoc }} />;
+  return <MnOutlinerView model={{ MnAiActionMenu, MnAiIcon, MnAiPreviewDialog, MnBlockContextMenu, MnInlineAiPreview, MnOutlineTree, MnSelectionToolbar, MnZoomBar, T, aiBusy, aiEnabled, aiMenu, aiPreview, aiPrompt, aiTarget, allCanvases, allNotes, appendPageBlocks, applyAiPreview, applyAnnotation, applyBlocksReplacement, applyPageReplacement, applySectionReplacement, applyTextReplacement, autoLink, beginBlockSelection, blockClipboardPayload, blockIdsInVerticalRange, blocks, blocksForClipboardIds, cancelAiPreview, clipboardHandlersRef, collapseByDefault, contentEditHistoryRef, contextClipboardIds, copyContextBlocks, ctxBlock, ctxMenu, currentAiTarget, currentNoteId, cutContextBlocks, deleteBlockRef, deleteSelection, deleteSelectionRef, dismissedAiPreviewRef, duplicateBlockRef, extendBlockSelection, findPath, focusId, focusIdRef, focusScopeBlocks, fontSize, handlers, historyRef, indentGuides, inlinePreviewKey, insertBlocksAfter, isPreviewForCurrentNote, keyboardEditActionsRef, localClipboardRef, makeAiPreview, mnAiAction, mnAiLiveDot, mnAiPagePulse, mnAiPulse, mnAiTextShimmer, mnCreateBlockLabel, mnInlineAiPreviewPulse, mnLocate, mnNormalizeBlockLabels, moveBlockRef, mutate, noteId, noteIdRef, noteTags, noteTitle, novelistMode, onBeginContentEdit, onChange, onChangeKind, onContextMenu, onCreateCanvas, onDelete, onDuplicate, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onShowToast, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, onZoomBlock, orderedBlockIds, pageContinuationInstruction, parseAiBlocks, parseClipboardBlocks, pasteContextBlocksAfter, plotPointsContextText, plotPointsInstruction, previewForCurrentNote, readNovelistAiConfig, redo, redoActionRef, redoStack, renderBlocks, replaceAllBlocks, replaceSelectedBlocksWith, requestAiEdit, runAiAction, selectDragRef, selectedBlockIds, selection, selectionRectForBlocks, selectionRef, setAiBusy, setAiMenu, setAiPreview, setAiPrompt, setAiTarget, setBlocks, setCtxMenu, setFocusId, setSelection, snapshotBlocks, spellCheck, topLevelSelectedIds, undo, undoActionRef, undoStack, vaultId, workflowEnabled, writeBlocksToClipboard, writeBlocksToSystemClipboard, writeInstruction, zoomBlock, zoomBlockId, zoomBlockRef, zoomLoc }} />;
 }
 export { MnOutliner };

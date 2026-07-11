@@ -2,12 +2,16 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { configureIsolatedUserData, scheduleTempCleanupAfterExit } = require('./test-temp-home');
 
 process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE = '1';
 process.env.VISPNOTE_DISABLE_GLOBAL_SHORTCUTS = '1';
 process.env.VISPNOTE_EPHEMERAL_SESSION = '1';
-const regressionHome = process.env.VISPNOTE_HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-ai-regression-'));
+const suppliedRegressionHome = process.env.VISPNOTE_HOME;
+const ownsRegressionHome = !suppliedRegressionHome;
+const regressionHome = suppliedRegressionHome || fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-ai-regression-'));
 process.env.VISPNOTE_HOME = regressionHome;
+configureIsolatedUserData(app, regressionHome);
 
 const ai = require('../lib/ai');
 
@@ -337,6 +341,9 @@ async function seedFixtureNotes(win) {
           { name: 'novel-scene', hue: 190 },
         ],
       }), 'saveVaultMeta');
+      unwrap(await window.mn.preferences.setPrefs({
+        aiConfig: { enabled: true },
+      }), 'enable assistance');
       return { vaultId };
     })()
   `);
@@ -517,24 +524,9 @@ async function closeWindowsBeforeCleanup() {
 
 async function cleanupAndExit(code) {
   await closeWindowsBeforeCleanup();
-  if (!process.env.VISPNOTE_KEEP_AI_REGRESSION_HOME) {
-    // Release the FTS index DB handle before deleting; on Windows an open
-    // SQLite file blocks removal of the temp home with EPERM.
+  if (!process.env.VISPNOTE_KEEP_AI_REGRESSION_HOME && ownsRegressionHome) {
     try { require('../lib/index').close(); } catch {}
-    let lastError = null;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      try {
-        fs.rmSync(regressionHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error;
-        await wait(250);
-      }
-    }
-    if (lastError) {
-      console.warn(`Could not remove AI regression temp home ${regressionHome}: ${lastError?.message || String(lastError)}`);
-    }
+    scheduleTempCleanupAfterExit(regressionHome);
   }
   app.exit(code);
 }

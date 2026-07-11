@@ -49,10 +49,15 @@ function workflowSlashCommands() {
 }
 
 export function slashCommands(options = {}) {
+  const base = BASE_SLASH_COMMANDS.filter(command => {
+    if (command.canvasAction) return options.canvasEnabled === true;
+    if (command.aiAction) return options.aiEnabled === true;
+    return true;
+  });
   return [
-    ...BASE_SLASH_COMMANDS,
+    ...base,
     ...(options.novelistMode ? NOVELIST_SLASH_COMMANDS : []),
-    ...workflowSlashCommands(),
+    ...(options.workflowEnabled ? workflowSlashCommands() : []),
   ];
 }
 

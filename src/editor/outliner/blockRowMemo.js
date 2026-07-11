@@ -5,6 +5,7 @@ export function blockRowMemoEqual(prev, next) {
     prev.T === next.T &&
     prev.allNotes === next.allNotes &&
     prev.allCanvases === next.allCanvases &&
+    prev.aiEnabled === next.aiEnabled &&
     prev.aiPreview === next.aiPreview &&
     prev.aiTarget === next.aiTarget &&
     prev.selectedBlockIds === next.selectedBlockIds &&
@@ -13,5 +14,7 @@ export function blockRowMemoEqual(prev, next) {
     prev.spellCheck === next.spellCheck &&
     prev.autoLink === next.autoLink &&
     prev.collapseByDefault === next.collapseByDefault &&
-    prev.novelistMode === next.novelistMode;
+    prev.novelistMode === next.novelistMode &&
+    prev.workflowEnabled === next.workflowEnabled &&
+    Boolean(prev.onCreateCanvas) === Boolean(next.onCreateCanvas);
 }

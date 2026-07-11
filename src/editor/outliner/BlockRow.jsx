@@ -118,7 +118,7 @@ function MnBlockRow({
   onToggleCollapse, onToggleCheck, onSetAnnotation, onClearAnnotation,
   onFocusNext, onFocusPrev, onDelete, onOpen, onTagClick,
   onSelectionChange, setFocusId,
-  onMove, onContextMenu, onZoom, onAiAction, aiTarget,
+  onMove, onContextMenu, onZoom, onAiAction, aiEnabled = false, aiTarget,
   onBlockMouseDown, onBlockMouseEnter, selectedBlockIds,
   onBeginContentEdit, onEndContentEdit,
   editorFontSize,
@@ -128,6 +128,7 @@ function MnBlockRow({
   collapseByDefault = false,
   parseClipboardBlocks,
   novelistMode = false,
+  workflowEnabled = false,
 }) {
   const [editing, setEditing] = useStateOE(focusId === block.id);
   const [autoQ, setAutoQ] = useStateOE(null);   // wiki autocomplete query
@@ -218,12 +219,17 @@ function MnBlockRow({
 
   const slashMatches = useMemoOE(() => {
     if (slashQ == null) return [];
-    return mnSlashCommands({ novelistMode })
+    return mnSlashCommands({
+      novelistMode,
+      aiEnabled,
+      canvasEnabled: !!onCreateCanvas,
+      workflowEnabled,
+    })
       .map((cmd, index) => ({ cmd, index, score: mnSlashCommandScore(cmd, slashQ.query) }))
       .filter(x => x.score !== Infinity)
       .sort((a, b) => a.score - b.score || a.index - b.index)
       .map(x => x.cmd);
-  }, [slashQ, novelistMode]);
+  }, [aiEnabled, novelistMode, onCreateCanvas, slashQ, workflowEnabled]);
 
   const wikiSuggestions = useMemoOE(() => {
     if (!autoLink) return [];
@@ -778,7 +784,7 @@ function MnBlockRow({
   }
 
   // ── render ──────────────────────────────────────────────────────
-  return <MnBlockRowView model={{ vaultId, MN_APP_HELPERS, MN_BLOCK_LABEL_COLORS, MN_CODE_LANGUAGES, MN_IMAGE_ATTACHMENTS, MN_LOGSEQ, MnBlockEmbed, MnCanvasEmbed, MnCanvasPicker, MnDisclosure, MnInlineAiButton, MnMarkdownTable, MnMathBlock, MnMermaidBlock, MnPageEmbed, MnPopover, MnPopoverHeader, MnPopoverItem, MnPropertyRow, MnSmartViewEmbed, MnSpellSuggestionMenu, MnWorkflowPill, T, addBlockLabel, aiActive, aiTarget, allCanvases, allNotes, applyEditorValue, applySlashCmd, applySpellSuggestion, autoIdx, autoLink, autoQ, block, blockAcceptsImageDrops, blockLabels, canvasPicker, collapseByDefault, depth, displayAnnotations, displayBlock, displaySourceOffset, displayTextRef, dropPos, editing, editingLabelId, editorFontSize, editorValue, focusId, fontStyle, handleCopy, handleCut, handleEnter, handleInput, handleKey, handlePaste, handleSelect, hasChildren, ignoreSpellWord, ignoredSpellWords, indentGuides, indentPx, inputRef, insertImageMarkdown, isList, labelMenu, latestContentRef, markdownDisplayProjection, mnAffordancePadTop, mnBlockLabelPalette, mnCodeLanguageLabel, mnDataTransferHasFiles, mnGripPadTop, mnImageFilesFromDataTransfer, mnIsPropertyLine, mnNormalizeCodeLanguage, mnParseProperty, mnPlaceholder, mnRenderAnnotated, mnRenderCode, mnRenderSpellCheckedText, mnWorkflow, novelistMode, onAiAction, onBeginContentEdit, onBlockMouseDown, onBlockMouseEnter, onChange, onChangeKind, onClearAnnotation, onContextMenu, onCreateCanvas, onDelete, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onSelectionChange, onSetAnnotation, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, parseClipboardBlocks, pendingCaretRef, pickSuggestion, removeBlockLabel, selectedAsArea, selectedBlockIds, setAutoIdx, setAutoQ, setBlockLabels, setCanvasPicker, setDropPos, setEditing, setEditingLabelId, setFocusId, setIgnoredSpellWords, setLabelMenu, setSlashIdx, setSlashQ, setSpellIssues, setSpellMenu, slashIdx, slashMatches, slashQ, spellCheck, spellIssues, spellMenu, startEdit, textOffsetFromPoint, updateBlockLabel, wikiSuggestions }} />;
+  return <MnBlockRowView model={{ vaultId, MN_APP_HELPERS, MN_BLOCK_LABEL_COLORS, MN_CODE_LANGUAGES, MN_IMAGE_ATTACHMENTS, MN_LOGSEQ, MnBlockEmbed, MnCanvasEmbed, MnCanvasPicker, MnDisclosure, MnInlineAiButton, MnMarkdownTable, MnMathBlock, MnMermaidBlock, MnPageEmbed, MnPopover, MnPopoverHeader, MnPopoverItem, MnPropertyRow, MnSmartViewEmbed, MnSpellSuggestionMenu, MnWorkflowPill, T, addBlockLabel, aiActive, aiEnabled, aiTarget, allCanvases, allNotes, applyEditorValue, applySlashCmd, applySpellSuggestion, autoIdx, autoLink, autoQ, block, blockAcceptsImageDrops, blockLabels, canvasPicker, collapseByDefault, depth, displayAnnotations, displayBlock, displaySourceOffset, displayTextRef, dropPos, editing, editingLabelId, editorFontSize, editorValue, focusId, fontStyle, handleCopy, handleCut, handleEnter, handleInput, handleKey, handlePaste, handleSelect, hasChildren, ignoreSpellWord, ignoredSpellWords, indentGuides, indentPx, inputRef, insertImageMarkdown, isList, labelMenu, latestContentRef, markdownDisplayProjection, mnAffordancePadTop, mnBlockLabelPalette, mnCodeLanguageLabel, mnDataTransferHasFiles, mnGripPadTop, mnImageFilesFromDataTransfer, mnIsPropertyLine, mnNormalizeCodeLanguage, mnParseProperty, mnPlaceholder, mnRenderAnnotated, mnRenderCode, mnRenderSpellCheckedText, mnWorkflow, novelistMode, onAiAction, onBeginContentEdit, onBlockMouseDown, onBlockMouseEnter, onChange, onChangeKind, onClearAnnotation, onContextMenu, onCreateCanvas, onDelete, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onSelectionChange, onSetAnnotation, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, parseClipboardBlocks, pendingCaretRef, pickSuggestion, removeBlockLabel, selectedAsArea, selectedBlockIds, setAutoIdx, setAutoQ, setBlockLabels, setCanvasPicker, setDropPos, setEditing, setEditingLabelId, setFocusId, setIgnoredSpellWords, setLabelMenu, setSlashIdx, setSlashQ, setSpellIssues, setSpellMenu, slashIdx, slashMatches, slashQ, spellCheck, spellIssues, spellMenu, startEdit, textOffsetFromPoint, updateBlockLabel, wikiSuggestions, workflowEnabled }} />;
 }
 
 const MnMemoBlockRow = React.memo(MnBlockRow, blockRowMemoEqual);
