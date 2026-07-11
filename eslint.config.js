@@ -14,7 +14,7 @@ module.exports = [
     ],
   },
   {
-    files: ['main.js', 'preload.js', 'lib/**/*.js', 'scripts/**/*.js', 'tests/**/*.js', 'src/**/*.js'],
+    files: ['main.js', 'main/**/*.js', 'preload.js', 'lib/**/*.js', 'scripts/**/*.js', 'tests/**/*.js', 'src/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',
@@ -69,6 +69,12 @@ module.exports = [
     files: ['src/platform/**/*.js', 'src/features/**/*.js'],
     languageOptions: {
       sourceType: 'module',
+    },
+  },
+  {
+    files: ['main/**/*.js', 'lib/connectors/**/*.js'],
+    rules: {
+      'no-undef': 'error',
     },
   },
 ];

@@ -10,7 +10,6 @@
     "src/settings/settings.jsx"
   ],
   "lineBudgets": {
-    "main.js": 2016,
     "src/ai/ai.jsx": 3135,
     "src/app/app.jsx": 5108,
     "src/app/appHelpers.js": 3174,

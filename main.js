@@ -10,14 +10,12 @@ const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShor
 const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
-const { fileURLToPath } = require('url');
 const store = require('./lib/store');
 const attachments = require('./lib/attachments');
 const linkRename = require('./lib/linkRename');
 const exportHtml = require('./lib/exportHtml');
 const llmMemory = require('./lib/llmMemory');
 const memoryLinks = require('./lib/memoryLinks');
-const { createMemoryIndexCache } = require('./lib/memoryIndexCache');
 const quitPersistence = require('./lib/quitPersistence');
 const featureUsage = require('./lib/featureUsage');
 const { createVaultWatcher } = require('./lib/vaultWatcher');
@@ -25,29 +23,37 @@ const idx = require('./lib/index');
 const ai = require('./lib/ai');
 const zotero = require('./lib/zotero');
 const { registerNotesVaultHandlers } = require('./lib/ipc/notesVaultHandlers');
+const { createNavigationSecurity } = require('./main/navigationSecurity');
+const { createNoteExportService } = require('./main/noteExportService');
+const { createSpellcheckService } = require('./main/spellcheckService');
+const { createWindowSecurity } = require('./main/windowSecurity');
+const { createWindowLifecycle } = require('./main/windowLifecycle');
+const { createUpdateService } = require('./main/updateService');
+const { createIpcRuntime } = require('./main/ipcRuntime');
+const { createNovelImportService } = require('./main/novelImportService');
+const {
+  sanitizeAttachmentPayload,
+  sanitizeZoteroSearchPayload,
+  sanitizeZoteroListPayload,
+  sanitizeZoteroReadPayload,
+} = require('./lib/connectors/ipc/payloadValidation');
+const { registerWorkspaceHandlers } = require('./lib/connectors/ipc/workspaceHandlers');
+const { registerPreferencesHandlers } = require('./lib/connectors/ipc/preferencesHandlers');
+const { registerZoteroHandlers } = require('./lib/connectors/ipc/zoteroHandlers');
+const { registerWindowHandlers } = require('./lib/connectors/ipc/windowHandlers');
+const { registerSearchHandlers } = require('./lib/connectors/ipc/searchHandlers');
+const { registerVaultNoteHandlers } = require('./lib/connectors/ipc/vaultNoteHandlers');
+const { registerMemoryHandlers } = require('./lib/connectors/ipc/memoryHandlers');
+const { registerAiHandlers } = require('./lib/connectors/ipc/aiHandlers');
+const { registerBackupHandlers } = require('./lib/connectors/ipc/backupHandlers');
+const { createAiIpcService } = require('./lib/connectors/ipc/aiService');
+const { createPreferencesService } = require('./lib/connectors/ipc/preferencesService');
 
-let mainWindow = null;
-let tray = null;
-let isQuitting = false;
-let flushBeforeCloseSeq = 0;
-let quickCaptureShortcutState = {
-  accelerator: null,
-  registered: false,
-  error: null,
-};
 let indexReadyPromise = Promise.resolve();
 let searchIndexAvailable = false;
 let searchIndexError = null;
+let memoryConnector = null;
 const indexVaultLocks = new Map();
-let updateState = {
-  status: 'idle',
-  currentVersion: app.getVersion(),
-  lastCheckedAt: null,
-  error: null,
-  updateInfo: null,
-  downloaded: false,
-  manualUrl: 'https://github.com/djkeshawa/visp-note/releases/latest',
-};
 const APP_NAME = 'VispNote';
 const APP_ID = 'com.vispnote.app';
 const ASSET_PROTOCOL_SCHEME = 'vispnote-asset';
@@ -57,19 +63,38 @@ protocol.registerSchemesAsPrivileged([
   { scheme: ASSET_PROTOCOL_SCHEME, privileges: { standard: true, secure: true } },
 ]);
 const APP_ICON_PATH = path.join(__dirname, 'assets', 'vispnote-icon.png');
-const SPELL_DICTIONARY_PATHS = [
-  '/usr/share/dict/american-english',
-  '/usr/share/dict/british-english',
-  '/usr/share/hunspell/en_US.dic',
-  '/usr/share/hunspell/en_GB.dic',
-];
-const SPELL_SUGGESTION_CACHE_LIMIT = 1000;
-const MIN_USABLE_DICTIONARY_WORDS = 1000;
+const { isAllowedAppNavigation, sanitizeExternalUrl } = createNavigationSecurity(
+  path.join(__dirname, 'vispnote.html')
+);
+const { attachEditContextMenu, registerAssetProtocol, hardenWindow } = createWindowSecurity({
+  Menu,
+  protocol,
+  assetScheme: ASSET_PROTOCOL_SCHEME,
+  attachments,
+  isAllowedAppNavigation,
+});
+const windowLifecycle = createWindowLifecycle({
+  app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShortcut,
+  path, rootDir: __dirname, appName: APP_NAME, iconPath: APP_ICON_PATH,
+  attachEditContextMenu, hardenWindow, quitPersistence,
+});
+const updateService = createUpdateService({
+  app, autoUpdater, getMainWindow: windowLifecycle.getMainWindow,
+});
+const noteExportService = createNoteExportService({
+  app,
+  BrowserWindow,
+  fs,
+  path,
+  store,
+  dialog,
+  exportHtml,
+  attachments,
+  getMainWindow: windowLifecycle.getMainWindow,
+});
+const { spellcheckWords, loadSpellWords } = createSpellcheckService();
+const { wrap, wrapWithEvent } = createIpcRuntime();
 const INITIAL_UPDATE_CHECK_DELAY_MS = 5000;
-let spellWords = null;
-let spellWordsPromise = null;
-let spellWordBuckets = null;
-let spellDictionaryAvailable = false;
 const vaultWatcher = process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE === '1'
   ? { refresh() {}, close() {}, markInternal() {} }
   : createVaultWatcher({
@@ -84,1026 +109,31 @@ const vaultWatcher = process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE === '1'
         const note = data.notes.find(item => item.id === noteId);
         if (note) ai.scheduleEmbed(event.vaultId, note);
       }).catch(error => console.error('external vault refresh failed', event.vaultId, error));
-      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
-      mainWindow.webContents.send('mn:vaultFilesChanged', event);
+      const win = windowLifecycle.getMainWindow();
+      if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+      win.webContents.send('mn:vaultFilesChanged', event);
     },
   });
-const spellSuggestionCache = new Map();
-let appHtmlRealPath = null;
-
-const COMMON_SPELL_WORDS = [
-  'about', 'after', 'again', 'also', 'because', 'block', 'blocks', 'calendar',
-  'check', 'checker', 'code', 'correct', 'document', 'editor', 'feature',
-  'features', 'highlight', 'language', 'markdown', 'misspelled', 'note',
-  'notes', 'notification', 'notifications', 'programming', 'reminder',
-  'reminders', 'settings', 'spell', 'spelling', 'suggestion', 'suggestions',
-  'syntax', 'text', 'their', 'there', 'these', 'this', 'typing', 'with',
-  'word', 'words', 'working',
-];
-const PREF_TOP_LEVEL_KEYS = new Set([
-  'activeVaultId',
-  'tweaks',
-  'aiConfig',
-  'smartViews',
-  'enabledPacks',
-  'localUsageMetrics',
-  'anonymousUsageSharing',
-]);
-const FEATURE_PACK_IDS = new Set(['planning', 'canvas', 'research', 'writer', 'agents', 'labs']);
-const PREF_TWEAK_DEFAULTS = {
-  theme: 'light',
-  density: 'comfortable',
-  graphStyle: 'force',
-  todoVariant: 'list',
-  toastVariant: 'card',
-  fontChoice: 'Editorial (Newsreader + Inter)',
-  showNoteList: true,
-  showSidebar: true,
-  editorWidth: 'medium',
-  fontSize: 'default',
-  appFontSize: 'default',
-  indentGuides: true,
-  spellCheck: true,
-  autoLink: true,
-  collapseByDefault: false,
-  sortBy: 'modified',
-  defaultTags: '',
-  pinnedFirst: true,
-  startupView: 'notes',
-  rollupFormat: 'long',
-  rollupDefaultRange: 'today',
-  rollupGroupBy: 'created',
-  rollupShowPreviews: true,
-  rollupShowTasks: true,
-  rollupShowReminders: true,
-  rollupCollapseOlder: true,
-  reminderSound: false,
-  showOverdue: true,
-  snoozeMinutes: '15',
-  weekStart: 'monday',
-  workflowStates: null,
-  plugins: null,
-  autoSave: true,
-  storageFormat: 'markdown',
-  sync: 'local',
-};
-const PREF_TWEAK_KEYS = new Set(Object.keys(PREF_TWEAK_DEFAULTS));
-const PREF_STRING_LIMIT = 500;
-const PREF_SECRET_LIMIT = 4096;
-const AI_QUERY_LIMIT = 20000;
-const AI_EDIT_TEXT_LIMIT = 120000;
-const AI_MESSAGE_TEXT_LIMIT = 20000;
-const AI_MAX_TOKENS_LIMIT = 8192;
-const AI_TOOL_LIMIT = 100;
-const AI_TOOL_SCHEMA_LIMIT = 30000;
-const BACKUP_IMPORT_FILE_LIMIT = 50 * 1024 * 1024;
-const NOVEL_IMPORT_FILE_LIMIT = 8;
-const NOVEL_IMPORT_FILE_BYTES_LIMIT = 750 * 1024;
-const NOVEL_IMPORT_TOTAL_TEXT_BYTES_LIMIT = 2 * 1024 * 1024;
-const IPC_ID_RE = /^[A-Za-z0-9_-]+$/;
-const AI_TOOL_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
-const SMART_VIEW_FORMAT = 'vispnote.smartView.v1';
-const SMART_VIEW_ID_RE = /^[A-Za-z][A-Za-z0-9_-]{1,63}$/;
-const SMART_VIEW_TYPES = new Set(['notes', 'tasks', 'reminders', 'actions']);
-const SMART_VIEW_FILTER_KEYS = new Set([
-  'title',
-  'titleContains',
-  'tag',
-  'tags',
-  'createdFrom',
-  'createdTo',
-  'createdAfter',
-  'createdBefore',
-  'modifiedFrom',
-  'modifiedTo',
-  'modifiedAfter',
-  'modifiedBefore',
-  'property',
-  'properties',
-  'propertyKey',
-  'propertyValue',
-  'workflowStatus',
-  'workflowStatuses',
-  'linkedNote',
-  'linkedNotes',
-  'actionStatus',
-  'actionStatuses',
-  'taskStatus',
-  'actionType',
-  'actionTypes',
-  'reminderFrom',
-  'reminderTo',
-  'remindFrom',
-  'remindTo',
-  'dueFrom',
-  'dueTo',
-]);
-const SMART_VIEW_DATE_FILTER_KEYS = new Set([
-  'createdFrom',
-  'createdTo',
-  'createdAfter',
-  'createdBefore',
-  'modifiedFrom',
-  'modifiedTo',
-  'modifiedAfter',
-  'modifiedBefore',
-  'reminderFrom',
-  'reminderTo',
-  'remindFrom',
-  'remindTo',
-  'dueFrom',
-  'dueTo',
-]);
-const SMART_VIEW_SORT_FIELDS = new Set(['title', 'created', 'modified', 'reminder']);
-const SMART_VIEW_SORT_DIRECTIONS = new Set(['asc', 'desc']);
-
-function normalizeSpellWord(word) {
-  return String(word || '').toLowerCase().replace(/^[^a-z']+|[^a-z']+$/g, '');
-}
-
-function isPlainObject(value) {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isUnsafePatchKey(key) {
-  return key === '__proto__' || key === 'prototype' || key === 'constructor';
-}
-
-function capString(value, field, maxLength = PREF_STRING_LIMIT) {
-  const clean = String(value || '').replace(/\0/g, '').trim();
-  if (clean.length > maxLength) throw new Error(`${field} is too long`);
-  return clean;
-}
-
-function capText(value, field, maxLength) {
-  const clean = String(value || '').replace(/\0/g, '');
-  if (clean.length > maxLength) throw new Error(`${field} is too long`);
-  return clean;
-}
-
-function sanitizeWorkflowStatesForPrefs(value) {
-  if (value == null) return null;
-  if (!Array.isArray(value) || value.length > 20) throw new Error('Invalid workflowStates preference');
-  return value.map((state, index) => {
-    if (!isPlainObject(state)) throw new Error('Invalid workflowStates preference');
-    return {
-      id: capString(state.id, `workflowStates[${index}].id`, 40),
-      next: state.next == null ? null : capString(state.next, `workflowStates[${index}].next`, 40),
-      color: capString(state.color, `workflowStates[${index}].color`, 120),
-      bg: capString(state.bg, `workflowStates[${index}].bg`, 120),
-    };
-  });
-}
-
-function sanitizePluginIdForPrefs(value, index) {
-  const clean = capString(value, `plugins[${index}].id`, 80)
-    .replace(/[^A-Za-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-  return clean || `plugin-${index + 1}`;
-}
-
-function sanitizePluginsForPrefs(value) {
-  if (value == null) return null;
-  if (!Array.isArray(value) || value.length > 30) throw new Error('Invalid plugins preference');
-  return value.map((plugin, index) => {
-    if (!isPlainObject(plugin)) throw new Error('Invalid plugin preference');
-    const config = isPlainObject(plugin.config) ? plugin.config : {};
-    const type = capString(plugin.type, `plugins[${index}].type`, 40);
-    if (!['note-template', 'quick-capture', 'open-url', 'zotero-reader', 'llm-memory'].includes(type)) throw new Error('Invalid plugin type');
-    return {
-      id: sanitizePluginIdForPrefs(plugin.id, index),
-      name: capString(plugin.name, `plugins[${index}].name`, 80),
-      purpose: capString(plugin.purpose, `plugins[${index}].purpose`, 180),
-      type,
-      enabled: plugin.enabled !== false,
-      config: {
-        title: capString(config.title, `plugins[${index}].config.title`, 160),
-        body: capString(config.body, `plugins[${index}].config.body`, 4000),
-        tags: capString(config.tags, `plugins[${index}].config.tags`, 240),
-        url: capString(config.url, `plugins[${index}].config.url`, 500),
-        serverUrl: capString(config.serverUrl, `plugins[${index}].config.serverUrl`, 500),
-        repoId: capString(config.repoId, `plugins[${index}].config.repoId`, 120),
-        apiKey: capString(config.apiKey, `plugins[${index}].config.apiKey`, 300),
-      },
-    };
-  });
-}
-
-function sanitizeTweaksForPrefs(tweaks) {
-  if (!isPlainObject(tweaks)) throw new Error('Invalid tweaks patch');
-  const clean = {};
-  for (const [key, value] of Object.entries(tweaks)) {
-    if (isUnsafePatchKey(key)) throw new Error('Unsupported tweak field: ' + key);
-    if (!PREF_TWEAK_KEYS.has(key)) throw new Error('Unsupported tweak field: ' + key);
-    const defaultValue = PREF_TWEAK_DEFAULTS[key];
-    if (key === 'workflowStates') {
-      clean.workflowStates = sanitizeWorkflowStatesForPrefs(value);
-    } else if (key === 'plugins') {
-      clean.plugins = sanitizePluginsForPrefs(value);
-    } else if (typeof defaultValue === 'boolean') {
-      if (typeof value !== 'boolean') throw new Error('Invalid tweak field: ' + key);
-      clean[key] = value;
-    } else if (typeof defaultValue === 'string') {
-      clean[key] = capString(value, key);
-    }
-  }
-  return clean;
-}
-
-function sanitizeAiConfigForPrefs(aiConfig) {
-  if (!isPlainObject(aiConfig)) throw new Error('Invalid AI config patch');
-  const clean = {};
-  for (const [key, value] of Object.entries(aiConfig)) {
-    if (isUnsafePatchKey(key)) throw new Error('Invalid AI config field: ' + key);
-    if (typeof value === 'string') clean[key] = capString(value, key, PREF_SECRET_LIMIT);
-    else if (typeof value === 'number' || typeof value === 'boolean' || value == null) clean[key] = value;
-    else throw new Error('Invalid AI config field: ' + key);
-  }
-  return clean;
-}
-
-function sanitizeSmartViewJsonValue(value, field, depth = 0) {
-  if (depth > 3) throw new Error(`${field} is too deeply nested`);
-  if (typeof value === 'string') return capString(value, field, 500);
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new Error(`Invalid ${field}`);
-    return value;
-  }
-  if (typeof value === 'boolean' || value == null) return value;
-  if (Array.isArray(value)) {
-    if (value.length > 40) throw new Error(`${field} has too many items`);
-    return value.map((item, index) => sanitizeSmartViewJsonValue(item, `${field}[${index}]`, depth + 1));
-  }
-  if (!isPlainObject(value)) throw new Error(`Invalid ${field}`);
-  const clean = {};
-  const entries = Object.entries(value);
-  if (entries.length > 40) throw new Error(`${field} has too many fields`);
-  for (const [key, item] of entries) {
-    if (isUnsafePatchKey(key)) throw new Error(`Unsupported ${field} field: ${key}`);
-    const cleanKey = capString(key, `${field} key`, 80);
-    clean[cleanKey] = sanitizeSmartViewJsonValue(item, `${field}.${cleanKey}`, depth + 1);
-  }
-  return clean;
-}
-
-function sanitizeSmartViewFiltersForPrefs(filters, index) {
-  if (filters == null) return {};
-  if (!isPlainObject(filters)) throw new Error(`Invalid Smart View filters at ${index}`);
-  const clean = {};
-  for (const [key, value] of Object.entries(filters)) {
-    if (isUnsafePatchKey(key)) throw new Error('Unsupported Smart View filter field: ' + key);
-    if (!SMART_VIEW_FILTER_KEYS.has(key)) throw new Error('Unsupported Smart View filter field: ' + key);
-    const next = sanitizeSmartViewJsonValue(value, `smartViews[${index}].filters.${key}`);
-    if (SMART_VIEW_DATE_FILTER_KEYS.has(key) && next && !/^\d{4}-\d{2}-\d{2}$/.test(String(next))) {
-      throw new Error('Invalid Smart View date filter: ' + key);
-    }
-    clean[key] = next;
-  }
-  return clean;
-}
-
-function sanitizeSmartViewSortForPrefs(sort, index) {
-  if (sort == null) return {};
-  if (!isPlainObject(sort)) throw new Error(`Invalid Smart View sort at ${index}`);
-  const clean = {};
-  for (const [key, value] of Object.entries(sort)) {
-    if (isUnsafePatchKey(key)) throw new Error('Unsupported Smart View sort field: ' + key);
-    if (!['field', 'direction'].includes(key)) throw new Error('Unsupported Smart View sort field: ' + key);
-    clean[key] = capString(value, `smartViews[${index}].sort.${key}`, 40);
-  }
-  if (clean.field && !SMART_VIEW_SORT_FIELDS.has(clean.field)) throw new Error('Invalid Smart View sort field');
-  if (clean.direction && !SMART_VIEW_SORT_DIRECTIONS.has(clean.direction)) throw new Error('Invalid Smart View sort direction');
-  return clean;
-}
-
-function sanitizeSmartViewsForPrefs(value) {
-  if (value == null) return null;
-  if (!Array.isArray(value) || value.length > 24) throw new Error('Invalid Smart Views preference');
-  const seen = new Set();
-  return value.map((definition, index) => {
-    if (!isPlainObject(definition)) throw new Error(`Invalid Smart View definition at ${index}`);
-    Object.keys(definition).forEach(key => {
-      if (isUnsafePatchKey(key)) throw new Error('Unsupported Smart View field: ' + key);
-      if (!['format', 'id', 'title', 'type', 'filters', 'sort', 'limit'].includes(key)) throw new Error('Unsupported Smart View field: ' + key);
-    });
-    if (definition.format && definition.format !== SMART_VIEW_FORMAT) throw new Error('Unsupported Smart View format');
-    const id = capString(definition.id, `smartViews[${index}].id`, 64);
-    if (!SMART_VIEW_ID_RE.test(id)) throw new Error('Invalid Smart View id');
-    if (seen.has(id)) throw new Error('Duplicate Smart View id');
-    seen.add(id);
-    const title = capString(definition.title, `smartViews[${index}].title`, 120);
-    if (!title) throw new Error('Smart View title is required');
-    const type = definition.type == null ? 'notes' : capString(definition.type, `smartViews[${index}].type`, 20);
-    if (!SMART_VIEW_TYPES.has(type)) throw new Error('Invalid Smart View type');
-    const limit = definition.limit == null ? undefined : Number(definition.limit);
-    if (limit != null && (!Number.isFinite(limit) || limit < 1 || limit > 500)) throw new Error('Invalid Smart View limit');
-    return {
-      format: SMART_VIEW_FORMAT,
-      id,
-      title,
-      type,
-      filters: sanitizeSmartViewFiltersForPrefs(definition.filters, index),
-      sort: sanitizeSmartViewSortForPrefs(definition.sort, index),
-      limit,
-    };
-  });
-}
-
-function sanitizePrefsPatchFromIpc(patch) {
-  if (!isPlainObject(patch)) throw new Error('Invalid preferences patch');
-  const clean = {};
-  for (const [key, value] of Object.entries(patch)) {
-    if (isUnsafePatchKey(key)) throw new Error('Unsupported preferences field: ' + key);
-    if (!PREF_TOP_LEVEL_KEYS.has(key)) throw new Error('Unsupported preferences field: ' + key);
-    if (key === 'activeVaultId') clean.activeVaultId = capString(value, 'activeVaultId', 120);
-    if (key === 'tweaks') clean.tweaks = sanitizeTweaksForPrefs(value);
-    if (key === 'aiConfig') clean.aiConfig = sanitizeAiConfigForPrefs(value);
-    if (key === 'smartViews') clean.smartViews = sanitizeSmartViewsForPrefs(value);
-    if (key === 'enabledPacks') clean.enabledPacks = sanitizeEnabledPacksForPrefs(value);
-    if (key === 'localUsageMetrics' || key === 'anonymousUsageSharing') {
-      if (typeof value !== 'boolean') throw new Error(`Invalid ${key} preference`);
-      clean[key] = value;
-    }
-  }
-  return clean;
-}
-
-function sanitizeEnabledPacksForPrefs(value) {
-  if (!Array.isArray(value) || value.length > FEATURE_PACK_IDS.size) {
-    throw new Error('Invalid enabled packs preference');
-  }
-  return [...new Set(value.map(item => capString(item, 'enabledPacks', 40)))]
-    .filter(packId => FEATURE_PACK_IDS.has(packId));
-}
-
-async function loadSpellWords() {
-  if (spellWords) return spellWords;
-  if (spellWordsPromise) return await spellWordsPromise;
-  spellWordsPromise = loadSpellWordsFromDisk();
-  return await spellWordsPromise;
-}
-
-async function loadSpellWordsFromDisk() {
-  const words = new Set();
-  let loadedDictionaryWords = 0;
-  for (const file of SPELL_DICTIONARY_PATHS) {
-    try {
-      const lines = (await fs.promises.readFile(file, 'utf8')).split(/\r?\n/);
-      for (const line of lines) {
-        const raw = line.replace(/\/.*$/, '').trim();
-        const word = normalizeSpellWord(raw);
-        if (word.length >= 2 && /^[a-z][a-z']*$/.test(word)) {
-          const before = words.size;
-          words.add(word);
-          if (words.size > before) loadedDictionaryWords++;
-        }
-      }
-    } catch {}
-  }
-  if (loadedDictionaryWords < MIN_USABLE_DICTIONARY_WORDS) {
-    spellWords = new Set();
-    spellWordBuckets = new Map();
-    spellDictionaryAvailable = false;
-    return spellWords;
-  }
-  for (const word of COMMON_SPELL_WORDS) words.add(word);
-  spellDictionaryAvailable = true;
-  spellWordBuckets = new Map();
-  for (const word of words) {
-    const first = word[0] || '';
-    if (!spellWordBuckets.has(first)) spellWordBuckets.set(first, []);
-    spellWordBuckets.get(first).push(word);
-  }
-  spellWords = words;
-  return spellWords;
-}
-
-function spellDistance(a, b) {
-  const alen = a.length, blen = b.length;
-  if (Math.abs(alen - blen) > 2) return 99;
-  const prev = Array.from({ length: blen + 1 }, (_, i) => i);
-  for (let i = 1; i <= alen; i++) {
-    let last = prev[0];
-    prev[0] = i;
-    for (let j = 1; j <= blen; j++) {
-      const old = prev[j];
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, last + cost);
-      last = old;
-    }
-  }
-  return prev[blen];
-}
-
-function spellSuggestions(word, dictionary) {
-  if (spellSuggestionCache.has(word)) {
-    const cached = spellSuggestionCache.get(word);
-    spellSuggestionCache.delete(word);
-    spellSuggestionCache.set(word, cached);
-    return cached;
-  }
-  const first = word[0];
-  const maxDistance = word.length <= 5 ? 1 : 2;
-  const scored = [];
-  const candidates = spellWordBuckets?.get(first) || dictionary;
-  for (const candidate of candidates) {
-    if (Math.abs(candidate.length - word.length) > maxDistance) continue;
-    const distance = spellDistance(word, candidate);
-    if (distance <= maxDistance) scored.push({ candidate, distance });
-  }
-  const suggestions = scored
-    .sort((a, b) => a.distance - b.distance || a.candidate.length - b.candidate.length || a.candidate.localeCompare(b.candidate))
-    .slice(0, 5)
-    .map(item => item.candidate);
-  if (spellSuggestionCache.size >= SPELL_SUGGESTION_CACHE_LIMIT) {
-    const oldest = spellSuggestionCache.keys().next().value;
-    spellSuggestionCache.delete(oldest);
-  }
-  spellSuggestionCache.set(word, suggestions);
-  return suggestions;
-}
-
-async function spellcheckWords(inputWords = []) {
-  const dictionary = await loadSpellWords();
-  if (!spellDictionaryAvailable) return {};
-  const result = {};
-  for (const raw of inputWords) {
-    const word = normalizeSpellWord(raw);
-    if (!word || word.length < 3 || dictionary.has(word)) continue;
-    result[word] = spellSuggestions(word, dictionary);
-  }
-  return result;
-}
-
-function createFallbackIcon() {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <rect width="32" height="32" fill="#57595d"/>
-      <path d="M7 11C7 7 12 6 15 9L16 10L17 9C20 6 25 7 25 11C25 15 20 17 17 14L16 13L15 14C12 17 7 15 7 11Z" fill="none" stroke="#9bbdff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M10 16C6 18 7 24 12 24C13 27 16 27 16 23M22 16C26 18 25 24 20 24C19 27 16 27 16 23M16 15V23" fill="none" stroke="#aaa5ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>`;
-  return nativeImage.createFromDataURL(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
-}
-
-function createAppIcon() {
-  try {
-    const image = nativeImage.createFromPath(APP_ICON_PATH);
-    if (!image.isEmpty()) return image;
-  } catch (e) {
-    console.error('failed to load app icon', e);
-  }
-  return createFallbackIcon();
-}
-
-// Bring the window forward and tell the renderer to open Quick Capture.
-// Routed through IPC because the renderer owns its modal stack and undo
-// history; the main process stays focused on lifecycle and OS hooks.
-function openQuickCaptureFromShortcut() {
-  showMainWindow();
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const win = mainWindow;
-  const send = () => {
-    if (!win.isDestroyed()) {
-      win.webContents.send('mn:openQuickCapture');
-    }
-  };
-  if (win.webContents.isLoading()) {
-    const clear = () => win.webContents?.removeListener?.('did-finish-load', send);
-    win.once('closed', clear);
-    win.webContents.once('did-finish-load', send);
-  } else {
-    send();
-  }
-}
-
-function linuxUpdaterMode() {
-  if (process.platform !== 'linux') return 'native';
-  return process.env.APPIMAGE ? 'appimage' : 'manual';
-}
-
-function emitUpdateState(patch = {}) {
-  updateState = {
-    ...updateState,
-    ...patch,
-    currentVersion: app.getVersion(),
-    linuxMode: linuxUpdaterMode(),
-  };
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('mn:updates.state', updateState);
-  }
-  return updateState;
-}
-
-function configureUpdates() {
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.on('checking-for-update', () => emitUpdateState({
-    status: 'checking',
-    lastCheckedAt: new Date().toISOString(),
-    error: null,
-  }));
-  autoUpdater.on('update-available', info => emitUpdateState({
-    status: 'available',
-    updateInfo: info || null,
-    downloaded: false,
-  }));
-  autoUpdater.on('update-not-available', info => emitUpdateState({
-    status: 'not-available',
-    updateInfo: info || null,
-    downloaded: false,
-  }));
-  autoUpdater.on('update-downloaded', info => emitUpdateState({
-    status: 'downloaded',
-    updateInfo: info || null,
-    downloaded: true,
-  }));
-  autoUpdater.on('error', error => emitUpdateState({
-    status: 'error',
-    error: error?.message || String(error),
-  }));
-}
-
-async function checkForUpdates(manual = false) {
-  const mode = linuxUpdaterMode();
-  if (!app.isPackaged || mode === 'manual' || process.platform === 'darwin') {
-    return emitUpdateState({
-      status: mode === 'manual' || process.platform === 'darwin' ? 'manual' : 'not-available',
-      lastCheckedAt: new Date().toISOString(),
-      error: process.platform === 'darwin' && app.isPackaged ? 'Automatic updates are disabled for unsigned macOS builds.' : null,
-      updateInfo: null,
-    });
-  }
-  emitUpdateState({ status: 'checking', lastCheckedAt: new Date().toISOString(), error: null });
-  try {
-    await autoUpdater.checkForUpdates();
-  } catch (e) {
-    emitUpdateState({ status: 'error', error: e?.message || String(e) });
-  }
-  return updateState;
-}
-
-const QUICK_CAPTURE_SHORTCUT = process.platform === 'darwin'
-  ? 'Cmd+Shift+N'
-  : 'Ctrl+Shift+N';
-
-function registerQuickCaptureShortcut() {
-  if (process.env.VISPNOTE_DISABLE_GLOBAL_SHORTCUTS === '1') {
-    quickCaptureShortcutState = { accelerator: QUICK_CAPTURE_SHORTCUT, registered: false, error: 'Global shortcuts are disabled for this process.' };
-    return;
-  }
-  // globalShortcut may fail (already-registered, no display server). The app
-  // still works without it — capture stays available via the in-app button.
-  try {
-    if (!globalShortcut.register(QUICK_CAPTURE_SHORTCUT, openQuickCaptureFromShortcut)) {
-      quickCaptureShortcutState = { accelerator: QUICK_CAPTURE_SHORTCUT, registered: false, error: 'Shortcut is already in use or unavailable.' };
-      console.warn('quick capture shortcut not registered:', QUICK_CAPTURE_SHORTCUT);
-      return;
-    }
-    quickCaptureShortcutState = { accelerator: QUICK_CAPTURE_SHORTCUT, registered: true, error: null };
-  } catch (e) {
-    quickCaptureShortcutState = { accelerator: QUICK_CAPTURE_SHORTCUT, registered: false, error: e?.message || String(e) };
-    console.error('quick capture shortcut registration failed', e);
-  }
-}
-
-function showMainWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    createWindow();
-    return;
-  }
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
-}
-
-function updateTrayMenu() {
-  if (!tray) return;
-  const visible = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
-  tray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: visible ? `Hide ${APP_NAME}` : `Show ${APP_NAME}`,
-      click: () => {
-        if (visible) mainWindow.hide();
-        else showMainWindow();
-      },
-    },
-    { type: 'separator' },
-    {
-      label: `Quit ${APP_NAME}`,
-      click: () => {
-        isQuitting = true;
-        app.quit();
-      },
-    },
-  ]));
-}
-
-function createTray() {
-  if (tray) return;
-  tray = new Tray(createAppIcon());
-  tray.setToolTip(APP_NAME);
-  tray.on('click', () => {
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) mainWindow.hide();
-    else showMainWindow();
-    updateTrayMenu();
-  });
-  updateTrayMenu();
-}
-
-function attachEditContextMenu(win) {
-  win.webContents.on('context-menu', (_event, params) => {
-    const flags = params.editFlags || {};
-    const template = [];
-
-    if (params.isEditable) {
-      const suggestions = Array.isArray(params.dictionarySuggestions)
-        ? params.dictionarySuggestions.slice(0, 5)
-        : [];
-      if (params.misspelledWord && suggestions.length) {
-        suggestions.forEach(word => {
-          template.push({
-            label: word,
-            click: () => win.webContents.replaceMisspelling(word),
-          });
-        });
-        template.push({ type: 'separator' });
-      }
-      template.push(
-        { label: 'Undo', role: 'undo', enabled: !!flags.canUndo },
-        { label: 'Redo', role: 'redo', enabled: !!flags.canRedo },
-        { type: 'separator' },
-        { label: 'Cut', role: 'cut', enabled: !!flags.canCut },
-        { label: 'Copy', role: 'copy', enabled: !!flags.canCopy },
-        { label: 'Paste', role: 'paste', enabled: !!flags.canPaste },
-        { label: 'Delete', role: 'delete', enabled: !!flags.canDelete },
-        { type: 'separator' },
-        { label: 'Select All', role: 'selectAll', enabled: !!flags.canSelectAll }
-      );
-      if (params.misspelledWord) {
-        template.push(
-          { type: 'separator' },
-          {
-            label: `Add "${params.misspelledWord}" to Dictionary`,
-            click: () => win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
-          }
-        );
-      }
-    } else if (params.selectionText) {
-      template.push(
-        { label: 'Copy', role: 'copy', enabled: !!flags.canCopy },
-        { type: 'separator' },
-        { label: 'Select All', role: 'selectAll', enabled: !!flags.canSelectAll }
-      );
-    }
-
-    if (!template.length) return;
-    Menu.buildFromTemplate(template).popup({ window: win });
-  });
-}
-
-function isAllowedAppNavigation(rawUrl) {
-  try {
-    const target = new URL(rawUrl);
-    if (target.protocol !== 'file:') return false;
-    if (!appHtmlRealPath) appHtmlRealPath = fs.realpathSync(path.join(__dirname, 'vispnote.html'));
-    const targetPath = fs.realpathSync(fileURLToPath(target));
-    return targetPath === appHtmlRealPath;
-  } catch {
-    return false;
-  }
-}
-
-function sanitizeExternalUrl(rawUrl) {
-  const value = String(rawUrl || '').trim();
-  if (!value || value.length > 2048) throw new Error('Invalid external URL');
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch (e) {
-    throw new Error('Invalid external URL');
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'mailto:') {
-    throw new Error('Unsupported external URL protocol');
-  }
-  if (parsed.protocol === 'mailto:') {
-    if (/[\r\n\x00-\x1f\x7f]/.test(value) || /%0d|%0a/i.test(value)) throw new Error('Invalid external URL');
-    const address = decodeURIComponent(parsed.pathname || '').trim();
-    if (!address || /\s/.test(address) || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) throw new Error('Invalid mailto URL');
-  }
-  return parsed.href;
-}
-
-const NOTE_EXPORT_FORMATS = {
-  md: { name: 'Markdown', extensions: ['md'] },
-  html: { name: 'HTML', extensions: ['html'] },
-  pdf: { name: 'PDF', extensions: ['pdf'] },
-};
-
-function exportFileNameForNote(note, format) {
-  const base = String(note.title || 'note')
-    .replace(/[^\w\s-]+/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .slice(0, 80) || 'note';
-  return `${base}.${format}`;
-}
-
-const PDF_EXPORT_TIMEOUT_MS = 20000;
-
-// Renders standalone HTML in a hidden window and prints it to PDF bytes.
-// The HTML goes into a private mkdtemp directory (a predictable name in the
-// shared temp dir could be pre-created by another local user), and the load
-// races a timeout so a stalled remote image cannot hang the export.
-async function renderHtmlToPdf(html) {
-  const win = new BrowserWindow({
-    show: false,
-    webPreferences: {
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: true,
-    },
-  });
-  const tmpDir = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'vispnote-export-'));
-  const tmpFile = path.join(tmpDir, 'note.html');
-  const timeout = (label) => new Promise((_resolve, reject) => {
-    setTimeout(() => reject(new Error(`PDF export timed out (${label})`)), PDF_EXPORT_TIMEOUT_MS).unref?.();
-  });
-  try {
-    await fs.promises.writeFile(tmpFile, html, 'utf8');
-    await Promise.race([win.loadFile(tmpFile), timeout('load')]);
-    return await Promise.race([
-      win.webContents.printToPDF({
-        printBackground: true,
-        pageSize: 'A4',
-        margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 },
-      }),
-      timeout('print'),
-    ]);
-  } finally {
-    win.destroy();
-    fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-  }
-}
-
-async function exportNoteFromIpc(vaultId, noteId, rawFormat) {
-  const format = Object.prototype.hasOwnProperty.call(NOTE_EXPORT_FORMATS, rawFormat) ? rawFormat : 'md';
-  const note = await store.getNote(vaultId, noteId);
-  if (!note) throw new Error('Note not found');
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: `Export note as ${format.toUpperCase()}`,
-    defaultPath: exportFileNameForNote(note, format),
-    filters: [NOTE_EXPORT_FORMATS[format]],
-  });
-  if (result.canceled || !result.filePath) return { canceled: true };
-  try {
-    const targetStat = await fs.promises.lstat(result.filePath);
-    if (targetStat.isSymbolicLink()) throw new Error('Note export target cannot be a symlink');
-  } catch (e) {
-    if (e.code !== 'ENOENT') throw e;
-  }
-  if (format === 'md') {
-    await store.atomicWriteFile(result.filePath, exportHtml.exportMarkdown(note), 'utf8');
-    return { canceled: false, filePath: result.filePath, format };
-  }
-  const html = await exportHtml.renderNoteHtml(note, {
-    resolveAttachment: async (fileName) => {
-      try { return await attachments.readAttachment(vaultId, fileName); } catch (e) { return null; }
-    },
-  });
-  if (format === 'html') {
-    await store.atomicWriteFile(result.filePath, html, 'utf8');
-    return { canceled: false, filePath: result.filePath, format };
-  }
-  const pdf = await renderHtmlToPdf(html);
-  await store.atomicWriteFile(result.filePath, pdf, null);
-  return { canceled: false, filePath: result.filePath, format };
-}
-
-function sanitizeAttachmentPayload(payload = {}) {
-  if (!isPlainObject(payload)) throw new Error('Invalid attachment payload');
-  const bytes = payload.bytes;
-  const isBinary = bytes instanceof Uint8Array || bytes instanceof ArrayBuffer;
-  if (!isBinary) throw new Error('Invalid attachment payload');
-  return {
-    name: capString(payload.name, 'attachment name', 240),
-    mimeType: capString(payload.mimeType, 'attachment type', 100),
-    bytes,
-  };
-}
-
-function sanitizeZoteroSearchPayload(payload = {}) {
-  if (!isPlainObject(payload)) throw new Error('Invalid Zotero search request');
-  return {
-    query: capString(payload.query, 'query', 300),
-    limit: Math.max(1, Math.min(20, Math.trunc(Number(payload.limit) || 8))),
-  };
-}
-
-function sanitizeZoteroListPayload(payload = {}) {
-  if (!isPlainObject(payload)) throw new Error('Invalid Zotero list request');
-  return {
-    limit: Math.max(1, Math.min(20, Math.trunc(Number(payload.limit) || 20))),
-  };
-}
-
-function sanitizeZoteroReadPayload(payload = {}) {
-  if (!isPlainObject(payload)) throw new Error('Invalid Zotero read request');
-  const itemKey = capString(payload.itemKey || payload.key, 'itemKey', 80);
-  if (!/^[A-Za-z0-9_-]{1,80}$/.test(itemKey)) throw new Error('Invalid Zotero item key');
-  return {
-    itemKey,
-    includeFullText: payload.includeFullText !== false,
-  };
-}
-
-function registerAssetProtocol() {
-  protocol.handle(ASSET_PROTOCOL_SCHEME, async (request) => {
-    try {
-      const url = new URL(request.url);
-      if (url.host !== 'attachment') return new Response('Not found', { status: 404 });
-      const segments = url.pathname.split('/').filter(Boolean).map(part => decodeURIComponent(part));
-      if (segments.length !== 2) return new Response('Not found', { status: 404 });
-      const [vaultId, fileName] = segments;
-      const { buffer, mimeType } = await attachments.readAttachment(vaultId, fileName);
-      return new Response(buffer, {
-        headers: {
-          'Content-Type': mimeType || 'application/octet-stream',
-          'Content-Security-Policy': "default-src 'none'",
-          'X-Content-Type-Options': 'nosniff',
-        },
-      });
-    } catch (e) {
-      return new Response('Not found', { status: 404 });
-    }
-  });
-}
-
-function hardenWindow(win) {
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', (event, targetUrl) => {
-    if (!isAllowedAppNavigation(targetUrl)) event.preventDefault();
-  });
-  win.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(false);
-  });
-}
-
-function cancelQuitForUnsavedChanges(win, status) {
-  isQuitting = false;
-  if (!win || win.isDestroyed()) return;
-  win.show();
-  win.focus();
-  dialog.showMessageBox(win, {
-    type: 'error',
-    title: 'Changes were not saved',
-    message: 'VispNote stayed open to protect your unsaved changes.',
-    detail: quitPersistence.flushFailureDetail(status),
-    buttons: ['Keep app open'],
-    defaultId: 0,
-    noLink: true,
-  }).catch(e => console.error('quit save warning failed', e));
-}
-
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 900,
-    minHeight: 700,
-    backgroundColor: '#f6f7f9',
-    icon: createAppIcon(),
-    title: APP_NAME,
-    webPreferences: {
-      ...(process.env.VISPNOTE_EPHEMERAL_SESSION === '1' ? { partition: `vispnote-test-${process.pid}` } : {}),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-      spellcheck: true,
-      preload: path.join(__dirname, 'preload.js'),
-    },
-  });
-  hardenWindow(win);
-  const spellSession = win.webContents.session;
-  spellSession.setSpellCheckerEnabled(true);
-  const spellLanguages = spellSession.availableSpellCheckerLanguages || [];
-  const spellLanguage = spellLanguages.includes('en-US')
-    ? 'en-US'
-    : spellLanguages.includes('en-GB')
-    ? 'en-GB'
-    : spellLanguages.find(lang => /^en[-_]/i.test(lang));
-  spellSession.setSpellCheckerLanguages([spellLanguage || 'en-US']);
-
-  win.loadFile(path.join(__dirname, 'vispnote.html'));
-  mainWindow = win;
-  attachEditContextMenu(win);
-
-  win.on('close', (event) => {
-    if (isQuitting) {
-      if (win.__vispnoteFlushComplete) return;
-      event.preventDefault();
-      if (win.__vispnoteFlushInProgress) return;
-      win.__vispnoteFlushInProgress = true;
-      flushRendererDirtyNotes(win).then((result) => {
-        const status = quitPersistence.classifyFlushResult(result);
-        win.__vispnoteFlushInProgress = false;
-        if (!status.ok) {
-          cancelQuitForUnsavedChanges(win, status);
-          return;
-        }
-        win.__vispnoteFlushComplete = true;
-        if (!win.isDestroyed()) win.close();
-        setImmediate(() => {
-          if (isQuitting) app.quit();
-        });
-      }).catch((error) => {
-        win.__vispnoteFlushInProgress = false;
-        console.error('dirty-note flush failed', error);
-        cancelQuitForUnsavedChanges(win, quitPersistence.classifyFlushResult({
-          ok: false,
-          error: error?.message || String(error),
-        }));
-      });
-      return;
-    }
-    event.preventDefault();
-    win.hide();
-    updateTrayMenu();
-  });
-  win.on('show', updateTrayMenu);
-  win.on('hide', updateTrayMenu);
-  win.on('closed', () => {
-    if (mainWindow === win) mainWindow = null;
-    updateTrayMenu();
-  });
-
-  return win;
-}
-
-function flushRendererDirtyNotes(win, timeoutMs = 3500) {
-  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return Promise.resolve({ ok: true, skipped: true });
-  const requestId = `flush_${Date.now().toString(36)}_${++flushBeforeCloseSeq}`;
-  return new Promise(resolve => {
-    let settled = false;
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      ipcMain.removeListener('mn:flushDirtyNotesResult', onResult);
-      resolve(result || { ok: true });
-    };
-    const onResult = (event, id, result) => {
-      if (event.sender !== win.webContents) return;
-      if (id === requestId) finish(result);
-    };
-    const timer = setTimeout(() => {
-      console.warn('timed out waiting for renderer dirty-note flush');
-      finish({ ok: false, error: 'Timed out waiting for dirty-note flush' });
-    }, timeoutMs);
-    ipcMain.on('mn:flushDirtyNotesResult', onResult);
-    try {
-      win.webContents.send('mn:flushDirtyNotes', requestId);
-    } catch (e) {
-      finish({ ok: false, error: e?.message || String(e) });
-    }
-  });
-}
+const {
+  isPlainObject,
+  capString,
+  capText,
+  sanitizePrefsPatchFromIpc,
+  AI_QUERY_LIMIT,
+  AI_EDIT_TEXT_LIMIT,
+  AI_MESSAGE_TEXT_LIMIT,
+  AI_MAX_TOKENS_LIMIT,
+  AI_TOOL_LIMIT,
+  AI_TOOL_SCHEMA_LIMIT,
+  BACKUP_IMPORT_FILE_LIMIT,
+  NOVEL_IMPORT_FILE_LIMIT,
+  NOVEL_IMPORT_FILE_BYTES_LIMIT,
+  NOVEL_IMPORT_TOTAL_TEXT_BYTES_LIMIT,
+  IPC_ID_RE,
+  AI_TOOL_NAME_RE,
+} = require('./lib/connectors/ipc/preferenceValidation');
 
 // ── IPC handlers ─────────────────────────────────────────────────────────────
-
-function ipcErrorResponse(name, e) {
-  console.error('[ipc]', name, e);
-  return {
-    ok: false,
-    error: e.message || String(e),
-    code: e.code || null,
-    currentModifiedAt: e.currentModifiedAt || null,
-    expectedModifiedAt: e.expectedModifiedAt || null,
-  };
-}
-
-function wrap(fn) {
-  return async (_evt, ...args) => {
-    try {
-      return { ok: true, value: await fn(...args) };
-    } catch (e) {
-      return ipcErrorResponse(fn.name, e);
-    }
-  };
-}
-
-function wrapWithEvent(fn) {
-  return async (evt, ...args) => {
-    try {
-      return { ok: true, value: await fn(evt, ...args) };
-    } catch (e) {
-      return ipcErrorResponse(fn.name, e);
-    }
-  };
-}
 
 function noteSearchIndexFailure(context, error) {
   searchIndexAvailable = false;
@@ -1139,129 +169,41 @@ function assertSearchIndexAvailable() {
   }
 }
 
-async function setPrefsFromIpc(patch) {
-  const cleanPatch = sanitizePrefsPatchFromIpc(patch);
-  const invalidateMemoryCache = isPlainObject(cleanPatch.tweaks)
-    && Object.prototype.hasOwnProperty.call(cleanPatch.tweaks, 'plugins');
-  if (Object.prototype.hasOwnProperty.call(cleanPatch, 'aiConfig')) {
-    const config = ai.previewConfig(cleanPatch.aiConfig);
-    await store.setPrefs({ ...cleanPatch, aiConfig: config });
-    ai.applyConfig(config);
-    if (invalidateMemoryCache) noteMemoryCache.invalidate();
-    return ai.publicConfig(config);
-  }
-  const result = await store.setPrefs(cleanPatch);
-  if (invalidateMemoryCache) noteMemoryCache.invalidate();
-  return result;
-}
+const {
+  setPrefsFromIpc,
+  importThemeFileFromIpc,
+  featureUsageStatusFromIpc,
+  exportFeatureUsageFromIpc,
+  shareFeatureUsageFromIpc,
+} = createPreferencesService({
+  app,
+  fs,
+  dialog,
+  store,
+  ai,
+  featureUsage,
+  sanitizePrefsPatchFromIpc,
+  isPlainObject,
+  getMainWindow: windowLifecycle.getMainWindow,
+  invalidateMemoryIndexCache: () => memoryConnector?.invalidateCache(),
+});
 
-async function importThemeFileFromIpc() {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Install VispNote theme',
-    properties: ['openFile'],
-    filters: [{ name: 'VispNote Theme', extensions: ['json', 'yaml', 'yml'] }],
-  });
-  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
-  const installed = await store.importThemeFile(result.filePaths[0]);
-  return { ...installed, canceled: false };
-}
-
-function telemetryEndpoint() {
-  const raw = String(process.env.VISPNOTE_TELEMETRY_ENDPOINT || '').trim();
-  if (!raw) return '';
-  try {
-    const url = new URL(raw);
-    return url.protocol === 'https:' ? url.toString() : '';
-  } catch {
-    return '';
-  }
-}
-
-async function featureUsageStatusFromIpc() {
-  const status = await store.featureUsageStatus();
-  return {
-    ...status,
-    report: featureUsage.publicReport(await store.getFeatureUsageData(), {
-      appVersion: app.getVersion(),
-    }),
-    anonymousUploadAvailable: Boolean(telemetryEndpoint()),
-  };
-}
-
-async function exportFeatureUsageFromIpc() {
-  const report = featureUsage.publicReport(await store.getFeatureUsageData(), {
-    appVersion: app.getVersion(),
-  });
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Export local feature usage report',
-    defaultPath: `vispnote-feature-usage-${new Date().toISOString().slice(0, 10)}.json`,
-    filters: [{ name: 'JSON', extensions: ['json'] }],
-  });
-  if (result.canceled || !result.filePath) return { canceled: true };
-  try {
-    const targetStat = await fs.promises.lstat(result.filePath);
-    if (targetStat.isSymbolicLink()) throw new Error('Usage report target cannot be a symlink');
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
-  await store.atomicWriteFile(result.filePath, JSON.stringify(report, null, 2), 'utf8');
-  return { canceled: false, filePath: result.filePath };
-}
-
-async function shareFeatureUsageFromIpc() {
-  const endpoint = telemetryEndpoint();
-  if (!endpoint) throw new Error('Anonymous usage sharing is not available in this build');
-  const prefs = await store.getPrefs();
-  if (prefs.anonymousUsageSharing !== true) throw new Error('Anonymous usage sharing is disabled');
-  const rotated = featureUsage.rotateUploadIdentity(await store.getFeatureUsageData());
-  const payload = featureUsage.anonymousSummary(rotated, {
-    appVersion: app.getVersion(),
-    os: process.platform,
-  });
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`Anonymous usage upload failed (${response.status})`);
-    await store.setFeatureUsageData({
-      ...rotated,
-      lastUploadedAt: new Date().toISOString(),
-    });
-    return { shared: true, month: payload.month };
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function sanitizeAiAskArgs(vaultId, query) {
-  const cleanVaultId = String(vaultId || '').trim();
-  if (!IPC_ID_RE.test(cleanVaultId)) throw new Error('Invalid vault id');
-  const cleanQuery = String(query || '');
-  if (!cleanQuery.trim()) throw new Error('AI query is empty');
-  if (cleanQuery.length > AI_QUERY_LIMIT) throw new Error('AI query is too long');
-  const cfg = await store.loadConfig();
-  if (!cfg.vaults?.some(v => v.id === cleanVaultId)) throw new Error('Vault not found: ' + cleanVaultId);
-  return { vaultId: cleanVaultId, query: cleanQuery };
-}
-
-async function askFromIpc(vaultId, query, options) {
-  const clean = await sanitizeAiAskArgs(vaultId, query);
-  return ai.ask(clean.vaultId, clean.query, store, sanitizeAiAskOptions(options || {}));
-}
-
-function sendIpcChunk(evt, requestId, channel, token) {
-  if (!requestId || evt.sender?.isDestroyed?.()) return;
-  try {
-    evt.sender.send(`${channel}:${requestId}`, String(token || ''));
-  } catch (e) {
-    console.warn(`${channel} chunk delivery failed`, e?.message || String(e));
-  }
-}
+const {
+  sanitizeAiAskArgs,
+  askFromIpc,
+  sendIpcChunk,
+  askStreamFromIpc,
+  relatedNotesFromIpc,
+  sanitizeAiAskOptions,
+  prepareAiEditPayload,
+  sanitizeAiChatPayload,
+  sanitizeAiToolPlanPayload,
+} = createAiIpcService({
+  store,
+  ai,
+  getIndexReadyPromise: () => indexReadyPromise,
+  assertSearchIndexAvailable,
+});
 
 async function withIndexVaultLock(vaultId, fn) {
   const key = String(vaultId || '');
@@ -1278,660 +220,113 @@ async function withIndexVaultLock(vaultId, fn) {
   }
 }
 
-async function askStreamFromIpc(evt, vaultId, query, options = {}) {
-  const clean = await sanitizeAiAskArgs(vaultId, query);
-  const requestId = String(options.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-  const cleanOptions = sanitizeAiAskOptions(options || {});
-  return await ai.askStream(clean.vaultId, clean.query, store, {
-    ...cleanOptions,
-    onToken: (token) => {
-      sendIpcChunk(evt, requestId, 'mn:ai.askStream.chunk', token);
-    },
-  });
-}
+const novelImportService = createNovelImportService({
+  fs, path, dialog, getMainWindow: windowLifecycle.getMainWindow,
+  limits: {
+    fileCount: NOVEL_IMPORT_FILE_LIMIT,
+    fileBytes: NOVEL_IMPORT_FILE_BYTES_LIMIT,
+    totalTextBytes: NOVEL_IMPORT_TOTAL_TEXT_BYTES_LIMIT,
+  },
+});
 
-function isMissingVaultError(error) {
-  return /\bVault (?:folder missing|not found):/i.test(String(error?.message || error || ''));
-}
-
-async function relatedNotesFromIpc(vaultId, noteId, options) {
-  try {
-    await indexReadyPromise;
-    assertSearchIndexAvailable();
-    return await ai.relatedNotes(vaultId, noteId, store, options || {});
-  } catch (error) {
-    if (isMissingVaultError(error)) {
-      return { ok: false, reason: 'Vault not available' };
-    }
-    throw error;
-  }
-}
-
-function sanitizeAiJobId(value) {
-  return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) || undefined;
-}
-
-function sanitizeOptionalIpcId(value, field) {
-  if (value == null || value === '') return undefined;
-  const clean = capString(value, field, 120);
-  if (!IPC_ID_RE.test(clean)) throw new Error(`Invalid ${field}`);
-  return clean;
-}
-
-function sanitizeAiMaxTokens(value) {
-  if (value == null || value === '') return undefined;
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.max(128, Math.min(AI_MAX_TOKENS_LIMIT, Math.round(n))) : undefined;
-}
-
-function sanitizeAiAskOptions(options = {}) {
-  return {
-    jobId: sanitizeAiJobId(options.jobId),
-    currentNoteId: sanitizeOptionalIpcId(options.currentNoteId, 'currentNoteId'),
-    recursiveResearch: options.recursiveResearch === true,
-    timeoutMs: sanitizeAiTimeoutMs(options.timeoutMs),
-  };
-}
-
-function sanitizeAiTimeoutMs(value) {
-  if (value == null || value === '') return undefined;
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.max(5000, Math.min(180000, Math.round(n))) : undefined;
-}
-
-function sanitizeAiEditPayload(payload = {}) {
-  if (!isPlainObject(payload)) throw new Error('Invalid AI edit payload');
-  const clean = {
-    text: capText(payload.text, 'text', AI_EDIT_TEXT_LIMIT),
-    instruction: capString(payload.instruction || 'Improve the writing.', 'instruction', 4000),
-    scope: capString(payload.scope || 'text', 'scope', 120),
-    jobId: sanitizeAiJobId(payload.jobId),
-  };
-  if (payload.vaultId != null && payload.vaultId !== '') {
-    const vaultId = capString(payload.vaultId, 'vaultId', 120);
-    if (!IPC_ID_RE.test(vaultId)) throw new Error('Invalid vault id');
-    clean.vaultId = vaultId;
-  }
-  clean.useNovelistConfig = payload.useNovelistConfig === true;
-  return clean;
-}
-
-async function prepareAiEditPayload(payload = {}) {
-  const clean = sanitizeAiEditPayload(payload);
-  if (!clean.useNovelistConfig || !clean.vaultId) return clean;
-  const vault = await store.loadVault(clean.vaultId);
-  const config = isPlainObject(vault?.novelistAiConfig) ? vault.novelistAiConfig : null;
-  if (!config) return clean;
-  const advanced = isPlainObject(config.advanced) ? config.advanced : {};
-  const maxTokens = sanitizeAiMaxTokens(advanced.maxTokens);
-  return {
-    ...clean,
-    systemMessage: config.systemMessage ? capString(config.systemMessage, 'systemMessage', 12000) : '',
-    model: config.model ? capString(config.model, 'model', 120) : '',
-    maxTokens,
-  };
-}
-
-function sanitizeAiChatPayload(payload = {}) {
-  if (!isPlainObject(payload)) throw new Error('Invalid AI chat payload');
-  const clean = {
-    jobId: sanitizeAiJobId(payload.jobId),
-    timeoutMs: sanitizeAiTimeoutMs(payload.timeoutMs),
-    maxTokens: sanitizeAiMaxTokens(payload.maxTokens),
-  };
-  if (Array.isArray(payload.messages)) {
-    clean.messages = payload.messages
-      .filter(m => m && (m.role === 'user' || m.role === 'assistant'))
-      .slice(-8)
-      .map(m => ({ role: m.role, content: capText(m.content, 'message', AI_MESSAGE_TEXT_LIMIT) }))
-      .filter(m => m.content.trim());
-  } else {
-    clean.text = capText(payload.text || '', 'text', AI_MESSAGE_TEXT_LIMIT);
-  }
-  return clean;
-}
-
-function sanitizeJsonValue(value, field, maxBytes = AI_TOOL_SCHEMA_LIMIT) {
-  const text = JSON.stringify(value ?? null);
-  if (Buffer.byteLength(text, 'utf8') > maxBytes) throw new Error(`${field} is too large`);
-  return JSON.parse(text);
-}
-
-function sanitizeStringList(value, field, limit = 8, maxChars = 240) {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, limit)
-    .map((item, index) => capString(item || '', `${field}[${index}]`, maxChars))
-    .filter(Boolean);
-}
-
-function sanitizeAiToolPlanPayload(payload = {}) {
-  const clean = sanitizeAiChatPayload(payload);
-  const tools = Array.isArray(payload.tools) ? payload.tools : [];
-  clean.tools = tools.slice(0, AI_TOOL_LIMIT).map((tool, index) => {
-    if (!isPlainObject(tool)) throw new Error(`Invalid tool at index ${index}`);
-    const name = capString(tool.name || tool.id || '', `tools[${index}].name`, 64);
-    if (!AI_TOOL_NAME_RE.test(name)) throw new Error(`Invalid tool name: ${name}`);
-    const item = {
-      name,
-      title: capString(tool.title || tool.label || name, `tools[${index}].title`, 120),
-      description: capText(tool.description || tool.title || name, `tools[${index}].description`, 1600),
-      section: capString(tool.section || '', `tools[${index}].section`, 80),
-      kind: capString(tool.kind || '', `tools[${index}].kind`, 40),
-      requires: sanitizeStringList(tool.requires, `tools[${index}].requires`, 8, 160),
-      examples: sanitizeStringList(tool.examples, `tools[${index}].examples`, 8, 240),
-      risk: capString(tool.risk || 'safe', `tools[${index}].risk`, 40),
-      readOnly: tool.readOnly === true,
-      destructive: tool.destructive === true,
-      external: tool.external === true,
-      confirm: tool.confirm === true,
-      idempotent: tool.idempotent === true,
-      inputSchema: sanitizeJsonValue(tool.inputSchema || tool.input_schema || { type: 'object', additionalProperties: false }, `tools[${index}].inputSchema`),
-      outputSchema: sanitizeJsonValue(tool.outputSchema || tool.output_schema || { type: 'object', additionalProperties: true }, `tools[${index}].outputSchema`),
-    };
-    return item;
-  });
-  clean.nativeOnly = payload.nativeOnly === true;
-  return clean;
-}
-
-function isBinaryLikeText(buffer, text) {
-  if (!buffer || !buffer.length) return false;
-  if (buffer.includes(0)) return true;
-  const replacementCount = (String(text || '').match(/\uFFFD/g) || []).length;
-  if (replacementCount > Math.max(3, text.length * 0.01)) return true;
-  const sample = buffer.subarray(0, Math.min(buffer.length, 4096));
-  let control = 0;
-  for (const byte of sample) {
-    if (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13) control++;
-  }
-  return control > Math.max(8, sample.length * 0.04);
-}
-
-async function readNovelImportFile(filePath, remainingBytes) {
-  const name = path.basename(filePath || 'file');
-  const stat = await fs.promises.lstat(filePath);
-  if (stat.isSymbolicLink()) return { skipped: { name, reason: 'Symlinks are not allowed.' } };
-  if (!stat.isFile()) return { skipped: { name, reason: 'Only files can be imported.' } };
-  if (stat.size <= 0) return { skipped: { name, reason: 'File is empty.' } };
-  if (stat.size > NOVEL_IMPORT_FILE_BYTES_LIMIT) return { skipped: { name, reason: 'File is larger than 750 KB.' } };
-  if (remainingBytes <= 0 || stat.size > remainingBytes) return { skipped: { name, reason: 'Selected files exceed the 2 MB import limit.' } };
-  const buffer = await fs.promises.readFile(filePath);
-  let text = buffer.toString('utf8').replace(/\r\n/g, '\n').replace(/\0/g, '');
-  if (isBinaryLikeText(buffer, text)) return { skipped: { name, reason: 'File does not look like readable UTF-8 text.' } };
-  text = text.trim();
-  if (!text) return { skipped: { name, reason: 'File has no readable text.' } };
-  const textBytes = Buffer.byteLength(text, 'utf8');
-  if (textBytes > remainingBytes) return { skipped: { name, reason: 'Selected files exceed the 2 MB import limit.' } };
-  return { file: { name, size: stat.size, text } };
-}
-
-async function importNovelFilesFromIpc() {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Import novel files',
-    properties: ['openFile', 'multiSelections'],
-    filters: [
-      { name: 'Text-like files', extensions: ['txt', 'md', 'markdown', 'text', 'csv', 'json', 'log'] },
-      { name: 'All files', extensions: ['*'] },
-    ],
-  });
-  if (result.canceled || !result.filePaths?.length) return { canceled: true, files: [], skipped: [] };
-  const filePaths = result.filePaths.slice(0, NOVEL_IMPORT_FILE_LIMIT);
-  const skipped = result.filePaths.length > NOVEL_IMPORT_FILE_LIMIT
-    ? result.filePaths.slice(NOVEL_IMPORT_FILE_LIMIT).map(filePath => ({ name: path.basename(filePath), reason: 'Only the first 8 files were imported.' }))
-    : [];
-  const files = [];
-  let remainingBytes = NOVEL_IMPORT_TOTAL_TEXT_BYTES_LIMIT;
-  for (const filePath of filePaths) {
-    try {
-      const item = await readNovelImportFile(filePath, remainingBytes);
-      if (item.file) {
-        files.push(item.file);
-        remainingBytes -= Buffer.byteLength(item.file.text, 'utf8');
-      } else if (item.skipped) {
-        skipped.push(item.skipped);
-      }
-    } catch (e) {
-      skipped.push({ name: path.basename(filePath || 'file'), reason: e.message || String(e) });
-    }
-  }
-  return { canceled: false, files, skipped };
-}
-
-// Vault management
-registerNotesVaultHandlers(ipcMain, {
+registerVaultNoteHandlers(ipcMain, {
+  wrap,
+  registerNotesVaultHandlers,
   store,
   idx,
   ai,
+  linkRename,
   withIndexVaultLock,
   runOptionalSearchIndexTask,
-  onBeforeVaultMutation: vaultId => vaultWatcher.markInternal(vaultId),
-  onVaultRegistryChange: async () => vaultWatcher.refresh(await store.listVaults()),
+  vaultWatcher,
 });
 
-ipcMain.handle('mn:listVaults',     wrap(store.listVaults));
-ipcMain.handle('mn:createVault',    wrap(async (name, options) => {
-  const v = await store.createVault(name, options);
-  // Index the seeded welcome note
-  const data = await store.loadVault(v.id);
-  await withIndexVaultLock(v.id, async () => runOptionalSearchIndexTask('rescan created vault', () => idx.rescanVault(v.id, data.notes)));
-  vaultWatcher.refresh(await store.listVaults());
-  return v;
-}));
-ipcMain.handle('mn:renameVault',    wrap(store.renameVault));
-ipcMain.handle('mn:deleteVault',    wrap(async (vaultId) => {
-  return await withIndexVaultLock(vaultId, async () => {
-    const result = await store.deleteVault(vaultId);
-    runOptionalSearchIndexTask('remove vault from index', () => idx.removeVault(vaultId));
-    vaultWatcher.refresh(await store.listVaults());
-    return result;
-  });
-}));
-ipcMain.handle('mn:setActiveVault', wrap(store.setActiveVault));
-
-// Notes
-ipcMain.handle('mn:loadVault',      wrap(store.loadVault));
-ipcMain.handle('mn:saveNote',       wrap(async (vaultId, note, options) => {
-  vaultWatcher.markInternal(vaultId);
-  return await withIndexVaultLock(vaultId, async () => {
-    const previousNote = note?.id ? await store.getNote(vaultId, note.id).catch(() => null) : null;
-    const saved = await store.saveNote(vaultId, note, options || {});
-    const indexed = runOptionalSearchIndexTask('index note', () => idx.indexNote(vaultId, saved));
-    if (indexed !== null) ai.scheduleEmbed(vaultId, saved);  // fire-and-forget; no-op if Ollama down
-    const linkedNoteUpdates = await linkRename.renameLinksAfterSave({
-      store,
-      vaultId,
-      previousNote,
-      savedNote: saved,
-      onNoteUpdated: (updated) => {
-        const linkIndexed = runOptionalSearchIndexTask('index link-renamed note', () => idx.indexNote(vaultId, updated));
-        if (linkIndexed !== null) ai.scheduleEmbed(vaultId, updated);
-      },
-    });
-    return linkedNoteUpdates.length
-      ? {
-          ...saved,
-          linkedNoteUpdates,
-          linkedNoteRename: { oldTitle: previousNote?.title || '', newTitle: saved.title || '' },
-        }
-      : saved;
-  });
-}));
-ipcMain.handle('mn:deleteNote',     wrap(async (vaultId, noteId, noteSnapshot) => {
-  vaultWatcher.markInternal(vaultId);
-  return await withIndexVaultLock(vaultId, async () => {
-    const result = await store.deleteNote(vaultId, noteId, noteSnapshot);
-    runOptionalSearchIndexTask('remove note from index', () => idx.removeNote(vaultId, noteId));
-    return result;
-  });
-}));
-// Resolves the enabled llm-memory plugin's config from preferences so the
-// renderer never supplies the server URL directly.
-async function activeMemoryConfig() {
-  const prefs = await store.getPrefs();
-  const plugins = Array.isArray(prefs?.tweaks?.plugins) ? prefs.tweaks.plugins : [];
-  const plugin = plugins.find(item => item?.enabled !== false && item?.type === 'llm-memory');
-  if (!plugin) throw new Error('Enable the LLM Memory bridge plugin in Settings first.');
-  return llmMemory.normalizeMemoryConfig(plugin.config || {});
-}
-
-// Feeds Ask AI with llm-memory recall. A disabled or unreachable bridge
-// throws here and lib/ai.js degrades to notes-only answers.
-//
-// Graph-aware by default: /graph-recall/trace seeds on the query, then expands
-// ONE hop through the relationship graph so connected context — not just
-// nearest-neighbour chunks — reaches the answer. Depth is kept at 1 because
-// GraphRAG evidence shows traversal helps multi-hop/relational questions but
-// adds noise on simple factoid lookups. Flat /recall is the fallback for
-// unrelated queries and older servers without the graph endpoints.
-ai.setMemoryRecallProvider(async ({ query, limit }) => {
-  const config = await activeMemoryConfig();
-  const want = Math.max(1, Math.min(12, Math.trunc(Number(limit)) || 6));
-  try {
-    const trace = await llmMemory.graphTrace(config, { query, depth: 1, limit: want });
-    const nodes = Array.isArray(trace?.nodes) ? trace.nodes : [];
-    if (nodes.length) {
-      return nodes.map(node => ({
-        id: node.id,
-        content: node.content,
-        layer: node.layer,
-        category: node.category,
-        importance: node.importance,
-        tags: [],
-        createdAt: '',
-      }));
-    }
-  } catch (e) {
-    // Graph recall unavailable (older server) or errored — fall back to flat.
-  }
-  return llmMemory.recall(config, { query, limit: want });
+memoryConnector = registerMemoryHandlers(ipcMain, {
+  wrap,
+  store,
+  idx,
+  ai,
+  llmMemory,
+  memoryLinks,
+  withIndexVaultLock,
+  runOptionalSearchIndexTask,
 });
 
-// Fetches remembered memories and maps notes→memories via the pure helper in
-// lib/memoryLinks. Returns the index plus a truncation flag: the server has no
-// pagination cursor, so a vault with more remembered notes than the ceiling
-// would silently drop mappings — the flag lets callers say the sync was partial
-// instead of miscounting.
-const MEMORY_INDEX_LIMIT = 2000;
-const noteMemoryCache = createMemoryIndexCache({
-  loader: (config, options) => llmMemory.listMemories(config, options),
-  limit: MEMORY_INDEX_LIMIT,
-  ttlMs: 30000,
-  maxEntries: 8,
+registerWorkspaceHandlers(ipcMain, {
+  wrap, store, attachments, sanitizeAttachmentPayload, vaultWatcher,
+  withIndexVaultLock, idx, ai, runOptionalSearchIndexTask,
 });
-async function buildNoteMemoryIndex(config, vaultId) {
-  const { memories, truncated } = await noteMemoryCache.get(config);
-  const index = memoryLinks.noteMemoryIndex(memories, { vaultId });
-  return { index, truncated, mappingStats: index.stats || {} };
-}
 
-// Mirrors the vault's [[wiki-link]] structure into the memory graph as directed,
-// weighted REFERENCES edges (only between notes that have been remembered). The
-// edge-weighting logic lives in lib/memoryLinks so it stays unit-testable.
-async function memorySyncNoteLinks(config, vaultId) {
-  const vault = await store.loadVault(vaultId);
-  const notes = Array.isArray(vault?.notes) ? vault.notes : [];
-  const { index, truncated, mappingStats } = await buildNoteMemoryIndex(config, vaultId);
-  const { edges, stats } = memoryLinks.buildNoteLinkEdges(notes, index);
-  const result = await llmMemory.syncNoteLinks(config, edges);
-  return {
-    ...result,
-    notesScanned: notes.length,
-    notesRemembered: index.size,
-    wikiLinks: stats.wikiLinks,
-    linkedNotesMissingMemory: stats.linkedNotesMissingMemory,
-    ambiguousTitles: stats.ambiguousTitles,
-    mappedLegacy: mappingStats.mappedLegacy || 0,
-    ambiguousLegacy: mappingStats.ambiguousLegacy || 0,
-    indexTruncated: truncated,
-  };
-}
+registerPreferencesHandlers(ipcMain, {
+  wrap, store, ai, setPrefsFromIpc, importThemeFileFromIpc, spellcheckWords,
+  featureUsageStatusFromIpc, exportFeatureUsageFromIpc, shareFeatureUsageFromIpc,
+});
 
-// Resolves the memories connected to a note (its neighbors in the graph). Falls
-// back to a content recall when the note itself was never remembered — the
-// caller labels that path 'similar' rather than 'graph' so the seed is honest.
-async function memoryConnectedForNote(config, vaultId, noteId, options = {}) {
-  const { index } = await buildNoteMemoryIndex(config, vaultId);
-  const mapped = index.get(noteId);
-  let memoryId = mapped?.memoryId || null;
-  let via = memoryId ? 'link' : '';
+registerSearchHandlers(ipcMain, {
+  wrap,
+  idx,
+  ai,
+  store,
+  withIndexVaultLock,
+  initializeSearchIndex,
+  noteSearchIndexFailure,
+  getIndexReadyPromise: () => indexReadyPromise,
+  isSearchIndexAvailable: () => searchIndexAvailable,
+  getSearchIndexError: () => searchIndexError,
+  assertSearchIndexAvailable,
+});
 
-  if (!memoryId) {
-    const note = await store.getNote(vaultId, noteId);
-    const query = [note?.title, String(note?.body || '').slice(0, 400)].filter(Boolean).join('\n');
-    if (query.trim()) {
-      const seeds = await llmMemory.recall(config, { query, limit: 1 });
-      if (seeds[0]?.id) { memoryId = seeds[0].id; via = 'recall'; }
-    }
-  }
-  if (!memoryId) return { ok: true, remembered: false, via: '', memoryId: '', neighbors: null };
+registerBackupHandlers(ipcMain, {
+  wrap,
+  dialog,
+  fs,
+  store,
+  idx,
+  getMainWindow: windowLifecycle.getMainWindow,
+  runOptionalSearchIndexTask,
+  importNovelFilesFromIpc: novelImportService.importFiles,
+  exportNote: noteExportService.exportNote,
+  backupImportFileLimit: BACKUP_IMPORT_FILE_LIMIT,
+});
 
-  const neighbors = await llmMemory.graphNeighbors(config, {
-    memoryId,
-    depth: Math.max(1, Math.min(3, Number(options.depth) || 1)),
-    limit: Math.max(1, Math.min(30, Number(options.limit) || 12)),
-  });
-  return { ok: true, remembered: via === 'link', via, memoryId, neighbors };
-}
+registerZoteroHandlers(ipcMain, {
+  wrap,
+  zotero,
+  sanitizeSearch: sanitizeZoteroSearchPayload,
+  sanitizeList: sanitizeZoteroListPayload,
+  sanitizeRead: sanitizeZoteroReadPayload,
+});
 
-ipcMain.handle('mn:memory.status', wrap(async () => {
-  const config = await activeMemoryConfig();
-  return llmMemory.status(config);
-}));
-ipcMain.handle('mn:memory.recall', wrap(async (query, limit) => {
-  const config = await activeMemoryConfig();
-  return llmMemory.recall(config, { query, limit });
-}));
-ipcMain.handle('mn:memory.import', wrap(async (vaultId) => {
-  const config = await activeMemoryConfig();
-  return await withIndexVaultLock(vaultId, async () => {
-    return llmMemory.importMemoriesToVault({
-      store,
-      onNoteSaved: (saved) => {
-        const indexed = runOptionalSearchIndexTask('index imported memory note', () => idx.indexNote(vaultId, saved));
-        if (indexed !== null) ai.scheduleEmbed(vaultId, saved);
-      },
-    }, config, vaultId, {});
-  });
-}));
-ipcMain.handle('mn:memory.remember', wrap(async (vaultId, noteId) => {
-  const config = await activeMemoryConfig();
-  const note = await store.getNote(vaultId, noteId);
-  if (!note) throw new Error('Note not found');
-  const cfg = await store.loadConfig();
-  const vaultName = cfg.vaults.find(v => v.id === vaultId)?.name || '';
-  const remembered = await llmMemory.rememberNote(config, note, { vaultId, vaultName });
-  noteMemoryCache.invalidate(config);
-  return remembered;
-}));
+registerAiHandlers(ipcMain, {
+  wrap,
+  wrapWithEvent,
+  ai,
+  store,
+  askFromIpc,
+  sanitizeAiAskArgs,
+  sanitizeAiAskOptions,
+  askStreamFromIpc,
+  prepareAiEditPayload,
+  sanitizeAiChatPayload,
+  sanitizeAiToolPlanPayload,
+  sendIpcChunk,
+  getIndexReadyPromise: () => indexReadyPromise,
+  assertSearchIndexAvailable,
+  relatedNotesFromIpc,
+});
 
-// ── Graph-aware memory features ──────────────────────────────────────────────
-ipcMain.handle('mn:memory.ask', wrap(async (query, options) => {
-  const config = await activeMemoryConfig();
-  return llmMemory.askMemory(config, { query, ...(options || {}) });
-}));
-ipcMain.handle('mn:memory.graphTrace', wrap(async (query, options) => {
-  const config = await activeMemoryConfig();
-  return llmMemory.graphTrace(config, { query, ...(options || {}) });
-}));
-ipcMain.handle('mn:memory.neighbors', wrap(async (memoryId, options) => {
-  const config = await activeMemoryConfig();
-  return llmMemory.graphNeighbors(config, { memoryId, ...(options || {}) });
-}));
-ipcMain.handle('mn:memory.whyRelevant', wrap(async (query, memoryId, options) => {
-  const config = await activeMemoryConfig();
-  return llmMemory.whyRelevant(config, { query, memoryId, ...(options || {}) });
-}));
-ipcMain.handle('mn:memory.graph', wrap(async () => {
-  const config = await activeMemoryConfig();
-  return llmMemory.getGraph(config);
-}));
-ipcMain.handle('mn:memory.intelligence', wrap(async (options) => {
-  const config = await activeMemoryConfig();
-  return llmMemory.memoryIntelligence(config, options || {});
-}));
-ipcMain.handle('mn:memory.duplicates', wrap(async (options) => {
-  const config = await activeMemoryConfig();
-  return llmMemory.duplicates(config, options || {});
-}));
-ipcMain.handle('mn:memory.connected', wrap(async (vaultId, noteId, options) => {
-  const config = await activeMemoryConfig();
-  return memoryConnectedForNote(config, vaultId, noteId, options || {});
-}));
-ipcMain.handle('mn:memory.syncLinks', wrap(async (vaultId) => {
-  const config = await activeMemoryConfig();
-  return memorySyncNoteLinks(config, vaultId);
-}));
-
-ipcMain.handle('mn:saveAttachment', wrap(async (vaultId, payload) => {
-  return attachments.saveAttachment(vaultId, sanitizeAttachmentPayload(payload));
-}));
-ipcMain.handle('mn:listDeletedNotes', wrap(store.listDeletedNotes));
-ipcMain.handle('mn:restoreDeletedNote', wrap(async (vaultId, trashId) => {
-  vaultWatcher.markInternal(vaultId);
-  return await withIndexVaultLock(vaultId, async () => {
-    const note = await store.restoreDeletedNote(vaultId, trashId);
-    const indexed = runOptionalSearchIndexTask('index restored note', () => idx.indexNote(vaultId, note));
-    if (indexed !== null) ai.scheduleEmbed(vaultId, note);
-    return note;
-  });
-}));
-ipcMain.handle('mn:purgeDeletedNote', wrap(store.purgeDeletedNote));
-ipcMain.handle('mn:listNoteVersions', wrap(store.listNoteVersions));
-ipcMain.handle('mn:getNoteVersion', wrap(store.getNoteVersion));
-ipcMain.handle('mn:restoreNoteVersion', wrap(async (vaultId, noteId, versionId) => {
-  vaultWatcher.markInternal(vaultId);
-  return await withIndexVaultLock(vaultId, async () => {
-    const note = await store.restoreNoteVersion(vaultId, noteId, versionId);
-    const indexed = runOptionalSearchIndexTask('index restored note version', () => idx.indexNote(vaultId, note));
-    if (indexed !== null) ai.scheduleEmbed(vaultId, note);
-    return note;
-  });
-}));
-ipcMain.handle('mn:listCanvases',   wrap(store.listCanvases));
-ipcMain.handle('mn:getCanvas',      wrap(store.getCanvas));
-ipcMain.handle('mn:saveCanvas',     wrap(store.saveCanvas));
-ipcMain.handle('mn:deleteCanvas',   wrap(store.deleteCanvas));
-ipcMain.handle('mn:listDeletedCanvases', wrap(store.listDeletedCanvases));
-ipcMain.handle('mn:restoreDeletedCanvas', wrap(store.restoreDeletedCanvas));
-ipcMain.handle('mn:purgeDeletedCanvas', wrap(store.purgeDeletedCanvas));
-ipcMain.handle('mn:saveVaultMeta',  wrap(store.saveVaultMeta));
-
-// Prefs
-ipcMain.handle('mn:getPrefs',       wrap(async () => {
-  const prefs = await store.getPrefs();
-  return {
-    ...prefs,
-    aiConfig: prefs.aiConfig ? ai.publicConfig(ai.previewConfig(prefs.aiConfig, { rejectUnknown: false })) : null,
-  };
-}));
-ipcMain.handle('mn:setPrefs',       wrap(setPrefsFromIpc));
-ipcMain.handle('mn:importThemeFile', wrap(importThemeFileFromIpc));
-ipcMain.handle('mn:spellcheck',     wrap(spellcheckWords));
-ipcMain.handle('mn:featureUsage.status', wrap(featureUsageStatusFromIpc));
-ipcMain.handle('mn:featureUsage.record', wrap((feature, action) => store.recordFeatureUsage(feature, action)));
-ipcMain.handle('mn:featureUsage.clear', wrap(store.clearFeatureUsage));
-ipcMain.handle('mn:featureUsage.export', wrap(exportFeatureUsageFromIpc));
-ipcMain.handle('mn:featureUsage.share', wrap(shareFeatureUsageFromIpc));
-
-// Search / backlinks / tags (SQLite-backed)
-ipcMain.handle('mn:search',         wrap(async (vaultId, query, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.search(vaultId, query, limit); }));
-ipcMain.handle('mn:searchDetailed', wrap(async (vaultId, query, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.searchDetailed(vaultId, query, limit); }));
-ipcMain.handle('mn:searchDetailedStatus', wrap(async (vaultId, query, limit) => { await indexReadyPromise; if (!searchIndexAvailable) return { ok: false, results: [], error: searchIndexError || 'Search index unavailable' }; return idx.searchDetailedStatus(vaultId, query, limit); }));
-ipcMain.handle('mn:backlinks',      wrap(async (vaultId, title, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.backlinks(vaultId, title, limit); }));
-ipcMain.handle('mn:unlinkedMentions', wrap(async (vaultId, title, limit) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.unlinkedMentions(vaultId, title, limit); }));
-ipcMain.handle('mn:notesByTag',     wrap(async (vaultId, tag) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.notesByTag(vaultId, tag); }));
-ipcMain.handle('mn:tagCounts',      wrap(async (vaultId) => { await indexReadyPromise; assertSearchIndexAvailable(); return idx.tagCounts(vaultId); }));
-ipcMain.handle('mn:rebuildIndex',   wrap(async (vaultId) => {
-  return await withIndexVaultLock(vaultId, async () => {
-    if (!searchIndexAvailable && !initializeSearchIndex()) assertSearchIndexAvailable();
-    const vault = await store.loadVault(vaultId);
-    try {
-      idx.rescanVault(vaultId, vault.notes || []);
-    } catch (e) {
-      noteSearchIndexFailure('rebuild vault index', e);
-      throw e;
-    }
-    return { indexed: vault.notes?.length || 0 };
-  });
-}));
-ipcMain.handle('mn:vaultHealth',    wrap(async (vaultId) => {
-  const health = await store.vaultHealth(vaultId);
-  await indexReadyPromise;
-  if (!searchIndexAvailable) return { ...health, indexStatus: { ok: false, failureReason: searchIndexError || 'Search index unavailable' } };
-  return { ...health, indexStatus: ai.indexStatus(vaultId) };
-}));
-ipcMain.handle('mn:exportBackup',   wrap(async (options = {}) => {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Export VispNote backup',
-    defaultPath: `vispnote-backup-${stamp}.vispnote-backup.json`,
-    filters: [{ name: 'VispNote Backup', extensions: ['json'] }],
-  });
-  if (result.canceled || !result.filePath) return { canceled: true };
-  try {
-    const targetStat = await fs.promises.lstat(result.filePath);
-    if (targetStat.isSymbolicLink()) throw new Error('Backup export target cannot be a symlink');
-  } catch (e) {
-    if (e.code !== 'ENOENT') throw e;
-  }
-  const payload = await store.exportBackup(options || {});
-  const backupText = JSON.stringify(payload, null, 2);
-  await store.atomicWriteFile(result.filePath, backupText, 'utf8');
-  return { canceled: false, filePath: result.filePath, vaultCount: payload.vaults.length, warnings: payload.warnings || [] };
-}));
-ipcMain.handle('mn:exportNote',     wrap(exportNoteFromIpc));
-ipcMain.handle('mn:importBackup',   wrap(async (options = {}) => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Import VispNote backup',
-    properties: ['openFile'],
-    filters: [{ name: 'VispNote Backup', extensions: ['json'] }],
-  });
-  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
-  const importStat = await fs.promises.lstat(result.filePaths[0]);
-  if (importStat.isSymbolicLink()) throw new Error('Backup import file cannot be a symlink');
-  if (importStat.size > BACKUP_IMPORT_FILE_LIMIT) throw new Error('Backup file is too large');
-  const text = await fs.promises.readFile(result.filePaths[0], 'utf8');
-  const imported = await store.importBackup(text, options || {});
-  for (const vault of imported.importedVaults || []) {
-    const loaded = await store.loadVault(vault.id);
-    runOptionalSearchIndexTask('rescan imported vault', () => idx.rescanVault(vault.id, loaded.notes || []));
-  }
-  return { ...imported, canceled: false, filePath: result.filePaths[0] };
-}));
-ipcMain.handle('mn:importNovelFiles', wrap(importNovelFilesFromIpc));
-
-// Zotero Desktop local API
-ipcMain.handle('mn:zotero.status',  wrap(() => zotero.status()));
-ipcMain.handle('mn:zotero.search',  wrap((payload) => zotero.search(sanitizeZoteroSearchPayload(payload))));
-ipcMain.handle('mn:zotero.list',    wrap((payload) => zotero.list(sanitizeZoteroListPayload(payload))));
-ipcMain.handle('mn:zotero.read',    wrap((payload) => zotero.read(sanitizeZoteroReadPayload(payload))));
-
-// AI (Ollama)
-ipcMain.handle('mn:ai.status',      wrap(() => ai.status()));
-ipcMain.handle('mn:ai.connect',     wrap(async () => {
-  const result = await ai.connect();
-  if (result?.config?.provider === 'ollama') await store.setPrefs({ aiConfig: ai.getConfig() });
-  return result;
-}));
-ipcMain.handle('mn:ai.ask',         wrap(askFromIpc));
-ipcMain.handle('mn:ai.summarizeVault', wrap(async (vaultId, query, options) => {
-  const clean = await sanitizeAiAskArgs(vaultId, query);
-  return ai.summarizeVault(clean.vaultId, clean.query, store, sanitizeAiAskOptions(options || {}));
-}));
-ipcMain.handle('mn:ai.askStream',   wrapWithEvent(askStreamFromIpc));
-ipcMain.handle('mn:ai.edit',        wrap(async (payload) => ai.editText(await prepareAiEditPayload(payload))));
-ipcMain.handle('mn:ai.editStream', wrapWithEvent(async function editTextStream(evt, payload = {}) {
-  const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-  const cleanPayload = await prepareAiEditPayload(payload);
-  return await ai.editTextStream({
-    ...cleanPayload,
-    onToken: (token) => {
-      sendIpcChunk(evt, requestId, 'mn:ai.editStream.chunk', token);
-    },
-  });
-}));
-ipcMain.handle('mn:ai.chat',        wrap((payload) => ai.chat(sanitizeAiChatPayload(payload))));
-ipcMain.handle('mn:ai.toolPlan',    wrap((payload) => ai.toolPlan(sanitizeAiToolPlanPayload(payload))));
-ipcMain.handle('mn:ai.chatStream', wrapWithEvent(async function chatStream(evt, payload = {}) {
-  const requestId = String(payload.requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-  const cleanPayload = sanitizeAiChatPayload(payload);
-  return await ai.chatStream({
-    ...cleanPayload,
-    onToken: (token) => {
-      sendIpcChunk(evt, requestId, 'mn:ai.chatStream.chunk', token);
-    },
-  });
-}));
-ipcMain.handle('mn:ai.cancel',      wrap((jobId) => ai.cancelJob(jobId)));
-ipcMain.handle('mn:ai.backfill',    wrap((vaultId) => ai.backfillVault(vaultId, store)));
-ipcMain.handle('mn:ai.indexStatus', wrap(async (vaultId) => { await indexReadyPromise; assertSearchIndexAvailable(); return ai.indexStatus(vaultId); }));
-ipcMain.handle('mn:ai.backfillStatus', wrap((vaultId) => ai.backfillStatus(vaultId)));
-ipcMain.handle('mn:ai.backfillCancel', wrap((vaultId) => ai.cancelBackfill(vaultId)));
-ipcMain.handle('mn:ai.related',     wrap(relatedNotesFromIpc));
-ipcMain.handle('mn:ai.getConfig',   wrap(() => ai.publicConfig()));
-ipcMain.handle('mn:ai.setConfig',   wrap(async (patch) => {
-  const config = ai.previewConfig(patch);
-  await store.setPrefs({ aiConfig: config });
-  ai.applyConfig(config);
-  return ai.publicConfig(config);
-}));
-
-// Window
-ipcMain.handle('mn:setTitle', wrapWithEvent((evt, title) => {
-  const win = BrowserWindow.fromWebContents(evt.sender);
-  if (win && typeof title === 'string') win.setTitle(title.slice(0, 200));
-}));
-ipcMain.handle('mn:openExternal', wrap((url) => shell.openExternal(sanitizeExternalUrl(url))));
-ipcMain.handle('mn:shortcutStatus', wrap(() => quickCaptureShortcutState));
-ipcMain.handle('mn:updates.status', wrap(() => emitUpdateState()));
-ipcMain.handle('mn:updates.check', wrap(() => checkForUpdates(true)));
-ipcMain.handle('mn:updates.install', wrap(() => {
-  if (!updateState.downloaded) throw new Error('No downloaded update is ready to install');
-  autoUpdater.quitAndInstall(false, true);
-  return { ok: true };
-}));
-
-// ── Boot scan: populate the index from disk ──────────────────────────────────
+registerWindowHandlers(ipcMain, {
+  wrap,
+  wrapWithEvent,
+  BrowserWindow,
+  shell,
+  autoUpdater,
+  sanitizeExternalUrl,
+  getShortcutState: windowLifecycle.getShortcutState,
+  emitUpdateState: updateService.emitState,
+  checkForUpdates: updateService.check,
+  getUpdateState: updateService.getState,
+});
 
 async function rescanAllVaults() {
   if (!searchIndexAvailable) return;
@@ -1961,14 +356,14 @@ if (!singleInstanceLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    showMainWindow();
+    windowLifecycle.showMainWindow();
   });
 }
 
 if (singleInstanceLock) app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
-  configureUpdates();
-  if (process.platform === 'darwin') app.dock?.setIcon(createAppIcon());
+  updateService.configure();
+  if (process.platform === 'darwin') app.dock?.setIcon(windowLifecycle.createAppIcon());
   try {
     await store.loadConfig();   // ensures the vault folder, seeds on first run
     vaultWatcher.refresh(await store.listVaults());
@@ -1987,25 +382,25 @@ if (singleInstanceLock) app.whenReady().then(async () => {
   }
   initializeSearchIndex();      // opens / creates the local search index
   registerAssetProtocol();
-  createTray();
-  createWindow();
+  windowLifecycle.createTray();
+  windowLifecycle.createWindow();
   indexReadyPromise = rescanAllVaults().catch(e => {
     console.error('boot index rescan failed', e);
   });
-  registerQuickCaptureShortcut();
-  setTimeout(() => { checkForUpdates(false).catch(e => console.error('update check failed', e)); }, INITIAL_UPDATE_CHECK_DELAY_MS);
+  windowLifecycle.registerQuickCaptureShortcut();
+  setTimeout(() => { updateService.check(false).catch(e => console.error('update check failed', e)); }, INITIAL_UPDATE_CHECK_DELAY_MS);
 
   app.on('activate', () => {
-    showMainWindow();
+    windowLifecycle.showMainWindow();
   });
 });
 
 app.on('before-quit', () => {
-  isQuitting = true;
+  windowLifecycle.beginQuit();
 });
 
 app.on('window-all-closed', () => {
-  if (!tray && process.platform !== 'darwin') app.quit();
+  if (!windowLifecycle.getTray() && process.platform !== 'darwin') app.quit();
 });
 
 app.on('will-quit', () => {
