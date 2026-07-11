@@ -826,6 +826,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const main = mainProcessSource();
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const appActions = fs.readFileSync(path.join(__dirname, '../src/app/actions/useAppActionRegistry.js'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const outlinerRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
@@ -898,7 +899,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(indexSource, /LIMIT \?/);
   assert.match(indexSource, /function backlinks\(vaultId, title, limit = 100\)/);
   assert.match(indexSource, /const statements = null|let statements = null/);
-  assert.match(app, /replace\(\/\[\^A-Z0-9_-\]\+\/g, '-'\)/);
+  assert.match(appActions, /replace\(\/\[\^A-Z0-9_-\]\+\/g, '-'\)/);
 
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /default-src 'self'/);
@@ -1237,6 +1238,7 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const store = storeProcessSource();
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const trashController = fs.readFileSync(path.join(__dirname, '../src/features/trash/useTrashController.js'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
@@ -1260,9 +1262,9 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   assert.match(app, /MnSaveConflictDialog/);
   assert.match(app, /MnVersionHistoryDialog/);
   assert.match(app, /MnRecentlyDeletedPanel/);
-  assert.match(app, /const refreshDeletedItems = useCallbackA/);
+  assert.match(trashController, /const refresh = useCallback/);
   assert.match(app, /view === 'trash'/);
-  assert.match(app, /setTrashItems\(items => items\.filter/);
+  assert.match(trashController, /setItems\(current => current\.filter/);
   assert.match(sidebar, /label="Recently deleted"/);
   assert.match(sidebar, /trashActive/);
   assert.match(utilityPanels, /function MnRecentlyDeletedPanel/);

@@ -14,7 +14,7 @@
   ],
   "lineBudgets": {
     "src/ai/ai.jsx": 3135,
-    "src/app/app.jsx": 5108,
+    "src/app/app.jsx": 3433,
     "src/app/appHelpers.js": 3174,
     "src/app/appShell.jsx": 1083,
     "src/canvas/canvas.jsx": 2234,
