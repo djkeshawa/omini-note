@@ -1,5 +1,5 @@
 {
-  "legacyGlobalAssignments": 73,
+  "legacyGlobalAssignments": 0,
   "softLimitExceptions": {
     "lib/store.js": "Storage composition root wires validated repositories into the stable persistence API."
   },

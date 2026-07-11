@@ -1,8 +1,9 @@
 import { platformApi } from '../platform/index.js';
 import { MN_AI_CHAT_TIMEOUT_MS, mnWantsZoteroAssistedNoteEdit, mnWantsZoteroSummaryNote } from './aiModels.js';
+import { getAppActionRegistry } from '../app/actions/actionRegistryRuntime.js';
 
 function createZoteroAiActions({ aiRuntime, setActiveAction, currentNote, onApplyCurrentPageBody, makeVirtualWriteReview, onCreateNote }) {
-  const zoteroTools = () => (window.MN_APP_ACTIONS?.describeForAi?.() || [])
+  const zoteroTools = () => (getAppActionRegistry()?.describeForAi?.() || [])
       .filter(tool => /^zotero-/.test(tool.name));
   
     const zoteroStatusMessage = (statusValue) => {
@@ -100,7 +101,7 @@ function createZoteroAiActions({ aiRuntime, setActiveAction, currentNote, onAppl
     };
   
     const runZoteroDocumentRequest = async ({ q, actionQuery, jobId, run }) => {
-      const registry = window.MN_APP_ACTIONS;
+      const registry = getAppActionRegistry();
       if (!registry?.run || !registry?.validate) {
         return { answer: 'I cannot search Zotero because app actions are not available.', sources: [], clarify: true };
       }

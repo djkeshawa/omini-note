@@ -124,3 +124,4 @@ function MnAppNoticeDialog({ notice, T, onClose }) {
 }
 
 export { MnAppNoticeDialog };
+const { useEffect: useEffectA, useRef: useRefA } = React;

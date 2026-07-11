@@ -117,7 +117,7 @@ function useAppPlanningActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, markDirty, ma
       setNotes(ns => ns.map(n => {
         if (n.id !== id) return n;
         return MN_APP_MUTATIONS.applyNoteBlocksUpdate(n, blocksOrUpdater, {
-          resolveBlocksChange: window.MN_EDITOR_OPS.resolveBlocksChange,
+          resolveBlocksChange: MN_EDITOR_OPS.resolveBlocksChange,
         });
       }));
       markDirty(id);
@@ -190,3 +190,4 @@ function useAppPlanningActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, markDirty, ma
 }
 
 export { useAppPlanningActions };
+import MN_EDITOR_OPS from '../../editor/editorOps.js';

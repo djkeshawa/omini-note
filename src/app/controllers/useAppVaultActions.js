@@ -41,7 +41,7 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
       }
       if (!targetCanvases && HAS_DISK) {
         try {
-          const res = await desktopBridge.listCanvases(id);
+          const res = await desktopBridge.canvas.listCanvases(id);
           if (res.ok) targetCanvases = res.value || [];
         } catch (e) { console.error('listCanvases failed', id, e); }
       }
@@ -62,7 +62,7 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
       setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
       if (HAS_DISK) {
         const selected = await MN_VAULTS_SERVICE.selectVault(desktopBridge, id);
-        if (!selected.ok) desktopBridge.setPrefs({ activeVaultId: id });
+        if (!selected.ok) desktopBridge.preferences.setPrefs({ activeVaultId: id });
       }
     }, [activeVaultId, vaults, notes, tags, canvases, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, refreshVaultRegistry, navigateView, showAppNotice]);
   
@@ -82,7 +82,7 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
         : mnBuildNovelistStarterNotes(normalizedSourceNotes, mnMdToBlocks, vaultId);
       const nextNotes = [...starterNotes, ...normalizedSourceNotes];
       if (HAS_DISK && vaultId) {
-        await desktopBridge.saveVaultMeta(vaultId, { tags: nextTags, novelistMode: true, workflowStates: nextWorkflowStates });
+        await desktopBridge.vaults.saveVaultMeta(vaultId, { tags: nextTags, novelistMode: true, workflowStates: nextWorkflowStates });
         for (const note of nextNotes) {
           const res = await MN_NOTES_VAULTS_SERVICE.saveNote(desktopBridge, vaultId, noteForDisk(note, mnBlocksToMd));
           if (!res.ok) throw new Error(res.error);
@@ -173,7 +173,7 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
           { ...v, notes: loadedNotes, tags: loadedTags, lastSelectedId: loaded.lastSelectedId || loadedNotes[0]?.id || null, canvases: [], workflowStates: loaded.workflowStates || null, novelistAiConfig: loaded.novelistAiConfig || null, novelistMode: vaultType === 'novelist' },
         ]);
         const selected = await MN_VAULTS_SERVICE.selectVault(desktopBridge, v.id);
-        if (!selected.ok) desktopBridge.setPrefs({ activeVaultId: v.id });
+        if (!selected.ok) desktopBridge.preferences.setPrefs({ activeVaultId: v.id });
         if (onboardingMode) recordPhase5Metric('onboarding_mode_selections', { onboardingMode });
       } catch (e) {
         console.error('createVault failed', e);
@@ -201,7 +201,7 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
       }
   
       try {
-        if (HAS_DISK) await desktopBridge.saveVaultMeta(activeVaultId, { novelistMode: false, workflowStates: null });
+        if (HAS_DISK) await desktopBridge.vaults.saveVaultMeta(activeVaultId, { novelistMode: false, workflowStates: null });
         setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, novelistMode: false, workflowStates: null } : v));
         if (view === 'novelist') navigateView('notes');
         return { ok: true };
@@ -293,7 +293,7 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
           nextMeta.novelistMode = !!loaded.novelistMode;
           nextMeta.workflowStates = loaded.workflowStates || nextMeta.workflowStates || null;
           nextMeta.novelistAiConfig = loaded.novelistAiConfig || nextMeta.novelistAiConfig || null;
-          const canvasRes = await desktopBridge.listCanvases(nextMeta.id);
+          const canvasRes = await desktopBridge.canvas.listCanvases(nextMeta.id);
           nextCanvases = canvasRes.ok ? (canvasRes.value || []) : [];
         } catch (e) {
           console.error('loadVault after delete failed', e);
@@ -317,7 +317,7 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
       navigateView('notes');
       if (HAS_DISK) {
         const selected = await MN_VAULTS_SERVICE.selectVault(desktopBridge, nextMeta.id);
-        if (!selected.ok) desktopBridge.setPrefs({ activeVaultId: nextMeta.id });
+        if (!selected.ok) desktopBridge.preferences.setPrefs({ activeVaultId: nextMeta.id });
       }
       return { ok: true };
     }, [activeVaultId, vaults, notes, tags, selectedId, dirtyNotes, saveDirtyNotesNow, saveVaultMetaNow, navigateView, mnMdToBlocks]);

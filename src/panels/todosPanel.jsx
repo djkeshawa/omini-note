@@ -1,7 +1,12 @@
 // Aggregated todo and reminder panel.
 
+import MN_APP_HELPERS from '../app/appHelpers.js';
+import { mnWalk } from '../editor/outline.jsx';
+import { MN_REMIND } from '../shared/markdown.jsx';
+import { SectionHead } from './panelShared.jsx';
+import { mnGetTagColor } from '../shared/theme.jsx';
+
 const { useMemo: useMemoP } = React;
-const { SectionHead } = window.MN_PANEL_COMPONENTS || {};
 
 function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant }) {
   const tagHue = useMemoP(() => {
@@ -9,7 +14,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
   }, [tags]);
 
   const items = useMemoP(() => {
-    return window.MN_APP_HELPERS?.collectTaskItems?.(notes, window.MN_REMIND, window.mnWalk) || [];
+    return MN_APP_HELPERS.collectTaskItems?.(notes, MN_REMIND, mnWalk) || [];
   }, [notes]);
 
   const open = items.filter(i => !i.checked);
@@ -24,7 +29,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
 
   const Card = ({ it, idx }) => {
     const isOverdue = it.remindAt && it.remindAt.at < new Date();
-    const label = it.label || window.MN_REMIND?.strip?.(it.text) || String(it.text || '').trim();
+    const label = it.label || MN_REMIND.strip(it.text) || String(it.text || '').trim();
     return (
       <div
         onClick={() => onOpen(it.noteId)}
@@ -205,4 +210,4 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
 }
 
 
-window.MnTodosPanel = MnTodosPanel;
+export { MnTodosPanel };

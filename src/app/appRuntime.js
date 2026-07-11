@@ -38,15 +38,19 @@ const MN_TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "sync": "local"
 }/*EDITMODE-END*/;
 
-const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
-const MN_APP_MUTATIONS = window.MN_APP_MUTATIONS || {};
-const MN_APP_CANVAS_ACTIONS = window.MN_APP_CANVAS_ACTIONS || {};
-const MN_APP_NOVELIST = window.MN_APP_NOVELIST || {};
-const MN_APP_ACTIONS_FACTORY = window.MN_APP_ACTIONS_FACTORY || {};
+const MN_APP_HELPERS = require('./appHelpers.js');
+const MN_APP_MUTATIONS = require('./appMutations.js');
+const MN_APP_CANVAS_ACTIONS = require('./appCanvasActions.js');
+const MN_APP_NOVELIST = require('./appNovelist.js');
+const MN_APP_ACTIONS_FACTORY = require('./appActions.js');
+const { MN_PLUGINS: MN_PLUGIN_API } = require('../shared/plugins.js');
+const { mnNormalizeWorkflowId, mnNormalizeWorkflowStates, MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES } = require('../editor/blockFeatures.jsx');
+const { mnWalk } = require('../editor/outline.jsx');
+const { MN_REMIND } = require('../shared/markdown.jsx');
+const { storage } = require('../shared/storageUtils.js');
 const MN_AUTOSAVE_DEBOUNCE_MS = 500;
 const MN_AUTOSAVE_MAX_WAIT_MS = 5000;
 const MN_NOTE_TEMPLATES = MN_APP_HELPERS.NOTE_TEMPLATES || [];
-const MN_PLUGIN_API = window.MN_PLUGINS || {};
 const {
   normalizeNovelImportCandidates,
   buildNovelImportPlan,
@@ -98,7 +102,7 @@ function noteForDisk(n, mnBlocksToMd) {
 
 function mnNormalizeNoteStatus(raw, states = []) {
   return MN_APP_HELPERS.normalizeWorkflowStatus
-    ? MN_APP_HELPERS.normalizeWorkflowStatus(raw, states, window.MN_LOGSEQ?.mnNormalizeWorkflowId)
+    ? MN_APP_HELPERS.normalizeWorkflowStatus(raw, states, mnNormalizeWorkflowId)
     : (() => {
       const id = String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
       return (states || []).some(state => state.id === id) ? id : '';
@@ -113,7 +117,7 @@ function collectWorkflowNotes(notes, states) {
   return MN_APP_HELPERS.collectWorkflowNotes
     ? MN_APP_HELPERS.collectWorkflowNotes(notes, states, {
       propertyValue: mnBodyPropertyValue,
-      normalizeId: window.MN_LOGSEQ?.mnNormalizeWorkflowId,
+      normalizeId: mnNormalizeWorkflowId,
     })
     : { counts: {}, byState: {}, noteIdsByState: {}, archivedNotes: [], total: 0 };
 }
@@ -132,10 +136,10 @@ function mnParseDefaultTags(value) {
 
 function mnNormalizeWorkflowStatesForApp(states) {
   if (Array.isArray(states) && states.length === 0) return [];
-  return (window.MN_LOGSEQ?.mnNormalizeWorkflowStates || ((value) => value))(
+  return mnNormalizeWorkflowStates(
     Array.isArray(states) && states.length
       ? states
-      : (window.MN_LOGSEQ?.DEFAULT_WORKFLOW_STATES || window.MN_LOGSEQ?.WORKFLOW_STATES || [])
+      : (MN_DEFAULT_WORKFLOW_STATES || MN_WORKFLOW_STATES || [])
   );
 }
 
@@ -144,24 +148,24 @@ function mnReminderKey(item) {
 }
 
 function mnReadSnoozedReminders() {
-  return window.MN_STORAGE?.getJson?.('mn:snoozedReminders', {}) || {};
+  return storage.getJson('mn:snoozedReminders', {}) || {};
 }
 
 function mnWriteSnoozedReminder(key, until) {
   const data = mnReadSnoozedReminders();
   data[key] = until;
-  window.MN_STORAGE?.setJson?.('mn:snoozedReminders', data);
+  storage.setJson('mn:snoozedReminders', data);
 }
 
 function mnCollectReminderItems(notes) {
   return MN_APP_HELPERS.collectReminderItems
-    ? MN_APP_HELPERS.collectReminderItems(notes, window.MN_REMIND, window.mnWalk)
+    ? MN_APP_HELPERS.collectReminderItems(notes, MN_REMIND, mnWalk)
     : [];
 }
 
 function mnCollectTaskItems(notes) {
   return MN_APP_HELPERS.collectTaskItems
-    ? MN_APP_HELPERS.collectTaskItems(notes, window.MN_REMIND, window.mnWalk)
+    ? MN_APP_HELPERS.collectTaskItems(notes, MN_REMIND, mnWalk)
     : [];
 }
 
@@ -218,7 +222,7 @@ function mnPlayReminderSound() {
 }
 
 
-window.MN_APP_RUNTIME = {
+module.exports = {
   MN_TWEAK_DEFAULTS,
   MN_APP_HELPERS,
   MN_APP_MUTATIONS,

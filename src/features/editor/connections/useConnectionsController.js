@@ -1,4 +1,6 @@
 import { hasDesktopBridge, platformApi } from '../../../platform/index.js';
+import { storage } from '../../../shared/storageUtils.js';
+import connectionsModel from '../../../editor/connectionsModel.js';
 
 const { useEffect, useMemo, useState } = React;
 
@@ -104,9 +106,9 @@ export function useConnectionsController({
   }, [hasDisk, note.id, vaultId]);
 
   const ignoredKey = `mn:ignoredConnections:${vaultId || 'local'}:${note.id}`;
-  const [ignoredIds, setIgnoredIds] = useState(() => window.MN_STORAGE?.getJson?.(ignoredKey, []) || []);
-  useEffect(() => setIgnoredIds(window.MN_STORAGE?.getJson?.(ignoredKey, []) || []), [ignoredKey]);
-  const suggested = useMemo(() => window.MN_CONNECTIONS_MODEL?.suggestedConnections?.({
+  const [ignoredIds, setIgnoredIds] = useState(() => storage.getJson(ignoredKey, []) || []);
+  useEffect(() => setIgnoredIds(storage.getJson(ignoredKey, []) || []), [ignoredKey]);
+  const suggested = useMemo(() => connectionsModel.suggestedConnections?.({
     noteId: note.id,
     currentNote: note,
     notes,
@@ -122,11 +124,11 @@ export function useConnectionsController({
     [related.items, suggestedIds]
   );
   const ignoreSuggested = (item) => {
-    const id = window.MN_CONNECTIONS_MODEL?.connectionNoteId?.(item) || item?.noteId || item?.id;
+    const id = connectionsModel.connectionNoteId?.(item) || item?.noteId || item?.id;
     if (!id) return;
     setIgnoredIds(current => {
       const next = [...new Set([...(current || []), String(id)])];
-      window.MN_STORAGE?.setJson?.(ignoredKey, next);
+      storage.setJson(ignoredKey, next);
       return next;
     });
     onIgnoreSuggestedConnection?.(item);

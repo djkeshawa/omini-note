@@ -126,7 +126,7 @@ test('renameLinksAfterSave detects the rename and reports updated notes', async 
 
 test('notesVaultsService.saveNote passes linked-note updates and rename titles through', async () => {
   const contractBridge = {
-    notesVaults: {
+    notes: {
       saveNote: async () => ({
         ok: true,
         data: {
@@ -144,14 +144,14 @@ test('notesVaultsService.saveNote passes linked-note updates and rename titles t
   assert.deepEqual(res.linkedNoteRename, { oldTitle: 'Old', newTitle: 'New' });
 
   const legacyBridge = {
-    saveNote: async () => ({
+    notes: { saveNote: async () => ({
       ok: true,
       value: {
         id: 'n1', title: 'New',
         linkedNoteUpdates: [{ id: 'n2' }],
         linkedNoteRename: { oldTitle: 'Old', newTitle: 'New' },
       },
-    }),
+    }) },
   };
   const legacy = await notesVaultsService.saveNote(legacyBridge, 'v1', { id: 'n1' });
   assert.equal(legacy.ok, true);

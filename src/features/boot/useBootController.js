@@ -73,7 +73,7 @@ export function useBootController({
           return;
         }
 
-        const prefsResponse = await platform.getPrefs();
+        const prefsResponse = await platform.preferences.getPrefs();
         if (!prefsResponse.ok) throw new Error(prefsResponse.error);
         const prefs = prefsResponse.value;
         setEnabledPacks(normalizePacks(prefs.enabledPacks));
@@ -82,8 +82,8 @@ export function useBootController({
         if (prefs.phase5Metrics && sanitizeMetrics) writeMetrics(sanitizeMetrics(prefs.phase5Metrics));
         const smartViews = normalizeSmartViews(prefs.smartViews);
         setSavedSmartViews(smartViews);
-        if (!Array.isArray(prefs.smartViews) && platform.setPrefs) {
-          platform.setPrefs({ smartViews }).catch(nextError => console.warn('Could not initialize Smart Views preferences', nextError));
+        if (!Array.isArray(prefs.smartViews) && platform.preferences.setPrefs) {
+          platform.preferences.setPrefs({ smartViews }).catch(nextError => console.warn('Could not initialize Smart Views preferences', nextError));
         }
         let startupView = 'notes';
         if (prefs.tweaks) {
@@ -110,7 +110,7 @@ export function useBootController({
         setCanvases(loaded.canvases);
         setSelectedId(loaded.lastSelectedId || loaded.notes[0]?.id || null);
         if (startupView === 'today') setView('today');
-        if (prefs.activeVaultId !== activeId) platform.setPrefs({ activeVaultId: activeId });
+        if (prefs.activeVaultId !== activeId) platform.preferences.setPrefs({ activeVaultId: activeId });
         setState('ready');
       } catch (bootError) {
         console.error('Bootstrap failed', bootError);

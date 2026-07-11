@@ -1,5 +1,7 @@
 import { H, SettingsCard, Row, Segmented, Toggle, Select, FontSizeStepper } from '../settingsControls.jsx';
-const MN_SETTINGS_PLUGINS = window.MN_PLUGINS || {};
+import { MN_PLUGINS as MN_SETTINGS_PLUGINS } from '../../shared/plugins.js';
+import { BtnOutline, StaticValue, mnSettingsInput } from '../settingsPrimitives.jsx';
+const { useState: useStateS } = React;
 
 function SectionPlugins({ tweaks, setTweak, T }) {
   const types = MN_SETTINGS_PLUGINS.TYPES || [];

@@ -1,9 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { loadRendererModule } = require('./helpers/rendererModule.js');
 
 const appActions = require('../src/app/appActions.js');
-const aiActions = require('../src/ai/aiActions.js');
-const aiRuntime = require('../src/ai/aiRuntime.js');
+const { aiActions } = loadRendererModule('src/ai/aiActions.js');
+const { aiRuntime } = loadRendererModule('src/ai/aiRuntime.js');
 
 test('App Action Registry validates schemas and blocks unknown actions', async () => {
   let created = null;

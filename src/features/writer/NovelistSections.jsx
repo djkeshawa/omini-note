@@ -257,3 +257,4 @@ function NovelistAiConfigurationSection({ T, aiConfig, addAiPrompt, aiWordLimitD
 }
 
 export { NovelistStatusSection, NovelistAiConfigurationSection };
+import { mnPanelInputStyle, mnPanelTextareaStyle } from '../../shared/panels/panelStyles.js';

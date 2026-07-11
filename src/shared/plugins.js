@@ -143,7 +143,7 @@ function mnPluginCommandTitle(plugin) {
   return `${plugin?.name || meta.label}`;
 }
 
-window.MN_PLUGINS = Object.freeze({
+const MN_PLUGINS = Object.freeze({
   TYPES: MN_PLUGIN_TYPES,
   type: mnPluginType,
   id: mnPluginId,
@@ -153,3 +153,4 @@ window.MN_PLUGINS = Object.freeze({
   tags: mnPluginTags,
   commandTitle: mnPluginCommandTitle,
 });
+export { MN_PLUGINS };

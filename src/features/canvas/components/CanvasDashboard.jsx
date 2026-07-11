@@ -5,8 +5,10 @@ const {
   mnCanvasPreviewElements, mnCanvasCloneElement, mnCanvasBounds, mnCanvasSelectionBounds,
   mnCanvasMoveElement, mnCanvasIsConnector, mnCanvasAnchorTargetAt, mnCanvasResolveConnector,
   mnCanvasSyncConnectors, mnCanvasCloneElements,
-} = window.MN_CANVAS_MODEL || {};
-import { mnCanvasPrimaryButton, mnCanvasDialogButton } from './CanvasStyles.js';
+} = MN_CANVAS_MODEL;
+import { mnCanvasPrimaryButton, mnCanvasDialogButton, mnCanvasStageBackground } from './CanvasStyles.js';
+import { MnCanvasDeleteDialog } from './CanvasControls.jsx';
+import { mnCanvasArrowHead } from './CanvasElements.jsx';
 
 function MnCanvasDashboard({ canvases, onCreate, onOpen, onDelete, T }) {
   const [title, setTitle] = useStateC('');
@@ -362,3 +364,4 @@ function MnCanvasPreviewShape({ element, transform }) {
 }
 
 export { MnCanvasDashboard };
+import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';

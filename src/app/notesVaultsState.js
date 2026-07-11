@@ -1,7 +1,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_NOTES_VAULTS_STATE = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   function cacheActiveVault(vaults = [], activeVaultId, snapshot = {}) {
     return (vaults || []).map(vault => vault.id === activeVaultId

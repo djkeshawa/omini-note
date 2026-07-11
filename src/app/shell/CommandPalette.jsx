@@ -1,4 +1,6 @@
-const MN_APP_SHELL_HELPERS = window.MN_APP_HELPERS || {};
+import MN_APP_SHELL_HELPERS from '../appHelpers.js';
+import { getAppActionRegistry } from '../actions/actionRegistryRuntime.js';
+const { useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useState: useStateA } = React;
 
 function MnCommandPalette({ open, commands, onClose, onNaturalAction, T }) {
   const [query, setQuery] = useStateA('');
@@ -18,8 +20,9 @@ function MnCommandPalette({ open, commands, onClose, onNaturalAction, T }) {
   }, [open]);
   const naturalPlan = useMemoA(() => {
     const q = query.trim();
-    if (!q || !window.MN_APP_ACTIONS?.findForText) return null;
-    try { return window.MN_APP_ACTIONS.findForText(q); } catch (e) { return null; }
+    const registry = getAppActionRegistry();
+    if (!q || !registry?.findForText) return null;
+    try { return registry.findForText(q); } catch (e) { return null; }
   }, [query]);
   const items = useMemoA(() => {
     const filtered = MN_APP_SHELL_HELPERS.filterCommands

@@ -1,5 +1,8 @@
 // Block engine for VispNote — typed blocks.
 //
+import { MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES } from './blockFeatures.jsx';
+import MN_TABLE_OPS_OUTLINE from './tableOps.js';
+
 // Each block has a `kind`:
 //   - 'paragraph'  — plain text, Enter creates next paragraph
 //   - 'heading'    — H1-H6 (level 1-6), Enter creates next paragraph
@@ -17,8 +20,6 @@
 // kind ∈ 'bold','italic','code','strike','hi-yellow','hi-green','hi-pink','hi-blue','color-red','color-blue','color-purple'.
 
 const { useState: useStateO, useEffect: useEffectO, useRef: useRefO, useCallback: useCallbackO, useMemo: useMemoO } = React;
-const MN_TABLE_OPS_OUTLINE = window.MN_TABLE_OPS || {};
-
 let _bid = 0;
 function mkBlock(opts = {}) {
   _bid++;
@@ -132,7 +133,7 @@ function mnMdToBlocks(md) {
 
   // Detect "TODO Some content" → { workflow: 'TODO', content: 'Some content' }
   const splitWorkflow = (content) => {
-    const states = window.MN_LOGSEQ?.WORKFLOW_STATES || window.MN_LOGSEQ?.DEFAULT_WORKFLOW_STATES || [
+    const states = MN_WORKFLOW_STATES || MN_DEFAULT_WORKFLOW_STATES || [
       { id: 'TODO' }, { id: 'DOING' }, { id: 'DONE' }, { id: 'LATER' }, { id: 'NOW' }, { id: 'WAIT' }, { id: 'CANCELLED' },
     ];
     const ids = states.map(s => s.id).filter(Boolean).sort((a, b) => b.length - a.length);
@@ -378,9 +379,8 @@ function mnIsListLike(kind) { return kind === 'bullet' || kind === 'todo'; }
 // Any block can have children.
 function mnCanHaveChildren(kind) { return kind !== 'divider'; }
 
-window.MN_OUTLINE = {
-  mkBlock, mnMdToBlocks, mnBlocksToMd, mnWalk,
-  mnFindBlock, mnLocate, mnCloneBlocks, mnFlatten,
-  mnIsListLike, mnCanHaveChildren,
-  mnNormalizeBlockLabels, mnSerializeBlockLabels, mnExtractBlockLabels,
+export {
+  mkBlock, mnBlocksToMd, mnCanHaveChildren, mnCloneBlocks, mnExtractBlockLabels,
+  mnFindBlock, mnFlatten, mnIsListLike, mnLocate, mnMdToBlocks,
+  mnNormalizeBlockLabels, mnSerializeBlockLabels, mnWalk,
 };

@@ -1,7 +1,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_APP_CANVAS_ACTIONS = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   function clearCanvasFilters(ctx = {}) {
     ctx.setSelectedTag?.(null);
@@ -41,7 +40,7 @@
     let canvas = null;
     if (ctx.hasDisk && ctx.activeVaultId) {
       try {
-        const res = await ctx.mn.getCanvas(ctx.activeVaultId, canvasId);
+        const res = await ctx.mn.canvas.getCanvas(ctx.activeVaultId, canvasId);
         if (!res.ok) throw new Error(res.error);
         canvas = res.value;
       } catch (e) {
@@ -77,7 +76,7 @@
 
     if (ctx.hasDisk && ctx.activeVaultId) {
       try {
-        const res = await ctx.mn.saveCanvas(ctx.activeVaultId, initial);
+        const res = await ctx.mn.canvas.saveCanvas(ctx.activeVaultId, initial);
         if (!res.ok) throw new Error(res.error);
         saved = res.value;
       } catch (e) {
@@ -102,7 +101,7 @@
 
     if (ctx.hasDisk && ctx.activeVaultId) {
       try {
-        const res = await ctx.mn.saveCanvas(ctx.activeVaultId, canvas);
+        const res = await ctx.mn.canvas.saveCanvas(ctx.activeVaultId, canvas);
         if (!res.ok) throw new Error(res.error);
         saved = res.value;
       } catch (e) {
@@ -122,7 +121,7 @@
 
     if (ctx.hasDisk && ctx.activeVaultId) {
       try {
-        const res = await ctx.mn.deleteCanvas(ctx.activeVaultId, canvasId);
+        const res = await ctx.mn.canvas.deleteCanvas(ctx.activeVaultId, canvasId);
         if (!res.ok) throw new Error(res.error);
       } catch (e) {
         ctx.logError?.('deleteCanvas failed', canvasId, e);

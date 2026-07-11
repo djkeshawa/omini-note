@@ -4,7 +4,7 @@ const {
   mnCanvasPreviewElements, mnCanvasCloneElement, mnCanvasBounds, mnCanvasSelectionBounds,
   mnCanvasMoveElement, mnCanvasIsConnector, mnCanvasAnchorTargetAt, mnCanvasResolveConnector,
   mnCanvasSyncConnectors, mnCanvasCloneElements,
-} = window.MN_CANVAS_MODEL || {};
+} = MN_CANVAS_MODEL;
 
 function mnCanvasArrowHead(x1, y1, x2, y2, size = 11) {
   const angle = Math.atan2(y2 - y1, x2 - x1);
@@ -215,4 +215,5 @@ function MnCanvasEmbed({ canvasId, canvases, onOpenCanvas, T }) {
   );
 }
 
-export { MnCanvasElement, MnCanvasEmbed };
+export { MnCanvasElement, MnCanvasEmbed, mnCanvasArrowHead };
+import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';

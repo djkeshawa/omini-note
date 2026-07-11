@@ -1,7 +1,7 @@
 import { H, SettingsCard, Row, Segmented, Toggle, Select, FontSizeStepper } from '../settingsControls.jsx';
 import { mnSettingsInput, BtnOutline, StaticValue } from '../settingsPrimitives.jsx';
 import { SectionUsagePrivacy } from './UsagePrivacySection.jsx';
-const { useState: useStateS, useEffect: useEffectS } = React;
+const { useState: useStateS, useEffect: useEffectS, useRef: useRefS } = React;
 
 function SectionData({
   tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault,

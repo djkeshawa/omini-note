@@ -1,3 +1,5 @@
+import { MN_THEMES } from '../shared/theme.jsx';
+
 const MN_CODE_LANGUAGES = [
   { value: '', label: 'Plain text' },
   { value: 'javascript', label: 'JavaScript', aliases: ['js', 'mjs', 'cjs'] },
@@ -107,7 +109,7 @@ function mnTokenizeCode(text, language) {
   while ((match = regex.exec(value))) {
     if (match.index > last) tokens.push({ text: value.slice(last, match.index), style: null });
     const token = match[0];
-    tokens.push({ text: token, style: mnCodeTokenStyle(token, language, window.MN_THEMES?.light || {}) });
+    tokens.push({ text: token, style: mnCodeTokenStyle(token, language, MN_THEMES.light) });
     last = match.index + token.length;
   }
   if (last < value.length) tokens.push({ text: value.slice(last), style: null });
@@ -130,14 +132,4 @@ function mnRenderCode(text, language, T) {
   return parts;
 }
 
-window.MN_CODE_LANGUAGES = MN_CODE_LANGUAGES;
-window.MN_CODE_HIGHLIGHTER = {
-  languages: MN_CODE_LANGUAGES,
-  normalizeLanguage: mnNormalizeCodeLanguage,
-  languageLabel: mnCodeLanguageLabel,
-  tokenize: mnTokenizeCode,
-  render: mnRenderCode,
-};
-window.mnNormalizeCodeLanguage = mnNormalizeCodeLanguage;
-window.mnCodeLanguageLabel = mnCodeLanguageLabel;
-window.mnRenderCode = mnRenderCode;
+export { MN_CODE_LANGUAGES, mnCodeLanguageLabel, mnNormalizeCodeLanguage, mnRenderCode, mnTokenizeCode };

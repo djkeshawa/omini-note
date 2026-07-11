@@ -33,20 +33,25 @@ import {
   useOutlinerKeyboardShortcuts,
 } from '../features/editor/outliner/index.js';
 import { platformApi } from '../platform/index.js';
+import { mnReadNovelistAiConfig } from '../panels/panelHelpers.js';
 import { MnCanvasEmbed } from '../features/canvas/index.js';
+import {
+  mkBlock, mnBlocksToMd, mnCloneBlocks, mnFlatten, mnIsListLike, mnLocate,
+  mnMdToBlocks, mnNormalizeBlockLabels, mnWalk,
+} from './outline.jsx';
+import { MnBlockContextMenu, MnBlockEmbed, MnPageEmbed, MnPropertyRow, MnWorkflowPill, MnZoomBar } from './blockFeatures.jsx';
+import MN_EDITOR_OPS from './editorOps.js';
+import MN_MARKDOWN_INPUT_RULES from './markdownInputRules.js';
+import MN_APP_HELPERS from '../app/appHelpers.js';
+import MN_TABLE_OPS from './tableOps.js';
+import { createEditorHistory as mnCreateEditorHistory, shareBlockTree as mnShareBlockTree } from './outlinerHistory.js';
+import {
+  MN_AI_ACTIONS, MN_CODE_LANGUAGES, MnAiIcon, MnMathBlock, MnMermaidBlock,
+  mnAiAction, mnCodeLanguageLabel, mnNormalizeCodeLanguage, mnRenderAnnotated, mnRenderCode,
+} from './outlinerRenderers.jsx';
 
 const { useState: useStateOE, useRef: useRefOE, useEffect: useEffectOE,
         useMemo: useMemoOE, useLayoutEffect: useLayoutEffectOE } = React;
-const {
-  mkBlock, mnLocate, mnCloneBlocks, mnFlatten, mnIsListLike,
-  mnBlocksToMd, mnMdToBlocks, mnNormalizeBlockLabels,
-} = window.MN_OUTLINE;
-const MnWorkflowPill = window.MnWorkflowPill;
-const MnPropertyRow = window.MnPropertyRow;
-const MnPageEmbed = window.MnPageEmbed;
-const MnBlockEmbed = window.MnBlockEmbed;
-const MnBlockContextMenu = window.MnBlockContextMenu;
-const MnZoomBar = window.MnZoomBar;
 const {
   clearAnnotationRange: mnClearAnnotationRange,
   applyAnnotationRange: mnApplyAnnotationRange,
@@ -55,31 +60,12 @@ const {
   splitBlock: mnSplitBlock,
   splitAnnotations: mnSplitAnnotations,
   mergeBlockContent: mnMergeBlockContent,
-} = window.MN_EDITOR_OPS;
-const MN_MARKDOWN_INPUT_RULES = window.MN_MARKDOWN_INPUT_RULES || {};
-const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
+} = MN_EDITOR_OPS;
 const {
   clipboardEventToMarkdownTable: mnClipboardEventToMarkdownTable,
   markdownTableToRows: mnMarkdownTableToRows,
   markdownTableToHtml: mnMarkdownTableToHtml,
-} = window.MN_TABLE_OPS || {};
-const {
-  createEditorHistory: mnCreateEditorHistory,
-  shareBlockTree: mnShareBlockTree,
-} = window.MN_OUTLINER_HISTORY || {};
-
-const {
-  MN_AI_ACTIONS,
-  mnAiAction,
-  MnAiIcon,
-  mnRenderAnnotated,
-  MN_CODE_LANGUAGES,
-  mnNormalizeCodeLanguage,
-  mnCodeLanguageLabel,
-  mnRenderCode,
-  MnMathBlock,
-  MnMermaidBlock,
-} = window.MN_OUTLINER_RENDERERS || {};
+} = MN_TABLE_OPS;
 
 const mnSpellWords = spellWords;
 const mnRenderSpellCheckedText = renderSpellCheckedText;
@@ -88,9 +74,20 @@ import { useOutlinerBlockActions } from './outliner/useOutlinerBlockActions.js';
 import { useOutlinerSelectionActions } from './outliner/useOutlinerSelectionActions.js';
 import { MnOutlinerView } from './outliner/MnOutlinerView.jsx';
 import { MnCanvasPicker } from './outliner/OutlinerChrome.jsx';
-import { MnMemoBlockRow } from './outliner/BlockRow.jsx';
+import { MnMemoBlockRow, mnCreateBlockLabel } from './outliner/BlockRow.jsx';
 import { MnSelectionToolbar } from './outliner/SelectionToolbar.jsx';
-import { MnAiActionMenu, MnAiPreviewDialog } from './outliner/OutlinerPopovers.jsx';
+import { MnAiActionMenu, MnAiPreviewDialog, MnInlineAiPreview } from './outliner/OutlinerPopovers.jsx';
+
+const mnAiLiveDot = 'mnAiLiveDot';
+const mnAiPagePulse = 'mnAiPagePulse';
+const mnAiPulse = 'mnAiPulse';
+const mnAiTextShimmer = 'mnAiTextShimmer';
+const mnInlineAiPreviewPulse = 'mnInlineAiPreviewPulse';
+const mnIsClipboardBlock = isClipboardBlock;
+const mnReidBlocks = reidBlocks;
+const mnNormalizeClipboardMarkdown = normalizeClipboardMarkdown;
+const mnLooksLikeBlockMarkdown = looksLikeBlockMarkdown;
+const MN_BLOCK_CLIPBOARD_TYPE = BLOCK_CLIPBOARD_TYPE;
 
 function MnOutlineTree({ blocks, depth, ...handlers }) {
   return (
@@ -267,7 +264,7 @@ function MnOutliner({
   zoomBlockRef.current = onZoom;
 
   const { orderedBlockIds, findPath, topLevelSelectedIds, blocksForClipboardIds, blockClipboardPayload, writeBlocksToClipboard, writeBlocksToSystemClipboard, parseClipboardBlocks, insertBlocksAfter, contextClipboardIds, copyContextBlocks, cutContextBlocks, pasteContextBlocksAfter, selectionRectForBlocks, blockIdsInVerticalRange, replaceSelectedBlocksWith, beginBlockSelection, extendBlockSelection } = useOutlinerSelectionActions({
-    blocks, mutate, mnWalk, mnCloneBlocks, mnBlocksToMd, mnMdToBlocks, mkBlock, mnIsClipboardBlock, mnReidBlocks, mnNormalizeClipboardMarkdown, mnLooksLikeBlockMarkdown, localClipboardRef, clipboardHandlersRef, selectDragRef, selectionRef, deleteSelectionRef, setSelection, setCtxMenu, setFocusId, focusScopeBlocks,
+    blocks, mutate, mnWalk, mnCloneBlocks, mnBlocksToMd, mnMdToBlocks, mkBlock, mnFlatten, mnLocate, MN_BLOCK_CLIPBOARD_TYPE, mnIsClipboardBlock, mnReidBlocks, mnNormalizeClipboardMarkdown, mnLooksLikeBlockMarkdown, localClipboardRef, clipboardHandlersRef, selectDragRef, selectionRef, deleteSelectionRef, deleteSelection, selection, onDelete, onShowToast, keyboardEditActionsRef, focusIdRef, setSelection, setCtxMenu, setFocusId, focusScopeBlocks,
   });
 
   const parseAiBlocks = (text) => {
@@ -296,7 +293,7 @@ function MnOutliner({
 
   const readNovelistAiConfig = () => {
     if (!(noteTags || []).some(tag => String(tag || '').startsWith('novel-'))) return null;
-    const config = window.mnReadNovelistAiConfig?.(vaultId);
+    const config = mnReadNovelistAiConfig(vaultId);
     if (!config) return null;
     return {
       wordLimit: config.wordLimit,
@@ -744,5 +741,3 @@ function MnOutliner({
   return <MnOutlinerView model={{ MnAiActionMenu, MnAiIcon, MnAiPreviewDialog, MnBlockContextMenu, MnInlineAiPreview, MnOutlineTree, MnSelectionToolbar, MnZoomBar, T, aiBusy, aiMenu, aiPreview, aiPrompt, aiTarget, allCanvases, allNotes, appendPageBlocks, applyAiPreview, applyAnnotation, applyBlocksReplacement, applyPageReplacement, applySectionReplacement, applyTextReplacement, autoLink, beginBlockSelection, blockClipboardPayload, blockIdsInVerticalRange, blocks, blocksForClipboardIds, cancelAiPreview, clipboardHandlersRef, collapseByDefault, contentEditHistoryRef, contextClipboardIds, copyContextBlocks, ctxBlock, ctxMenu, currentAiTarget, currentNoteId, cutContextBlocks, deleteBlockRef, deleteSelection, deleteSelectionRef, dismissedAiPreviewRef, duplicateBlockRef, extendBlockSelection, findPath, focusId, focusIdRef, focusScopeBlocks, fontSize, handlers, historyRef, indentGuides, inlinePreviewKey, insertBlocksAfter, isPreviewForCurrentNote, keyboardEditActionsRef, localClipboardRef, makeAiPreview, mnAiAction, mnAiLiveDot, mnAiPagePulse, mnAiPulse, mnAiTextShimmer, mnCreateBlockLabel, mnInlineAiPreviewPulse, mnLocate, mnNormalizeBlockLabels, moveBlockRef, mutate, noteId, noteIdRef, noteTags, noteTitle, novelistMode, onBeginContentEdit, onChange, onChangeKind, onContextMenu, onCreateCanvas, onDelete, onDuplicate, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onShowToast, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, onZoomBlock, orderedBlockIds, pageContinuationInstruction, parseAiBlocks, parseClipboardBlocks, pasteContextBlocksAfter, plotPointsContextText, plotPointsInstruction, previewForCurrentNote, readNovelistAiConfig, redo, redoActionRef, redoStack, renderBlocks, replaceAllBlocks, replaceSelectedBlocksWith, requestAiEdit, runAiAction, selectDragRef, selectedBlockIds, selection, selectionRectForBlocks, selectionRef, setAiBusy, setAiMenu, setAiPreview, setAiPrompt, setAiTarget, setBlocks, setCtxMenu, setFocusId, setSelection, snapshotBlocks, spellCheck, topLevelSelectedIds, undo, undoActionRef, undoStack, vaultId, writeBlocksToClipboard, writeBlocksToSystemClipboard, writeInstruction, zoomBlock, zoomBlockId, zoomBlockRef, zoomLoc }} />;
 }
 export { MnOutliner };
-window.MnBlockRow = MnBlockRow;
-window.MnMemoBlockRow = MnMemoBlockRow;

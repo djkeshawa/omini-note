@@ -51,10 +51,12 @@ for (const file of checkedFiles) {
 
 const directBridgeFiles = new Set();
 const assignedGlobals = new Set();
+const legacyGlobalReads = new Set();
 for (const file of rendererFiles) {
   const name = posix(file);
   const source = fs.readFileSync(file, 'utf8');
   if (/\bwindow\.mn\b/.test(source) && !name.startsWith('src/platform/')) directBridgeFiles.add(name);
+  if (/\b(?:window|globalThis)\.(?:MN_[A-Z0-9_]+|Mn[A-Z][A-Za-z0-9_]*|mn[A-Z][A-Za-z0-9_]*)\b/.test(source)) legacyGlobalReads.add(name);
   for (const match of source.matchAll(/\bwindow\.([A-Za-z0-9_]+)\s*=/g)) assignedGlobals.add(match[1]);
 }
 
@@ -65,9 +67,10 @@ for (const file of directBridgeFiles) {
 for (const file of allowedBridgeFiles) {
   if (!directBridgeFiles.has(file)) warnings.push(`Direct bridge allowlist can shrink: ${file}`);
 }
-if (assignedGlobals.size > baseline.legacyGlobalAssignments) {
-  failures.push(`Renderer global count increased (${assignedGlobals.size} > ${baseline.legacyGlobalAssignments})`);
+if (assignedGlobals.size !== baseline.legacyGlobalAssignments) {
+  failures.push(`Renderer global count differs from the required baseline (${assignedGlobals.size} !== ${baseline.legacyGlobalAssignments})`);
 }
+for (const file of legacyGlobalReads) failures.push(`Renderer feature global access is forbidden: ${file}`);
 
 const importPattern = /(?:import\s+(?:[^'\"]*?\s+from\s+)?|export\s+[^'\"]*?\s+from\s+)["']([^"']+)["']/g;
 const graph = new Map();

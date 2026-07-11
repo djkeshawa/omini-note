@@ -1,3 +1,6 @@
+import { MN_WORKFLOW_STATES } from '../../../editor/blockFeatures.jsx';
+import { MN_REMIND } from '../../../shared/markdown.jsx';
+
 export const BASE_SLASH_COMMANDS = [
   { id: 'h1', label: 'Heading 1', hint: 'Large section title', kbd: '#', icon: 'H1', kind: 'heading', level: 1 },
   { id: 'h2', label: 'Heading 2', hint: 'Medium section title', kbd: '##', icon: 'H2', kind: 'heading', level: 2 },
@@ -20,7 +23,7 @@ export const BASE_SLASH_COMMANDS = [
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     },
   },
-  { id: 'remind', label: 'Reminder', hint: 'Schedule reminder', kbd: '@remind', icon: '⏰', insertFn: () => window.MN_REMIND?.defaultText?.() || '@remind YYYY-MM-DD 09:00 ' },
+  { id: 'remind', label: 'Reminder', hint: 'Schedule reminder', kbd: '@remind', icon: '⏰', insertFn: () => MN_REMIND.defaultText() },
   { id: 'ai-improve-page', label: 'AI: Improve writing on this page', hint: 'Rewrite the whole page body', kbd: '/ai improve', icon: '✦', aiAction: 'improve', aiScope: 'page' },
   { id: 'ai-format-page', label: 'AI: Format this page', hint: 'Clean up the whole page body', kbd: '/ai format', icon: 'AI', aiAction: 'format', aiScope: 'page' },
   { id: 'ai-summarize-page', label: 'AI: Summarize this page', hint: 'Replace page body with a summary', kbd: '/ai summary', icon: 'Σ', aiAction: 'summarize', aiScope: 'page' },
@@ -34,7 +37,7 @@ const NOVELIST_SLASH_COMMANDS = [
 ];
 
 function workflowSlashCommands() {
-  const states = window.MN_LOGSEQ?.WORKFLOW_STATES || [];
+  const states = MN_WORKFLOW_STATES || [];
   return states.map(state => ({
     id: `wf-${String(state.id || '').toLowerCase()}`,
     label: `Marker: ${state.id}`,

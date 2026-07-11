@@ -1,10 +1,5 @@
-(function (root, factory) {
-  const api = factory(root);
-  if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_PANEL_HELPERS = api;
-  root.mnReadNovelistAiConfig = api.mnReadNovelistAiConfig;
-  root.mnWriteNovelistAiConfig = api.mnWriteNovelistAiConfig;
-})(typeof globalThis !== 'undefined' ? globalThis : window, function (root) {
+import { storage } from '../shared/storageUtils.js';
+
 const MN_NOVELIST_AI_CONFIG_KEY = 'mn_novelist_ai_config_v2';
 const MN_NOVELIST_AI_CONFIG_LEGACY_KEY = 'mn_novelist_ai_config_v1';
 
@@ -111,32 +106,23 @@ function mnNormalizeNovelistAiConfig(raw) {
 }
 
 function mnReadNovelistAiConfig(vaultId = '') {
-  const storage = root.MN_STORAGE;
-  const saved = storage?.getJson?.(mnNovelistAiConfigKey(vaultId), null, root);
+  const saved = storage.getJson(mnNovelistAiConfigKey(vaultId), null);
   if (saved) return mnNormalizeNovelistAiConfig(saved);
-  const legacy = storage?.getJson?.(mnNovelistLegacyAiConfigKey(vaultId), null, root);
+  const legacy = storage.getJson(mnNovelistLegacyAiConfigKey(vaultId), null);
   return mnNormalizeNovelistAiConfig(legacy || null);
 }
 
 function mnWriteNovelistAiConfig(config, vaultId = '') {
-  const storage = root.MN_STORAGE;
-  if (!storage) return;
   if (!config) {
-    storage.remove(mnNovelistAiConfigKey(vaultId), root);
+    storage.remove(mnNovelistAiConfigKey(vaultId));
     return;
   }
-  storage.setJson(mnNovelistAiConfigKey(vaultId), config, root);
+  storage.setJson(mnNovelistAiConfigKey(vaultId), config);
 }
 
 
-  return {
-    MN_NOVELIST_AI_CONFIG_KEY,
-    MN_NOVELIST_AI_CONFIG_LEGACY_KEY,
-    mnNovelistAiConfigKey,
-    mnNovelistLegacyAiConfigKey,
-    mnDefaultNovelistAiPrompts,
-    mnNormalizeNovelistAiConfig,
-    mnReadNovelistAiConfig,
-    mnWriteNovelistAiConfig,
-  };
-});
+export {
+  MN_NOVELIST_AI_CONFIG_KEY, MN_NOVELIST_AI_CONFIG_LEGACY_KEY,
+  mnDefaultNovelistAiPrompts, mnNormalizeNovelistAiConfig, mnNovelistAiConfigKey,
+  mnNovelistLegacyAiConfigKey, mnReadNovelistAiConfig, mnWriteNovelistAiConfig,
+};

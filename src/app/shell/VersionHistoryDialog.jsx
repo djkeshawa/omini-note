@@ -1,4 +1,7 @@
 import { hasDesktopBridge, platformApi } from '../../platform/index.js';
+import { mnBlocksToMd } from '../../editor/outline.jsx';
+import versionDiff from '../versionDiff.js';
+const { useCallback: useCallbackA, useEffect: useEffectA, useState: useStateA } = React;
 const HAS_DISK = hasDesktopBridge();
 
 function MnVersionHistoryDialog({ note, vaultId, T, onClose, onRestore }) {
@@ -36,8 +39,8 @@ function MnVersionHistoryDialog({ note, vaultId, T, onClose, onRestore }) {
     try {
       const res = await platformApi.notes.getNoteVersion(vaultId, note.id, version.versionId);
       if (!res.ok) throw new Error(res.error || 'Could not load this version');
-      const currentBody = String(note.body || (window.mnBlocksToMd?.(note.blocks || []) || ''));
-      const diff = window.MN_VERSION_DIFF?.lineDiff?.(res.value?.body || '', currentBody) || { rows: [], added: 0, removed: 0 };
+      const currentBody = String(note.body || mnBlocksToMd(note.blocks || []));
+      const diff = versionDiff.lineDiff(res.value?.body || '', currentBody);
       setPreview({ version, value: res.value, diff });
     } catch (e) {
       setError(e.message || String(e));

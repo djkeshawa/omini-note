@@ -1,8 +1,9 @@
 import { platformApi } from '../platform/index.js';
+import { getAppActionRegistry } from '../app/actions/actionRegistryRuntime.js';
 import * as aiModels from './aiModels.js';
 const { MN_ASK_EDIT_ACTIONS, MN_NOVEL_STRUCTURE_TAGS, mnIsSupportingNovelNote, mnSupportingNovelNotes, mnSupportingNotesEditInstruction, MN_ASK_SUGGESTIONS, MN_AI_PLANNER_TIMEOUT_MS, MN_AI_CHAT_TIMEOUT_MS, MN_AI_NOTES_TIMEOUT_MS, MN_AI_VIRTUAL_WRITE_TOOLS, MN_AI_REPORT_TARGETS, MN_AI_VIRTUAL_TOOLS, mnReportAiOutput, mnAskAiJobId, mnAskMessageId, mnNormalizeAskMessages, mnAskMessageThreadText, mnBuildAskThreadMessages, mnBuildAskThreadPrompt, mnRecentAskThreadNote, mnLastAskMessage, mnLooksLikeNoteEditRequest, mnMentionsThreadNote, mnAssistantAskedForActionDetail, mnBuildContextualActionQuery, mnAiCurrentNoteMarkdown, mnAiMarkdownMarkers, mnAiMissingMarkdownMarkers, mnAiBuildMarkdownPreview, mnAiShouldShareCurrentContext, mnWantsZoteroAssistedNoteEdit, mnWantsZoteroSummaryNote, mnAiCurrentContextMessage, mnAiVirtualToolMeta, mnAiCleanVirtualToolArgs, mnAiToolCallsFromPlanResult } = aiModels;
 
-function createAiOrchestrator({ currentNote, setActiveAction, aiRuntime, askNotes, askVaultSummary, makeVirtualWriteReview, onCreateNote }) {
+function createAiOrchestrator({ currentNote, setActiveAction, aiRuntime, askEdit, askNotes, askVaultSummary, makeVirtualWriteReview, onCreateNote }) {
   const mnAiToolCatalogForPrompt = (tools = []) => (Array.isArray(tools) ? tools : [])
       .map(tool => ({
         name: tool.name,
@@ -42,7 +43,7 @@ function createAiOrchestrator({ currentNote, setActiveAction, aiRuntime, askNote
     };
   
     const orchestratorTools = () => {
-      const registryTools = window.MN_APP_ACTIONS?.describeForAi?.() || [];
+      const registryTools = getAppActionRegistry()?.describeForAi?.() || [];
       const pluginTools = registryTools.filter(tool => /^plugin-/.test(tool.name || '')).slice(0, 20);
       const regularTools = registryTools.filter(tool => !/^plugin-/.test(tool.name || ''));
       const regularLimit = Math.max(0, 100 - MN_AI_VIRTUAL_TOOLS.length - pluginTools.length);
@@ -81,7 +82,7 @@ function createAiOrchestrator({ currentNote, setActiveAction, aiRuntime, askNote
         return { final: await makeVirtualWriteReview(name, args, q) };
       }
   
-      const registry = window.MN_APP_ACTIONS;
+      const registry = getAppActionRegistry();
       if (!registry?.run || !registry?.validate) throw new Error('App actions are not available');
       const meta = registry.list?.({ includeHidden: true })?.find?.(item => item.id === name);
       const cleanArgs = registry.validate(name, args);
@@ -261,7 +262,7 @@ function createAiOrchestrator({ currentNote, setActiveAction, aiRuntime, askNote
     };
   
     const runAppActionPlan = async (q, plan, jobId, run) => {
-      const registry = window.MN_APP_ACTIONS;
+      const registry = getAppActionRegistry();
       if (!registry?.run) throw new Error('App actions are not available');
       if (!Array.isArray(plan?.steps) || !plan.steps.length) throw new Error('No app action steps found');
       const completed = [];

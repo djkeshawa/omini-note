@@ -26,6 +26,7 @@ function appHelpersSource(testDir) {
     fs.readFileSync(path.join(appRoot, 'appHelpers.js'), 'utf8'),
     ...fs.readdirSync(path.join(appRoot, 'helpers')).sort()
       .map(name => fs.readFileSync(path.join(appRoot, 'helpers', name), 'utf8')),
+    fs.readFileSync(path.join(testDir, '../src/features/writer/novelistHelpers.js'), 'utf8'),
   ].join('\n');
 }
 

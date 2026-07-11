@@ -186,3 +186,4 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
 // ────────────────────────────────────────────────────────────
 
 export { MnQuickCapture };
+import { mnGetTagBg, mnGetTagColor } from '../../../shared/theme.jsx';

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
+const { loadRendererModule } = require('./helpers/rendererModule.js');
 
 const ops = require('../src/editor/editorOps.js');
 const tableOps = require('../src/editor/tableOps.js');
@@ -12,7 +13,7 @@ const appNovelist = require('../src/app/appNovelist.js');
 const appMutations = require('../src/app/appMutations.js');
 const appCanvasActions = require('../src/app/appCanvasActions.js');
 const panelHelpers = require('../src/panels/panelHelpers.js');
-const aiActions = require('../src/ai/aiActions.js');
+const { aiActions } = loadRendererModule('src/ai/aiActions.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
 test('App helpers expand templates, rank commands, and decorate search results', () => {
@@ -1083,6 +1084,7 @@ test('App canvas actions orchestrate canvas state without renderer state', async
     canvases,
     hasDisk: true,
     mn: {
+      canvas: {
       async getCanvas(vaultId, canvasId) {
         calls.push(['get', vaultId, canvasId]);
         return { ok: true, value: { id: canvasId, title: 'Loaded', modifiedAt: '2026-05-02T00:00:00.000Z', elements: [] } };
@@ -1094,6 +1096,7 @@ test('App canvas actions orchestrate canvas state without renderer state', async
       async deleteCanvas(vaultId, canvasId) {
         calls.push(['delete', vaultId, canvasId]);
         return { ok: true };
+      },
       },
     },
     newCanvas(title) {
@@ -1150,7 +1153,7 @@ test('App canvas actions orchestrate canvas state without renderer state', async
   const failingCtx = {
     ...ctx,
     canvases,
-    mn: { async saveCanvas() { return { ok: false, error: 'disk full' }; } },
+    mn: { canvas: { async saveCanvas() { return { ok: false, error: 'disk full' }; } } },
   };
   const failed = await appCanvasActions.createCanvas('Broken', {}, failingCtx);
   assert.equal(failed, null);

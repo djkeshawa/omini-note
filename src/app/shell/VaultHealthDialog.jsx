@@ -95,3 +95,6 @@ function mnSmallActionButton(T) {
 }
 
 export { MnVaultHealthDialog };
+import { hasDesktopBridge } from '../../platform/index.js';
+const HAS_DISK = hasDesktopBridge();
+const { useEffect: useEffectA, useState: useStateA } = React;

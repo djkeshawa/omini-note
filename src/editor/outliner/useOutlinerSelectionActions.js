@@ -1,6 +1,6 @@
 const { useEffect: useEffectOE } = React;
 
-function useOutlinerSelectionActions({ blocks, mutate, mnWalk, mnCloneBlocks, mnBlocksToMd, mnMdToBlocks, mkBlock, mnIsClipboardBlock, mnReidBlocks, mnNormalizeClipboardMarkdown, mnLooksLikeBlockMarkdown, localClipboardRef, clipboardHandlersRef, selectDragRef, selectionRef, deleteSelectionRef, setSelection, setCtxMenu, setFocusId, focusScopeBlocks }) {
+function useOutlinerSelectionActions({ blocks, mutate, mnWalk, mnCloneBlocks, mnBlocksToMd, mnMdToBlocks, mkBlock, mnFlatten, mnLocate, MN_BLOCK_CLIPBOARD_TYPE, mnIsClipboardBlock, mnReidBlocks, mnNormalizeClipboardMarkdown, mnLooksLikeBlockMarkdown, localClipboardRef, clipboardHandlersRef, selectDragRef, selectionRef, deleteSelectionRef, deleteSelection, selection, onDelete, onShowToast, keyboardEditActionsRef, focusIdRef, setSelection, setCtxMenu, setFocusId, focusScopeBlocks }) {
   const orderedBlockIds = (ids, sourceBlocks = blocks) => {
       const wanted = new Set(ids);
       return mnFlatten(sourceBlocks, 0, false)

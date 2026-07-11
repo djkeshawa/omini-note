@@ -34,19 +34,24 @@ import {
 } from '../../features/editor/outliner/index.js';
 import { platformApi } from '../../platform/index.js';
 import { MnCanvasEmbed } from '../../features/canvas/index.js';
+import {
+  mkBlock, mnBlocksToMd, mnCloneBlocks, mnFlatten, mnIsListLike, mnLocate,
+  mnMdToBlocks, mnNormalizeBlockLabels, mnWalk,
+} from '../outline.jsx';
+import { MnBlockContextMenu, MnBlockEmbed, MnPageEmbed, MnPropertyRow, MnWorkflowPill, MnZoomBar } from '../blockFeatures.jsx';
+import MN_EDITOR_OPS from '../editorOps.js';
+import MN_MARKDOWN_INPUT_RULES from '../markdownInputRules.js';
+import MN_APP_HELPERS from '../../app/appHelpers.js';
+import MN_TABLE_OPS from '../tableOps.js';
+import { createEditorHistory as mnCreateEditorHistory, shareBlockTree as mnShareBlockTree } from '../outlinerHistory.js';
+import { MN_REMIND } from '../../shared/markdown.jsx';
+import {
+  MN_AI_ACTIONS, MN_CODE_LANGUAGES, MnAiIcon, MnMathBlock, MnMermaidBlock,
+  mnAiAction, mnCodeLanguageLabel, mnNormalizeCodeLanguage, mnRenderAnnotated, mnRenderCode,
+} from '../outlinerRenderers.jsx';
 
 const { useState: useStateOE, useRef: useRefOE, useEffect: useEffectOE,
         useMemo: useMemoOE, useLayoutEffect: useLayoutEffectOE } = React;
-const {
-  mkBlock, mnLocate, mnCloneBlocks, mnFlatten, mnIsListLike,
-  mnBlocksToMd, mnMdToBlocks, mnNormalizeBlockLabels,
-} = window.MN_OUTLINE;
-const MnWorkflowPill = window.MnWorkflowPill;
-const MnPropertyRow = window.MnPropertyRow;
-const MnPageEmbed = window.MnPageEmbed;
-const MnBlockEmbed = window.MnBlockEmbed;
-const MnBlockContextMenu = window.MnBlockContextMenu;
-const MnZoomBar = window.MnZoomBar;
 const {
   clearAnnotationRange: mnClearAnnotationRange,
   applyAnnotationRange: mnApplyAnnotationRange,
@@ -55,31 +60,12 @@ const {
   splitBlock: mnSplitBlock,
   splitAnnotations: mnSplitAnnotations,
   mergeBlockContent: mnMergeBlockContent,
-} = window.MN_EDITOR_OPS;
-const MN_MARKDOWN_INPUT_RULES = window.MN_MARKDOWN_INPUT_RULES || {};
-const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
+} = MN_EDITOR_OPS;
 const {
   clipboardEventToMarkdownTable: mnClipboardEventToMarkdownTable,
   markdownTableToRows: mnMarkdownTableToRows,
   markdownTableToHtml: mnMarkdownTableToHtml,
-} = window.MN_TABLE_OPS || {};
-const {
-  createEditorHistory: mnCreateEditorHistory,
-  shareBlockTree: mnShareBlockTree,
-} = window.MN_OUTLINER_HISTORY || {};
-
-const {
-  MN_AI_ACTIONS,
-  mnAiAction,
-  MnAiIcon,
-  mnRenderAnnotated,
-  MN_CODE_LANGUAGES,
-  mnNormalizeCodeLanguage,
-  mnCodeLanguageLabel,
-  mnRenderCode,
-  MnMathBlock,
-  MnMermaidBlock,
-} = window.MN_OUTLINER_RENDERERS || {};
+} = MN_TABLE_OPS;
 
 const mnSpellWords = spellWords;
 const mnRenderSpellCheckedText = renderSpellCheckedText;
@@ -404,13 +390,13 @@ function MnSmartViewEmbedFallback({ raw, error, T }) {
 }
 
 function MnSmartViewEmbed({ embed, allNotes = [], T, onOpen }) {
-  const helpers = window.MN_APP_HELPERS || MN_APP_HELPERS;
+  const helpers = MN_APP_HELPERS;
   if (!embed?.ok || !embed.definition || !helpers.smartViewQuery) {
     return <MnSmartViewEmbedFallback raw={embed?.raw || ''} error={embed?.error || 'Smart Views are unavailable.'} T={T} />;
   }
   let results = [];
   try {
-    results = helpers.smartViewQuery(allNotes, embed.definition, { parser: window.MN_REMIND, walk: window.mnWalk, allNotes });
+    results = helpers.smartViewQuery(allNotes, embed.definition, { parser: MN_REMIND, walk: mnWalk, allNotes });
   } catch (error) {
     return <MnSmartViewEmbedFallback raw={embed.raw} error={error?.message || 'Smart View query failed.'} T={T} />;
   }

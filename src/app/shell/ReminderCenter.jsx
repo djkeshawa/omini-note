@@ -1,4 +1,4 @@
-const MN_APP_SHELL_HELPERS = window.MN_APP_HELPERS || {};
+import MN_APP_SHELL_HELPERS from '../appHelpers.js';
 
 function mnReminderDisplayDate(item) {
   return MN_APP_SHELL_HELPERS.reminderDisplayDate ? MN_APP_SHELL_HELPERS.reminderDisplayDate(item) : '';

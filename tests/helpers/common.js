@@ -1,9 +1,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const vm = require('node:vm');
-
-const tableOps = require('../../src/editor/tableOps.js');
+const { loadRendererModule } = require('./rendererModule.js');
 
 async function withIsolatedStore(fn) {
   const previousVispnoteHome = process.env.VISPNOTE_HOME;
@@ -23,19 +21,7 @@ async function withIsolatedStore(fn) {
 }
 
 function loadOutlineForTest() {
-  const code = fs.readFileSync(path.join(__dirname, '../../src/editor/outline.jsx'), 'utf8');
-  const sandbox = {
-    React: {
-      useState() {},
-      useEffect() {},
-      useRef() {},
-      useCallback() {},
-      useMemo() {},
-    },
-    window: { MN_TABLE_OPS: tableOps },
-  };
-  vm.runInNewContext(code, sandbox);
-  return sandbox.window.MN_OUTLINE;
+  return loadRendererModule('src/editor/outline.jsx');
 }
 
 function block(content, annotations = []) {

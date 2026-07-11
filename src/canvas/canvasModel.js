@@ -346,8 +346,4 @@ const MN_CANVAS_MODEL_API = {
   mnCanvasCloneElements,
   mnCanvasAddNoteCard,
 };
-if (typeof window !== 'undefined') {
-  window.MN_CANVAS_MODEL = MN_CANVAS_MODEL_API;
-  window.mnNewCanvas = mnNewCanvas;
-}
 if (typeof module === 'object' && module.exports) module.exports = MN_CANVAS_MODEL_API;

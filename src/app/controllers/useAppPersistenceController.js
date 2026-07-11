@@ -4,9 +4,6 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       try {
         const next = MN_APP_HELPERS.phase5RecordMetric(mnReadLocalPhase5Metrics(), key, details);
         mnWriteLocalPhase5Metrics(next);
-        if (desktopBridge?.recordPhase5Metric) {
-          desktopBridge.recordPhase5Metric(key, details).catch(e => console.warn('recordPhase5Metric failed', e));
-        }
         return next;
       } catch (e) {
         console.warn('Local Phase 5 metric ignored', e);
@@ -50,8 +47,8 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
     }, []);
   
     const recordFeatureUsage = useCallbackA((feature, action = 'used') => {
-      if (!desktopBridge?.featureUsage?.record) return;
-      desktopBridge.featureUsage.record(feature, action)
+      if (!desktopBridge.integrations?.featureUsage?.record) return;
+      desktopBridge.integrations.featureUsage.record(feature, action)
         .catch(error => console.warn('Feature usage event ignored', error));
     }, []);
   
@@ -60,8 +57,8 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
         const next = MN_FEATURES.togglePack
           ? MN_FEATURES.togglePack(current, packId, enabled)
           : current;
-        if (HAS_DISK && desktopBridge?.setPrefs) {
-          desktopBridge.setPrefs({ enabledPacks: next })
+        if (HAS_DISK && desktopBridge.preferences?.setPrefs) {
+          desktopBridge.preferences.setPrefs({ enabledPacks: next })
             .then(result => {
               if (result?.ok === false) showAppNotice('Pack setting not saved', result.error, 'warn');
             })
@@ -156,7 +153,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       if (nextSelectedId) patch.lastSelectedId = nextSelectedId;
       if (!Object.keys(patch).length) return { ok: true, skipped: true };
       try {
-        const res = await desktopBridge.saveVaultMeta(vaultId, patch);
+        const res = await desktopBridge.vaults.saveVaultMeta(vaultId, patch);
         if (res?.ok === false) throw new Error(res.error || 'Save failed');
         if (patch.tags && vaultId === activeVaultId) tagsDirty.current = false;
         return { ok: true };
@@ -176,7 +173,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       }
       let loadedCanvases = [];
       try {
-        const canvasRes = await desktopBridge.listCanvases(vaultId);
+        const canvasRes = await desktopBridge.canvas.listCanvases(vaultId);
         if (canvasRes.ok) loadedCanvases = canvasRes.value || [];
       } catch (e) {
         console.error('listCanvases failed', vaultId, e);
@@ -202,7 +199,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       []
     );
     const applyWorkflowStates = useCallbackA(
-      value => window.MN_LOGSEQ?.setWorkflowStates?.(value),
+      value => mnSetWorkflowStates(value),
       []
     );
     const { state: bootState, error: bootError } = useBootController({
@@ -254,7 +251,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
     useEffectA(() => {
       if (!HAS_DISK) return;
       if (!tweakInitialized.current) { tweakInitialized.current = true; return; }
-      desktopBridge.setPrefs({ tweaks }).then(res => {
+      desktopBridge.preferences.setPrefs({ tweaks }).then(res => {
         if (res && res.ok === false) showAppNotice('Settings not saved', res.error || 'Preferences could not be saved.', 'warn');
       }).catch(() => {});
     }, [tweaks]);
@@ -455,8 +452,8 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
     }, [dirtyNotes, saveDirtyNotesNow]);
   
     useEffectA(() => {
-      if (!HAS_DISK || !desktopBridge?.onFlushDirtyNotes) return undefined;
-      return desktopBridge.onFlushDirtyNotes(async () => {
+      if (!HAS_DISK || !desktopBridge.events?.onFlushDirtyNotes) return undefined;
+      return desktopBridge.events.onFlushDirtyNotes(async () => {
         const entries = [...dirtyNotesRef.current.values()];
         const noteResult = entries.length ? await saveDirtyNotesNow(entries) : { failures: [], deferred: 0 };
         const metaResult = await saveVaultMetaNow(activeVaultId, tags, selectedId, tagsDirty.current);
@@ -490,7 +487,8 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       }, 1000);
       return () => clearTimeout(t);
     }, [selectedId, activeVaultId, tags, saveVaultMetaNow]);
-  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, searchUsageActiveRef, noteDiskStampRef, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
+  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, searchUsageActiveRef, noteDiskStampRef, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
 }
 
 export { useAppPersistenceController };
+import { mnSetWorkflowStates } from '../../editor/blockFeatures.jsx';

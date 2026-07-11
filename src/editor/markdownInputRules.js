@@ -1,7 +1,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_MARKDOWN_INPUT_RULES = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   const BLOCK_STARTERS = [
     { marker: '- [ ] ', kind: 'todo', checked: false },

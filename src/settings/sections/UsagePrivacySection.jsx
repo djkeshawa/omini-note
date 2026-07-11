@@ -1,5 +1,6 @@
 import { H, SettingsCard, Row, Segmented, Toggle, Select, FontSizeStepper } from '../settingsControls.jsx';
 import { platformApi } from '../../platform/index.js';
+import { BtnOutline } from '../settingsPrimitives.jsx';
 const { useState: useStateS, useEffect: useEffectS } = React;
 
 function SectionUsagePrivacy({ T }) {

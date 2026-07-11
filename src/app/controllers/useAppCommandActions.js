@@ -44,8 +44,8 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
           return { ok: false, message };
         }
         try {
-          if (desktopBridge?.openExternal) {
-            const res = await desktopBridge.openExternal(url);
+          if (desktopBridge.app?.openExternal) {
+            const res = await desktopBridge.app.openExternal(url);
             if (res && res.ok === false) throw new Error(res.error || 'Could not open external URL');
           } else {
             window.open(url, '_blank', 'noopener,noreferrer');
@@ -58,8 +58,8 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
         }
       }
       if (plugin.type === 'zotero-reader') {
-        if (!desktopBridge?.zotero?.status) return { ok: false, message: 'Zotero integration is unavailable.' };
-        const res = await desktopBridge.zotero.status();
+        if (!desktopBridge.integrations?.zotero?.status) return { ok: false, message: 'Zotero integration is unavailable.' };
+        const res = await desktopBridge.integrations.zotero.status();
         if (!res.ok) return { ok: false, message: res.error || 'Could not check Zotero.' };
         const reachable = !!res.value?.reachable;
         const message = reachable ? 'Zotero Desktop is reachable.' : (res.value?.error || 'Zotero Desktop is not reachable.');
@@ -135,9 +135,9 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
     });
   
     useEffectA(() => {
-      window.MN_APP_ACTIONS = appActionRegistry;
+      setAppActionRegistry(appActionRegistry);
       return () => {
-        if (window.MN_APP_ACTIONS === appActionRegistry) delete window.MN_APP_ACTIONS;
+        clearAppActionRegistry(appActionRegistry);
       };
     }, [appActionRegistry]);
   
@@ -298,7 +298,7 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
       const t = [vname, nname].filter(Boolean).join(' — ') || 'VispNote';
       clearTimeout(titleUpdateTimerRef.current);
       titleUpdateTimerRef.current = setTimeout(() => {
-        desktopBridge.setTitle(t === 'VispNote' ? t : `${t} — VispNote`);
+        desktopBridge.app.setTitle(t === 'VispNote' ? t : `${t} — VispNote`);
       }, 80);
       return () => clearTimeout(titleUpdateTimerRef.current);
     }, [activeVaultId, vaults, selectedNote]);
@@ -306,3 +306,4 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
 }
 
 export { useAppCommandActions };
+import { clearAppActionRegistry, setAppActionRegistry } from '../actions/actionRegistryRuntime.js';

@@ -90,3 +90,4 @@ function MnReminderToast({ toast, onDismiss, onSnooze, onOpen, T, variant }) {
 }
 
 export { MnReminderToast };
+import { mnShadow } from '../../../shared/theme.jsx';

@@ -25,6 +25,27 @@ import { MnPanelGrip, MnPanelGripPeek } from '../shared/layout/PanelGrips.jsx';
 import { MnSettingsModal } from '../settings/settings.jsx';
 import { MnSidebar } from '../panels/sidebar.jsx';
 import { MnAskAI } from '../ai/ai.jsx';
+import { MnAiChatHistory } from '../ai/aiUi.jsx';
+import { MnEditor } from '../editor/editor.jsx';
+import { mkBlock, mnBlocksToMd, mnCloneBlocks, mnLocate, mnMdToBlocks, mnWalk } from '../editor/outline.jsx';
+import { mnSetWorkflowStates } from '../editor/blockFeatures.jsx';
+import { MnCalendarPanel } from '../panels/calendarPanel.jsx';
+import { MnGraph } from '../panels/graph.jsx';
+import { MnNoteList } from '../panels/notelist.jsx';
+import { MnSmartViewsPanel } from '../panels/smartViewsPanel.jsx';
+import { MnTodosPanel } from '../panels/todosPanel.jsx';
+import { mnWriteNovelistAiConfig } from '../panels/panelHelpers.js';
+import { MnQuickSwitcher } from './quickSwitcher.jsx';
+import MN_QUICK_SWITCHER_MODEL from './quickSwitcherModel.js';
+import MN_APP_RUNTIME from './appRuntime.js';
+import MN_FEATURES from './featureRegistry.js';
+import MN_NOTES_VAULTS_SERVICE from './notesVaultsService.js';
+import MN_VAULTS_SERVICE from './vaultsService.js';
+import MN_NOTES_VAULTS_STATE from './notesVaultsState.js';
+import MN_MEMORY_ACTIONS from './memoryActions.js';
+import { SEED_NOTES, SEED_TAGS, SEED_VAULTS, buildLinks } from '../shared/data.jsx';
+import { MN_FONTS, MN_THEMES, mnShadow } from '../shared/theme.jsx';
+import { storage } from '../shared/storageUtils.js';
 import {
   calendarCleanTaskText as mnCalendarCleanTaskText,
   calendarTaskContent as mnCalendarTaskContent,
@@ -50,10 +71,10 @@ import {
   normalizeOnboardingMode as mnNormalizeOnboardingMode,
   readLocalPhase5Metrics as mnReadLocalPhase5Metrics,
   writeLocalPhase5Metrics as mnWriteLocalPhase5Metrics,
-  buildDefaultSmartViewDefinitions as mnBuildDefaultSmartViewDefinitions,
-  normalizeSmartViews as mnNormalizeSmartViewsForApp,
+  buildDefaultSmartViewDefinitions as buildDefaultSmartViewDefinitionsModel,
+  normalizeSmartViews as normalizeSmartViewsModel,
 } from '../features/preferences/index.js';
-import { desktopBridge, hasDesktopBridge } from '../platform/index.js';
+import { hasDesktopBridge, platformApi } from '../platform/index.js';
 import { useAppActionRegistry } from './actions/index.js';
 import {
   MnLaunchScreen,
@@ -68,8 +89,6 @@ import {
 } from './appShell.jsx';
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useCallback: useCallbackA, useRef: useRefA } = React;
-const MN_FEATURES = window.MN_FEATURES || {};
-
 const {
   MN_TWEAK_DEFAULTS,
   MN_APP_HELPERS,
@@ -133,37 +152,14 @@ const {
   mnAskAiSessionTitle,
   mnPickActiveAskAiSession,
   mnPlayReminderSound,
-} = window.MN_APP_RUNTIME || {};
+} = MN_APP_RUNTIME;
 
-const MN_PANEL_COMPONENTS = window.MN_PANEL_COMPONENTS || {};
-const MN_NOTES_VAULTS_SERVICE = window.MN_NOTES_VAULTS_SERVICE || {};
-const MN_VAULTS_SERVICE = window.MN_VAULTS_SERVICE || {};
-const MN_NOTES_VAULTS_STATE = window.MN_NOTES_VAULTS_STATE || {};
-const MN_MEMORY_ACTIONS = window.MN_MEMORY_ACTIONS || {};
+const mnBuildDefaultSmartViewDefinitions = () => buildDefaultSmartViewDefinitionsModel(MN_APP_HELPERS);
+const mnNormalizeSmartViewsForApp = value => normalizeSmartViewsModel(value, MN_APP_HELPERS);
+
 const HAS_DISK = hasDesktopBridge();
-const MnQuickSwitcher = window.MnQuickSwitcher;
-const MN_QUICK_SWITCHER_MODEL = window.MN_QUICK_SWITCHER_MODEL || {};
-const {
-  MnSmartViewsPanel,
-} = MN_PANEL_COMPONENTS;
-const {
-  MnNoteList,
-  MnAiChatHistory,
-  MnEditor,
-  MnGraph,
-  MnTodosPanel,
-  MnCalendarPanel,
-} = window;
 
 function MnApp() {
-  const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
-  const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
-  // make them available to other modules via globals too
-  window.MN_RUNTIME = window.MN_RUNTIME || Object.freeze({ mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk });
-  window.mnMdToBlocks = mnMdToBlocks; window.mnBlocksToMd = mnBlocksToMd;
-  window.mnWalk = mnWalk; window.mnLocate = mnLocate; window.mnCloneBlocks = mnCloneBlocks;
-  window.mkBlock = mkBlock;
-
   const [tweaks, setTweaks] = useStateA(MN_TWEAK_DEFAULTS);
   const [enabledPacks, setEnabledPacks] = useStateA([]);
   const [assistanceEnabled, setAssistanceEnabled] = useStateA(false);
@@ -240,9 +236,6 @@ function MnApp() {
   useEffectA(() => {
     dismissedReminderKeys.current.clear();
     quietedReminderKeys.current.clear();
-    // Inline renderers (attachment images) resolve vault asset URLs from this
-    // global because block components don't receive the vault id as a prop.
-    window.MN_ACTIVE_VAULT_ID = activeVaultId || '';
   }, [activeVaultId]);
 
   useEffectA(() => {
@@ -258,27 +251,27 @@ function MnApp() {
   // (Ctrl/Cmd+Shift+N) and pushes an IPC event when it fires. We mirror the
   // existing in-app keybinding by opening Quick Capture.
   useEffectA(() => {
-    if (typeof window === 'undefined' || !desktopBridge?.onOpenQuickCapture) return;
-    return desktopBridge.onOpenQuickCapture(() => setCaptureOpen(true));
+    if (!platformApi.events?.onOpenQuickCapture) return;
+    return platformApi.events.onOpenQuickCapture(() => setCaptureOpen(true));
   }, []);
 
-  const { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, searchUsageActiveRef, noteDiskStampRef, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow } = useAppPersistenceController({
-    HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATIONS, MN_AUTOSAVE_DEBOUNCE_MS, MN_AUTOSAVE_MAX_WAIT_MS, MN_FEATURES, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVELIST_WORKFLOW_STATES, MN_TWEAK_DEFAULTS, SEED_NOTES, SEED_TAGS, SEED_VAULTS, activeVaultId, captureOpen, desktopBridge, mnAskAiSessionTitle, mnBlocksToMd, mnDirtyNoteKey, mnMdToBlocks, mnNewAskAiSession, mnNormalizeCustomThemesForApp, mnNormalizeNoteBody, mnNormalizeSmartViewsForApp, mnNormalizeStartupView, mnNormalizeWorkflowStatesForApp, mnPickActiveAskAiSession, mnReadLocalPhase5Metrics, mnReplaceWikiLinkTitle, mnWriteLocalPhase5Metrics, navigateView, normalizeNotes, noteForDisk, notes, query, selectedId, setActiveVaultId, setAssistanceEnabled, setCanvases, setConflictNotice, setConnectionsRefreshToken, setCustomThemes, setEnabledPacks, setNotes, setSavedSmartViews, setSelectedId, setTags, setTweaks, setVaults, setView, showAppNotice, tags, tweaks, useAiSessionsController, useBootController, useCallbackA, useEffectA, useRefA, useStateA, vaults, view,
+  const { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, searchUsageActiveRef, noteDiskStampRef, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow } = useAppPersistenceController({
+    HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATIONS, MN_AUTOSAVE_DEBOUNCE_MS, MN_AUTOSAVE_MAX_WAIT_MS, MN_FEATURES, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVELIST_WORKFLOW_STATES, MN_TWEAK_DEFAULTS, SEED_NOTES, SEED_TAGS, SEED_VAULTS, activeVaultId, captureOpen, desktopBridge: platformApi, mnAskAiSessionTitle, mnBlocksToMd, mnDirtyNoteKey, mnMdToBlocks, mnNewAskAiSession, mnNormalizeCustomThemesForApp, mnNormalizeNoteBody, mnNormalizeSmartViewsForApp, mnNormalizeStartupView, mnNormalizeWorkflowStatesForApp, mnPickActiveAskAiSession, mnReadLocalPhase5Metrics, mnReplaceWikiLinkTitle, mnWriteLocalPhase5Metrics, navigateView, normalizeNotes, noteForDisk, notes, query, selectedId, setActiveVaultId, setAssistanceEnabled, setCanvases, setConflictNotice, setConnectionsRefreshToken, setCustomThemes, setEnabledPacks, setNotes, setSavedSmartViews, setSelectedId, setTags, setTweaks, setVaults, setView, showAppNotice, tags, tweaks, useAiSessionsController, useBootController, useCallbackA, useEffectA, useRefA, useStateA, vaults, view,
   });
 
   const { refreshVaultRegistry, setTweak, importThemeFile } = useAppLifecycleController({
-    HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVaultId, bootState, canvases, desktopBridge, dirtyNotes, loadVaultBundle, mnNormalizeCustomThemesForApp, navigateView, notes, recordPhase5Metric, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setCustomThemes, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setTags, setTweaks, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, useEffectA, vaultActivationSeq,
+    HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVaultId, bootState, canvases, desktopBridge: platformApi, dirtyNotes, loadVaultBundle, mnNormalizeCustomThemesForApp, navigateView, notes, recordPhase5Metric, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setCustomThemes, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setTags, setTweaks, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, useEffectA, vaultActivationSeq,
   });
 
   const theme = tweaks.theme;
-  const baseThemeMap = window.MN_THEMES || {};
+  const baseThemeMap = MN_THEMES;
   const themeMap = useMemoA(() => {
     const next = { ...baseThemeMap };
     for (const item of customThemes) next[item.id] = item.tokens;
     return next;
   }, [customThemes]);
   const themeOptions = useMemoA(() => mnThemeOptionsForApp(baseThemeMap, customThemes), [customThemes]);
-  const fontMap = window.MN_FONTS || {};
+  const fontMap = MN_FONTS;
   const T = themeMap[theme] || themeMap.light || {};
   const fonts = fontMap[tweaks.fontChoice] || fontMap['Editorial (Newsreader + Inter)'] || { ui: 'sans-serif', body: 'serif', mono: 'monospace' };
   useEffectA(() => {
@@ -293,7 +286,7 @@ function MnApp() {
 
   // ── Vault switching (lazy load from disk) ──────────────────────────────
   const { selectVault, persistNovelistSetup, createVault, setActiveVaultNovelistMode, renameVault, deleteVault } = useAppVaultActions({
-    HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WORKFLOW_STATES, MN_VAULTS_SERVICE, activeVaultId, canvases, desktopBridge, dirtyNotes, mnBlocksToMd, mnBuildNovelistStarterNotes, mnEnsureNovelistTags, mnEnsureScenePlotPoints, mnMdToBlocks, mnNormalizeNoteBody, mnNormalizeNovelistLegacyBody, mnNormalizeNovelistLegacyTags, mnNormalizeOnboardingMode, mnNormalizeWorkflowStatesForApp, navigateView, normalizeNotes, noteForDisk, notes, recordPhase5Metric, refreshVaultRegistry, saveDirtyNotesNow, saveVaultMetaNow, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, vaultActivationSeq, vaults, view,
+    HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WORKFLOW_STATES, MN_VAULTS_SERVICE, activeVaultId, canvases, desktopBridge: platformApi, dirtyNotes, mnBlocksToMd, mnBuildNovelistStarterNotes, mnEnsureNovelistTags, mnEnsureScenePlotPoints, mnMdToBlocks, mnNormalizeNoteBody, mnNormalizeNovelistLegacyBody, mnNormalizeNovelistLegacyTags, mnNormalizeOnboardingMode, mnNormalizeWorkflowStatesForApp, navigateView, normalizeNotes, noteForDisk, notes, recordPhase5Metric, refreshVaultRegistry, saveDirtyNotesNow, saveVaultMetaNow, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, vaultActivationSeq, vaults, view,
   });
 
   const vaultsForSidebar = useMemoA(() => vaults.map(v => ({
@@ -305,10 +298,10 @@ function MnApp() {
 
   const updateNovelistAiConfig = useCallbackA((config) => {
     if (!activeVaultId) return;
-    window.mnWriteNovelistAiConfig?.(config || null, activeVaultId);
+    mnWriteNovelistAiConfig(config || null, activeVaultId);
     setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, novelistAiConfig: config || null } : v));
     if (HAS_DISK) {
-      desktopBridge.saveVaultMeta(activeVaultId, { novelistAiConfig: config || null })
+      platformApi.vaults.saveVaultMeta(activeVaultId, { novelistAiConfig: config || null })
         .catch(e => {
           console.error('save novelist AI config failed', e);
           showAppNotice('Could not save novelist AI configuration', e.message || String(e));
@@ -318,7 +311,7 @@ function MnApp() {
 
   useEffectA(() => {
     if (!activeVaultId || !activeVault?.novelistAiConfig) return;
-    window.mnWriteNovelistAiConfig?.(activeVault.novelistAiConfig, activeVaultId);
+    mnWriteNovelistAiConfig(activeVault.novelistAiConfig, activeVaultId);
   }, [activeVaultId, activeVault?.novelistAiConfig]);
 
   const sidebarHidden = tweaks.showSidebar === false;
@@ -387,7 +380,7 @@ function MnApp() {
   );
   const workflowStates = activeVault?.novelistMode ? novelistWorkflowStates : normalWorkflowStates;
   useEffectA(() => {
-    window.MN_LOGSEQ?.setWorkflowStates?.(workflowStates);
+    mnSetWorkflowStates(workflowStates);
     if (selectedWorkflow && !workflowStates.some(s => s.id === selectedWorkflow)) {
       setSelectedWorkflow(null);
     }
@@ -397,7 +390,7 @@ function MnApp() {
     if (activeVault?.novelistMode && activeVaultId) {
       setVaults(vs => vs.map(v => v.id === activeVaultId ? { ...v, workflowStates: next } : v));
       if (HAS_DISK) {
-        desktopBridge.saveVaultMeta(activeVaultId, { workflowStates: next })
+        platformApi.vaults.saveVaultMeta(activeVaultId, { workflowStates: next })
           .catch(e => console.error('save novelist workflow states failed', e));
       }
       return;
@@ -438,7 +431,7 @@ function MnApp() {
     notes: notesWithBody,
     dirtyNotes,
     hasDisk: HAS_DISK,
-    search: desktopBridge.searchDetailed || desktopBridge.search,
+    search: platformApi.search.searchDetailed,
     view,
     selectedTag,
     selectedWorkflow,
@@ -490,7 +483,7 @@ function MnApp() {
     navigateView,
     setNoteListVisible: setReferenceNoteListVisible,
     recordUsage: recordFeatureUsage,
-    storage: window.MN_STORAGE,
+    storage,
   });
   const referenceNote = notesWithBody.find(n => n.id === referenceNoteId) || null;
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
@@ -562,7 +555,7 @@ function MnApp() {
     links,
     weekStart: tweaks.weekStart,
     helpers: MN_APP_HELPERS,
-    ai: desktopBridge.ai,
+    ai: platformApi.ai,
   });
 
   const { nextStoryOrder, uniqueNoteTitle, createRuntimeNoteId, createNote, createNoteFromTemplate, createDailyNote, duplicateNote, updateNote, restoreNoteMetadataSnapshot, undoNoteMetadataEdit, redoNoteMetadataEdit, updateNoteBody, acceptSuggestedConnection, quickCaptureMergeTags, quickCaptureRawMarkdown, quickCaptureAppendBody, saveQuickCapture, addQuickTodayTask, appendToTodayDailyNote, addTodayReflection, addTodayEndDayRecap, updateNoteBodies, applyAiCurrentPageBody, restoreAiCurrentPageBody, openNoteById } = useAppNoteActions({
@@ -574,11 +567,11 @@ function MnApp() {
   });
 
   const { promptNewTag, requestDeleteNote, deleteNote, normalizeRuntimeNote, trashItems, trashLoading, trashError, listDeletedItems, refreshDeletedItems, restoreDeletedNote, purgeDeletedNote, prependDeletedItem, restoreNoteVersion, reloadConflictFromDisk, keepConflictAsDuplicate, openCanvasDashboard, openCanvas, createCanvas, saveCanvas, deleteCanvas, addNoteToCanvas, exportBackup, importBackup, analyzeNovelImportFiles, importNovelFiles, applyNovelImportPreview, closeNovelImportDialog, rebuildIndex } = useAppDataActions({
-    HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVEL_IMPORT_TOOL, activeCanvas, activeVault, activeVaultId, addTag, buildNovelImportPlan, canvases, conflictNotice, createRuntimeNoteId, desktopBridge, dirtyNotes, markDirty, markTagsDirty, mnBlocksToMd, mnDirtyNoteKey, mnEnsureNovelistTags, mnMdToBlocks, mnNormalizeNoteBody, mnNovelImportChunks, mnNovelImportConsolidationPrompt, mnNovelImportExistingSummary, mnNovelImportExtractionPrompt, mnNovelImportToolArgs, navigateView, normalizeNotes, normalizeNovelImportCandidates, noteForDisk, notes, notesWithBody, novelImportDialog, novelImportSeq, refreshVaultRegistry, selectedId, setActiveCanvas, setCanvases, setConflictNotice, setDeleteTargetId, setNotes, setNovelImportDialog, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, uniqueNoteTitle, updateDirtyNotes, useCallbackA, useCanvasController, useTrashController, view,
+    HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVEL_IMPORT_TOOL, activeCanvas, activeVault, activeVaultId, addTag, buildNovelImportPlan, canvases, conflictNotice, createRuntimeNoteId, desktopBridge: platformApi, dirtyNotes, markDirty, markTagsDirty, mnBlocksToMd, mnDirtyNoteKey, mnEnsureNovelistTags, mnMdToBlocks, mnNormalizeNoteBody, mnNovelImportChunks, mnNovelImportExistingSummary, mnNovelImportExtractionPrompt, mnNovelImportConsolidationPrompt, mnNovelImportToolArgs, navigateView, normalizeNotes, normalizeNovelImportCandidates, noteForDisk, notes, notesWithBody, novelImportDialog, novelImportSeq, refreshVaultRegistry, selectedId, setActiveCanvas, setCanvases, setConflictNotice, setDeleteTargetId, setNotes, setNovelImportDialog, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, uniqueNoteTitle, updateDirtyNotes, useCallbackA, useCanvasController, useTrashController, view,
   });
 
   const { plugins, featureState, runPlugin, appActionRegistry, handleAppActionResult, commands, runNaturalCommand } = useAppCommandActions({
-    HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS, MN_APP_MUTATIONS, MN_FEATURES, MN_MEMORY_ACTIONS, MN_NOTE_TEMPLATES, MN_PLUGIN_API, activeCanvas, activeVault, activeVaultId, addNoteToCanvas, addTag, appNotice, assistanceEnabled, blockingOverlayOpen, bootState, canvasTextEditing, canvases, clearInterval, closeReferencePane, commandPaletteOpen, conflictNotice, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, deleteTargetId, desktopBridge, dismissedReminderKeys, duplicateNote, enabledPacks, exportBackup, importBackup, markDirty, mnCollectReminderItems, mnMdToBlocks, mnNormalizeNoteStatus, mnPlayReminderSound, mnReadSnoozedReminders, navigateView, normalizeNotes, normalizeTagName, notesWithBody, notesWithBodyRef, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, quickSwitcherOpen, quietedReminderKeys, rebuildIndex, recordPhase5Metric, referencePaneOpen, reminderCenterOpen, renameNoteTitle, restoreDeletedNote, selectVault, selectedNote, setAppNotice, setCaptureOpen, setCommandPaletteOpen, setConflictNotice, setConnectionsRefreshToken, setDeleteTargetId, setInterval, setNoteListHidden, setNotes, setQuickSwitcherOpen, setReminderCenterOpen, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setSidebarHidden, setToast, setVaultHealthOpen, setVersionTargetId, settingsOpen, showAppNotice, smartViewDefinitions, titleUpdateTimerRef, toast, toastRef, todayAgendaItems, tweaks, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, useAppActionRegistry, useCallbackA, useEffectA, useMemoA, vaultHealthOpen, vaults, vaultsForSidebar, versionTargetId, view, workflowData, workflowStates,
+    HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS, MN_APP_MUTATIONS, MN_FEATURES, MN_MEMORY_ACTIONS, MN_NOTE_TEMPLATES, MN_PLUGIN_API, activeCanvas, activeVault, activeVaultId, addNoteToCanvas, addTag, appNotice, assistanceEnabled, blockingOverlayOpen, bootState, canvasTextEditing, canvases, clearInterval, closeReferencePane, commandPaletteOpen, conflictNotice, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, deleteTargetId, desktopBridge: platformApi, dismissedReminderKeys, duplicateNote, enabledPacks, exportBackup, importBackup, markDirty, mnCollectReminderItems, mnMdToBlocks, mnNormalizeNoteStatus, mnPlayReminderSound, mnReadSnoozedReminders, navigateView, normalizeNotes, normalizeTagName, notesWithBody, notesWithBodyRef, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, quickSwitcherOpen, quietedReminderKeys, rebuildIndex, recordPhase5Metric, referencePaneOpen, reminderCenterOpen, renameNoteTitle, restoreDeletedNote, selectVault, selectedNote, setAppNotice, setCaptureOpen, setCommandPaletteOpen, setConflictNotice, setConnectionsRefreshToken, setDeleteTargetId, setInterval, setNoteListHidden, setNotes, setQuickSwitcherOpen, setReminderCenterOpen, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setSidebarHidden, setToast, setVaultHealthOpen, setVersionTargetId, settingsOpen, showAppNotice, smartViewDefinitions, titleUpdateTimerRef, toast, toastRef, todayAgendaItems, tweaks, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, useAppActionRegistry, useCallbackA, useEffectA, useMemoA, vaultHealthOpen, vaults, vaultsForSidebar, versionTargetId, view, workflowData, workflowStates,
   });
 
   const noteListVisible = view === 'notes' || view === 'pinned' || view === 'graph' || view === 'workflow';
@@ -598,7 +591,7 @@ function MnApp() {
     : `${filteredNotes.length} note${filteredNotes.length === 1 ? '' : 's'}${selectedTag ? ' tagged' : selectedWorkflow ? ' with workflow' : ''}`;
 
   // ── Loading / error screens ─────────────────────────────────────────────
-  return <AppView model={{ MN_APP_HELPERS, MN_APP_MUTATIONS, MnAiChatHistory, MnAiNotice, MnAppNoticeDialog, MnAskAI, MnCalendarPanel, MnCanvasPanel, MnCommandPalette, MnDeleteNoteDialog, MnEditor, MnGraph, MnLaunchScreen, MnNoteList, MnNovelImportPreviewDialog, MnNovelistPanel, MnPanelGrip, MnPanelGripPeek, MnQuickCapture, MnQuickSwitcher, MnRecentlyDeletedPanel, MnReferencePane, MnReminderCenter, MnReminderToast, MnSaveConflictDialog, MnSettingsModal, MnSidebar, MnSmartViewsPanel, MnTodayPanel, MnTodosPanel, MnVaultHealthDialog, MnVersionHistoryDialog, MnWorkflowPanel, SEED_NOTES, SEED_TAGS, SEED_VAULTS, T, acceptSuggestedConnection, activeAskAiSession, activeCanvas, activeSmartViewId, activeVault, activeVaultId, addNoteToCanvas, addQuickTodayTask, addTag, addTodayEndDayRecap, addTodayReflection, aiChatListVisible, aiNoteBodyRestoreRef, aiNotice, analyzeNovelImportFiles, appActionRegistry, appNotice, appStats, appendToTodayDailyNote, applyAiCurrentPageBody, applyLinkedNoteUpdates, applyNovelImportPreview, applyWorkflowStates, archiveAskAiChat, askAiSeed, askAiSessions, assistanceEnabled, baseThemeMap, blockingOverlayOpen, bootError, bootState, buildLinks, calendarActionItems, calendarTaskItems, canvasTextEditing, canvases, captureOpen, cloneNoteForMetadataHistory, closeNovelImportDialog, closeReferencePane, commandPaletteOpen, commands, conflictNotice, connectionsRefreshToken, convertNovelistType, createAskAiChat, createCalendarTaskItem, createCanvas, createDailyNote, createNote, createNoteFromTemplate, createRuntimeNoteId, createVault, customThemes, deleteAskAiChat, deleteCanvas, deleteNote, deleteTargetId, deleteTargetNote, deleteVault, dirtyMissingWarnedRef, dirtyNotes, dirtyNotesRef, dirtyRevisionRef, dismissedReminderKeys, duplicateNote, enabledPacks, endNoteMetadataEdit, exportBackup, featureState, filteredNotes, findNotesForVault, fontMap, fonts, generateTodayAiRecap, goBackView, graphFilter, graphVisibleNotes, handleAppActionResult, importBackup, importNovelFiles, importThemeFile, keepConflictAsDuplicate, linkNovelistChapter, linkNovelistScene, links, listDeletedItems, loadVaultBundle, markDirty, markTagsDirty, mkBlock, mnBlocksToMd, mnBodyPropertyValue, mnCloneBlocks, mnLocate, mnMdToBlocks, mnNormalizeNoteBody, mnNormalizeNoteStatus, mnShadow, mnWalk, mnWriteSnoozedReminder, navigateView, nextStoryOrder, normalWorkflowStates, normalizeFeaturePacks, normalizeRuntimeNote, noteDiskStampRef, noteListHidden, noteListSubtitle, noteListTitle, noteListVisible, noteMetadataHistoryRef, notes, notesRef, notesWithBody, notesWithBodyCacheRef, notesWithBodyRef, notifyAskAiComplete, novelImportDialog, novelImportSeq, novelistNotes, novelistStructure, novelistWorkflowStates, openAskAi, openCanvas, openCanvasDashboard, openNoteById, openReferencePane, openSmartView, pendingDirtyKeysRef, persistNovelistSetup, plugins, prependDeletedItem, promptNewTag, purgeDeletedNote, query, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, quickSwitcherOpen, quietedReminderKeys, rebuildIndex, recentNoteIds, recordFeatureUsage, recordNoteMetadataHistory, recordPhase5Metric, redoNoteMetadataEdit, referenceNote, referenceNoteId, referencePaneOpen, refreshDeletedItems, refreshVaultRegistry, reloadConflictFromDisk, reminderCenterItems, reminderCenterOpen, reminderCenterTop, reminderDueCount, removeNovelistSupportingType, removeTag, renameAskAiChat, renameNoteTitle, renameVault, requestDeleteNote, restoreAiCurrentPageBody, restoreDeletedNote, restoreNoteMetadataSnapshot, restoreNoteVersion, runNaturalCommand, runPlugin, saveCanvas, saveDirtyNotesNow, saveQuickCapture, saveVaultMetaNow, savedSmartViews, savingDirtyKeysRef, searchUsageActiveRef, selectReferenceNote, selectVault, selectedId, selectedNote, selectedTag, selectedWorkflow, setActiveAskAiSession, setActiveAskAiSessionId, setActiveCanvas, setActiveSmartViewId, setActiveVaultId, setActiveVaultNovelistMode, setAiNotice, setAppNotice, setAssistanceEnabled, setCanvasTextEditing, setCanvases, setCaptureOpen, setCommandPaletteOpen, setConflictNotice, setConnectionsRefreshToken, setCustomThemes, setDeleteTargetId, setDirtyNotes, setEnabledPacks, setGraphFilter, setNoteListHidden, setNotes, setNovelImportDialog, setNovelistOrder, setPackEnabled, setQuery, setQuickSwitcherOpen, setRecentNoteIds, setReferenceNoteListVisible, setReminderCenterOpen, setSavedSmartViews, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setSidebarHidden, setTags, setToast, setTweak, setTweaks, setVaultHealthOpen, setVaults, setVersionTargetId, setView, settingsOpen, showAppNotice, sidebarHidden, smartViewDefinitions, snoozeCalendarTaskItem, tagCurrentNoteFromAi, tags, tagsDirty, theme, themeMap, themeOptions, titleUpdateTimerRef, toast, toastRef, todayAgendaItems, todayAiContext, todayAiRecap, todayAiRecapBusy, todayAiRecapError, todayDailyNote, todayDigest, toggleCheckFromAggregate, trashError, trashItems, trashLoading, tweakInitialized, tweaks, undoNoteMetadataEdit, uniqueNoteTitle, updateDirtyNotes, updateNote, updateNoteBlocks, updateNoteBodies, updateNoteBody, updateNoteTags, updateNovelistAiConfig, updateTaskItemSource, updateWorkflowArchived, updateWorkflowNoteStatus, updateWorkflowStates, vaultActivationSeq, vaultHealthOpen, vaults, vaultsForSidebar, vaultsRef, versionTargetId, view, workflowData, workflowStates, workflowViewData }} />;
+  return <AppView model={{ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATIONS, MnAiChatHistory, MnAiNotice, MnAppNoticeDialog, MnAskAI, MnCalendarPanel, MnCanvasPanel, MnCommandPalette, MnDeleteNoteDialog, MnEditor, MnGraph, MnLaunchScreen, MnNoteList, MnNovelImportPreviewDialog, MnNovelistPanel, MnPanelGrip, MnPanelGripPeek, MnQuickCapture, MnQuickSwitcher, MnRecentlyDeletedPanel, MnReferencePane, MnReminderCenter, MnReminderToast, MnSaveConflictDialog, MnSettingsModal, MnSidebar, MnSmartViewsPanel, MnTodayPanel, MnTodosPanel, MnVaultHealthDialog, MnVersionHistoryDialog, MnWorkflowPanel, SEED_NOTES, SEED_TAGS, SEED_VAULTS, T, acceptSuggestedConnection, activeAskAiSession, activeCanvas, activeSmartViewId, activeVault, activeVaultId, addNoteToCanvas, addQuickTodayTask, addTag, addTodayEndDayRecap, addTodayReflection, aiChatListVisible, aiNoteBodyRestoreRef, aiNotice, analyzeNovelImportFiles, appActionRegistry, appNotice, appStats, appendToTodayDailyNote, applyAiCurrentPageBody, applyLinkedNoteUpdates, applyNovelImportPreview, applyWorkflowStates, archiveAskAiChat, askAiSeed, askAiSessions, assistanceEnabled, baseThemeMap, blockingOverlayOpen, bootError, bootState, buildLinks, calendarActionItems, calendarTaskItems, canvasTextEditing, canvases, captureOpen, cloneNoteForMetadataHistory, closeNovelImportDialog, closeReferencePane, commandPaletteOpen, commands, conflictNotice, connectionsRefreshToken, convertNovelistType, createAskAiChat, createCalendarTaskItem, createCanvas, createDailyNote, createNote, createNoteFromTemplate, createRuntimeNoteId, createVault, customThemes, deleteAskAiChat, deleteCanvas, deleteNote, deleteTargetId, deleteTargetNote, deleteVault, dirtyMissingWarnedRef, dirtyNotes, dirtyNotesRef, dirtyRevisionRef, dismissedReminderKeys, duplicateNote, enabledPacks, endNoteMetadataEdit, exportBackup, featureState, filteredNotes, findNotesForVault, fontMap, fonts, generateTodayAiRecap, goBackView, graphFilter, graphVisibleNotes, handleAppActionResult, importBackup, importNovelFiles, importThemeFile, keepConflictAsDuplicate, linkNovelistChapter, linkNovelistScene, links, listDeletedItems, loadVaultBundle, markDirty, markTagsDirty, mkBlock, mnBlocksToMd, mnBodyPropertyValue, mnCloneBlocks, mnLocate, mnMdToBlocks, mnNormalizeNoteBody, mnNormalizeNoteStatus, mnShadow, mnWalk, mnWriteSnoozedReminder, navigateView, nextStoryOrder, normalWorkflowStates, normalizeFeaturePacks, normalizeRuntimeNote, noteDiskStampRef, noteListHidden, noteListSubtitle, noteListTitle, noteListVisible, noteMetadataHistoryRef, notes, notesRef, notesWithBody, notesWithBodyCacheRef, notesWithBodyRef, notifyAskAiComplete, novelImportDialog, novelImportSeq, novelistNotes, novelistStructure, novelistWorkflowStates, openAskAi, openCanvas, openCanvasDashboard, openNoteById, openReferencePane, openSmartView, pendingDirtyKeysRef, persistNovelistSetup, plugins, prependDeletedItem, promptNewTag, purgeDeletedNote, query, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, quickSwitcherOpen, quietedReminderKeys, rebuildIndex, recentNoteIds, recordFeatureUsage, recordNoteMetadataHistory, recordPhase5Metric, redoNoteMetadataEdit, referenceNote, referenceNoteId, referencePaneOpen, refreshDeletedItems, refreshVaultRegistry, reloadConflictFromDisk, reminderCenterItems, reminderCenterOpen, reminderCenterTop, reminderDueCount, removeNovelistSupportingType, removeTag, renameAskAiChat, renameNoteTitle, renameVault, requestDeleteNote, restoreAiCurrentPageBody, restoreDeletedNote, restoreNoteMetadataSnapshot, restoreNoteVersion, runNaturalCommand, runPlugin, saveCanvas, saveDirtyNotesNow, saveQuickCapture, saveVaultMetaNow, savedSmartViews, savingDirtyKeysRef, searchUsageActiveRef, selectReferenceNote, selectVault, selectedId, selectedNote, selectedTag, selectedWorkflow, setActiveAskAiSession, setActiveAskAiSessionId, setActiveCanvas, setActiveSmartViewId, setActiveVaultId, setActiveVaultNovelistMode, setAiNotice, setAppNotice, setAssistanceEnabled, setCanvasTextEditing, setCanvases, setCaptureOpen, setCommandPaletteOpen, setConflictNotice, setConnectionsRefreshToken, setCustomThemes, setDeleteTargetId, setDirtyNotes, setEnabledPacks, setGraphFilter, setNoteListHidden, setNotes, setNovelImportDialog, setNovelistOrder, setPackEnabled, setQuery, setQuickSwitcherOpen, setRecentNoteIds, setReferenceNoteListVisible, setReminderCenterOpen, setSavedSmartViews, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setSidebarHidden, setTags, setToast, setTweak, setTweaks, setVaultHealthOpen, setVaults, setVersionTargetId, setView, settingsOpen, showAppNotice, sidebarHidden, smartViewDefinitions, snoozeCalendarTaskItem, tagCurrentNoteFromAi, tags, tagsDirty, theme, themeMap, themeOptions, titleUpdateTimerRef, toast, toastRef, todayAgendaItems, todayAiContext, todayAiRecap, todayAiRecapBusy, todayAiRecapError, todayDailyNote, todayDigest, toggleCheckFromAggregate, trashError, trashItems, trashLoading, tweakInitialized, tweaks, undoNoteMetadataEdit, uniqueNoteTitle, updateDirtyNotes, updateNote, updateNoteBlocks, updateNoteBodies, updateNoteBody, updateNoteTags, updateNovelistAiConfig, updateTaskItemSource, updateWorkflowArchived, updateWorkflowNoteStatus, updateWorkflowStates, vaultActivationSeq, vaultHealthOpen, vaults, vaultsForSidebar, vaultsRef, versionTargetId, view, workflowData, workflowStates, workflowViewData }} />;
 }
 
 export { MnApp };

@@ -5,8 +5,8 @@ const {
   mnCanvasPreviewElements, mnCanvasCloneElement, mnCanvasBounds, mnCanvasSelectionBounds,
   mnCanvasMoveElement, mnCanvasIsConnector, mnCanvasAnchorTargetAt, mnCanvasResolveConnector,
   mnCanvasSyncConnectors, mnCanvasCloneElements,
-} = window.MN_CANVAS_MODEL || {};
-import { mnCanvasDialogButton } from './CanvasStyles.js';
+} = MN_CANVAS_MODEL;
+import { mnCanvasDialogButton, mnCanvasIconToolButton } from './CanvasStyles.js';
 
 function MnCanvasNotePicker({ notes = [], onPick, onClose, T }) {
   const [query, setQuery] = useStateC('');
@@ -17,10 +17,6 @@ function MnCanvasNotePicker({ notes = [], onPick, onClose, T }) {
     return () => clearTimeout(handle);
   }, []);
   const items = useMemoC(() => {
-    const model = window.MN_QUICK_SWITCHER_MODEL;
-    if (model?.mnQuickSwitcherResults) {
-      return model.mnQuickSwitcherResults({ notes, query, recentIds: [], limit: 10 }).items;
-    }
     const q = query.trim().toLowerCase();
     return (notes || [])
       .filter(n => !q || String(n.title || '').toLowerCase().includes(q))
@@ -484,3 +480,4 @@ function MnCanvasDeleteDialog({ canvas, T, onCancel, onConfirm }) {
 }
 
 export { MnCanvasNotePicker, MnCanvasColorControl, MnCanvasToolButton, MnCanvasActionButton, MnCanvasActionIcon, MnCanvasDivider, MnCanvasStatusPill, MnCanvasResizeHandles, MnCanvasToolIcon, MnCanvasContextMenu, MnCanvasDeleteDialog };
+import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';

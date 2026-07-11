@@ -1,4 +1,4 @@
-const { MnAiIcon } = window.MN_OUTLINER_RENDERERS || {};
+import { MnAiIcon } from '../outlinerRenderers.jsx';
 
 function MnSelectionToolbar({ rect, selectionKind, onApply, onOpenAiMenu, onDelete, onUndo, onRedo, onClose, T }) {
   const [moreOpen, setMoreOpen] = React.useState(false);

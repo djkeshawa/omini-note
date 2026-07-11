@@ -2,14 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { loadRendererModule } = require('./helpers/rendererModule.js');
 
 function loadModule(relativePath, exportNames) {
-  const filename = path.join(__dirname, '..', relativePath);
-  const source = fs.readFileSync(filename, 'utf8').replace(/\bexport\s+/g, '');
-  const module = { exports: {} };
-  const body = `${source}\nmodule.exports = { ${exportNames.join(', ')} };`;
-  new Function('module', 'exports', 'require', 'window', body)(module, module.exports, require, { MN_LOGSEQ: { WORKFLOW_STATES: [] } });
-  return module.exports;
+  const loaded = loadRendererModule(relativePath);
+  return Object.fromEntries(exportNames.map(name => [name, loaded[name]]));
 }
 
 function locate(blocks, id, parent = null) {

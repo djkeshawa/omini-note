@@ -86,7 +86,7 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
     const restoreNoteVersion = useCallbackA(async (noteId, versionId) => {
       if (!HAS_DISK || !activeVaultId || !noteId || !versionId) return { ok: false, error: 'No active vault.' };
       try {
-        const res = await desktopBridge.restoreNoteVersion(activeVaultId, noteId, versionId);
+        const res = await desktopBridge.notes.restoreNoteVersion(activeVaultId, noteId, versionId);
         if (!res.ok) throw new Error(res.error || 'Could not restore note version');
         const restored = normalizeRuntimeNote(res.value);
         if (!restored) throw new Error('Restored version could not be loaded');
@@ -184,8 +184,8 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
       hasDisk: HAS_DISK,
       platform: desktopBridge,
       canvasActions: MN_APP_CANVAS_ACTIONS,
-      canvasModel: window.MN_CANVAS_MODEL,
-      newCanvas: window.mnNewCanvas,
+      canvasModel: MN_CANVAS_MODEL,
+      newCanvas: MN_CANVAS_MODEL.mnNewCanvas,
       upsertCanvasList: MN_APP_MUTATIONS.upsertCanvasList,
       setCanvases,
       setVaults,
@@ -198,9 +198,9 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
     });
   
     const exportBackup = useCallbackA(async () => {
-      if (!desktopBridge?.exportBackup) return showAppNotice('Backup unavailable', 'This build does not expose backup export.');
+      if (!desktopBridge.maintenance?.exportBackup) return showAppNotice('Backup unavailable', 'This build does not expose backup export.');
       try {
-        const res = await desktopBridge.exportBackup({});
+        const res = await desktopBridge.maintenance.exportBackup({});
         if (!res.ok) throw new Error(res.error);
         if (!res.value?.canceled) showAppNotice('Backup exported', `${res.value.vaultCount || 0} vault${res.value.vaultCount === 1 ? '' : 's'} saved.`, 'info');
       } catch (e) {
@@ -209,9 +209,9 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
     }, [showAppNotice]);
   
     const importBackup = useCallbackA(async () => {
-      if (!desktopBridge?.importBackup) return showAppNotice('Import unavailable', 'This build does not expose backup import.');
+      if (!desktopBridge.maintenance?.importBackup) return showAppNotice('Import unavailable', 'This build does not expose backup import.');
       try {
-        const res = await desktopBridge.importBackup({ activate: true });
+        const res = await desktopBridge.maintenance.importBackup({ activate: true });
         if (!res.ok) throw new Error(res.error);
         if (res.value?.canceled) return;
         await refreshVaultRegistry({ reloadActive: true, reason: 'import-backup' });
@@ -281,11 +281,11 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
   
     const importNovelFiles = useCallbackA(async () => {
       if (!activeVault?.novelistMode) return showAppNotice('Novelist vault required', 'Switch this vault to Novelist mode before importing novel files.', 'warn');
-      if (!desktopBridge?.importNovelFiles) return showAppNotice('Novel import unavailable', 'This build does not expose novel file import.');
+      if (!desktopBridge.maintenance?.importNovelFiles) return showAppNotice('Novel import unavailable', 'This build does not expose novel file import.');
       if (!desktopBridge?.ai?.toolPlan) return showAppNotice('AI unavailable', 'Novel import needs AI tool planning to classify structure and support notes.');
       let importSeq = 0;
       try {
-        const res = await desktopBridge.importNovelFiles({});
+        const res = await desktopBridge.maintenance.importNovelFiles({});
         if (!res.ok) throw new Error(res.error || 'Could not import novel files.');
         if (res.value?.canceled) return;
         const files = res.value?.files || [];
@@ -336,9 +336,9 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
     }, []);
   
     const rebuildIndex = useCallbackA(async () => {
-      if (!activeVaultId || !desktopBridge?.rebuildIndex) return;
+      if (!activeVaultId || !desktopBridge.search?.rebuildIndex) return;
       try {
-        const res = await desktopBridge.rebuildIndex(activeVaultId);
+        const res = await desktopBridge.search.rebuildIndex(activeVaultId);
         if (!res.ok) throw new Error(res.error);
         showAppNotice('Index rebuilt', `${res.value.indexed || 0} notes indexed.`, 'info');
       } catch (e) {
@@ -349,3 +349,4 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
 }
 
 export { useAppDataActions };
+import MN_CANVAS_MODEL from '../../canvas/canvasModel.js';

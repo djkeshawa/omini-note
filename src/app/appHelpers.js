@@ -3,7 +3,7 @@ const { createWorkflowHelpers } = require('./helpers/workflowHelpers.js');
 const { createSmartViewHelpers } = require('./helpers/smartViewHelpers.js');
 const { createRollupHelpers } = require('./helpers/rollupHelpers.js');
 const { createContextualAiHelpers } = require('./helpers/contextualAiHelpers.js');
-const { createNovelistHelpers } = require('./helpers/novelistHelpers.js');
+const { createNovelistHelpers } = require('../features/writer/novelistHelpers.js');
 const { createNovelImportHelpers } = require('./helpers/novelImportHelpers.js');
 
 const scope = {};
@@ -156,5 +156,4 @@ const PUBLIC_HELPERS = [
   "buildNovelImportPlan"
 ];
 const api = Object.fromEntries(PUBLIC_HELPERS.map(name => [name, scope[name]]));
-if (typeof globalThis !== 'undefined') globalThis.MN_APP_HELPERS = api;
 module.exports = api;

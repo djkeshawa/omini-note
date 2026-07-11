@@ -156,12 +156,12 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
     }, [markDirty, mnMdToBlocks, mnBlocksToMd]);
   
     const acceptSuggestedConnection = useCallbackA((item) => {
-      if (!selectedNote?.id || !window.MN_CONNECTIONS_MODEL?.appendConnectionMarkdown) return false;
+      if (!selectedNote?.id || !connectionsModel.appendConnectionMarkdown) return false;
       const targetId = String(item?.noteId || item?.id || '');
       const target = notesWithBody.find(note => note.id === targetId);
       const title = String(item?.title || target?.title || '').trim();
       if (!title || targetId === selectedNote.id) return false;
-      updateNoteBody(selectedNote.id, body => window.MN_CONNECTIONS_MODEL.appendConnectionMarkdown(body, title));
+      updateNoteBody(selectedNote.id, body => connectionsModel.appendConnectionMarkdown(body, title));
       recordFeatureUsage('connections', 'used');
       showAppNotice('Connection added', `Linked to ${title}.`, 'success');
       return true;
@@ -389,3 +389,4 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
 }
 
 export { useAppNoteActions };
+import connectionsModel from '../../editor/connectionsModel.js';

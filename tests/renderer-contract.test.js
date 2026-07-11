@@ -34,93 +34,18 @@ test('renderer bundle entry and HTML shell contract stay stable', () => {
   assert.match(entry, /import \{ MnApp \} from '\.\/app\/app\.jsx';/);
 });
 
-test('renderer modules declare cross-file globals explicitly during migration', () => {
+test('renderer modules use explicit imports across feature boundaries', () => {
   const app = appSource(__dirname);
   const editor = read(paths.src.editor);
   const outliner = outlinerSource(__dirname);
 
   assert.match(app, /import \{ MnSettingsModal \} from '\.\.\/settings\/settings\.jsx';/);
   assert.match(editor, /import \{ MnOutliner \} from '\.\/outliner\.jsx';/);
-  assert.match(outliner, /const MnWorkflowPill = window\.MnWorkflowPill;/);
+  assert.match(outliner, /import \{ MnBlockContextMenu, MnBlockEmbed, MnPageEmbed, MnPropertyRow, MnWorkflowPill, MnZoomBar \} from '\.\/blockFeatures\.jsx';/);
   assert.match(outliner, /import \{ MnCanvasEmbed \} from '\.\.\/features\/canvas\/index\.js';/);
 });
 
-test('renderer globals are explicitly allowlisted until ESM migration removes them', () => {
-  const allowedGlobals = new Set([
-    'MN_ACTIVE_VAULT_ID',
-    'MN_AI_REPORT',
-    'MnQuickSwitcher',
-    'MN_AI_UI',
-    'MN_APP_ACTIONS',
-    'MN_APP_RUNTIME',
-    'MN_APP_SHELL',
-    'MN_CANVAS_MODEL',
-    'MN_CODE_HIGHLIGHTER',
-    'MN_CODE_LANGUAGES',
-    'MN_DATA',
-    'MN_FONTS',
-    'MN_LOGSEQ',
-    'MN_MARKDOWN_INLINE_RENDERERS',
-    'MN_OUTLINE',
-    'MN_OUTLINER_RENDERERS',
-    'MN_OUTLINER_HISTORY',
-    'MN_PANEL_COMPONENTS',
-    'MN_PLUGINS',
-    'MN_REMIND',
-    'MN_RUNTIME',
-    'MN_SETTINGS_CONTROLS',
-    'MN_THEMES',
-    'MnAiChatHistory',
-    'MnAskAI',
-    'MnBlockContextMenu',
-    'MnBlockEmbed',
-    'MnBlockRef',
-    'MnBlockRow',
-    'MnCanvasEmbed',
-    'MnCanvasPanel',
-    'MnCalendarPanel',
-    'MnEditor',
-    'MnGraph',
-    'MnInline',
-    'MnMarkdown',
-    'MnMathBlock',
-    'MnMemoBlockRow',
-    'MnMermaidBlock',
-    'MnNoteList',
-    'MnNovelistPanel',
-    'MnOutliner',
-    'MnPageEmbed',
-    'MnPanelGrip',
-    'MnPanelGripPeek',
-    'MnPropertyRow',
-    'MnQuickCapture',
-    'MnRecentlyDeletedPanel',
-    'MnReminderToast',
-    'MnSettingsModal',
-    'MnSidebar',
-    'MnTodayPanel',
-    'MnTodosPanel',
-    'MnWorkflowPanel',
-    'MnWorkflowPill',
-    'MnZoomBar',
-    'mkBlock',
-    'mnBlocksToMd',
-    'mnCloneBlocks',
-    'mnCodeLanguageLabel',
-    'mnFormatDate',
-    'mnGetTagBg',
-    'mnGetTagColor',
-    'mnHighlight',
-    'mnIconButtonStyle',
-    'mnLocate',
-    'mnMdToBlocks',
-    'mnNewCanvas',
-    'mnNormalizeCodeLanguage',
-    'mnParse',
-    'mnRenderCode',
-    'mnShadow',
-    'mnWalk',
-  ]);
+test('renderer feature globals are fully removed', () => {
   const assignedGlobals = new Set();
 
   for (const file of srcFiles()) {
@@ -130,10 +55,7 @@ test('renderer globals are explicitly allowlisted until ESM migration removes th
     }
   }
 
-  const unexpected = [...assignedGlobals].filter(name => !allowedGlobals.has(name)).sort();
-  assert.deepEqual(unexpected, []);
-  assert.ok(!assignedGlobals.has('MnApp'));
-  assert.ok(assignedGlobals.has('MN_AI_REPORT'));
+  assert.deepEqual([...assignedGlobals], []);
 });
 
 test('modularization target feature folders exist', () => {

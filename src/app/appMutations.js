@@ -1,7 +1,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_APP_MUTATIONS = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   function uniqueNoteTitle(notes = [], rawTitle = 'Untitled', excludeId = null) {
     const base = String(rawTitle || '').trim() || 'Untitled';

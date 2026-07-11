@@ -1,5 +1,5 @@
 function MnBlockRowView({ model }) {
-  const { MN_APP_HELPERS, MN_BLOCK_LABEL_COLORS, MN_CODE_LANGUAGES, MN_IMAGE_ATTACHMENTS, MN_LOGSEQ, MnBlockEmbed, MnCanvasEmbed, MnCanvasPicker, MnDisclosure, MnInlineAiButton, MnMarkdownTable, MnMathBlock, MnMermaidBlock, MnPageEmbed, MnPopover, MnPopoverHeader, MnPopoverItem, MnPropertyRow, MnSmartViewEmbed, MnSpellSuggestionMenu, MnWorkflowPill, T, addBlockLabel, aiActive, aiTarget, allCanvases, allNotes, applyEditorValue, applySlashCmd, applySpellSuggestion, autoIdx, autoLink, autoQ, block, blockAcceptsImageDrops, blockLabels, canvasPicker, collapseByDefault, depth, displayAnnotations, displayBlock, displaySourceOffset, displayTextRef, dropPos, editing, editingLabelId, editorFontSize, editorValue, focusId, fontStyle, handleCopy, handleCut, handleEnter, handleInput, handleKey, handlePaste, handleSelect, hasChildren, ignoreSpellWord, ignoredSpellWords, indentGuides, indentPx, inputRef, insertImageMarkdown, isList, labelMenu, latestContentRef, markdownDisplayProjection, mnAffordancePadTop, mnBlockLabelPalette, mnCodeLanguageLabel, mnDataTransferHasFiles, mnGripPadTop, mnImageFilesFromDataTransfer, mnIsPropertyLine, mnNormalizeCodeLanguage, mnParseProperty, mnPlaceholder, mnRenderAnnotated, mnRenderCode, mnRenderSpellCheckedText, mnWorkflow, novelistMode, onAiAction, onBeginContentEdit, onBlockMouseDown, onBlockMouseEnter, onChange, onChangeKind, onClearAnnotation, onContextMenu, onCreateCanvas, onDelete, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onSelectionChange, onSetAnnotation, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, parseClipboardBlocks, pendingCaretRef, pickSuggestion, removeBlockLabel, selectedAsArea, selectedBlockIds, setAutoIdx, setAutoQ, setBlockLabels, setCanvasPicker, setDropPos, setEditing, setEditingLabelId, setFocusId, setIgnoredSpellWords, setLabelMenu, setSlashIdx, setSlashQ, setSpellIssues, setSpellMenu, slashIdx, slashMatches, slashQ, spellCheck, spellIssues, spellMenu, startEdit, textOffsetFromPoint, updateBlockLabel, wikiSuggestions } = model;
+  const { MN_APP_HELPERS, MN_BLOCK_LABEL_COLORS, MN_CODE_LANGUAGES, MN_IMAGE_ATTACHMENTS, MN_LOGSEQ, MnBlockEmbed, MnCanvasEmbed, MnCanvasPicker, MnDisclosure, MnInlineAiButton, MnMarkdownTable, MnMathBlock, MnMermaidBlock, MnPageEmbed, MnPopover, MnPopoverHeader, MnPopoverItem, MnPropertyRow, MnSmartViewEmbed, MnSpellSuggestionMenu, MnWorkflowPill, T, addBlockLabel, aiActive, aiTarget, allCanvases, allNotes, applyEditorValue, applySlashCmd, applySpellSuggestion, autoIdx, autoLink, autoQ, block, blockAcceptsImageDrops, blockLabels, canvasPicker, collapseByDefault, depth, displayAnnotations, displayBlock, displaySourceOffset, displayTextRef, dropPos, editing, editingLabelId, editorFontSize, editorValue, focusId, fontStyle, handleCopy, handleCut, handleEnter, handleInput, handleKey, handlePaste, handleSelect, hasChildren, ignoreSpellWord, ignoredSpellWords, indentGuides, indentPx, inputRef, insertImageMarkdown, isList, labelMenu, latestContentRef, markdownDisplayProjection, mnAffordancePadTop, mnBlockLabelPalette, mnCodeLanguageLabel, mnDataTransferHasFiles, mnGripPadTop, mnImageFilesFromDataTransfer, mnIsPropertyLine, mnNormalizeCodeLanguage, mnParseProperty, mnPlaceholder, mnRenderAnnotated, mnRenderCode, mnRenderSpellCheckedText, mnWorkflow, novelistMode, onAiAction, onBeginContentEdit, onBlockMouseDown, onBlockMouseEnter, onChange, onChangeKind, onClearAnnotation, onContextMenu, onCreateCanvas, onDelete, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onSelectionChange, onSetAnnotation, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, parseClipboardBlocks, pendingCaretRef, pickSuggestion, removeBlockLabel, selectedAsArea, selectedBlockIds, setAutoIdx, setAutoQ, setBlockLabels, setCanvasPicker, setDropPos, setEditing, setEditingLabelId, setFocusId, setIgnoredSpellWords, setLabelMenu, setSlashIdx, setSlashQ, setSpellIssues, setSpellMenu, slashIdx, slashMatches, slashQ, spellCheck, spellIssues, spellMenu, startEdit, textOffsetFromPoint, updateBlockLabel, vaultId, wikiSuggestions } = model;
     return (
       <div
         className="mn-block-row"
@@ -7,7 +7,7 @@ function MnBlockRowView({ model }) {
         data-block-kind={block.kind || 'paragraph'}
         data-block-depth={depth}
         onDragOver={(e) => {
-          if (window.MN_IMAGE_ATTACHMENTS?.mnDataTransferHasFiles?.(e.dataTransfer) && blockAcceptsImageDrops) {
+          if (imageAttachments.mnDataTransferHasFiles(e.dataTransfer) && blockAcceptsImageDrops) {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'copy';
             setDropPos('child');
@@ -26,7 +26,7 @@ function MnBlockRowView({ model }) {
         }}
         onDragLeave={() => setDropPos(null)}
         onDrop={(e) => {
-          const imageFiles = window.MN_IMAGE_ATTACHMENTS?.mnImageFilesFromDataTransfer?.(e.dataTransfer) || [];
+          const imageFiles = imageAttachments.mnImageFilesFromDataTransfer(e.dataTransfer) || [];
           if (imageFiles.length && blockAcceptsImageDrops) {
             e.preventDefault();
             setDropPos(null);
@@ -454,7 +454,7 @@ function MnBlockRowView({ model }) {
                   state={block.workflow}
                   onClick={(e) => {
                     e.stopPropagation();
-                    const cur = window.MN_LOGSEQ.mnWorkflow(block.workflow);
+                    const cur = mnWorkflow(block.workflow);
                     onChangeKind(block.id, { workflow: cur?.next || null });
                   }}
                   T={T}
@@ -464,8 +464,8 @@ function MnBlockRowView({ model }) {
                 {(() => {
                   const content = displayBlock.content || '';
                   // Page-property line: key:: value
-                  if (!markdownDisplayProjection && window.MN_LOGSEQ.mnIsPropertyLine(content)) {
-                    const prop = window.MN_LOGSEQ.mnParseProperty(content);
+                  if (!markdownDisplayProjection && mnIsPropertyLine(content)) {
+                    const prop = mnParseProperty(content);
                     if (prop) return <MnPropertyRow property={prop} T={T} />;
                   }
                   // Block-level embed: {{embed [[Page]]}} or {{embed ((id))}}
@@ -503,7 +503,7 @@ function MnBlockRowView({ model }) {
                     const renderSpellText = spellCheck && Object.keys(spellIssues || {}).length
                       ? (text, offset) => mnRenderSpellCheckedText(text, spellIssues, T, setSpellMenu, displaySourceOffset + offset)
                       : null;
-                    return mnRenderAnnotated(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText);
+                    return mnRenderAnnotated(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText, vaultId);
                   }
                   return <span style={{ color: T.inkDim, fontStyle: 'italic' }}>{mnPlaceholder(displayBlock)}</span>;
                 })()}
@@ -558,3 +558,4 @@ function MnBlockRowView({ model }) {
   }
 
 export { MnBlockRowView };
+import imageAttachments from '../imageAttachments.js';

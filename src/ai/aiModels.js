@@ -1,4 +1,5 @@
 import { AI_REPORT_TARGETS, reportAiOutput } from '../features/ai/index.js';
+import { mnBlocksToMd } from '../editor/outline.jsx';
 
 const MN_ASK_EDIT_ACTIONS = {
   format: 'Format and organize this page. Preserve meaning, markdown, wiki-links, tags, tasks, and headings.',
@@ -129,7 +130,6 @@ const MN_AI_VIRTUAL_TOOLS = [
 
 const mnReportAiOutput = reportAiOutput;
 
-window.MN_AI_REPORT = { report: mnReportAiOutput, targets: MN_AI_REPORT_TARGETS };
 
 function mnAskAiJobId() {
   return `ask_${Date.now().toString(36)}_${Math.floor(Math.random() * 100000).toString(36)}`;
@@ -253,7 +253,7 @@ function mnAiCurrentNoteMarkdown(note) {
   if (!note) return '';
   if (typeof note.body === 'string') return note.body;
   try {
-    return window.MN_OUTLINE?.mnBlocksToMd?.(note.blocks || []) || '';
+    return mnBlocksToMd(note.blocks || []);
   } catch (e) {
     return '';
   }

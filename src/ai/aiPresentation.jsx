@@ -504,3 +504,4 @@ function MnCurrentNoteSuggestionsCard({ result, busy, error, T, onRefresh, onRej
 }
 
 export { mnAiPlainInlineText, mnAiLooksLikeSectionLabel, mnAskStatusText, mnAiProviderLabel, mnAskFooterHint, MnAiSetupNotice, mnAiWikiLinkParts, mnAiHeadingKey, MN_AI_GENERIC_SUMMARY_HEADINGS, mnAiIsGenericSummaryHeading, mnNormalizeAiResponseBlocks, mnAiInlineText, mnParseAiResponseBlocks, MnAiFormattedResponse, MnCurrentNoteSuggestionsCard };
+import { mnAskSecondaryButton } from './aiUi.jsx';

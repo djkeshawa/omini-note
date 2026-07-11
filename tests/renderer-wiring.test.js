@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { appHelpersSource, appSource, backendAiSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
+const { loadRendererModule } = require('./helpers/rendererModule.js');
 
 const ops = require('../src/editor/editorOps.js');
 const tableOps = require('../src/editor/tableOps.js');
@@ -11,7 +12,6 @@ const appHelpers = require('../src/app/appHelpers.js');
 const appNovelist = require('../src/app/appNovelist.js');
 const appMutations = require('../src/app/appMutations.js');
 const appCanvasActions = require('../src/app/appCanvasActions.js');
-const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 const projectPaths = require('./helpers/paths.js');
 
@@ -212,7 +212,7 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(store, /deleteVault, setActiveVault/);
   assert.match(main, /ipcMain\.handle\('mn:deleteVault'/);
   assert.match(main, /idx\.removeVault\(vaultId\)/);
-  assert.match(preload, /deleteVault: \(id\) => ipcRenderer\.invoke\('mn:deleteVault', id\)/);
+  assert.match(preload, /deleteVault: \(vaultId\) => ipcRenderer\.invoke\(NOTES_VAULTS_CHANNELS\.vaultDelete, \{ vaultId \}\)/);
   assert.match(app, /const deleteVault = useCallbackA\(async \(id\) =>/);
   assert.match(app, /const refreshVaultRegistry = useCallbackA/);
   assert.match(app, /refreshVaultRegistry\(\{ reloadActive: true, reason: 'focus' \}\)/);
@@ -318,10 +318,10 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(app, /id: 'add-todo-to-note'/);
   assert.match(app, /id: 'add-reminder-to-note'/);
   assert.match(app, /id: 'link-note'/);
-  assert.match(app, /desktopBridge\?\.searchDetailedStatus/);
+  assert.match(app, /desktopBridge\.search\?\.searchDetailedStatus/);
 
   assert.match(ai, /const aiSession = session \|\| localSession/);
-  assert.match(ai, /window\.MN_AI_ACTIONS\?\.classifyPrompt/);
+  assert.match(ai, /aiActions\.classifyPrompt/);
   assert.match(ai, /function mnBuildAskThreadMessages\(priorMessages = \[\], currentQuery = '', options = \{\}\)/);
   assert.match(ai, /function mnBuildAskThreadPrompt\(priorMessages = \[\], currentQuery = ''\)/);
   assert.match(ai, /function mnRecentAskThreadNote\(priorMessages = \[\]\)/);
@@ -376,7 +376,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /if \(onlyInspectionSteps && isPureInspectionRequest\(q\)\) return plan/);
   assert.match(ai, /planAppActionsWithModel\(actionQuery, route\.plan, jobId, run, priorMessages\)/);
   assert.match(ai, /const actionQuery = mnBuildContextualActionQuery\(priorMessages, q\)/);
-  assert.match(ai, /query: actionQuery, aiActions: window\.MN_AI_ACTIONS, appRegistry: window\.MN_APP_ACTIONS/);
+  assert.match(ai, /query: actionQuery, aiActions, appRegistry: getAppActionRegistry\(\)/);
   assert.match(ai, /const toolMessages = mnBuildAskThreadMessages\(priorMessages, q, \{ limit: 8 \}\)/);
   assert.match(ai, /const qForAsk = mnBuildAskThreadPrompt\(priorMessages, q\)/);
   assert.match(ai, /const chatMessages = mnBuildAskThreadMessages\(priorMessages, q, \{ limit: 8 \}\)/);
@@ -583,12 +583,12 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(sidebar, /canvasActive/);
   assert.match(app, /const \[canvases, setCanvases\]/);
   assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
-  assert.match(app, /desktopBridge\.listCanvases\(vaultId\)/);
-  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
+  assert.match(app, /desktopBridge\.canvas\.listCanvases\(vaultId\)/);
+  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = require\('\.\/appCanvasActions\.js'\)/);
   assert.match(canvasController, /canvasActions\.openCanvas\(canvasId, actionContext\(\)\)/);
   assert.match(canvasController, /canvasActions\.createCanvas\(title, options, actionContext\(\)\)/);
   assert.match(canvasActions, /async function openCanvas\(canvasId, ctx = \{\}\)/);
-  assert.match(canvasActions, /ctx\.mn\.getCanvas\(ctx\.activeVaultId, canvasId\)/);
+  assert.match(canvasActions, /ctx\.mn\.canvas\.getCanvas\(ctx\.activeVaultId, canvasId\)/);
   assert.match(canvasActions, /async function createCanvas/);
   assert.match(canvasActions, /async function saveCanvas/);
   assert.match(canvasActions, /async function deleteCanvas/);
@@ -600,7 +600,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(outliner, /<MnCanvasPicker/);
   assert.match(outliner, /<MnCanvasEmbed/);
   assert.match(canvasModel, /const MN_CANVAS_TOOLS = \[/);
-  assert.match(canvasModel, /window\.MN_CANVAS_MODEL/);
+  assert.doesNotMatch(canvasModel, /window\.MN_CANVAS_MODEL/);
   assert.match(canvas, /function MnCanvasPanel/);
   assert.match(canvas, /function MnCanvasCardMenu/);
   assert.match(canvas, /onContextMenu=\{\(e\) => openCanvasCardMenu\(e, canvas\)\}/);
@@ -632,7 +632,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(store, /async function createVault\(name, options = \{\}\)/);
   assert.match(store, /fs\.existsSync\(vaultDir\(finalSlug\)\)/);
   assert.match(main, /store\.createVault\(name, options\)/);
-  assert.match(preload, /createVault: \(name, options\) => ipcRenderer\.invoke\('mn:createVault', name, options\)/);
+  assert.match(preload, /createVault: \(name, options\) => ipcRenderer\.invoke\(NOTES_VAULTS_CHANNELS\.vaultCreate, \{ name, options \}\)/);
   assert.match(appNovelistSource, /const MN_NOVELIST_TAGS = \[/);
   assert.match(appNovelistSource, /novel-act/);
   assert.match(appNovelistSource, /\[\[Act 1\]\]/);
@@ -653,7 +653,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /noteDiskStampRef\.current\.set\(dirtyKey, diskModifiedAt\)/);
   assert.match(app, /revision: \+\+dirtyRevisionRef\.current/);
   assert.match(app, /current\.revision !== revision/);
-  assert.match(app, /desktopBridge\.onFlushDirtyNotes/);
+  assert.match(app, /desktopBridge\.events\.onFlushDirtyNotes/);
   assert.match(app, /entry\.vaultId === activeVaultId/);
   assert.match(app, /notes: targetNotes, tags: targetTags/);
   assert.match(app, /saveVaultMeta\(activeVaultId, \{ novelistMode: false, workflowStates: null \}\)/);
@@ -713,7 +713,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /novelistStructure=\{activeVault\?\.novelistMode/);
   assert.match(app, /onSetVaultNovelistMode=\{setActiveVaultNovelistMode\}/);
   assert.match(app, /const importNovelFiles = useCallbackA/);
-  assert.match(app, /desktopBridge\.importNovelFiles/);
+  assert.match(app, /desktopBridge\.maintenance\?\.importNovelFiles/);
   assert.match(app, /desktopBridge\.ai\.toolPlan/);
   assert.match(app, /<MnNovelImportPreviewDialog/);
   assert.match(app, /onImportNovelFiles=\{importNovelFiles\}/);
@@ -822,7 +822,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panelHelpersSource, /mn_novelist_ai_config_v2/);
   assert.match(panelHelpersSource, /function mnNovelistAiConfigKey\(vaultId = ''\)/);
   assert.match(panelHelpersSource, /function mnReadNovelistAiConfig\(vaultId = ''\)/);
-  assert.match(panelHelpersSource, /root\.mnReadNovelistAiConfig = api\.mnReadNovelistAiConfig/);
+  assert.match(panelHelpersSource, /mnReadNovelistAiConfig, mnWriteNovelistAiConfig/);
   assert.match(panels, /addAiPrompt/);
   assert.match(panels, /updateAiPrompt/);
   assert.doesNotMatch(panels, /AI Actions/);
@@ -919,10 +919,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(outliner, /indentGuides && Array\.from/);
   assert.match(outliner, /autoLink \? before\.match/);
   assert.match(outliner, /collapseByDefault && cmd\.kind === 'heading'/);
-  assert.match(slashCommands, /window\.MN_REMIND\?\.defaultText/);
+  assert.match(slashCommands, /MN_REMIND\.defaultText\(\)/);
   assert.doesNotMatch(outliner, /@remind\(tomorrow 9am\)/);
 
-  assert.match(markdown, /window\.MN_REMIND/);
+  assert.match(markdown, /const MN_REMIND = \{/);
   assert.match(markdown, /function mnDefaultReminderText/);
   assert.match(todosPanel, /collectTaskItems/);
   assert.match(todosPanel, /isReminderOnly/);
@@ -1130,16 +1130,16 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(smartViewsPanel, /Open Notes/);
   assert.match(smartViewsPanel, /function MnSmartViewActionButton/);
   assert.match(smartViewsPanel, /source\?\.noteId/);
-  assert.match(smartViewsPanel, /window\.MN_PANEL_COMPONENTS = \{/);
-  assert.match(smartViewsPanel, /MnSmartViewsPanel,/);
-  assert.match(app, /const MN_PANEL_COMPONENTS = window\.MN_PANEL_COMPONENTS \|\| \{\}/);
+  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel \}/);
+  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel \}/);
+  assert.match(app, /import \{ MnSmartViewsPanel \} from '\.\.\/panels\/smartViewsPanel\.jsx'/);
   assert.match(app, /MnSmartViewsPanel/);
   assert.match(preferenceModels, /function buildDefaultSmartViewDefinitions/);
   assert.match(preferenceModels, /function normalizeSmartViews/);
   assert.match(navigationController, /const \[savedSmartViews, setSavedSmartViews\]/);
   assert.match(navigationController, /const \[activeSmartViewId, setActiveSmartViewId\]/);
   assert.match(bootController, /setSavedSmartViews\(smartViews\)/);
-  assert.match(bootController, /platform\.setPrefs\(\{ smartViews \}\)/);
+  assert.match(bootController, /platform\.preferences\.setPrefs\(\{ smartViews \}\)/);
   assert.match(navigationController, /const openSmartView = useCallback/);
   assert.match(app, /const smartViewDefinitions = useMemoA/);
   assert.match(app, /MN_APP_HELPERS\.currentSmartViewDefinitions = smartViewDefinitions/);
@@ -1164,7 +1164,7 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(sidebar, /const iconSmartViews =/);
   assert.match(sidebar, /!smartViewsActive/);
   assert.match(sidebar, /label="Smart Views" count=\{smartViewCount\}/);
-  assert.match(outliner, /const MN_APP_HELPERS = window\.MN_APP_HELPERS \|\| \{\}/);
+  assert.match(outliner, /import MN_APP_HELPERS from '\.\.\/app\/appHelpers\.js'/);
   assert.match(outliner, /function MnSmartViewEmbed/);
   assert.match(outliner, /function MnSmartViewEmbedFallback/);
   assert.match(outliner, /data-mn-smart-view-embed="rendered"/);
@@ -1185,8 +1185,7 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const themeLib = fs.readFileSync(path.join(__dirname, '../lib/themes.js'), 'utf8');
-  const sandbox = { window: {} };
-  vm.runInNewContext(themeSource, sandbox);
+  const { MN_THEMES: themes } = loadRendererModule('src/shared/theme.jsx');
   const hueOf = (value) => {
     const match = String(value || '').match(/oklch\(\s*[\d.]+\s+[\d.]+\s+(-?[\d.]+)/);
     return match ? Number(match[1]) : null;
@@ -1196,7 +1195,6 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
     assert.ok(hue >= min && hue <= max, `${token} hue ${hue} expected in ${min}-${max}`);
   };
 
-  const themes = sandbox.window.MN_THEMES;
   assert.ok(themes.light);
   assert.ok(themes.dark);
   assert.ok(themes.pastel);
@@ -1240,7 +1238,7 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
   assert.match(bootController, /setCustomThemes\(normalizeThemes\(prefs\.customThemes\)\)/);
   assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
   assert.match(app, /for \(const item of customThemes\) next\[item\.id\] = item\.tokens/);
-  assert.match(app, /desktopBridge\.importThemeFile\(\)/);
+  assert.match(app, /desktopBridge\.preferences\.importThemeFile\(\)/);
   assert.match(preload, /importThemeFile: \(\) => ipcRenderer\.invoke\('mn:importThemeFile'\)/);
   assert.match(main, /async function importThemeFileFromIpc\(\)/);
   assert.match(main, /filters: \[\{ name: 'VispNote Theme', extensions: \['json', 'yaml', 'yml'\] \}\]/);
@@ -1370,19 +1368,17 @@ test('URL plugins follow the external URL security policy and surface failures',
   assert.match(app, /const runPlugin = useCallbackA\(async \(plugin\) =>/);
   assert.ok(app.includes("if (!/^(https:\\/\\/|mailto:)/i.test(url)) {"));
   assert.match(app, /must start with https:\/\/ or mailto:/);
-  assert.match(app, /const res = await desktopBridge\.openExternal\(url\)/);
+  assert.match(app, /const res = await desktopBridge\.app\.openExternal\(url\)/);
   assert.match(app, /if \(res && res\.ok === false\) throw new Error/);
   assert.match(app, /showAppNotice\('Could not open link'/);
   assert.doesNotMatch(app, /must start with http:\/\/ or https:\/\//);
 });
 
 test('Plugin ids normalize to AI-safe action names', () => {
-  const pluginsSource = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
   const appActions = require('../src/app/appActions.js');
-  const sandbox = { window: {} };
-  vm.runInNewContext(pluginsSource, sandbox);
+  const { MN_PLUGINS } = loadRendererModule('src/shared/plugins.js');
 
-  const plugin = sandbox.window.MN_PLUGINS.normalize({
+  const plugin = MN_PLUGINS.normalize({
     id: '../bad plugin:id',
     name: 'Open docs',
     purpose: 'Open documentation',
@@ -1403,15 +1399,13 @@ test('Plugin ids normalize to AI-safe action names', () => {
 });
 
 test('Main-process prefs sanitizer accepts every renderer plugin type', () => {
-  const pluginsSource = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
   const main = mainProcessSource();
-  const sandbox = { window: {} };
-  vm.runInNewContext(pluginsSource, sandbox);
+  const { MN_PLUGINS } = loadRendererModule('src/shared/plugins.js');
 
   const allowlist = main.match(/if \(!\[([^\]]+)\]\.includes\(type\)\) throw new Error\('Invalid plugin type'\)/);
   assert.ok(allowlist, 'plugin type allowlist exists in main.js sanitizer');
   const allowedTypes = allowlist[1].split(',').map(entry => entry.trim().replace(/^'|'$/g, ''));
-  for (const type of sandbox.window.MN_PLUGINS.TYPES) {
+  for (const type of MN_PLUGINS.TYPES) {
     assert.ok(allowedTypes.includes(type.id), `main.js prefs sanitizer allows plugin type "${type.id}"`);
   }
 
@@ -1443,9 +1437,9 @@ test('Zotero reader is wired as a read-only AI app action', () => {
   assert.match(app, /label: 'Create Zotero source note'/);
   assert.match(app, /idempotent: true/);
   assert.match(app, /readOnly: true/);
-  assert.match(app, /desktopBridge\.zotero\.search/);
-  assert.match(app, /desktopBridge\.zotero\.read/);
-  assert.match(app, /desktopBridge\.zotero\.status/);
+  assert.match(app, /desktopBridge\.integrations\.zotero\.search/);
+  assert.match(app, /desktopBridge\.integrations\.zotero\.read/);
+  assert.match(app, /desktopBridge\.integrations\.zotero\.status/);
   assert.match(app, /zoteroFindSourceNote\(notesWithBody, itemKey\)/);
   assert.match(app, /zoteroBuildSourceNotePlan/);
   assert.match(app, /Created Zotero source note/);
@@ -1612,7 +1606,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(app, /const normalWorkflowStates = useMemoA/);
   assert.match(app, /const novelistWorkflowStates = useMemoA/);
   assert.match(app, /activeVault\?\.novelistMode \? novelistWorkflowStates : normalWorkflowStates/);
-  assert.match(app, /setWorkflowStates\?\.\(workflowStates\)/);
+  assert.match(app, /mnSetWorkflowStates\(workflowStates\)/);
   assert.match(app, /const updateWorkflowStates = useCallbackA/);
   assert.match(app, /saveVaultMeta\(activeVaultId, \{ workflowStates: next \}\)/);
   assert.match(app, /onWorkflowStatesChange=\{updateWorkflowStates\}/);
@@ -1675,9 +1669,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(blockFeatures, /safe\[index \+ 1\]\?\.id \|\| null/);
   assert.match(blockFeatures, /function mnWorkflowIsClosed\(state\)/);
   assert.match(blockFeatures, /mnWorkflowIsClosed,/);
-  assert.match(blockFeatures, /setWorkflowStates: mnSetWorkflowStates/);
+  assert.match(blockFeatures, /mnSetWorkflowStates/);
   assert.match(blockFeatures, /DEFAULT_WORKFLOW_STATES/);
-  assert.match(panels, /const isClosedState = \(state\) => window\.MN_LOGSEQ\?\.mnWorkflowIsClosed/);
+  assert.match(panels, /const isClosedState = mnWorkflowIsClosed/);
   assert.doesNotMatch(panels, /textDecoration: isClosedState\(state\) \? 'line-through' : 'none'/);
   assert.doesNotMatch(panels, /textDecoration:[\s\S]{0,80}line-through[\s\S]{0,80}No preview/);
   assert.doesNotMatch(panels, /state\.id === 'DONE' \|\| state\.id === 'CANCELLED'/);
@@ -1697,7 +1691,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /mn-ai-live-dots/);
   assert.match(outliner, /function MnInlineAiPreview/);
   assert.match(outliner, /AI preview/);
-  assert.match(outliner, /window\.MN_AI_REPORT\?\.report/);
+  assert.match(outliner, /mnReportAiOutput\(/);
   assert.match(outliner, /Report AI output/);
   assert.match(outliner, /mn-inline-ai-preview-streaming/);
   assert.match(editor, /noteId=\{note\.id\}/);
@@ -1739,7 +1733,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(aiSource, /async function askStream/);
   assert.match(aiSource, /async function chatStream/);
   assert.match(ollama, /const CHAT_TIMEOUT_MS = 180000/);
-  assert.match(outline, /window\.MN_LOGSEQ\?\.WORKFLOW_STATES/);
+  assert.match(outline, /import \{ MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES \} from '\.\/blockFeatures\.jsx'/);
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(notelist, /const workflowPattern = states/);
   assert.doesNotMatch(notelist, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
@@ -1772,19 +1766,14 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
 
   assert.match(appShell, /function MnAppNoticeDialog/);
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  const entryIndex = source => rendererEntry.indexOf(source);
-  assert.ok(entryIndex('app/appHelpers.js') < entryIndex('app/app.jsx'));
-  assert.ok(entryIndex('app/appHelpers.js') < entryIndex('app/appMutations.js'));
-  assert.ok(entryIndex('app/appMutations.js') < entryIndex('app/app.jsx'));
-  assert.ok(entryIndex('app/appMutations.js') < entryIndex('app/appCanvasActions.js'));
-  assert.ok(entryIndex('app/appCanvasActions.js') < entryIndex('app/app.jsx'));
-  assert.match(appRuntime, /const MN_APP_HELPERS = window\.MN_APP_HELPERS/);
-  assert.match(appRuntime, /const MN_APP_MUTATIONS = window\.MN_APP_MUTATIONS/);
-  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
+  assert.match(rendererEntry, /import \{ MnApp \} from '\.\/app\/app\.jsx'/);
+  assert.match(appRuntime, /const MN_APP_HELPERS = require\('\.\/appHelpers\.js'\)/);
+  assert.match(appRuntime, /const MN_APP_MUTATIONS = require\('\.\/appMutations\.js'\)/);
+  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = require\('\.\/appCanvasActions\.js'\)/);
   assert.match(searchController, /const sequence = useRef\(0\)/);
   assert.match(searchController, /if \(requestId !== sequence\.current\) return/);
   assert.match(app, /Load first, then switch atomically/);
-  assert.match(panelHelpersSource, /root\.mnWriteNovelistAiConfig = api\.mnWriteNovelistAiConfig/);
+  assert.match(panelHelpersSource, /mnReadNovelistAiConfig, mnWriteNovelistAiConfig/);
   assert.match(app, /const duplicateNote = useCallbackA/);
   assert.match(app, /showAppNotice\('Could not create vault'/);
   assert.doesNotMatch(app, /alert\(/);
@@ -1807,30 +1796,24 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(main, /function flushDirtyNotes/);
   assert.match(preload, /onFlushDirtyNotes/);
   assert.match(app, /onNew=\{\(\) => createNote\(\)\}/);
-  assert.match(app, /const baseThemeMap = window\.MN_THEMES \|\| \{\}/);
+  assert.match(app, /const baseThemeMap = MN_THEMES/);
   assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
   assert.match(panels, /initialAiConfig = null/);
   assert.match(panels, /onAiConfigChange && onAiConfigChange\(next\)/);
   assert.match(appNovelistSource, /function mnReplaceWikiLinkTitle/);
-  assert.match(app, /window\.mnWriteNovelistAiConfig\?\.\(activeVault\.novelistAiConfig, activeVaultId\)/);
+  assert.match(app, /mnWriteNovelistAiConfig\(activeVault\.novelistAiConfig, activeVaultId\)/);
 });
 
 test('Markdown input rules load before outliner modules and stay renderer-scoped', () => {
-  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const outliner = outlinerSource(__dirname);
   const renderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
   const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
 
-  const entryIndex = source => rendererEntry.indexOf(`import './${source}';`);
-  assert.ok(entryIndex('editor/markdownInputRules.js') > entryIndex('editor/editorOps.js'));
-  assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') > entryIndex('editor/markdownInputRules.js'));
-  assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') < entryIndex('editor/outlinerRenderers.jsx'));
-  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/outlinerRenderers.jsx'));
-  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/editor.jsx'));
-
-  assert.match(helper, /MN_MARKDOWN_INPUT_RULES/);
-  assert.match(inlineRenderers, /window\.MN_MARKDOWN_INLINE_RENDERERS/);
+  assert.match(outliner, /import MN_MARKDOWN_INPUT_RULES from '\.\/markdownInputRules\.js'/);
+  assert.match(inlineRenderers, /import MN_MARKDOWN_INPUT_RULES from '\.\/markdownInputRules\.js'/);
+  assert.match(renderers, /from '\.\/markdownInlineRenderers\.jsx'/);
+  assert.match(helper, /module\.exports = api/);
   assert.match(inlineRenderers, /function mnRenderMarkdownInlineText/);
   assert.match(inlineRenderers, /MN_MARKDOWN_INPUT_RULES\.parseInlineMarkdown/);
   assert.match(inlineRenderers, /platformApi\.app\.openExternal\(segment\.url\)/);
@@ -1839,7 +1822,7 @@ test('Markdown input rules load before outliner modules and stay renderer-scoped
   assert.match(outliner, /onChangeKind\(block\.id, blockStarter\.patch\)/);
   assert.match(outliner, /pendingCaretRef\.current = blockStarter\.caret/);
   assert.doesNotMatch(outliner, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
-  assert.match(renderers, /window\.MN_MARKDOWN_INLINE_RENDERERS/);
+  assert.match(renderers, /import \{ mnRenderAnnotated, mnRenderMarkdownInlineText, mnRenderSpecialInlineText \}/);
   assert.doesNotMatch(inlineRenderers, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
   assert.doesNotMatch(renderers, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
 });
@@ -1868,13 +1851,13 @@ test('Markdown inline rendering is preserved when spellcheck issues are present'
   const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
   const spellcheck = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/spellcheck.jsx'), 'utf8');
 
-  assert.match(inlineRenderers, /function mnRenderMarkdownInlineText\(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0\)/);
+  assert.match(inlineRenderers, /function mnRenderMarkdownInlineText\(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0, vaultId = ''\)/);
   assert.match(inlineRenderers, /renderPlainText\(segment\.text, textOffset\)/);
-  assert.match(inlineRenderers, /mnRenderMarkdownInlineText\(sub, T, onOpen, onTagClick, allNotes, renderPlainText, seg\.s\)/);
+  assert.match(inlineRenderers, /mnRenderMarkdownInlineText\(sub, T, onOpen, onTagClick, allNotes, renderPlainText, seg\.s, vaultId\)/);
   assert.match(spellcheck, /function renderSpellCheckedText\(text, issues, theme, onOpenMenu, offset = 0\)/);
   assert.match(spellcheck, /start: baseOffset \+ start/);
   assert.match(outliner, /const renderSpellText = spellCheck && Object\.keys\(spellIssues \|\| \{\}\)\.length/);
-  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText\)/);
+  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText, vaultId\)/);
   assert.doesNotMatch(outliner, /return mnRenderSpellCheckedText\(content, spellIssues, T, setSpellMenu\)/);
 });
 
@@ -1897,5 +1880,5 @@ test('Structural markdown blocks edit with markdown source prefixes', () => {
   assert.match(outliner, /contentOffsetToEditorOffset\?\.\(block, contentCaret\)/);
   assert.match(outliner, /editorOffsetToContentOffset\?\.\(block, ta\?\.selectionStart/);
   assert.match(outliner, /displaySourceOffset \+ contentCaret/);
-  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText\)/);
+  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText, vaultId\)/);
 });

@@ -80,7 +80,7 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
             setSelectedWorkflow(null);
             setQuery('');
             navigateView('notes');
-            desktopBridge.setPrefs({ activeVaultId: nextActiveId });
+            desktopBridge.preferences.setPrefs({ activeVaultId: nextActiveId });
           } else {
             // Same-vault reload: keep the current selection unless the note vanished
             // from disk (e.g. deleted externally), then fall back like a vault switch.
@@ -113,8 +113,8 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
     }, [bootState, refreshVaultRegistry]);
   
     useEffectA(() => {
-      if (!HAS_DISK || bootState !== 'ready' || !desktopBridge?.onVaultFilesChanged) return undefined;
-      return desktopBridge.onVaultFilesChanged(event => {
+      if (!HAS_DISK || bootState !== 'ready' || !desktopBridge.events?.onVaultFilesChanged) return undefined;
+      return desktopBridge.events.onVaultFilesChanged(event => {
         if (!event?.vaultId) return;
         const activeHasDirtyNotes = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
         if (event.vaultId === activeVaultId && (activeHasDirtyNotes || tagsDirty.current)) {
@@ -153,13 +153,13 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
     }, []);
   
     const importThemeFile = useCallbackA(async () => {
-      if (!desktopBridge?.importThemeFile) {
+      if (!desktopBridge.preferences?.importThemeFile) {
         const error = 'This build does not expose theme import.';
         showAppNotice('Theme import unavailable', error, 'warn');
         return { ok: false, error };
       }
       try {
-        const res = await desktopBridge.importThemeFile();
+        const res = await desktopBridge.preferences.importThemeFile();
         if (!res?.ok) throw new Error(res?.error || 'Could not install theme.');
         const value = res.value || {};
         if (value.canceled) return { ok: true, canceled: true };

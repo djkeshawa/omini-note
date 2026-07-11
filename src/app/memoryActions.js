@@ -1,7 +1,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_MEMORY_ACTIONS = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   function plural(count, singular, pluralValue = `${singular}s`) {
     return `${count} ${count === 1 ? singular : pluralValue}`;

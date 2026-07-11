@@ -2,6 +2,9 @@
 // Renders as the main AI workspace and can still run as a compact overlay.
 
 import { platformApi } from '../platform/index.js';
+import { getAppActionRegistry } from '../app/actions/actionRegistryRuntime.js';
+import { aiActions } from './aiActions.js';
+import { aiRuntime } from './aiRuntime.js';
 
 const { useState: useStateAI, useEffect: useEffectAI, useRef: useRefAI } = React;
 import { createAiReviewActions } from './createAiReviewActions.js';
@@ -47,7 +50,6 @@ function MnAskAI({
     });
   };
   const messages = aiSession.messages || [];
-  const aiRuntime = window.MN_AI_RUNTIME || {};
   const noteIdSet = new Set((allNotes || []).map(note => String(note?.id || '')).filter(Boolean));
 
   useEffectAI(() => {
@@ -120,7 +122,7 @@ function MnAskAI({
   };
 
   const classifyPrompt = (q) => {
-    return (window.MN_AI_ACTIONS?.classifyPrompt || (() => ({ type: 'notes' })))(q);
+    return (aiActions.classifyPrompt || (() => ({ type: 'notes' })))(q);
   };
 
   const isClearlyNoteQuestion = (q) => {
@@ -143,8 +145,9 @@ function MnAskAI({
         !/\b(create|make|new|open|show|go to|delete|rename|duplicate|tag|untag|archive|restore|import|export|rebuild|backfill|refresh|settings|graph|calendar|agenda|schedule|canvas|todos?|zotero)\b/i.test(text)) {
       return null;
     }
-    if (!window.MN_APP_ACTIONS?.findForText) return null;
-    try { return window.MN_APP_ACTIONS.findForText(q); } catch (e) { return null; }
+    const registry = getAppActionRegistry();
+    if (!registry?.findForText) return null;
+    try { return registry.findForText(q); } catch (e) { return null; }
   };
 
   const shouldUseModelPlanner = (plan, q) => {
@@ -160,7 +163,7 @@ function MnAskAI({
   };
 
   const planAppActionsWithModel = async (q, fallbackPlan, jobId, run, priorMessages = []) => {
-    const registry = window.MN_APP_ACTIONS;
+    const registry = getAppActionRegistry();
     if (!registry?.describeForAi || !registry?.validate || !platformApi.ai?.toolPlan) return fallbackPlan;
     const functions = registry.describeForAi()
       .slice(0, 100);
@@ -274,7 +277,7 @@ function MnAskAI({
   });
 
   const { orchestratorTools, executeOrchestratorTool, runLlmOrchestrator, runActionPlan, runAppActionPlan } = createAiOrchestrator({
-    currentNote, setActiveAction, aiRuntime, askNotes, askVaultSummary, makeVirtualWriteReview, onCreateNote,
+    currentNote, setActiveAction, aiRuntime, askEdit, askNotes, askVaultSummary, makeVirtualWriteReview, onCreateNote,
   });
 
   const { confirmReview, cancelReview, editReviewArgs, restoreAiEdit, openAiEditVersionHistory } = createAiReviewActions({
@@ -342,7 +345,7 @@ function MnAskAI({
     const priorMessages = messages;
     const actionQuery = mnBuildContextualActionQuery(priorMessages, q);
     const route = aiRuntime.routeRequest
-      ? aiRuntime.routeRequest({ query: actionQuery, aiActions: window.MN_AI_ACTIONS, appRegistry: window.MN_APP_ACTIONS })
+      ? aiRuntime.routeRequest({ query: actionQuery, aiActions, appRegistry: getAppActionRegistry() })
       : (() => {
           const classifiedRoute = classifyPrompt(actionQuery);
           const appPlan = classifiedRoute.type === 'action' ? null : initialAppPlan(actionQuery);

@@ -1,4 +1,3 @@
-(function () {
   function normalizeBlock(block) {
     return block && typeof block === 'object' ? block : null;
   }
@@ -73,8 +72,4 @@
     };
   }
 
-  window.MN_OUTLINER_HISTORY = {
-    createEditorHistory,
-    shareBlockTree,
-  };
-})();
+export { createEditorHistory, shareBlockTree };

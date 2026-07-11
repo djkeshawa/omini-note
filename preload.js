@@ -23,27 +23,22 @@ function requestId(prefix) {
 
 contextBridge.exposeInMainWorld('mn', {
   // Vaults
-  notesVaults: {
-    listNotes: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteList, payload),
-    openNote: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteOpen, payload),
-    saveNote: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteSave, payload),
-    deleteNote: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteDelete, payload),
-    listVaults: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultList, payload),
-    createVault: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultCreate, payload),
-    renameVault: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultRename, payload),
-    deleteVault: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultDelete, payload),
-    selectVault: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultSelect, payload),
+  vaults: {
+  listVaults: () => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultList, {}),
+  createVault: (name, options) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultCreate, { name, options }),
+  renameVault: (vaultId, name) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultRename, { vaultId, name }),
+  deleteVault: (vaultId) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultDelete, { vaultId }),
+  setActiveVault: (vaultId) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.vaultSelect, { vaultId }),
+  saveVaultMeta: (vaultId, patch) => ipcRenderer.invoke('mn:saveVaultMeta', vaultId, patch),
   },
-  listVaults: () => ipcRenderer.invoke('mn:listVaults'),
-  createVault: (name, options) => ipcRenderer.invoke('mn:createVault', name, options),
-  renameVault: (id, name) => ipcRenderer.invoke('mn:renameVault', id, name),
-  deleteVault: (id) => ipcRenderer.invoke('mn:deleteVault', id),
-  setActiveVault: (id) => ipcRenderer.invoke('mn:setActiveVault', id),
 
   // Notes
+  notes: {
+  listNotes: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteList, payload),
+  openNote: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteOpen, payload),
   loadVault: (vaultId) => ipcRenderer.invoke('mn:loadVault', vaultId),
-  saveNote: (vaultId, note, options) => ipcRenderer.invoke('mn:saveNote', vaultId, note, options),
-  deleteNote: (vaultId, noteId, noteSnapshot) => ipcRenderer.invoke('mn:deleteNote', vaultId, noteId, noteSnapshot),
+  saveNote: (vaultId, note, options) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteSave, { vaultId, noteId: note?.id, note, options }),
+  deleteNote: (vaultId, noteId, noteSnapshot) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteDelete, { vaultId, noteId, noteSnapshot }),
   saveAttachment: (vaultId, payload) => ipcRenderer.invoke('mn:saveAttachment', vaultId, payload),
   listDeletedNotes: (vaultId) => ipcRenderer.invoke('mn:listDeletedNotes', vaultId),
   restoreDeletedNote: (vaultId, trashId) => ipcRenderer.invoke('mn:restoreDeletedNote', vaultId, trashId),
@@ -51,6 +46,10 @@ contextBridge.exposeInMainWorld('mn', {
   listNoteVersions: (vaultId, noteId) => ipcRenderer.invoke('mn:listNoteVersions', vaultId, noteId),
   getNoteVersion: (vaultId, noteId, versionId) => ipcRenderer.invoke('mn:getNoteVersion', vaultId, noteId, versionId),
   restoreNoteVersion: (vaultId, noteId, versionId) => ipcRenderer.invoke('mn:restoreNoteVersion', vaultId, noteId, versionId),
+  exportNote:  (vaultId, noteId, format) => ipcRenderer.invoke('mn:exportNote', vaultId, noteId, format),
+  },
+
+  canvas: {
   listCanvases: (vaultId) => ipcRenderer.invoke('mn:listCanvases', vaultId),
   getCanvas: (vaultId, canvasId) => ipcRenderer.invoke('mn:getCanvas', vaultId, canvasId),
   saveCanvas: (vaultId, canvas) => ipcRenderer.invoke('mn:saveCanvas', vaultId, canvas),
@@ -58,22 +57,18 @@ contextBridge.exposeInMainWorld('mn', {
   listDeletedCanvases: (vaultId) => ipcRenderer.invoke('mn:listDeletedCanvases', vaultId),
   restoreDeletedCanvas: (vaultId, trashId) => ipcRenderer.invoke('mn:restoreDeletedCanvas', vaultId, trashId),
   purgeDeletedCanvas: (vaultId, trashId) => ipcRenderer.invoke('mn:purgeDeletedCanvas', vaultId, trashId),
-  saveVaultMeta: (vaultId, patch) => ipcRenderer.invoke('mn:saveVaultMeta', vaultId, patch),
+  },
 
   // Prefs
+  preferences: {
   getPrefs: () => ipcRenderer.invoke('mn:getPrefs'),
   setPrefs: (patch) => ipcRenderer.invoke('mn:setPrefs', patch),
   importThemeFile: () => ipcRenderer.invoke('mn:importThemeFile'),
   spellcheck: (words) => ipcRenderer.invoke('mn:spellcheck', words),
-  featureUsage: {
-    status: () => ipcRenderer.invoke('mn:featureUsage.status'),
-    record: (feature, action = 'used') => ipcRenderer.invoke('mn:featureUsage.record', feature, action),
-    clear: () => ipcRenderer.invoke('mn:featureUsage.clear'),
-    export: () => ipcRenderer.invoke('mn:featureUsage.export'),
-    share: () => ipcRenderer.invoke('mn:featureUsage.share'),
   },
 
   // Search / backlinks / tags (SQLite-backed)
+  search: {
   search:      (vaultId, query, limit) => ipcRenderer.invoke('mn:search', vaultId, query, limit),
   searchDetailed:(vaultId, query, limit) => ipcRenderer.invoke('mn:searchDetailed', vaultId, query, limit),
   searchDetailedStatus:(vaultId, query, limit) => ipcRenderer.invoke('mn:searchDetailedStatus', vaultId, query, limit),
@@ -83,10 +78,13 @@ contextBridge.exposeInMainWorld('mn', {
   tagCounts:   (vaultId) => ipcRenderer.invoke('mn:tagCounts', vaultId),
   rebuildIndex:(vaultId) => ipcRenderer.invoke('mn:rebuildIndex', vaultId),
   vaultHealth: (vaultId) => ipcRenderer.invoke('mn:vaultHealth', vaultId),
+  },
+
+  maintenance: {
   exportBackup:(options) => ipcRenderer.invoke('mn:exportBackup', options),
-  exportNote:  (vaultId, noteId, format) => ipcRenderer.invoke('mn:exportNote', vaultId, noteId, format),
   importBackup:(options) => ipcRenderer.invoke('mn:importBackup', options),
   importNovelFiles:(options) => ipcRenderer.invoke('mn:importNovelFiles', options),
+  },
 
   // AI (Ollama)
   ai: {
@@ -152,6 +150,14 @@ contextBridge.exposeInMainWorld('mn', {
     setConfig: (patch) => ipcRenderer.invoke('mn:ai.setConfig', patch),
   },
 
+  integrations: {
+  featureUsage: {
+    status: () => ipcRenderer.invoke('mn:featureUsage.status'),
+    record: (feature, action = 'used') => ipcRenderer.invoke('mn:featureUsage.record', feature, action),
+    clear: () => ipcRenderer.invoke('mn:featureUsage.clear'),
+    export: () => ipcRenderer.invoke('mn:featureUsage.export'),
+    share: () => ipcRenderer.invoke('mn:featureUsage.share'),
+  },
   // Local llm-memory server bridge
   memory: {
     status: () => ipcRenderer.invoke('mn:memory.status'),
@@ -177,11 +183,14 @@ contextBridge.exposeInMainWorld('mn', {
     list: (payload) => ipcRenderer.invoke('mn:zotero.list', payload),
     read: (payload) => ipcRenderer.invoke('mn:zotero.read', payload),
   },
+  },
 
   // Window
+  app: {
   setTitle: (title) => ipcRenderer.invoke('mn:setTitle', title),
   openExternal: (url) => ipcRenderer.invoke('mn:openExternal', url),
   shortcutStatus: () => ipcRenderer.invoke('mn:shortcutStatus'),
+  },
   updates: {
     status: () => ipcRenderer.invoke('mn:updates.status'),
     check: () => ipcRenderer.invoke('mn:updates.check'),
@@ -196,6 +205,7 @@ contextBridge.exposeInMainWorld('mn', {
 
   // Push events from main → renderer. The bridge wraps the listener so the
   // renderer never sees the raw IpcRendererEvent object.
+  events: {
   onOpenQuickCapture: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = () => { try { callback(); } catch (e) { console.error('onOpenQuickCapture handler', e); } };
@@ -224,5 +234,6 @@ contextBridge.exposeInMainWorld('mn', {
     };
     ipcRenderer.on('mn:flushDirtyNotes', listener);
     return () => ipcRenderer.removeListener('mn:flushDirtyNotes', listener);
+  },
   },
 });

@@ -5,7 +5,7 @@ const {
   mnCanvasPreviewElements, mnCanvasCloneElement, mnCanvasBounds, mnCanvasSelectionBounds,
   mnCanvasMoveElement, mnCanvasIsConnector, mnCanvasAnchorTargetAt, mnCanvasResolveConnector,
   mnCanvasSyncConnectors, mnCanvasCloneElements,
-} = window.MN_CANVAS_MODEL || {};
+} = MN_CANVAS_MODEL;
 import { MnCanvasNotePicker, MnCanvasColorControl, MnCanvasToolButton, MnCanvasActionButton, MnCanvasDivider, MnCanvasStatusPill, MnCanvasResizeHandles, MnCanvasContextMenu, MnCanvasDeleteDialog } from './CanvasControls.jsx';
 import { MnCanvasElement } from './CanvasElements.jsx';
 import { CanvasToolbar } from './CanvasToolbar.jsx';
@@ -639,9 +639,11 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
         activeStrokeWidth={activeStrokeWidth}
         applyStrokeWidth={applyStrokeWidth}
         undoCanvas={undoCanvas}
-        historyIndex={historyIndex}
-        history={history}
+        canUndo={canUndo}
+        canRedo={canRedo}
         redoCanvas={redoCanvas}
+        setZoom={setZoom}
+        viewport={viewport}
         fitToScreen={fitToScreen}
         toolbarMenuRef={toolbarMenuRef}
         setToolbarMenuOpen={setToolbarMenuOpen}
@@ -761,3 +763,4 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
 // place at the viewport center.
 
 export { MnCanvasEditor };
+import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';

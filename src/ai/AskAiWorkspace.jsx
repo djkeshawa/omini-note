@@ -1,7 +1,6 @@
-import { MN_ASK_SUGGESTIONS } from './aiModels.js';
+import { MN_ASK_SUGGESTIONS, mnReportAiOutput } from './aiModels.js';
 import { MnAiSetupNotice, MnCurrentNoteSuggestionsCard, MnAiFormattedResponse } from './aiPresentation.jsx';
-
-const { StatusPill, mnAskPrimaryButton, mnAskSecondaryButton, mnAskReportButton, iconBtn } = window.MN_AI_UI || {};
+import { StatusPill, iconBtn, mnAskPrimaryButton, mnAskReportButton, mnAskSecondaryButton } from './aiUi.jsx';
 
 function AskAiWorkspace({ model }) {
   const {
@@ -582,7 +581,7 @@ function AskAiWorkspace({ model }) {
                 {canReport && (
                   <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
                     <button
-                      onClick={() => window.MN_AI_REPORT?.report?.({ prompt: previousUser, output: m.text, scope: m.action ? 'AI page action' : 'Ask AI answer' })}
+                      onClick={() => mnReportAiOutput({ prompt: previousUser, output: m.text, scope: m.action ? 'AI page action' : 'Ask AI answer' })}
                       title="Report this AI output to the configured provider"
                       style={mnAskReportButton(T)}>
                       Report AI output

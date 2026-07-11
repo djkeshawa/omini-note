@@ -27,20 +27,26 @@ import {
   useOutlinerKeyboardShortcuts,
 } from '../../features/editor/outliner/index.js';
 import { platformApi } from '../../platform/index.js';
+import imageAttachments from '../imageAttachments.js';
+import { mnIsPropertyLine, mnParseProperty, mnWorkflow } from '../blockFeatures.jsx';
 import { MnCanvasEmbed } from '../../features/canvas/index.js';
+import {
+  mkBlock, mnBlocksToMd, mnCloneBlocks, mnFlatten, mnIsListLike, mnLocate,
+  mnMdToBlocks, mnNormalizeBlockLabels,
+} from '../outline.jsx';
+import { MnBlockContextMenu, MnBlockEmbed, MnPageEmbed, MnPropertyRow, MnWorkflowPill, MnZoomBar } from '../blockFeatures.jsx';
+import MN_EDITOR_OPS from '../editorOps.js';
+import MN_MARKDOWN_INPUT_RULES from '../markdownInputRules.js';
+import MN_APP_HELPERS from '../../app/appHelpers.js';
+import MN_TABLE_OPS from '../tableOps.js';
+import { createEditorHistory as mnCreateEditorHistory, shareBlockTree as mnShareBlockTree } from '../outlinerHistory.js';
+import {
+  MN_AI_ACTIONS, MN_CODE_LANGUAGES, MnAiIcon, MnMathBlock, MnMermaidBlock,
+  mnAiAction, mnCodeLanguageLabel, mnNormalizeCodeLanguage, mnRenderAnnotated, mnRenderCode,
+} from '../outlinerRenderers.jsx';
 
 const { useState: useStateOE, useRef: useRefOE, useEffect: useEffectOE,
         useMemo: useMemoOE, useLayoutEffect: useLayoutEffectOE } = React;
-const {
-  mkBlock, mnLocate, mnCloneBlocks, mnFlatten, mnIsListLike,
-  mnBlocksToMd, mnMdToBlocks, mnNormalizeBlockLabels,
-} = window.MN_OUTLINE;
-const MnWorkflowPill = window.MnWorkflowPill;
-const MnPropertyRow = window.MnPropertyRow;
-const MnPageEmbed = window.MnPageEmbed;
-const MnBlockEmbed = window.MnBlockEmbed;
-const MnBlockContextMenu = window.MnBlockContextMenu;
-const MnZoomBar = window.MnZoomBar;
 const {
   clearAnnotationRange: mnClearAnnotationRange,
   applyAnnotationRange: mnApplyAnnotationRange,
@@ -49,36 +55,17 @@ const {
   splitBlock: mnSplitBlock,
   splitAnnotations: mnSplitAnnotations,
   mergeBlockContent: mnMergeBlockContent,
-} = window.MN_EDITOR_OPS;
-const MN_MARKDOWN_INPUT_RULES = window.MN_MARKDOWN_INPUT_RULES || {};
-const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
+} = MN_EDITOR_OPS;
 const {
   clipboardEventToMarkdownTable: mnClipboardEventToMarkdownTable,
   markdownTableToRows: mnMarkdownTableToRows,
   markdownTableToHtml: mnMarkdownTableToHtml,
-} = window.MN_TABLE_OPS || {};
-const {
-  createEditorHistory: mnCreateEditorHistory,
-  shareBlockTree: mnShareBlockTree,
-} = window.MN_OUTLINER_HISTORY || {};
-
-const {
-  MN_AI_ACTIONS,
-  mnAiAction,
-  MnAiIcon,
-  mnRenderAnnotated,
-  MN_CODE_LANGUAGES,
-  mnNormalizeCodeLanguage,
-  mnCodeLanguageLabel,
-  mnRenderCode,
-  MnMathBlock,
-  MnMermaidBlock,
-} = window.MN_OUTLINER_RENDERERS || {};
+} = MN_TABLE_OPS;
 
 const mnSpellWords = spellWords;
 const mnRenderSpellCheckedText = renderSpellCheckedText;
 const MnSpellSuggestionMenu = SpellSuggestionMenu;
-import { MnDisclosure } from './OutlinerChrome.jsx';
+import { MnCanvasPicker, MnDisclosure } from './OutlinerChrome.jsx';
 import { MnPlotPointsBlock, MnInlineAiButton, MnSmartViewEmbedFallback, MnSmartViewEmbed, MnMarkdownTable, mnEditorFontScale, mnGetFontStyle, mnAffordancePadTop, mnGripPadTop, mnPlaceholder } from './EmbeddedBlocks.jsx';
 import { MnPopover, MnPopoverHeader, MnPopoverItem, MnInlineAiPreview } from './OutlinerPopovers.jsx';
 
@@ -114,13 +101,17 @@ const mnIsClipboardBlock = isClipboardBlock;
 const mnReidBlocks = blocks => reidBlocks(blocks, mnCloneBlocks);
 const mnNormalizeClipboardMarkdown = normalizeClipboardMarkdown;
 const mnLooksLikeBlockMarkdown = looksLikeBlockMarkdown;
+const MN_IMAGE_ATTACHMENTS = imageAttachments;
+const MN_LOGSEQ = { mnIsPropertyLine, mnParseProperty, mnWorkflow };
+const mnDataTransferHasFiles = imageAttachments.mnDataTransferHasFiles;
+const mnImageFilesFromDataTransfer = imageAttachments.mnImageFilesFromDataTransfer;
 
 // ── Selection toolbar (floats above selected text) ────────────────────
 import { MnBlockRowView } from './BlockRowView.jsx';
 import { blockRowMemoEqual } from './blockRowMemo.js';
 
 function MnBlockRow({
-  block, depth, focusId, T, allNotes,
+  block, depth, focusId, T, allNotes, vaultId = '',
   allCanvases = [], onOpenCanvas, onCreateCanvas,
   onChange, onChangeKind, onIndent, onOutdent, onSplit, onMergePrev,
   onInsertBlocksAt,
@@ -420,7 +411,7 @@ function MnBlockRow({
   // resulting ![alt](attachments/...) markdown into this block at [start, end),
   // clamped against the block's content as it is when the save completes.
   const insertImageMarkdown = async (files, start, end) => {
-    const api = window.MN_IMAGE_ATTACHMENTS;
+    const api = imageAttachments;
     if (!api) return;
     const { markdowns, errors } = await api.mnSaveImageAttachments(files, {
       bridge: { saveAttachment: platformApi.notes.saveAttachment },
@@ -481,7 +472,7 @@ function MnBlockRow({
       setFocusId && setFocusId(tableBlock.id);
       return;
     }
-    const imageFiles = window.MN_IMAGE_ATTACHMENTS?.mnImageFilesFromDataTransfer?.(e.clipboardData) || [];
+    const imageFiles = imageAttachments.mnImageFilesFromDataTransfer(e.clipboardData) || [];
     if (imageFiles.length && blockAcceptsImageDrops) {
       e.preventDefault();
       setAutoQ(null);
@@ -787,9 +778,9 @@ function MnBlockRow({
   }
 
   // ── render ──────────────────────────────────────────────────────
-  return <MnBlockRowView model={{ MN_APP_HELPERS, MN_BLOCK_LABEL_COLORS, MN_CODE_LANGUAGES, MN_IMAGE_ATTACHMENTS, MN_LOGSEQ, MnBlockEmbed, MnCanvasEmbed, MnCanvasPicker, MnDisclosure, MnInlineAiButton, MnMarkdownTable, MnMathBlock, MnMermaidBlock, MnPageEmbed, MnPopover, MnPopoverHeader, MnPopoverItem, MnPropertyRow, MnSmartViewEmbed, MnSpellSuggestionMenu, MnWorkflowPill, T, addBlockLabel, aiActive, aiTarget, allCanvases, allNotes, applyEditorValue, applySlashCmd, applySpellSuggestion, autoIdx, autoLink, autoQ, block, blockAcceptsImageDrops, blockLabels, canvasPicker, collapseByDefault, depth, displayAnnotations, displayBlock, displaySourceOffset, displayTextRef, dropPos, editing, editingLabelId, editorFontSize, editorValue, focusId, fontStyle, handleCopy, handleCut, handleEnter, handleInput, handleKey, handlePaste, handleSelect, hasChildren, ignoreSpellWord, ignoredSpellWords, indentGuides, indentPx, inputRef, insertImageMarkdown, isList, labelMenu, latestContentRef, markdownDisplayProjection, mnAffordancePadTop, mnBlockLabelPalette, mnCodeLanguageLabel, mnDataTransferHasFiles, mnGripPadTop, mnImageFilesFromDataTransfer, mnIsPropertyLine, mnNormalizeCodeLanguage, mnParseProperty, mnPlaceholder, mnRenderAnnotated, mnRenderCode, mnRenderSpellCheckedText, mnWorkflow, novelistMode, onAiAction, onBeginContentEdit, onBlockMouseDown, onBlockMouseEnter, onChange, onChangeKind, onClearAnnotation, onContextMenu, onCreateCanvas, onDelete, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onSelectionChange, onSetAnnotation, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, parseClipboardBlocks, pendingCaretRef, pickSuggestion, removeBlockLabel, selectedAsArea, selectedBlockIds, setAutoIdx, setAutoQ, setBlockLabels, setCanvasPicker, setDropPos, setEditing, setEditingLabelId, setFocusId, setIgnoredSpellWords, setLabelMenu, setSlashIdx, setSlashQ, setSpellIssues, setSpellMenu, slashIdx, slashMatches, slashQ, spellCheck, spellIssues, spellMenu, startEdit, textOffsetFromPoint, updateBlockLabel, wikiSuggestions }} />;
+  return <MnBlockRowView model={{ vaultId, MN_APP_HELPERS, MN_BLOCK_LABEL_COLORS, MN_CODE_LANGUAGES, MN_IMAGE_ATTACHMENTS, MN_LOGSEQ, MnBlockEmbed, MnCanvasEmbed, MnCanvasPicker, MnDisclosure, MnInlineAiButton, MnMarkdownTable, MnMathBlock, MnMermaidBlock, MnPageEmbed, MnPopover, MnPopoverHeader, MnPopoverItem, MnPropertyRow, MnSmartViewEmbed, MnSpellSuggestionMenu, MnWorkflowPill, T, addBlockLabel, aiActive, aiTarget, allCanvases, allNotes, applyEditorValue, applySlashCmd, applySpellSuggestion, autoIdx, autoLink, autoQ, block, blockAcceptsImageDrops, blockLabels, canvasPicker, collapseByDefault, depth, displayAnnotations, displayBlock, displaySourceOffset, displayTextRef, dropPos, editing, editingLabelId, editorFontSize, editorValue, focusId, fontStyle, handleCopy, handleCut, handleEnter, handleInput, handleKey, handlePaste, handleSelect, hasChildren, ignoreSpellWord, ignoredSpellWords, indentGuides, indentPx, inputRef, insertImageMarkdown, isList, labelMenu, latestContentRef, markdownDisplayProjection, mnAffordancePadTop, mnBlockLabelPalette, mnCodeLanguageLabel, mnDataTransferHasFiles, mnGripPadTop, mnImageFilesFromDataTransfer, mnIsPropertyLine, mnNormalizeCodeLanguage, mnParseProperty, mnPlaceholder, mnRenderAnnotated, mnRenderCode, mnRenderSpellCheckedText, mnWorkflow, novelistMode, onAiAction, onBeginContentEdit, onBlockMouseDown, onBlockMouseEnter, onChange, onChangeKind, onClearAnnotation, onContextMenu, onCreateCanvas, onDelete, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onSelectionChange, onSetAnnotation, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, parseClipboardBlocks, pendingCaretRef, pickSuggestion, removeBlockLabel, selectedAsArea, selectedBlockIds, setAutoIdx, setAutoQ, setBlockLabels, setCanvasPicker, setDropPos, setEditing, setEditingLabelId, setFocusId, setIgnoredSpellWords, setLabelMenu, setSlashIdx, setSlashQ, setSpellIssues, setSpellMenu, slashIdx, slashMatches, slashQ, spellCheck, spellIssues, spellMenu, startEdit, textOffsetFromPoint, updateBlockLabel, wikiSuggestions }} />;
 }
 
 const MnMemoBlockRow = React.memo(MnBlockRow, blockRowMemoEqual);
 
-export { MnBlockRow, MnMemoBlockRow };
+export { MnBlockRow, MnMemoBlockRow, mnCreateBlockLabel };

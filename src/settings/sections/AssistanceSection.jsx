@@ -1,6 +1,6 @@
 import { H, SettingsCard, Row, Segmented, Toggle, Select, FontSizeStepper } from '../settingsControls.jsx';
 import { platformApi } from '../../platform/index.js';
-import { uniqueOptions, mnAiInput, mnSettingsInput } from '../settingsPrimitives.jsx';
+import { uniqueOptions, mnAiInput, mnSettingsInput, BtnOutline, StaticValue } from '../settingsPrimitives.jsx';
 const { useState: useStateS, useEffect: useEffectS, useRef: useRefS } = React;
 
 const MN_AI_PROVIDERS = [

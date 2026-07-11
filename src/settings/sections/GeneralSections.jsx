@@ -1,7 +1,9 @@
 import { H, SettingsCard, Row, Segmented, Toggle, Select, FontSizeStepper } from '../settingsControls.jsx';
 import { SectionPlugins } from './PluginSection.jsx';
 
-const MN_SETTINGS_PLUGINS = window.MN_PLUGINS || {};
+import { MN_PLUGINS as MN_SETTINGS_PLUGINS } from '../../shared/plugins.js';
+import MN_FEATURES from '../../app/featureRegistry.js';
+import { mnSettingsInput } from '../settingsPrimitives.jsx';
 
 function SectionAppearance({ tweaks, setTweak, T, themeOptions = [] }) {
   const builtIns = [
@@ -174,7 +176,7 @@ function SectionReminders({ tweaks, setTweak, T }) {
 
 
 function SectionAdvanced({ tweaks, setTweak, T, enabledPacks = [], featureState = {}, onSetPack }) {
-  const packs = window.MN_FEATURES?.PACKS || [];
+  const packs = MN_FEATURES.PACKS || [];
   const inferred = new Set(featureState.inferred || []);
   const plugins = MN_SETTINGS_PLUGINS.normalizeAll ? MN_SETTINGS_PLUGINS.normalizeAll(tweaks.plugins) : [];
   return (

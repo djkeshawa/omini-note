@@ -341,10 +341,11 @@ async function activeVaultId(win) {
     (async () => {
       const unwrap = (result, label) => {
         if (!result?.ok) throw new Error(label + ': ' + (result?.error || 'failed'));
-        return result.value;
+        return result.data ?? result.value;
       };
-      const vaults = unwrap(await window.mn.listVaults(), 'listVaults');
-      const prefs = unwrap(await window.mn.getPrefs(), 'getPrefs');
+      const vaultResult = unwrap(await window.mn.vaults.listVaults(), 'listVaults');
+      const vaults = Array.isArray(vaultResult) ? vaultResult : (vaultResult?.vaults || []);
+      const prefs = unwrap(await window.mn.preferences.getPrefs(), 'getPrefs');
       const active = vaults.find(v => v.id === prefs.activeVaultId) || vaults[0];
       if (!active) throw new Error('No active vault');
       return active.id;
@@ -356,7 +357,7 @@ async function loadActiveVault(win) {
   const vaultId = await activeVaultId(win);
   return await evaluate(win, `
     (async () => {
-      const res = await window.mn.loadVault(${JSON.stringify(vaultId)});
+      const res = await window.mn.notes.loadVault(${JSON.stringify(vaultId)});
       if (!res?.ok) throw new Error(res?.error || 'loadVault failed');
       return res.value;
     })()
@@ -384,7 +385,7 @@ async function waitForDeletedNote(win, title) {
   return await waitFor(win, `deleted note ${title}`, async () => {
     const res = await evaluate(win, `
       (async () => {
-        const result = await window.mn.listDeletedNotes(${JSON.stringify(vaultId)});
+        const result = await window.mn.notes.listDeletedNotes(${JSON.stringify(vaultId)});
         if (!result?.ok) throw new Error(result?.error || 'listDeletedNotes failed');
         return result.value || [];
       })()
@@ -399,7 +400,7 @@ async function waitForCanvas(win, title) {
   return await waitFor(win, `canvas ${title}`, async () => {
     const res = await evaluate(win, `
       (async () => {
-        const result = await window.mn.listCanvases(${JSON.stringify(vaultId)});
+        const result = await window.mn.canvas.listCanvases(${JSON.stringify(vaultId)});
         if (!result?.ok) throw new Error(result?.error || 'listCanvases failed');
         return result.value || [];
       })()
@@ -413,11 +414,11 @@ async function loadCanvasByTitle(win, title) {
   const vaultId = await activeVaultId(win);
   return await evaluate(win, `
     (async () => {
-      const listResult = await window.mn.listCanvases(${JSON.stringify(vaultId)});
+      const listResult = await window.mn.canvas.listCanvases(${JSON.stringify(vaultId)});
       if (!listResult?.ok) throw new Error(listResult?.error || 'listCanvases failed');
       const canvas = (listResult.value || []).find(row => row.title === ${JSON.stringify(title)});
       if (!canvas) return null;
-      const getResult = await window.mn.getCanvas(${JSON.stringify(vaultId)}, canvas.id);
+      const getResult = await window.mn.canvas.getCanvas(${JSON.stringify(vaultId)}, canvas.id);
       if (!getResult?.ok) throw new Error(getResult?.error || 'getCanvas failed');
       return getResult.value || null;
     })()
@@ -581,14 +582,15 @@ async function seedEditorNote(win, { id, title, body }) {
     (async () => {
       const unwrap = (result, label) => {
         if (!result?.ok) throw new Error(label + ': ' + (result?.error || 'failed'));
-        return result.value;
+        return result.data ?? result.value;
       };
-      const vaults = unwrap(await window.mn.listVaults(), 'listVaults');
-      const prefs = unwrap(await window.mn.getPrefs(), 'getPrefs');
+      const vaultResult = unwrap(await window.mn.vaults.listVaults(), 'listVaults');
+      const vaults = Array.isArray(vaultResult) ? vaultResult : (vaultResult?.vaults || []);
+      const prefs = unwrap(await window.mn.preferences.getPrefs(), 'getPrefs');
       const active = vaults.find(v => v.id === prefs.activeVaultId) || vaults[0];
       if (!active) throw new Error('No vault available for editor regression');
       const now = new Date().toISOString();
-      unwrap(await window.mn.saveNote(active.id, {
+      unwrap(await window.mn.notes.saveNote(active.id, {
         id: ${JSON.stringify(id)},
         title: ${JSON.stringify(title)},
         body: ${JSON.stringify(body)},
@@ -596,7 +598,7 @@ async function seedEditorNote(win, { id, title, body }) {
         date: now,
         modifiedAt: now,
       }, {}), 'saveNote');
-      unwrap(await window.mn.saveVaultMeta(active.id, {
+      unwrap(await window.mn.vaults.saveVaultMeta(active.id, {
         lastSelectedId: ${JSON.stringify(id)},
       }), 'saveVaultMeta');
     })()

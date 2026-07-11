@@ -1,11 +1,14 @@
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
-const { SectionHead } = window.MN_PANEL_COMPONENTS || {};
-const { mnReadNovelistAiConfig, mnWriteNovelistAiConfig, mnNormalizeNovelistAiConfig } = window.MN_PANEL_HELPERS || {};
+import { SectionHead } from '../../panels/panelShared.jsx';
+import { mnNormalizeNovelistAiConfig, mnReadNovelistAiConfig, mnWriteNovelistAiConfig } from '../../panels/panelHelpers.js';
 import { SupportingNoteSection } from './SupportingNoteSection.jsx';
+import { createNovelistHelpers } from './novelistHelpers.js';
 import { buildNovelistStatusModel } from './novelistStatusModel.js';
 import { NovelistStatusSection, NovelistAiConfigurationSection } from './NovelistSections.jsx';
 import { NovelistPanelView } from './NovelistPanelView.jsx';
+import { TypeLine } from './TypeLine.jsx';
 import { mnPanelButton, mnPanelMiniButton, mnPanelInputStyle, mnPanelTextareaStyle, mnPanelMenuItem } from '../../shared/panels/panelStyles.js';
+const { bodyPropertyValue: mnBodyPropertyValue, noteOrderValue: mnNoteOrderValue, setBodyProperty: mnSetBodyProperty } = createNovelistHelpers();
 
 function MnNovelistPanel({
   notes, novelistNotes, tags, vaultId = '', workflowStates, workflowItems,
@@ -388,7 +391,7 @@ function MnNovelistPanel({
         whiteSpace: 'nowrap',
         maxWidth: '100%',
       }}>{note.title || label}</div>
-      <TypeLine label={label} linkedTo={linkedTo} extraParent={extraParent} count={count} />
+      <TypeLine label={label} linkedTo={linkedTo} extraParent={extraParent} count={count} T={T} />
     </button>
   );
 

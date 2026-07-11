@@ -19,7 +19,7 @@ function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
   }, [onCancel]);
 
   if (!note) return null;
-  const blockCount = (window.MN_OUTLINE?.mnFlatten?.(note.blocks || [], 0, false) || []).length;
+  const blockCount = mnFlatten(note.blocks || [], 0, false).length;
   const tagText = (note.tags || []).length
     ? (note.tags || []).map(t => `#${t}`).join(' ')
     : 'No tags';
@@ -174,3 +174,5 @@ function MnDeleteNoteDialog({ note, T, onCancel, onConfirm }) {
 }
 
 export { MnDeleteNoteDialog };
+import { mnFlatten } from '../../editor/outline.jsx';
+const { useEffect: useEffectA, useRef: useRefA } = React;

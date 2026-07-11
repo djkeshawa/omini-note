@@ -1,9 +1,10 @@
 // Inline markdown and annotation renderers for outliner text.
 
 import { platformApi } from '../platform/index.js';
+import { MnBlockRef } from './blockFeatures.jsx';
+import { MnInline } from '../shared/markdown.jsx';
+import MN_MARKDOWN_INPUT_RULES from './markdownInputRules.js';
 
-const MnInline = window.MnInline;
-const MN_MARKDOWN_INPUT_RULES = window.MN_MARKDOWN_INPUT_RULES || {};
 
 function mnRenderSpecialInlineText(text, T, onOpen, onTagClick, allNotes) {
   const value = String(text || '');
@@ -15,10 +16,10 @@ function mnRenderSpecialInlineText(text, T, onOpen, onTagClick, allNotes) {
     const whole = match[0];
     if (whole.startsWith('((')) {
       const refId = whole.slice(2, -2);
-      if (window.MnBlockRef) {
+      if (MnBlockRef) {
         out.push(
           <span key={key++}>
-            <window.MnBlockRef refId={refId} allNotes={allNotes} T={T}
+            <MnBlockRef refId={refId} allNotes={allNotes} T={T}
               onOpenBlock={(noteId, blockId) => onOpen && onOpen(null, noteId, blockId)} />
           </span>
         );
@@ -94,13 +95,12 @@ function mnInlineSegmentTextOffset(segment, sourceOffset) {
   return sourceOffset;
 }
 
-function mnResolveInlineImageSrc(url) {
+function mnResolveInlineImageSrc(url, vaultId = '') {
   const value = String(url || '');
   const isAttachmentPath = MN_MARKDOWN_INPUT_RULES.isVaultAttachmentPath
     ? MN_MARKDOWN_INPUT_RULES.isVaultAttachmentPath(value)
     : false;
   if (isAttachmentPath) {
-    const vaultId = String(window.MN_ACTIVE_VAULT_ID || '');
     if (!vaultId) return null;
     const fileName = value.slice('attachments/'.length);
     return `vispnote-asset://attachment/${encodeURIComponent(vaultId)}/${encodeURIComponent(fileName)}`;
@@ -109,11 +109,11 @@ function mnResolveInlineImageSrc(url) {
   return null;
 }
 
-function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0) {
+function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0, vaultId = '') {
   const value = String(text || '');
   const parseInlineMarkdown = MN_MARKDOWN_INPUT_RULES.parseInlineMarkdown;
   if (!parseInlineMarkdown) {
-    return <MnInline text={value} T={T} onOpen={onOpen} onTagClick={onTagClick} allNotes={allNotes} />;
+    return <MnInline text={value} T={T} onOpen={onOpen} onTagClick={onTagClick} allNotes={allNotes} BlockRefComponent={MnBlockRef} />;
   }
   const segments = parseInlineMarkdown(value);
   let sourceOffset = Number(baseOffset) || 0;
@@ -144,7 +144,7 @@ function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, rende
           );
         }
         if (segment.kind === 'image') {
-          const src = mnResolveInlineImageSrc(segment.url);
+          const src = mnResolveInlineImageSrc(segment.url, vaultId);
           if (!src) {
             return (
               <span key={index} style={{ fontFamily: 'var(--mn-mono)', fontSize: '0.85em', color: T.inkDim }}>
@@ -208,9 +208,9 @@ function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, rende
   );
 }
 
-function mnRenderAnnotated(text, annotations, T, onOpen, onTagClick, allNotes, renderPlainText) {
+function mnRenderAnnotated(text, annotations, T, onOpen, onTagClick, allNotes, renderPlainText, vaultId = '') {
   if (!annotations || annotations.length === 0) {
-    return mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, renderPlainText, 0);
+    return mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, renderPlainText, 0, vaultId);
   }
   const points = new Set([0, text.length]);
   for (const a of annotations) { points.add(a.start); points.add(a.end); }
@@ -226,7 +226,7 @@ function mnRenderAnnotated(text, annotations, T, onOpen, onTagClick, allNotes, r
     <>
       {segs.map((seg, i) => {
         const sub = text.slice(seg.s, seg.e);
-        const content = mnRenderMarkdownInlineText(sub, T, onOpen, onTagClick, allNotes, renderPlainText, seg.s);
+        const content = mnRenderMarkdownInlineText(sub, T, onOpen, onTagClick, allNotes, renderPlainText, seg.s, vaultId);
         const style = {};
         for (const k of seg.kinds) {
           if (k === 'bold') style.fontWeight = 600;
@@ -260,8 +260,4 @@ function mnRenderAnnotated(text, annotations, T, onOpen, onTagClick, allNotes, r
   );
 }
 
-window.MN_MARKDOWN_INLINE_RENDERERS = {
-  mnRenderSpecialInlineText,
-  mnRenderMarkdownInlineText,
-  mnRenderAnnotated,
-};
+export { mnRenderAnnotated, mnRenderMarkdownInlineText, mnRenderSpecialInlineText };

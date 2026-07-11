@@ -1,6 +1,7 @@
 import { MnCanvasToolButton, MnCanvasActionButton, MnCanvasColorControl, MnCanvasDivider, MnCanvasStatusPill } from './CanvasControls.jsx';
 import { mnCanvasIconButton, mnCanvasToolbarGroup, mnCanvasToolbarShelf, mnCanvasToolbarRow, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid } from './CanvasStyles.js';
-const { MN_CANVAS_TOOLS } = window.MN_CANVAS_MODEL || {};
+import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';
+const { MN_CANVAS_TOOLS } = MN_CANVAS_MODEL;
 
 function CanvasToolbar({
   T,
@@ -23,9 +24,11 @@ function CanvasToolbar({
   activeStrokeWidth,
   applyStrokeWidth,
   undoCanvas,
-  historyIndex,
-  history,
+  canUndo,
+  canRedo,
   redoCanvas,
+  setZoom,
+  viewport,
   fitToScreen,
   toolbarMenuRef,
   setToolbarMenuOpen,

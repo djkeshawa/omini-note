@@ -7,9 +7,8 @@ function MnTodayPanel({
   rollupDefaultRange = 'today', rollupGroupBy = 'created', rollupShowPreviews = true,
   rollupShowTasks = true, rollupShowReminders = true, rollupCollapseOlder = true,
   todayAiRecap = null, todayAiRecapBusy = false, todayAiRecapError = '', onGenerateAiRecap,
-  weekStart = 'monday',
+  weekStart = 'monday', helpers = {},
 }) {
-  const helpers = window.MN_APP_HELPERS || {};
   const normalizeRange = helpers.rollupNormalizeRange || (value => value || 'today');
   const normalizeGroupBy = helpers.rollupNormalizeGroupBy || (value => value || 'created');
   const [range, setRange] = useStateP(normalizeRange(rollupDefaultRange));
@@ -689,3 +688,4 @@ function MnTodayPanel({
 }
 
 export { MnTodayPanel };
+import { mnGetTagColor } from '../../../shared/theme.jsx';

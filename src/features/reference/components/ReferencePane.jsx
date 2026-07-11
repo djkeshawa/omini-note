@@ -1,12 +1,11 @@
 // Optional read-only companion pane for consulting one note while writing another.
 
 const { useMemo } = React;
-const MnMarkdown = window.MnMarkdown;
 
 function ReferencePane({ note, notes = [], onSelect, onOpenAsMain, onOpenLink, onClose, T }) {
   const body = useMemo(() => {
     if (!note) return '';
-    const markdown = note.body ? String(note.body) : (window.MN_OUTLINE?.mnBlocksToMd?.(note.blocks || []) || '');
+    const markdown = note.body ? String(note.body) : mnBlocksToMd(note.blocks || []);
     const escapedTitle = String(note.title || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return markdown.replace(new RegExp(`^#\\s+${escapedTitle}\\s*(?:\\r?\\n)+`, 'i'), '');
   }, [note]);
@@ -78,3 +77,5 @@ function referenceIconButton(T) {
 }
 
 export { ReferencePane };
+import { mnBlocksToMd } from '../../../editor/outline.jsx';
+import { MnMarkdown } from '../../../shared/markdown.jsx';

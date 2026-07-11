@@ -1,4 +1,5 @@
 // Quick switcher (Ctrl/Cmd+P): fuzzy-jump to a note by title, recents first.
+import MN_QS_MODEL from './quickSwitcherModel.js';
 
 const {
   useState: useStateQS,
@@ -6,8 +7,6 @@ const {
   useMemo: useMemoQS,
   useRef: useRefQS,
 } = React;
-
-const MN_QS_MODEL = window.MN_QUICK_SWITCHER_MODEL || {};
 
 function mnQuickSwitcherDate(note) {
   const stamp = note?.modifiedAt || note?.diskModifiedAt || note?.date || '';
@@ -158,4 +157,4 @@ function MnQuickSwitcher({ open, notes, recentIds, onPick, onCreate, onClose, T 
   );
 }
 
-window.MnQuickSwitcher = MnQuickSwitcher;
+export { MnQuickSwitcher };

@@ -4,15 +4,18 @@ import {
   cleanPropertyKey,
   ConnectionsSection,
   createPropertyBlock,
+  propertyParts,
   splitPropertyBlocks,
   useConnectionsController,
 } from '../features/editor/index.js';
 import { MnOutliner } from './outliner.jsx';
+import { mkBlock, mnBlocksToMd, mnWalk } from './outline.jsx';
+import { mnGetTagBg, mnGetTagColor, mnIconButtonStyle } from '../shared/theme.jsx';
+import MN_EDITOR_SEARCH from './searchNavigation.js';
 
 const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useEffectE } = React;
-const { mkBlock } = window.MN_OUTLINE || {};
-
 const mnEditorSplitPropertyBlocks = splitPropertyBlocks;
+const mnEditorPropertyParts = propertyParts;
 const mnEditorCleanPropertyKey = cleanPropertyKey;
 const mnEditorCreatePropertyBlock = (key, value) => createPropertyBlock(key, value, mkBlock);
 
@@ -61,7 +64,7 @@ function MnEditor({
   useEffectE(() => { setSearchMatch({ count: 0, activeIndex: 0 }); }, [note.id, searchQuery]);
 
   useEffectE(() => {
-    const search = window.MN_EDITOR_SEARCH;
+    const search = MN_EDITOR_SEARCH;
     if (!search?.applyEditorSearchHighlights) return undefined;
     const handle = requestAnimationFrame(() => {
       const result = search.applyEditorSearchHighlights(
@@ -741,4 +744,4 @@ function mnMetadataIconButton(T) {
   };
 }
 
-window.MnEditor = MnEditor;
+export { MnEditor };

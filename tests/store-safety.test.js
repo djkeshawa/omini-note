@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { appSource, backendAiSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
+const { loadRendererModule } = require('./helpers/rendererModule.js');
 
 const ops = require('../src/editor/editorOps.js');
 const tableOps = require('../src/editor/tableOps.js');
@@ -1126,7 +1127,7 @@ test('AI recursive note research is gated for simple specific queries unless for
 });
 
 test('AI high-risk capability policy remains disabled by default', () => {
-  const aiActions = require('../src/ai/aiActions.js');
+  const { aiActions } = loadRendererModule('src/ai/aiActions.js');
   const action = aiActions.classifyPrompt('run python code over my notes').action;
   assert.equal(action.type, 'high-risk-disabled');
   assert.match(action.reason, /not enabled/);

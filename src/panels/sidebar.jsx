@@ -1,4 +1,4 @@
-import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx';
+import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx'; import { storage } from '../shared/storageUtils.js'; import { mnGetTagColor } from '../shared/theme.jsx';
 const { useMemo: useMemoS } = React;
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
@@ -27,21 +27,21 @@ function MnSidebar({
   const [renameVal, setRenameVal] = React.useState('');
   const sidebarSectionsKey = activeVaultId ? `mn:sidebarSections:${activeVaultId}` : 'mn:sidebarSections';
   const [openSections, setOpenSections] = React.useState(() => {
-    return window.MN_STORAGE?.getJson?.(sidebarSectionsKey, null) ||
-      window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
+    return storage.getJson(sidebarSectionsKey, null) ||
+      storage.getJson('mn:sidebarSections', null) ||
       { allnotes: true, vaults: true, workflow: false, tags: true, more: false };
   });
   React.useEffect(() => {
     setOpenSections(
-      window.MN_STORAGE?.getJson?.(sidebarSectionsKey, null) ||
-      window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
+      storage.getJson(sidebarSectionsKey, null) ||
+      storage.getJson('mn:sidebarSections', null) ||
       { allnotes: true, vaults: true, workflow: false, tags: true, more: false }
     );
   }, [sidebarSectionsKey]);
   const toggleSection = (key) => {
     setOpenSections(prev => {
       const next = { ...prev, [key]: !prev[key] };
-      window.MN_STORAGE?.setJson?.(sidebarSectionsKey, next);
+      storage.setJson(sidebarSectionsKey, next);
       return next;
     });
   };

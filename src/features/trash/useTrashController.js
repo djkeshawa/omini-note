@@ -26,8 +26,8 @@ export function useTrashController({
   const list = useCallback(async () => {
     if (!hasDisk || !activeVaultId) return [];
     const [noteResponse, canvasResponse] = await Promise.all([
-      platform.listDeletedNotes(activeVaultId),
-      platform.listDeletedCanvases ? platform.listDeletedCanvases(activeVaultId) : Promise.resolve({ ok: true, value: [] }),
+      platform.notes.listDeletedNotes(activeVaultId),
+      platform.canvas.listDeletedCanvases ? platform.canvas.listDeletedCanvases(activeVaultId) : Promise.resolve({ ok: true, value: [] }),
     ]);
     if (!noteResponse.ok) throw new Error(noteResponse.error || 'Could not load deleted notes');
     if (!canvasResponse.ok) throw new Error(canvasResponse.error || 'Could not load deleted canvases');
@@ -57,7 +57,7 @@ export function useTrashController({
     if (!hasDisk || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
     try {
       if (sourceType === 'canvas') {
-        const response = await platform.restoreDeletedCanvas(activeVaultId, trashId);
+        const response = await platform.canvas.restoreDeletedCanvas(activeVaultId, trashId);
         if (!response.ok) throw new Error(response.error || 'Could not restore canvas');
         const restored = summarizeCanvas(response.value);
         setCanvases(current => upsertCanvasList(current, restored));
@@ -69,7 +69,7 @@ export function useTrashController({
         setItems(current => current.filter(item => item.trashId !== trashId));
         return { ok: true, canvas: response.value };
       }
-      const response = await platform.restoreDeletedNote(activeVaultId, trashId);
+      const response = await platform.notes.restoreDeletedNote(activeVaultId, trashId);
       if (!response.ok) throw new Error(response.error || 'Could not restore note');
       const restored = normalizeNote(response.value);
       if (!restored) throw new Error('Restored note could not be loaded');
@@ -95,9 +95,9 @@ export function useTrashController({
     const sourceType = typeof itemOrTrashId === 'object' ? itemOrTrashId?.sourceType : 'note';
     if (!hasDisk || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
     try {
-      const response = sourceType === 'canvas' && platform.purgeDeletedCanvas
-        ? await platform.purgeDeletedCanvas(activeVaultId, trashId)
-        : await platform.purgeDeletedNote(activeVaultId, trashId);
+      const response = sourceType === 'canvas' && platform.canvas.purgeDeletedCanvas
+        ? await platform.canvas.purgeDeletedCanvas(activeVaultId, trashId)
+        : await platform.notes.purgeDeletedNote(activeVaultId, trashId);
       if (!response.ok) throw new Error(response.error || `Could not permanently delete ${sourceType === 'canvas' ? 'canvas' : 'note'}`);
       setItems(current => current.filter(item => item.trashId !== trashId));
       return { ok: true };

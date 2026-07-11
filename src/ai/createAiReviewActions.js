@@ -1,8 +1,9 @@
 import { MN_AI_VIRTUAL_WRITE_TOOLS, mnAskAiJobId, mnAiCleanVirtualToolArgs } from './aiModels.js';
+import { getAppActionRegistry } from '../app/actions/actionRegistryRuntime.js';
 
 function createAiReviewActions({ updateSession, aiRuntime, runConfirmedVirtualWriteTool, onRestoreCurrentPageBody, currentNote, onOpenCurrentNoteVersions }) {
   const confirmReview = async (messageId, review) => {
-      const registry = window.MN_APP_ACTIONS;
+      const registry = getAppActionRegistry();
       if (!review?.steps?.length) return;
       updateSession(prev => ({
         ...(prev || {}),
@@ -67,7 +68,7 @@ function createAiReviewActions({ updateSession, aiRuntime, runConfirmedVirtualWr
     };
   
     const editReviewArgs = async (messageId, review) => {
-      const registry = window.MN_APP_ACTIONS;
+      const registry = getAppActionRegistry();
       if (!review?.steps?.length) return;
       const currentSteps = review.steps.map(step => ({ actionId: step.actionId, args: step.args || {} }));
       const raw = window.prompt?.('Edit action arguments as JSON.', JSON.stringify(currentSteps, null, 2));

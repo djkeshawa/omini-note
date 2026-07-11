@@ -1,5 +1,8 @@
+import { mnNormalizeWorkflowId, mnNormalizeWorkflowStates, mnWorkflowIsClosed } from '../../editor/blockFeatures.jsx';
+import { SectionHead } from '../../panels/panelShared.jsx';
+import { mnGetTagBg, mnGetTagColor } from '../../shared/theme.jsx';
+
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
-const { SectionHead } = window.MN_PANEL_COMPONENTS || {};
 import { WorkflowStateManager, ArchivedWorkflowNotes } from './WorkflowSupportPanels.jsx';
 
 import { mnPanelButton, mnPanelMiniButton, mnPanelInputStyle, mnPanelTextareaStyle, mnPanelMenuItem } from '../../shared/panels/panelStyles.js';
@@ -27,15 +30,9 @@ function MnWorkflowPanel({
   const populatedStateCount = (workflowStates || []).filter(state => countFor(state.id) > 0).length;
   const stateCount = Math.max(1, (workflowStates || []).length);
   const kanbanMinWidth = Math.max(760, stateCount * 172);
-  const normalizeStateId = (raw) => window.MN_LOGSEQ?.mnNormalizeWorkflowId
-    ? window.MN_LOGSEQ.mnNormalizeWorkflowId(raw)
-    : String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
-  const normalizeStates = (states) => window.MN_LOGSEQ?.mnNormalizeWorkflowStates
-    ? (Array.isArray(states) && states.length === 0 ? [] : window.MN_LOGSEQ.mnNormalizeWorkflowStates(states))
-    : states;
-  const isClosedState = (state) => window.MN_LOGSEQ?.mnWorkflowIsClosed
-    ? window.MN_LOGSEQ.mnWorkflowIsClosed(state)
-    : state?.next === null;
+  const normalizeStateId = mnNormalizeWorkflowId;
+  const normalizeStates = states => Array.isArray(states) && states.length === 0 ? [] : mnNormalizeWorkflowStates(states);
+  const isClosedState = mnWorkflowIsClosed;
   const stateColor = (index) => {
     const hues = [30, 250, 145, 290, 15, 60, 205, 330, 115, 275, 180, 5];
     return hues[index % hues.length];

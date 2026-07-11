@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
+const { loadRendererModule } = require('./helpers/rendererModule.js');
 
 const ops = require('../src/editor/editorOps.js');
 const tableOps = require('../src/editor/tableOps.js');
@@ -136,11 +137,7 @@ test('Functional block updates compose in one event', () => {
 });
 
 test('Outliner history preserves unchanged block identity for memoized rows', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerHistory.js'), 'utf8');
-  const context = { window: {} };
-  vm.createContext(context);
-  vm.runInContext(source, context);
-  const history = context.window.MN_OUTLINER_HISTORY;
+  const history = loadRendererModule('src/editor/outlinerHistory.js');
 
   const previous = [
     { id: 'a', content: 'keep', annotations: [], children: [] },
@@ -217,10 +214,9 @@ test('Block area selection can delete as one undoable operation and redo it', ()
 
 test('Typing in a section groups into one undo entry per edit session', () => {
   const outliner = outlinerSource(__dirname);
-  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
 
   assert.match(outliner, /contentEditHistoryRef/);
-  assert.match(rendererEntry, /import '\.\/editor\/outlinerHistory\.js';/);
+  assert.match(outliner, /from '\.\/outlinerHistory\.js';/);
   assert.match(outliner, /mnCreateEditorHistory/);
   assert.match(outliner, /mnShareBlockTree/);
   assert.match(outliner, /const MnMemoBlockRow = React\.memo\(MnBlockRow, blockRowMemoEqual\)/);
@@ -269,13 +265,12 @@ test('Visible block context menu options are wired to real operations', () => {
 
 test('Table blocks are parsed, rendered, copied, and pasted as formatted markdown', () => {
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
   const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
 
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  assert.match(rendererEntry, /import '\.\/editor\/tableOps\.js';/);
+  assert.match(outline, /import MN_TABLE_OPS_OUTLINE from '\.\/tableOps\.js';/);
   assert.match(outline, /readMarkdownTable\(lines, i\)/);
   assert.match(outline, /kind: 'table'/);
   assert.match(outline, /b\.kind === 'table'/);
@@ -305,8 +300,8 @@ test('Code blocks preserve language metadata and expose syntax UI', () => {
 
   assert.match(highlighter, /const MN_CODE_LANGUAGES = \[/);
   assert.match(highlighter, /value: 'javascript'/);
-  assert.match(highlighter, /window\.MN_CODE_HIGHLIGHTER/);
-  assert.match(renderers, /function mnRenderCode/);
+  assert.match(highlighter, /export \{ MN_CODE_LANGUAGES,[\s\S]*mnRenderCode/);
+  assert.match(renderers, /import \{ MN_CODE_LANGUAGES, mnCodeLanguageLabel, mnNormalizeCodeLanguage, mnRenderCode \} from '\.\/codeHighlighter\.jsx';/);
   assert.match(outliner, /<select[\s\S]+Code language/);
   assert.match(outliner, /mnRenderCode\(content, block\.language, T\)/);
   assert.match(renderers, /mnMermaidSvgHeight\(svg\)/);

@@ -362,3 +362,4 @@ function MnOutlinerView({ model }) {
 }
 
 export { MnOutlinerView };
+import { mkBlock } from '../outline.jsx';

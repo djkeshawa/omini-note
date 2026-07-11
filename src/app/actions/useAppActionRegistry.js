@@ -106,9 +106,9 @@ export function useAppActionRegistry(ctx) {
       const cleanQuery = String(query || '').trim();
       const max = Math.max(1, Math.min(Number(limit) || 8, 30));
       if (!cleanQuery) return [];
-      if (HAS_DISK && activeVaultId && desktopBridge?.searchDetailedStatus) {
+      if (HAS_DISK && activeVaultId && desktopBridge.search?.searchDetailedStatus) {
         try {
-          const res = await desktopBridge.searchDetailedStatus(activeVaultId, cleanQuery, max);
+          const res = await desktopBridge.search.searchDetailedStatus(activeVaultId, cleanQuery, max);
           const value = res?.value;
           const rows = Array.isArray(value?.results) ? value.results
             : Array.isArray(value?.value?.results) ? value.value.results
@@ -277,7 +277,7 @@ export function useAppActionRegistry(ctx) {
         }),
         run: async () => {
           if (!selectedNote) return { message: 'No note is selected.' };
-          const res = await desktopBridge.exportNote(activeVaultId, selectedNote.id, format);
+          const res = await desktopBridge.notes.exportNote(activeVaultId, selectedNote.id, format);
           if (res?.ok === false) throw new Error(res.error || 'Export failed');
           return { message: res?.value?.canceled ? 'Export cancelled.' : `Note exported to ${res?.value?.filePath || 'file'}.` };
         },
@@ -296,7 +296,7 @@ export function useAppActionRegistry(ctx) {
           affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
         }),
         run: async () => {
-          const res = await desktopBridge.memory.import(activeVaultId);
+          const res = await desktopBridge.integrations.memory.import(activeVaultId);
           if (res?.ok === false) throw new Error(res.error || 'Memory import failed');
           const value = res?.value || {};
           const created = Array.isArray(value.notes) ? normalizeNotes(value.notes, mnMdToBlocks) : [];
@@ -320,7 +320,7 @@ export function useAppActionRegistry(ctx) {
         }),
         run: async () => {
           if (!selectedNote) return { message: 'No note is selected.' };
-          const res = await desktopBridge.memory.remember(activeVaultId, selectedNote.id);
+          const res = await desktopBridge.integrations.memory.remember(activeVaultId, selectedNote.id);
           if (res?.ok === false) throw new Error(res.error || 'Could not store the memory');
           setConnectionsRefreshToken(token => token + 1);
           return { message: `Stored “${selectedNote.title || 'Untitled'}” as memory ${res?.value?.id ? res.value.id.slice(0, 8) : ''}.` };
@@ -340,7 +340,7 @@ export function useAppActionRegistry(ctx) {
           affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
         }),
         run: async () => {
-          const res = await desktopBridge.memory.syncLinks(activeVaultId);
+          const res = await desktopBridge.integrations.memory.syncLinks(activeVaultId);
           if (res?.ok === false) throw new Error(res.error || 'Link sync failed');
           const value = res?.value || {};
           setConnectionsRefreshToken(token => token + 1);
@@ -362,8 +362,8 @@ export function useAppActionRegistry(ctx) {
         }),
         run: async () => {
           const [reportRes, dupRes] = await Promise.all([
-            desktopBridge.memory.intelligence({ limit: 5 }),
-            desktopBridge.memory.duplicates({ limit: 20 }),
+            desktopBridge.integrations.memory.intelligence({ limit: 5 }),
+            desktopBridge.integrations.memory.duplicates({ limit: 20 }),
           ]);
           return { message: MN_MEMORY_ACTIONS.insightsResultMessage(reportRes, dupRes) };
         },

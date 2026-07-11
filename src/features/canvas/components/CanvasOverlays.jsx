@@ -1,6 +1,7 @@
 import { MnCanvasContextMenu } from './CanvasControls.jsx';
 
-const { MN_CANVAS_TOOLS } = window.MN_CANVAS_MODEL || {};
+import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';
+const { MN_CANVAS_TOOLS } = MN_CANVAS_MODEL;
 
 function CanvasOverlays({
   editingElement,

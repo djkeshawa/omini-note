@@ -1,5 +1,9 @@
 // Smart Views dashboard presentations.
 
+import MN_APP_HELPERS from '../app/appHelpers.js';
+import { mnWalk } from '../editor/outline.jsx';
+import { MN_REMIND } from '../shared/markdown.jsx';
+
 const { useEffect: useEffectSV, useMemo: useMemoSV, useState: useStateSV } = React;
 
 const MN_SMART_VIEW_PRESENTATIONS = ['list', 'table', 'cards', 'timeline'];
@@ -241,7 +245,7 @@ function MnSmartViewsPanel({
   onOpenAllNotes,
   T,
 }) {
-  const helpers = window.MN_APP_HELPERS || {};
+  const helpers = MN_APP_HELPERS;
   const safeDefinitions = definitions.length ? definitions : [{
     id: 'all_notes',
     title: 'All notes',
@@ -260,7 +264,7 @@ function MnSmartViewsPanel({
   }, [activeDefinitionId, safeDefinitions]);
   const results = useMemoSV(() => (
     helpers.smartViewQuery
-      ? helpers.smartViewQuery(notes, activeDefinition, { parser: window.MN_REMIND, walk: window.mnWalk, allNotes: notes })
+      ? helpers.smartViewQuery(notes, activeDefinition, { parser: MN_REMIND, walk: mnWalk, allNotes: notes })
       : []
   ), [helpers, notes, activeDefinition]);
   const resultCount = results.length;
@@ -378,7 +382,4 @@ function MnSmartViewsPanel({
   );
 }
 
-window.MN_PANEL_COMPONENTS = {
-  ...(window.MN_PANEL_COMPONENTS || {}),
-  MnSmartViewsPanel,
-};
+export { MnSmartViewsPanel };

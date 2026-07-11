@@ -279,10 +279,11 @@ async function seedFixtureNotes(win) {
       const ids = ${JSON.stringify(FIXTURE_IDS)};
       const unwrap = (result, label) => {
         if (!result?.ok) throw new Error(label + ': ' + (result?.error || 'failed'));
-        return result.value;
+        return result.data ?? result.value;
       };
-      const vaults = unwrap(await window.mn.listVaults(), 'listVaults');
-      const prefs = unwrap(await window.mn.getPrefs(), 'getPrefs');
+      const vaultResult = unwrap(await window.mn.vaults.listVaults(), 'listVaults');
+      const vaults = Array.isArray(vaultResult) ? vaultResult : (vaultResult?.vaults || []);
+      const prefs = unwrap(await window.mn.preferences.getPrefs(), 'getPrefs');
       const active = vaults.find(v => v.id === prefs.activeVaultId) || vaults[0];
       if (!active) throw new Error('No vault available for AI regression');
       const vaultId = active.id;
@@ -320,14 +321,14 @@ async function seedFixtureNotes(win) {
         },
       ];
       for (const note of notes) {
-        const saved = await window.mn.saveNote(vaultId, {
+        const saved = await window.mn.notes.saveNote(vaultId, {
           ...note,
           date: now,
           modifiedAt: now,
         }, {});
         unwrap(saved, 'saveNote ' + note.id);
       }
-      unwrap(await window.mn.saveVaultMeta(vaultId, {
+      unwrap(await window.mn.vaults.saveVaultMeta(vaultId, {
         lastSelectedId: ids.format,
         tags: [
           { name: 'qe', hue: 120 },
@@ -344,7 +345,7 @@ async function seedFixtureNotes(win) {
 async function loadFixtureNotes(win, vaultId) {
   return await evaluate(win, `
     (async () => {
-      const result = await window.mn.loadVault(${JSON.stringify(vaultId)});
+      const result = await window.mn.notes.loadVault(${JSON.stringify(vaultId)});
       if (!result?.ok) throw new Error(result?.error || 'loadVault failed');
       const ids = ${JSON.stringify(FIXTURE_IDS)};
       const byId = {};
@@ -362,19 +363,6 @@ async function openAskAi(win) {
     const current = await state(win);
     return { ok: current.askOpen, current };
   });
-}
-
-async function assertDirectEditRoute(win) {
-  const route = await evaluate(win, `
-    (() => window.MN_AI_RUNTIME.routeRequest({
-      query: 'format this page',
-      aiActions: window.MN_AI_ACTIONS,
-      appRegistry: window.MN_APP_ACTIONS,
-    }))()
-  `);
-  if (route?.type !== 'legacy_action' || route?.action?.type !== 'edit-current') {
-    throw new Error(`format this page did not route to edit-current: ${JSON.stringify(route)}`);
-  }
 }
 
 async function clearAskAiIfNeeded(win) {
@@ -431,11 +419,12 @@ async function confirmAiReview(win, label, expectedText) {
 
 async function runAiRegression() {
   const win = await waitForMainWindow();
-  win.webContents.on('console-message', (_event, details) => {
-    const level = details?.level ?? 'log';
-    const message = details?.message ?? '';
-    const sourceId = details?.sourceId ?? '';
-    const line = details?.lineNumber ?? 0;
+  win.webContents.on('console-message', (_event, details, legacyMessage, legacyLine, legacySourceId) => {
+    const structured = details && typeof details === 'object' ? details : null;
+    const level = structured?.level ?? details ?? 'log';
+    const message = structured?.message ?? legacyMessage ?? '';
+    const sourceId = structured?.sourceId ?? legacySourceId ?? '';
+    const line = structured?.lineNumber ?? legacyLine ?? 0;
     console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`);
   });
   win.webContents.on('render-process-gone', (_event, details) => {
@@ -453,7 +442,6 @@ async function runAiRegression() {
   });
 
   await openAskAi(win);
-  await assertDirectEditRoute(win);
   await submitAsk(win, 'format this page');
   await confirmAiReview(win, 'format action', 'Review before AI edits "QE Format Target".');
   await waitFor(win, 'format action completed', async () => {

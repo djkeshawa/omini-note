@@ -34,19 +34,24 @@ import {
 } from '../../features/editor/outliner/index.js';
 import { platformApi } from '../../platform/index.js';
 import { MnCanvasEmbed } from '../../features/canvas/index.js';
+import {
+  mkBlock, mnBlocksToMd, mnCloneBlocks, mnFlatten, mnIsListLike, mnLocate,
+  mnMdToBlocks, mnNormalizeBlockLabels,
+} from '../outline.jsx';
+import { MnBlockContextMenu, MnBlockEmbed, MnPageEmbed, MnPropertyRow, MnWorkflowPill, MnZoomBar } from '../blockFeatures.jsx';
+import MN_EDITOR_OPS from '../editorOps.js';
+import MN_MARKDOWN_INPUT_RULES from '../markdownInputRules.js';
+import MN_APP_HELPERS from '../../app/appHelpers.js';
+import MN_TABLE_OPS from '../tableOps.js';
+import { createEditorHistory as mnCreateEditorHistory, shareBlockTree as mnShareBlockTree } from '../outlinerHistory.js';
+import {
+  MN_AI_ACTIONS, MN_CODE_LANGUAGES, MnAiIcon, MnMathBlock, MnMermaidBlock,
+  mnAiAction, mnCodeLanguageLabel, mnNormalizeCodeLanguage, mnRenderAnnotated, mnRenderCode,
+} from '../outlinerRenderers.jsx';
+import { mnReportAiOutput } from '../../ai/aiModels.js';
 
 const { useState: useStateOE, useRef: useRefOE, useEffect: useEffectOE,
         useMemo: useMemoOE, useLayoutEffect: useLayoutEffectOE } = React;
-const {
-  mkBlock, mnLocate, mnCloneBlocks, mnFlatten, mnIsListLike,
-  mnBlocksToMd, mnMdToBlocks, mnNormalizeBlockLabels,
-} = window.MN_OUTLINE;
-const MnWorkflowPill = window.MnWorkflowPill;
-const MnPropertyRow = window.MnPropertyRow;
-const MnPageEmbed = window.MnPageEmbed;
-const MnBlockEmbed = window.MnBlockEmbed;
-const MnBlockContextMenu = window.MnBlockContextMenu;
-const MnZoomBar = window.MnZoomBar;
 const {
   clearAnnotationRange: mnClearAnnotationRange,
   applyAnnotationRange: mnApplyAnnotationRange,
@@ -55,31 +60,12 @@ const {
   splitBlock: mnSplitBlock,
   splitAnnotations: mnSplitAnnotations,
   mergeBlockContent: mnMergeBlockContent,
-} = window.MN_EDITOR_OPS;
-const MN_MARKDOWN_INPUT_RULES = window.MN_MARKDOWN_INPUT_RULES || {};
-const MN_APP_HELPERS = window.MN_APP_HELPERS || {};
+} = MN_EDITOR_OPS;
 const {
   clipboardEventToMarkdownTable: mnClipboardEventToMarkdownTable,
   markdownTableToRows: mnMarkdownTableToRows,
   markdownTableToHtml: mnMarkdownTableToHtml,
-} = window.MN_TABLE_OPS || {};
-const {
-  createEditorHistory: mnCreateEditorHistory,
-  shareBlockTree: mnShareBlockTree,
-} = window.MN_OUTLINER_HISTORY || {};
-
-const {
-  MN_AI_ACTIONS,
-  mnAiAction,
-  MnAiIcon,
-  mnRenderAnnotated,
-  MN_CODE_LANGUAGES,
-  mnNormalizeCodeLanguage,
-  mnCodeLanguageLabel,
-  mnRenderCode,
-  MnMathBlock,
-  MnMermaidBlock,
-} = window.MN_OUTLINER_RENDERERS || {};
+} = MN_TABLE_OPS;
 
 const mnSpellWords = spellWords;
 const mnRenderSpellCheckedText = renderSpellCheckedText;
@@ -337,7 +323,7 @@ function MnAiPreviewDialog({ preview, onCancel, onApply, T }) {
           background: T.bg,
         }}>
           <button
-            onClick={() => window.MN_AI_REPORT?.report?.({ output: preview.text, scope: 'AI writing preview' })}
+            onClick={() => mnReportAiOutput({ output: preview.text, scope: 'AI writing preview' })}
             style={mnAiReportBtn(T)}>
             Report AI output
           </button>
@@ -411,7 +397,7 @@ function MnInlineAiPreview({ preview, depth, T, onApply, onCancel }) {
           {!preview.error && (
             <button
               disabled={!text.trim()}
-              onClick={() => window.MN_AI_REPORT?.report?.({ output: text, scope: 'AI inline preview' })}
+              onClick={() => mnReportAiOutput({ output: text, scope: 'AI inline preview' })}
               style={mnAiInlineReportBtn(T, !text.trim())}>
               Report
             </button>

@@ -228,3 +228,4 @@ function MnSettingsModal({
 // ───── building blocks ─────
 
 export { MnSettingsModal };
+import { mnShadow } from '../shared/theme.jsx';
