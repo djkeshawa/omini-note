@@ -78,10 +78,11 @@ function MnEditor({
   connectionsRefreshToken = 0,
   memoryEnabled = false,
   canvases = [], onOpenCanvas, onCreateCanvas,
-  onOpen, onCreateLinkedNote, onOpenTag, onLinkMention, onAcceptSuggestedConnection,
+  onOpen, onCreateLinkedNote, onOpenTag, onLinkMention, onAcceptSuggestedConnection, onIgnoreSuggestedConnection,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
   onEndNoteMetadataEdit, onUndoNoteEdit, onRedoNoteEdit,
   onPinToggle, onDuplicate, onDelete, onOpenVersions, onOpenGraph, onOpenCalendar, onBack,
+  referencePaneOpen = false, onToggleReferencePane,
   onToggleSidebar, sidebarHidden,
   onToggleNoteList, noteListHidden,
   editorWidth = 'medium', fontSize = 'default',
@@ -260,12 +261,15 @@ function MnEditor({
   const suggestedConnections = useMemoE(() => (
     window.MN_CONNECTIONS_MODEL?.suggestedConnections?.({
       noteId: note.id,
+      currentNote: note,
+      notes,
       related: related.items,
+      mode: related.mode,
       links,
       ignoredIds: ignoredConnectionIds,
       limit: 4,
     }) || []
-  ), [note.id, related.items, links, ignoredConnectionIds]);
+  ), [note.id, note.title, note.tags, notes, related.items, related.mode, links, ignoredConnectionIds]);
   const suggestedConnectionIds = useMemoE(
     () => new Set(suggestedConnections.map(item => String(item.noteId || item.id || ''))),
     [suggestedConnections]
@@ -282,6 +286,7 @@ function MnEditor({
       window.MN_STORAGE?.setJson?.(ignoredConnectionsKey, next);
       return next;
     });
+    onIgnoreSuggestedConnection?.(item);
   };
   const acceptSuggestedConnection = (item) => {
     if (onAcceptSuggestedConnection?.(item) !== false) ignoreSuggestedConnection(item);
@@ -531,6 +536,14 @@ function MnEditor({
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
               <path d="M4 4.5C5 3.3 6.5 2.5 8.2 2.5C11.2 2.5 13.5 4.8 13.5 7.8C13.5 10.8 11.2 13.2 8.2 13.2C5.7 13.2 3.7 11.6 3 9.4" strokeLinecap="round"/>
               <path d="M3 4.5H4.8V2.7M8 5.4V8.2L10 9.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        )}
+        {onToggleReferencePane && (
+          <button onClick={onToggleReferencePane} title={referencePaneOpen ? 'Close reference pane' : 'Open reference pane'} aria-label={referencePaneOpen ? 'Close reference pane' : 'Open reference pane'} style={iconBtn(T, referencePaneOpen)}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+              <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+              <path d="M9 2.5v11M10.8 5h1" strokeLinecap="round" />
             </svg>
           </button>
         )}
@@ -861,6 +874,7 @@ function MnEditor({
                         textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--mn-ui)', fontSize: 12.5,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>{item.title || 'Untitled'}</button>
+                      {item.reason && <span style={{ gridColumn: '1 / -1', fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim }}>{item.reason}</span>}
                       <button type="button" aria-label={`Accept connection to ${item.title || 'note'}`} onClick={() => acceptSuggestedConnection(item)} style={mnConnectionActionStyle(T, true)}>Accept</button>
                       <button type="button" aria-label={`Ignore connection to ${item.title || 'note'}`} onClick={() => ignoreSuggestedConnection(item)} style={mnConnectionActionStyle(T, false)}>Ignore</button>
                     </div>

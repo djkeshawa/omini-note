@@ -1170,6 +1170,21 @@ test('Focused product shell and private usage controls are wired end to end', ()
   assert.match(main, /prefs\.anonymousUsageSharing !== true/);
 });
 
+test('Reference pane and bounded note list stay optional and keyboard accessible', () => {
+  const app = fs.readFileSync(projectPaths.src.app, 'utf8');
+  const editor = fs.readFileSync(projectPaths.src.editor, 'utf8');
+  const noteList = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
+  const entry = fs.readFileSync(projectPaths.src.main, 'utf8');
+  assert.match(entry, /referencePane\.jsx/);
+  assert.match(app, /id: 'reference-pane'/);
+  assert.match(app, /recordFeatureUsage\('reference_pane', 'opened'\)/);
+  assert.match(app, /isMod && e\.shiftKey && lowerKey === 'r'/);
+  assert.match(editor, /aria-label=\{referencePaneOpen \? 'Close reference pane' : 'Open reference pane'\}/);
+  assert.match(noteList, /role="listbox"/);
+  assert.match(noteList, /visibleLimit < notes\.length/);
+  assert.match(noteList, /Open as reference/);
+});
+
 test('Electron installs native edit context menu for right-click copy paste cut', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');

@@ -86,6 +86,8 @@ app.whenReady().then(async () => {
   const win = await waitForMainWindow();
   await waitForRenderer(win);
   console.log('Renderer smoke booted');
+  if (!win.isDestroyed()) win.destroy();
+  await wait(150);
   await removeSmokeHome();
   app.exit(0);
 }).catch(async (error) => {

@@ -1049,6 +1049,48 @@ async function runRegression() {
   await runScenario(win, 'Notes', 'create, edit, and persist a note', async () => {
     await runNoteCreateEditPersistenceScenario(win);
   });
+  await runScenario(win, 'Reference', 'keeps a read-only note beside the editor and restores the note list', async () => {
+    const mainTitle = (await state(win)).selectedTitle;
+    await clickButton(win, { aria: 'Open reference pane' });
+    await waitFor(win, 'reference pane open', async () => {
+      const current = await evaluate(win, `
+        (() => {
+          const pane = document.querySelector('aside[aria-label="Reference note"]');
+          const select = pane?.querySelector('select[aria-label="Reference note"]');
+          return {
+            ok: Boolean(pane && select && select.options.length >= 2),
+            title: document.querySelector('.mn-note-title-input')?.value || '',
+            noteListVisible: Boolean(document.querySelector('input[placeholder^="Search notes"]')),
+            text: pane?.textContent || '',
+          };
+        })()
+      `);
+      return { ok: current.ok && current.title === mainTitle && !current.noteListVisible && current.text.includes('read only'), current };
+    });
+    const changed = await evaluate(win, `
+      (() => {
+        const select = document.querySelector('aside[aria-label="Reference note"] select');
+        if (!select || select.options.length < 2) return false;
+        const next = [...select.options].find(option => option.value !== select.value);
+        if (!next) return false;
+        select.value = next.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()
+    `);
+    if (!changed) throw new Error('Could not choose a second reference note');
+    await pressAccelerator(win, 'R', ['control', 'shift']);
+    await waitFor(win, 'reference pane close', async () => {
+      const current = await evaluate(win, `
+        (() => ({
+          paneOpen: Boolean(document.querySelector('aside[aria-label="Reference note"]')),
+          noteListVisible: Boolean(document.querySelector('input[placeholder^="Search notes"]')),
+          title: document.querySelector('.mn-note-title-input')?.value || '',
+        }))()
+      `);
+      return { ok: !current.paneOpen && current.noteListVisible && current.title === mainTitle, current };
+    });
+  });
   await runScenario(win, 'Capture', 'quick capture saves a task note and closes cleanly', async () => {
     await runQuickCaptureSaveScenario(win);
   });

@@ -13,6 +13,7 @@ import './editor/outline.jsx';
 import './editor/editorOps.js';
 import './editor/searchNavigation.js';
 import './editor/connectionsModel.js';
+import './editor/referencePane.jsx';
 import './editor/markdownInputRules.js';
 import './editor/imageAttachments.js';
 import './editor/markdownInlineRenderers.jsx';

@@ -28,6 +28,38 @@ test('connection suggestions exclude linked and ignored notes and append portabl
   assert.equal(connections.appendConnectionMarkdown(appended, 'Connected idea'), appended);
 });
 
+test('connection suggestions work without AI and explain deterministic signals', () => {
+  const notes = [
+    { id: 'a', title: 'Launch decision', tags: ['project'] },
+    { id: 'b', title: 'Launch risks', tags: ['project', 'review'] },
+    { id: 'c', title: 'Grocery list', tags: ['personal'] },
+  ];
+  const suggestions = connections.suggestedConnections({
+    noteId: 'a',
+    currentNote: notes[0],
+    notes,
+  });
+  assert.equal(suggestions[0].noteId, 'b');
+  assert.equal(suggestions[0].reason, 'Shares #project');
+  assert.equal(suggestions.some(item => item.noteId === 'c'), false);
+});
+
+test('connection ranking bounds deterministic work for large vaults', () => {
+  const notes = Array.from({ length: 2400 }, (_, index) => ({
+    id: `n${index}`,
+    title: index === 2399 ? 'Focused launch follow-up' : `Unrelated ${index}`,
+    tags: index === 2399 ? ['focus'] : [],
+  }));
+  const suggestions = connections.suggestedConnections({
+    noteId: 'current',
+    currentNote: { id: 'current', title: 'Focused launch', tags: ['focus'] },
+    notes,
+    candidateLimit: 300,
+  });
+  assert.equal(suggestions[0].noteId, 'n2399');
+  assert.ok(suggestions[0].connectionScore > 0);
+});
+
 test('version diff reports added and removed lines', () => {
   const diff = versionDiff.lineDiff('one\ntwo\nthree', 'one\nchanged\nthree');
   assert.equal(diff.added, 1);

@@ -100,6 +100,7 @@ const {
   MnNoteList,
   MnAiChatHistory,
   MnEditor,
+  MnReferencePane,
   MnAskAI,
   MnGraph,
   MnTodosPanel,
@@ -503,6 +504,9 @@ function MnApp() {
   const quietedReminderKeys = useRefA(new Set());
   const notesWithBodyCacheRef = useRefA(new Map());
   const [query, setQuery] = useStateA('');
+  const [referencePaneOpen, setReferencePaneOpen] = useStateA(false);
+  const [referenceNoteId, setReferenceNoteId] = useStateA('');
+  const referenceRestoreNoteListRef = useRefA(false);
 
   useEffectA(() => {
     askAiOpenRef.current = view === 'ai';
@@ -1326,13 +1330,13 @@ function MnApp() {
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  const setTweak = (key, val) => {
+  const setTweak = useCallbackA((key, val) => {
     setTweaks(t => {
       const next = { ...t, [key]: val };
       window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*');
       return next;
     });
-  };
+  }, []);
 
   const importThemeFile = useCallbackA(async () => {
     if (!window.mn?.importThemeFile) {
@@ -1959,6 +1963,47 @@ function MnApp() {
   );
 
   const selectedNote = notes.find(n => n.id === selectedId);
+  const referenceNote = notesWithBody.find(n => n.id === referenceNoteId) || null;
+  const openReferencePane = useCallbackA((noteId = '') => {
+    const storedId = window.MN_STORAGE?.getJson?.(`mn:referenceNote:${activeVaultId || 'local'}`, '') || '';
+    const target = notesWithBody.find(note => note.id === noteId)
+      || notesWithBody.find(note => note.id === storedId && note.id !== selectedId)
+      || notesWithBody.find(note => note.id !== selectedId)
+      || selectedNote
+      || null;
+    if (!target) return { ok: false, message: 'Create a note before opening the reference pane.' };
+    setReferenceNoteId(target.id);
+    setReferencePaneOpen(true);
+    navigateView('notes');
+    window.MN_STORAGE?.setJson?.(`mn:referenceNote:${activeVaultId || 'local'}`, target.id);
+    if (!noteListHidden) {
+      referenceRestoreNoteListRef.current = true;
+      setTweak('showNoteList', false);
+    }
+    recordFeatureUsage('reference_pane', 'opened');
+    return { message: `Opened ${target.title || 'Untitled'} as a reference.` };
+  }, [activeVaultId, navigateView, noteListHidden, notesWithBody, recordFeatureUsage, selectedId, selectedNote, setTweak]);
+  const closeReferencePane = useCallbackA(() => {
+    setReferencePaneOpen(false);
+    if (referenceRestoreNoteListRef.current) {
+      referenceRestoreNoteListRef.current = false;
+      setTweak('showNoteList', true);
+    }
+  }, [setTweak]);
+  const selectReferenceNote = useCallbackA((noteId) => {
+    const target = notesWithBody.find(note => note.id === noteId);
+    if (!target) return;
+    setReferenceNoteId(target.id);
+    window.MN_STORAGE?.setJson?.(`mn:referenceNote:${activeVaultId || 'local'}`, target.id);
+    recordFeatureUsage('reference_pane', 'used');
+  }, [activeVaultId, notesWithBody, recordFeatureUsage]);
+
+  useEffectA(() => {
+    if (referenceRestoreNoteListRef.current) setTweak('showNoteList', true);
+    setReferencePaneOpen(false);
+    setReferenceNoteId(window.MN_STORAGE?.getJson?.(`mn:referenceNote:${activeVaultId || 'local'}`, '') || '');
+    referenceRestoreNoteListRef.current = false;
+  }, [activeVaultId, setTweak]);
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
   const blockingOverlayOpen = captureOpen || settingsOpen || commandPaletteOpen || quickSwitcherOpen || vaultHealthOpen || !!novelImportDialog || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
 
@@ -3451,6 +3496,24 @@ function MnApp() {
         },
       },
       {
+        id: 'reference-pane',
+        label: referencePaneOpen ? 'Close reference pane' : 'Open reference pane',
+        description: 'Keep one note visible beside the editor without opening a second workspace.',
+        section: 'Navigate',
+        shortcut: 'Ctrl+Shift+R',
+        keywords: 'side by side read companion note',
+        enabled: notesWithBody.length > 0,
+        inputSchema: noteActionSchema,
+        run: args => {
+          if (referencePaneOpen) {
+            closeReferencePane();
+            return { message: 'Closed reference pane.' };
+          }
+          const target = args.noteId || args.noteTitle ? resolveNote(args) : null;
+          return openReferencePane(target?.id || '');
+        },
+      },
+      {
         id: 'ask-ai',
         label: 'Ask AI',
         description: 'Open the Ask AI workspace.',
@@ -4212,7 +4275,7 @@ function MnApp() {
       })),
     ];
     return makeRegistry(actions);
-  }, [activeCanvas, activeVault?.name, activeVaultId, addNoteToCanvas, canvases, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openSmartView, plugins, rebuildIndex, recordPhase5Metric, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+  }, [activeCanvas, activeVault?.name, activeVaultId, addNoteToCanvas, canvases, closeReferencePane, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, plugins, rebuildIndex, recordPhase5Metric, referencePaneOpen, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
 
   useEffectA(() => {
     window.MN_APP_ACTIONS = appActionRegistry;
@@ -4293,6 +4356,10 @@ function MnApp() {
       } else if (isMod && lowerKey === 'p' && !e.shiftKey) {
         e.preventDefault();
         setQuickSwitcherOpen(v => !v);
+      } else if (isMod && e.shiftKey && lowerKey === 'r') {
+        e.preventDefault();
+        if (referencePaneOpen) closeReferencePane();
+        else openReferencePane();
       } else if (isMod && e.shiftKey && isBackslashKey) {
         e.preventDefault(); setNoteListHidden(v => !v);
       } else if (isMod && isBackslashKey && !e.shiftKey) {
@@ -4314,7 +4381,7 @@ function MnApp() {
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [appNotice, blockingOverlayOpen, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, navigateView, openAskAi, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
+  }, [appNotice, blockingOverlayOpen, closeReferencePane, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, navigateView, openAskAi, openReferencePane, referencePaneOpen, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
 
   useEffectA(() => {
     if (!toast?.key) return;
@@ -4503,6 +4570,7 @@ function MnApp() {
               onDuplicateNote={duplicateNote}
               onDeleteNote={requestDeleteNote}
               onAddToCanvas={async (id) => handleAppActionResult(await addNoteToCanvas(id))}
+              onOpenReference={openReferencePane}
               tags={tags} theme={theme} density={tweaks.density} T={T}
             />
           )}
@@ -4562,6 +4630,7 @@ function MnApp() {
                 return true;
               }}
               onAcceptSuggestedConnection={acceptSuggestedConnection}
+              onIgnoreSuggestedConnection={() => recordFeatureUsage('connections', 'used')}
               onCreateLinkedNote={(title) => {
                 const cleanTitle = String(title || '').trim();
                 if (!cleanTitle) return null;
@@ -4612,6 +4681,8 @@ function MnApp() {
               onDuplicate={() => duplicateNote(selectedNote.id)}
               onDelete={() => requestDeleteNote(selectedNote.id)}
               onOpenVersions={HAS_DISK ? () => setVersionTargetId(selectedNote.id) : null}
+              referencePaneOpen={referencePaneOpen}
+              onToggleReferencePane={() => referencePaneOpen ? closeReferencePane() : openReferencePane()}
               onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onOpenCalendar={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
               onBack={goBackView}
@@ -4634,6 +4705,22 @@ function MnApp() {
               )}
               onSetWorkflowStatus={(status) => updateWorkflowNoteStatus(selectedNote.id, null, status)}
               theme={theme} T={T}
+            />
+          )}
+
+          {(view === 'notes' || view === 'pinned') && referencePaneOpen && (
+            <MnReferencePane
+              note={referenceNote}
+              notes={notesWithBody}
+              onSelect={selectReferenceNote}
+              onOpenAsMain={(id) => { setSelectedId(id); navigateView('notes'); }}
+              onOpenLink={(label) => {
+                const cleanTitle = String(label || '').split('|')[0].split('#')[0].trim().toLowerCase();
+                const target = notesWithBody.find(note => String(note.title || '').trim().toLowerCase() === cleanTitle);
+                if (target) selectReferenceNote(target.id);
+              }}
+              onClose={closeReferencePane}
+              T={T}
             />
           )}
 
