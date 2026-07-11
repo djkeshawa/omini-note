@@ -1010,7 +1010,10 @@ async function runDeleteRestoreScenario(win) {
 
 async function runRegression() {
   const win = await waitForMainWindow();
-  win.webContents.on('console-message', (_event, details) => {
+  win.webContents.on('console-message', (_event, detailsOrLevel, legacyMessage, legacyLine, legacySourceId) => {
+    const details = detailsOrLevel && typeof detailsOrLevel === 'object'
+      ? detailsOrLevel
+      : { level: detailsOrLevel, message: legacyMessage, lineNumber: legacyLine, sourceId: legacySourceId };
     const level = details?.level ?? 'log';
     const message = details?.message ?? '';
     const sourceId = details?.sourceId ?? '';

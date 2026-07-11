@@ -66,7 +66,7 @@ module.exports = [
     },
   },
   {
-    files: ['src/platform/**/*.js', 'src/features/**/*.js'],
+    files: ['src/platform/**/*.js', 'src/features/**/*.js', 'src/app/actions/**/*.js'],
     languageOptions: {
       sourceType: 'module',
     },

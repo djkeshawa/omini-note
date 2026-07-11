@@ -145,3 +145,25 @@ test('modularization target feature folders exist', () => {
     );
   }
 });
+
+test('application composition delegates focused state to feature controllers', () => {
+  const app = read(path.join(paths.srcRoot, 'app/app.jsx'));
+  const features = ['ai', 'boot', 'canvas', 'navigation', 'overlays', 'planning', 'preferences', 'reference', 'search', 'today', 'trash', 'writer'];
+  for (const feature of features) {
+    const entry = path.join(paths.srcRoot, `features/${feature}/index.js`);
+    assert.ok(fs.existsSync(entry), `${feature} is missing its public entry point`);
+    assert.match(app, new RegExp(`from ['\"]\\.\\.\\/features\\/${feature}\\/index\\.js['\"]`));
+  }
+  assert.doesNotMatch(app, /from ['"]\.\.\/features\/(?![^/]+\/index\.js)[^'"]+['"]/);
+  assert.ok(app.split(/\r?\n/).length <= 3433, 'app composition root regrew beyond the Phase 4 budget');
+});
+
+test('trash state mutations stay behind the feature controller', () => {
+  const app = read(path.join(paths.srcRoot, 'app/app.jsx'));
+  const controller = read(path.join(paths.srcRoot, 'features/trash/useTrashController.js'));
+
+  assert.doesNotMatch(app, /\bsetTrash(?:Items|Error)\b/);
+  assert.match(app, /prependDeletedItem\(res\.value\)/);
+  assert.match(app, /onListDeletedNotes=\{listDeletedItems\}/);
+  assert.match(controller, /return \{ items, loading, error, list, refresh, restore, purge, prepend \}/);
+});

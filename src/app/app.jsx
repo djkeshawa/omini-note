@@ -2,8 +2,43 @@
 // Disk-backed through the renderer platform adapter. Falls back to in-memory
 // seed when running outside Electron (e.g. opened directly in a browser).
 
-import { ReferencePane as MnReferencePane } from '../features/reference/index.js';
+import { ReferencePane as MnReferencePane, useReferencePaneController } from '../features/reference/index.js';
+import { useAiSessionsController } from '../features/ai/index.js';
+import { useSearchController } from '../features/search/index.js';
+import { useCanvasController } from '../features/canvas/index.js';
+import { useNavigationController } from '../features/navigation/index.js';
+import { useOverlayController } from '../features/overlays/index.js';
+import { useTrashController } from '../features/trash/index.js';
+import { useBootController } from '../features/boot/index.js';
+import { useTodayController } from '../features/today/index.js';
+import {
+  calendarCleanTaskText as mnCalendarCleanTaskText,
+  calendarTaskContent as mnCalendarTaskContent,
+  calendarReminderDateParts as mnCalendarReminderDateParts,
+  calendarUpdateMarkdownLine as mnCalendarUpdateMarkdownLine,
+} from '../features/planning/index.js';
+import {
+  NOVEL_IMPORT_TOOL as MN_NOVEL_IMPORT_TOOL,
+  novelImportChunks as mnNovelImportChunks,
+  novelImportExistingSummary as mnNovelImportExistingSummary,
+  novelImportExtractionPrompt as mnNovelImportExtractionPrompt,
+  novelImportConsolidationPrompt as mnNovelImportConsolidationPrompt,
+  novelImportToolArgs as mnNovelImportToolArgs,
+  NovelImportPreviewDialog as MnNovelImportPreviewDialog,
+} from '../features/writer/index.js';
+import {
+  PHASE5_METRICS_STORAGE_KEY as MN_PHASE5_METRICS_STORAGE_KEY,
+  normalizeCustomThemes as mnNormalizeCustomThemesForApp,
+  themeOptions as mnThemeOptionsForApp,
+  normalizeStartupView as mnNormalizeStartupView,
+  normalizeOnboardingMode as mnNormalizeOnboardingMode,
+  readLocalPhase5Metrics as mnReadLocalPhase5Metrics,
+  writeLocalPhase5Metrics as mnWriteLocalPhase5Metrics,
+  buildDefaultSmartViewDefinitions as mnBuildDefaultSmartViewDefinitions,
+  normalizeSmartViews as mnNormalizeSmartViewsForApp,
+} from '../features/preferences/index.js';
 import { desktopBridge, hasDesktopBridge } from '../platform/index.js';
+import { useAppActionRegistry } from './actions/index.js';
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useCallback: useCallbackA, useRef: useRefA } = React;
 const MN_FEATURES = window.MN_FEATURES || {};
@@ -117,322 +152,6 @@ const {
   MnSettingsModal,
 } = window;
 
-const MN_NOVEL_IMPORT_TOOL = {
-  name: 'propose-novel-import',
-  title: 'Propose novel import notes',
-  description: 'Return structured novelist notes extracted from imported text files.',
-  readOnly: true,
-  inputSchema: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      notes: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            title: { type: 'string' },
-            kind: { type: 'string', enum: ['act', 'chapter', 'scene', 'character', 'location', 'plot', 'research', 'revision'] },
-            body: { type: 'string' },
-            actTitle: { type: 'string' },
-            chapterTitle: { type: 'string' },
-            order: { type: 'string' },
-            pov: { type: 'string' },
-            purpose: { type: 'string' },
-            sourceFile: { type: 'string' },
-            confidence: { type: 'string' },
-            plotPoints: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'kind', 'body'],
-        },
-      },
-    },
-    required: ['notes'],
-  },
-};
-
-function mnCalendarCleanTaskText(value = '') {
-  if (MN_APP_HELPERS?.agendaCleanActionText) return MN_APP_HELPERS.agendaCleanActionText(value);
-  return String(value || '')
-    .replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '')
-    .replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g, '')
-    .trim();
-}
-
-function mnCalendarTaskContent(text, date = '', time = '', deferUntil = '') {
-  if (MN_APP_HELPERS?.agendaBuildTaskContent) return MN_APP_HELPERS.agendaBuildTaskContent(text, date, time, deferUntil);
-  const clean = mnCalendarCleanTaskText(text);
-  const cleanDate = String(date || '').trim();
-  const cleanTime = String(time || '').trim();
-  const cleanDefer = String(deferUntil || '').trim();
-  return [
-    cleanDate ? `${clean} @remind ${[cleanDate, cleanTime].filter(Boolean).join(' ')}` : clean,
-    cleanDefer ? `@defer ${cleanDefer}` : '',
-  ].filter(Boolean).join(' ');
-}
-
-function mnCalendarReminderDateParts(date = new Date()) {
-  const d = new Date(date);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const min = String(d.getMinutes()).padStart(2, '0');
-  return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${min}` };
-}
-
-function mnCalendarUpdateMarkdownLine(line, nextText, checked) {
-  const match = String(line || '').match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
-  if (match) {
-    const box = checked == null ? match[2] : checked ? 'x' : ' ';
-    return `${match[1]}- [${box}] ${nextText}`;
-  }
-  return nextText;
-}
-
-function mnNovelImportChunks(files = [], maxChars = 11000) {
-  const chunks = [];
-  (files || []).forEach(file => {
-    const text = String(file?.text || '');
-    for (let start = 0; start < text.length; start += maxChars) {
-      chunks.push({
-        fileName: file.name || 'imported-file',
-        index: Math.floor(start / maxChars) + 1,
-        text: text.slice(start, start + maxChars),
-      });
-    }
-  });
-  return chunks.filter(chunk => chunk.text.trim());
-}
-
-function mnNovelImportExistingSummary(notes = []) {
-  return (notes || [])
-    .filter(note => (note.tags || []).some(tag => String(tag || '').startsWith('novel-')))
-    .slice(0, 50)
-    .map(note => `- ${String(note.title || 'Untitled').slice(0, 80)} [${(note.tags || []).join(', ')}]`)
-    .join('\n');
-}
-
-function mnNovelImportExtractionPrompt(chunk, existingSummary) {
-  return [
-    'Analyze this imported novel file chunk and call the propose-novel-import tool.',
-    'Classify content as story structure, story draft, or supporting notes.',
-    'Use kind=act/chapter/scene for actual story structure or prose.',
-    'Use kind=character/location/plot/research/revision for supporting details.',
-    'If the chunk has both story and support material, return both.',
-    'Do not invent facts. Keep bodies concise but useful.',
-    'Use existing titles when they clearly match.',
-    '',
-    'Existing novelist notes:',
-    existingSummary || '- None',
-    '',
-    `Source file: ${chunk.fileName} (chunk ${chunk.index})`,
-    'Text:',
-    chunk.text,
-  ].join('\n');
-}
-
-function mnNovelImportConsolidationPrompt(candidates, existingSummary) {
-  return [
-    'Consolidate these extracted novelist import candidates and call propose-novel-import.',
-    'Merge duplicates, preserve useful details, and keep act/chapter/scene relationships.',
-    'Return only candidates that should become or update app notes.',
-    '',
-    'Existing novelist notes:',
-    existingSummary || '- None',
-    '',
-    'Candidates JSON:',
-    JSON.stringify({ notes: candidates }),
-  ].join('\n');
-}
-
-function mnNovelImportToolArgs(response) {
-  if (!response || response.ok === false) throw new Error(response?.error || 'AI import analysis failed.');
-  const value = response.value || response;
-  if (value.ok === false) throw new Error(value.error || 'AI import analysis failed.');
-  const call = (value.toolCalls || []).find(item => item.name === 'propose-novel-import') || (value.toolCalls || [])[0];
-  if (call?.args && typeof call.args === 'object') return call.args;
-  const answer = String(value.answer || '').trim();
-  if (answer.startsWith('{')) {
-    try { return JSON.parse(answer); } catch (e) {}
-  }
-  return { notes: [] };
-}
-
-function MnNovelImportPreviewDialog({ dialog, T, onApply, onClose }) {
-  if (!dialog) return null;
-  const plan = dialog.plan || {};
-  const loading = dialog.phase === 'analyzing';
-  const errored = dialog.phase === 'error';
-  const created = plan.created || [];
-  const updated = plan.updated || [];
-  const skipped = [...(dialog.skipped || []), ...(plan.skipped || [])];
-  const renderItems = (label, items) => (
-    <section style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, padding: 10, background: T.bgSub }}>
-      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>{label}</div>
-      <div style={{ display: 'grid', gap: 6 }}>
-        {items.length
-          ? items.slice(0, 18).map(item => (
-            <div key={`${label}:${item.id || item.title}:${item.reason || ''}`} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
-              <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>{item.kind || 'file'}</span>
-              <span style={{ color: T.ink }}>{item.title || item.name}</span>
-              {item.reason && <span style={{ color: T.inkDim }}>{item.reason}</span>}
-            </div>
-          ))
-          : <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkDim }}>None</div>}
-        {items.length > 18 && <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>+{items.length - 18} more</div>}
-      </div>
-    </section>
-  );
-
-  return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, zIndex: 72, background: T.overlay || `color-mix(in oklab, ${T.ink} 34%, transparent)`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(760px, calc(100vw - 48px))', maxHeight: 'min(680px, calc(100vh - 48px))', overflow: 'auto', borderRadius: 10, border: `1px solid ${T.line}`, background: T.bg, boxShadow: `0 24px 60px color-mix(in oklab, ${T.ink} 28%, transparent)`, padding: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 17, fontWeight: 760, color: T.ink }}>Novel import preview</div>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkDim, marginTop: 3 }}>
-              {loading ? (dialog.progress || 'Analyzing imported files...') : errored ? 'No notes were changed.' : `${created.length} create, ${updated.length} merge`}
-            </div>
-          </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${T.lineSub}`, background: T.bgSub, color: T.inkDim, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Close" aria-label="Close">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
-              <path d="M4 4L12 12M12 4L4 12" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-        {loading && (
-          <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, padding: 14, background: T.bgSub, fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkMed }}>
-            {dialog.progress || 'Reading source material and asking AI to classify story and supporting details.'}
-          </div>
-        )}
-        {errored && (
-          <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 8, padding: 14, background: T.bgSub, fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkMed }}>
-            {dialog.error || 'AI could not analyze the imported files.'}
-          </div>
-        )}
-        {!loading && !errored && (
-          <div style={{ display: 'grid', gap: 10 }}>
-            {renderItems('Create', created)}
-            {renderItems('Merge into existing notes', updated)}
-            {renderItems('Skipped', skipped)}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-          <button onClick={onClose} style={{ border: `1px solid ${T.lineSub}`, background: T.bgSub, color: T.inkMed, borderRadius: 7, padding: '7px 11px', fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer' }}>{loading ? 'Hide' : 'Cancel'}</button>
-          {!loading && !errored && (
-            <button onClick={onApply} disabled={!plan.changedIds?.length} style={{ border: `1px solid ${T.ink}`, background: T.ink, color: T.bg, borderRadius: 7, padding: '7px 11px', fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: plan.changedIds?.length ? 'pointer' : 'not-allowed', opacity: plan.changedIds?.length ? 1 : 0.55 }}>Apply</button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function mnNormalizeCustomThemesForApp(themes = []) {
-  if (!Array.isArray(themes)) return [];
-  return themes
-    .filter(theme => theme && typeof theme.id === 'string' && typeof theme.name === 'string' && theme.tokens && typeof theme.tokens === 'object')
-    .map(theme => ({ id: theme.id, name: theme.name, tokens: theme.tokens }));
-}
-
-function mnThemeOptionsForApp(baseThemes, customThemes) {
-  const builtInLabels = { light: 'Light', dark: 'Dark', pastel: 'Pastel' };
-  const builtIns = Object.entries(builtInLabels)
-    .filter(([id]) => !!baseThemes[id])
-    .map(([value, label]) => ({ value, label }));
-  const custom = mnNormalizeCustomThemesForApp(customThemes)
-    .map(theme => ({ value: theme.id, label: theme.name }));
-  return [...builtIns, ...custom];
-}
-
-function mnNormalizeStartupView(value) {
-  return value === 'today' ? 'today' : 'notes';
-}
-
-function mnNormalizeOnboardingMode(value) {
-  const clean = String(value || '').trim().toLowerCase();
-  return ['general', 'daily', 'researcher', 'writer'].includes(clean) ? clean : '';
-}
-
-const MN_PHASE5_METRICS_STORAGE_KEY = 'mn_phase5_metrics_v1';
-
-function mnReadLocalPhase5Metrics() {
-  if (typeof window === 'undefined' || !window.localStorage) return null;
-  try {
-    return JSON.parse(window.localStorage.getItem(MN_PHASE5_METRICS_STORAGE_KEY) || 'null');
-  } catch (e) {
-    return null;
-  }
-}
-
-function mnWriteLocalPhase5Metrics(metrics) {
-  if (typeof window === 'undefined' || !window.localStorage || !metrics) return;
-  try {
-    window.localStorage.setItem(MN_PHASE5_METRICS_STORAGE_KEY, JSON.stringify(metrics));
-  } catch (e) {}
-}
-
-function mnBuildDefaultSmartViewDefinitions() {
-  const helpers = window.MN_APP_HELPERS || {};
-  const today = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
-  const format = helpers.SMART_VIEW_FORMAT || 'vispnote.smartView.v1';
-  return [
-    {
-      format,
-      id: 'recent_notes',
-      title: 'Recent notes',
-      type: 'notes',
-      filters: {},
-      sort: { field: 'modified', direction: 'desc' },
-      limit: 60,
-    },
-    {
-      format,
-      id: 'open_tasks',
-      title: 'Open tasks',
-      type: 'tasks',
-      filters: { actionStatus: 'open' },
-      sort: { field: 'reminder', direction: 'asc' },
-      limit: 80,
-    },
-    {
-      format,
-      id: 'deferred_tasks',
-      title: 'Deferred tasks',
-      type: 'tasks',
-      filters: { actionStatus: 'deferred' },
-      sort: { field: 'reminder', direction: 'asc' },
-      limit: 80,
-    },
-    {
-      format,
-      id: 'due_reminders',
-      title: 'Due reminders',
-      type: 'reminders',
-      filters: { reminderFrom: '1970-01-01', reminderTo: today },
-      sort: { field: 'reminder', direction: 'asc' },
-      limit: 80,
-    },
-  ];
-}
-
-function mnNormalizeSmartViewsForApp(value) {
-  const helpers = window.MN_APP_HELPERS || {};
-  const defaults = mnBuildDefaultSmartViewDefinitions();
-  if (!Array.isArray(value)) return defaults;
-  const validate = helpers.smartViewValidateSavedDefinition;
-  const clean = [];
-  for (const definition of value.slice(0, 24)) {
-    try {
-      const next = validate ? validate(definition) : definition;
-      if (next?.id && next?.title) clean.push(next);
-    } catch {}
-  }
-  return clean.length ? clean : defaults;
-}
-
 function MnApp() {
   const { SEED_TAGS, SEED_NOTES, SEED_VAULTS, buildLinks } = window.MN_DATA;
   const { mnMdToBlocks, mnBlocksToMd, mkBlock, mnLocate, mnCloneBlocks, mnWalk } = window.MN_OUTLINE;
@@ -442,24 +161,41 @@ function MnApp() {
   window.mnWalk = mnWalk; window.mnLocate = mnLocate; window.mnCloneBlocks = mnCloneBlocks;
   window.mkBlock = mkBlock;
 
-  const [bootState, setBootState] = useStateA('loading'); // 'loading' | 'ready' | 'error'
-  const [bootError, setBootError] = useStateA(null);
-
   const [tweaks, setTweaks] = useStateA(MN_TWEAK_DEFAULTS);
   const [enabledPacks, setEnabledPacks] = useStateA([]);
   const [assistanceEnabled, setAssistanceEnabled] = useStateA(false);
   const [customThemes, setCustomThemes] = useStateA([]);
-  const [settingsOpen, setSettingsOpen] = useStateA(false);
-  const [commandPaletteOpen, setCommandPaletteOpen] = useStateA(false);
-  const [quickSwitcherOpen, setQuickSwitcherOpen] = useStateA(false);
   const [recentNoteIds, setRecentNoteIds] = useStateA([]);
   const [canvasTextEditing, setCanvasTextEditing] = useStateA(false);
   // Bumped when a rename rewrites links in other notes so the editor's
   // backlinks/mentions panels refetch; their effects otherwise only key on
   // the open note's id/title and would show stale rows after a rename.
   const [connectionsRefreshToken, setConnectionsRefreshToken] = useStateA(0);
-  const [vaultHealthOpen, setVaultHealthOpen] = useStateA(false);
-  const [novelImportDialog, setNovelImportDialog] = useStateA(null);
+  const {
+    settingsOpen,
+    setSettingsOpen,
+    commandPaletteOpen,
+    setCommandPaletteOpen,
+    quickSwitcherOpen,
+    setQuickSwitcherOpen,
+    vaultHealthOpen,
+    setVaultHealthOpen,
+    novelImportDialog,
+    setNovelImportDialog,
+    captureOpen,
+    setCaptureOpen,
+    deleteTargetId,
+    setDeleteTargetId,
+    appNotice,
+    setAppNotice,
+    conflictNotice,
+    setConflictNotice,
+    versionTargetId,
+    setVersionTargetId,
+    reminderCenterOpen,
+    setReminderCenterOpen,
+    showAppNotice,
+  } = useOverlayController();
   const novelImportSeq = useRefA(0);
 
   // ── State (populated after disk load) ───────────────────────────────────
@@ -472,47 +208,31 @@ function MnApp() {
   const [canvases, setCanvases] = useStateA([]);
   const [activeCanvas, setActiveCanvas] = useStateA(null);
 
-  const [selectedTag, setSelectedTag] = useStateA(null);
-  const [selectedWorkflow, setSelectedWorkflow] = useStateA(null);
-  const [view, setView] = useStateA('notes');
-  const [savedSmartViews, setSavedSmartViews] = useStateA(() => mnBuildDefaultSmartViewDefinitions());
-  const [activeSmartViewId, setActiveSmartViewId] = useStateA('');
-  const [graphFilter, setGraphFilter] = useStateA('all-novelist');
-  const lastViewRef = useRefA('notes');
+  const {
+    selectedTag,
+    setSelectedTag,
+    selectedWorkflow,
+    setSelectedWorkflow,
+    view,
+    setView,
+    savedSmartViews,
+    setSavedSmartViews,
+    activeSmartViewId,
+    setActiveSmartViewId,
+    graphFilter,
+    setGraphFilter,
+    query,
+    setQuery,
+    navigateView,
+    openSmartView,
+    goBackView,
+  } = useNavigationController({ defaultSmartViews: mnBuildDefaultSmartViewDefinitions });
   const titleUpdateTimerRef = useRefA(null);
-  const [askAiSeed, setAskAiSeed] = useStateA('');
-  const askAiOpenRef = useRefA(false);
-  const newAiSession = useCallbackA(() => mnNewAskAiSession(), []);
-  const [askAiSessions, setAskAiSessions] = useStateA(() => [mnNewAskAiSession()]);
-  const [activeAskAiSessionId, setActiveAskAiSessionId] = useStateA('');
-  const activeAskAiSessionIdRef = useRefA('');
-  const [aiNotice, setAiNotice] = useStateA(null);
-  const [todayAiRecap, setTodayAiRecap] = useStateA(null);
-  const [todayAiRecapBusy, setTodayAiRecapBusy] = useStateA(false);
-  const [todayAiRecapError, setTodayAiRecapError] = useStateA('');
-  const [captureOpen, setCaptureOpen] = useStateA(false);
-  const [deleteTargetId, setDeleteTargetId] = useStateA(null);
-  const [appNotice, setAppNotice] = useStateA(null);
-  const [conflictNotice, setConflictNotice] = useStateA(null);
-  const [versionTargetId, setVersionTargetId] = useStateA(null);
-  const [trashItems, setTrashItems] = useStateA([]);
-  const [trashLoading, setTrashLoading] = useStateA(false);
-  const [trashError, setTrashError] = useStateA('');
-  const trashLoadSeq = useRefA(0);
   const [toast, setToast] = useStateA(null);
   const toastRef = useRefA(null);
-  const [reminderCenterOpen, setReminderCenterOpen] = useStateA(false);
   const dismissedReminderKeys = useRefA(new Set());
   const quietedReminderKeys = useRefA(new Set());
   const notesWithBodyCacheRef = useRefA(new Map());
-  const [query, setQuery] = useStateA('');
-  const [referencePaneOpen, setReferencePaneOpen] = useStateA(false);
-  const [referenceNoteId, setReferenceNoteId] = useStateA('');
-  const referenceRestoreNoteListRef = useRefA(false);
-
-  useEffectA(() => {
-    askAiOpenRef.current = view === 'ai';
-  }, [view]);
 
   useEffectA(() => {
     dismissedReminderKeys.current.clear();
@@ -528,10 +248,6 @@ function MnApp() {
   }, [selectedId]);
 
   useEffectA(() => {
-    activeAskAiSessionIdRef.current = activeAskAiSessionId;
-  }, [activeAskAiSessionId]);
-
-  useEffectA(() => {
     toastRef.current = toast;
   }, [toast]);
 
@@ -541,48 +257,6 @@ function MnApp() {
   useEffectA(() => {
     if (typeof window === 'undefined' || !desktopBridge?.onOpenQuickCapture) return;
     return desktopBridge.onOpenQuickCapture(() => setCaptureOpen(true));
-  }, []);
-
-  useEffectA(() => {
-    if (bootState === 'loading') return;
-    const splash = document.getElementById('mn-boot-splash');
-    if (!splash) return;
-    splash.style.opacity = '0';
-    splash.style.pointerEvents = 'none';
-    const handle = setTimeout(() => splash.remove(), 240);
-    return () => clearTimeout(handle);
-  }, [bootState]);
-
-  const navigateView = useCallbackA((nextView) => {
-    setView(current => {
-      if (current !== nextView) lastViewRef.current = current;
-      return nextView;
-    });
-  }, []);
-
-  const openSmartView = useCallbackA((definitionId = '') => {
-    setSelectedTag(null);
-    setSelectedWorkflow(null);
-    setQuery('');
-    setActiveSmartViewId(String(definitionId || ''));
-    navigateView('smart-views');
-    return { message: 'Opened Smart Views.' };
-  }, [navigateView]);
-
-  const goBackView = useCallbackA(() => {
-    const target = lastViewRef.current || 'notes';
-    setView(current => {
-      lastViewRef.current = current === target ? 'notes' : current;
-      return target;
-    });
-  }, []);
-
-  const showAppNotice = useCallbackA((title, message, tone = 'error') => {
-    setAppNotice({
-      title,
-      message: message || 'The operation could not be completed.',
-      tone,
-    });
   }, []);
 
   const recordPhase5Metric = useCallbackA((key, details = {}) => {
@@ -600,90 +274,27 @@ function MnApp() {
     }
   }, []);
 
-  const openAskAi = useCallbackA((initialQuery = '') => {
-    setAiNotice(null);
-    setAskAiSeed(typeof initialQuery === 'string' ? initialQuery : '');
-    navigateView('ai');
-  }, [navigateView]);
-
-  const activeAskAiSession = useMemoA(
-    () => mnPickActiveAskAiSession(askAiSessions, activeAskAiSessionId),
-    [askAiSessions, activeAskAiSessionId]
-  );
-
-  useEffectA(() => {
-    if (!activeAskAiSession && askAiSessions[0]) setActiveAskAiSessionId(askAiSessions[0].id);
-  }, [activeAskAiSession, askAiSessions]);
-
-  const setActiveAskAiSession = useCallbackA((updater) => {
-    setAskAiSessions(prev => prev.map(session => {
-      if (session.id !== (activeAskAiSessionIdRef.current || prev[0]?.id)) return session;
-      const next = typeof updater === 'function' ? updater(session) : updater;
-      const title = mnAskAiSessionTitle({ ...session, ...(next || {}) });
-      return { ...session, ...(next || {}), title, updatedAt: new Date().toISOString() };
-    }));
-  }, []);
-
-  const createAskAiChat = useCallbackA(() => {
-    const session = newAiSession();
-    setAskAiSessions(prev => [session, ...prev]);
-    setActiveAskAiSessionId(session.id);
-    setAskAiSeed('');
-    navigateView('ai');
-  }, [navigateView, newAiSession]);
-
-  const deleteAskAiChat = useCallbackA((id) => {
-    const target = askAiSessions.find(session => session.id === id);
-    if (target?.pending) return;
-    const next = askAiSessions.filter(session => session.id !== id);
-    if (!next.length) {
-      setAskAiSessions([]);
-      setActiveAskAiSessionId('');
-      return;
-    }
-    const nextActive = mnPickActiveAskAiSession(next, activeAskAiSessionId);
-    setAskAiSessions(next);
-    if (id === activeAskAiSessionId || !nextActive || nextActive.id !== activeAskAiSessionId) {
-      setActiveAskAiSessionId(nextActive?.id || '');
-    }
-  }, [activeAskAiSessionId, askAiSessions]);
-
-  const renameAskAiChat = useCallbackA((id, title) => {
-    const next = String(title || 'New chat').slice(0, 80) || 'New chat';
-    setAskAiSessions(prev => prev.map(session => session.id === id
-      ? { ...session, title: next, updatedAt: new Date().toISOString() }
-      : session));
-  }, []);
-
-  const archiveAskAiChat = useCallbackA((id, archived = true) => {
-    const target = askAiSessions.find(session => session.id === id);
-    if (target?.pending) return;
-    const next = askAiSessions.map(session => session.id === id
-      ? { ...session, archived: !!archived, updatedAt: new Date().toISOString() }
-      : session);
-    if (archived && id === activeAskAiSessionId) {
-      const nextActive = mnPickActiveAskAiSession(next, activeAskAiSessionId, { allowArchivedPreferred: false });
-      if (nextActive && !nextActive.archived) {
-        setAskAiSessions(next);
-        setActiveAskAiSessionId(nextActive.id);
-      } else {
-        const session = newAiSession();
-        setAskAiSessions([session, ...next]);
-        setActiveAskAiSessionId(session.id);
-      }
-      return;
-    }
-    setAskAiSessions(next);
-  }, [activeAskAiSessionId, askAiSessions, newAiSession]);
-
-  const notifyAskAiComplete = useCallbackA((notice) => {
-    if (askAiOpenRef.current) return;
-    setAiNotice({
-      id: `ai_${Date.now().toString(36)}`,
-      query: notice?.query || 'AI task completed',
-      error: notice?.error || null,
-    });
-  }, []);
+  const {
+    seed: askAiSeed,
+    sessions: askAiSessions,
+    activeSession: activeAskAiSession,
+    notice: aiNotice,
+    setNotice: setAiNotice,
+    setActiveSessionId: setActiveAskAiSessionId,
+    open: openAskAi,
+    updateActiveSession: setActiveAskAiSession,
+    createChat: createAskAiChat,
+    deleteChat: deleteAskAiChat,
+    renameChat: renameAskAiChat,
+    archiveChat: archiveAskAiChat,
+    notifyComplete: notifyAskAiComplete,
+  } = useAiSessionsController({
+    view,
+    navigateView,
+    createSession: mnNewAskAiSession,
+    sessionTitle: mnAskAiSessionTitle,
+    pickActiveSession: mnPickActiveAskAiSession,
+  });
 
   // dirtyNotes is keyed by vault+note so same-title novelist starter notes in
   // different vaults cannot overwrite each other's pending saves.
@@ -846,104 +457,57 @@ function MnApp() {
   }, [mnMdToBlocks, showAppNotice]);
 
   // ── Bootstrap from disk ─────────────────────────────────────────────────
+  const normalizeFeaturePacks = useCallbackA(
+    value => MN_FEATURES.normalizePacks ? MN_FEATURES.normalizePacks(value) : [],
+    []
+  );
+  const applyWorkflowStates = useCallbackA(
+    value => window.MN_LOGSEQ?.setWorkflowStates?.(value),
+    []
+  );
+  const { state: bootState, error: bootError } = useBootController({
+    hasDisk: HAS_DISK,
+    platform: desktopBridge,
+    notesVaultsService: MN_NOTES_VAULTS_SERVICE,
+    seedVaults: SEED_VAULTS,
+    seedNotes: SEED_NOTES,
+    seedTags: SEED_TAGS,
+    defaultTweaks: MN_TWEAK_DEFAULTS,
+    novelistWorkflowStates: MN_NOVELIST_WORKFLOW_STATES,
+    normalizeNotes,
+    markdownToBlocks: mnMdToBlocks,
+    normalizePacks: normalizeFeaturePacks,
+    normalizeThemes: mnNormalizeCustomThemesForApp,
+    sanitizeMetrics: MN_APP_HELPERS?.phase5SanitizeMetrics,
+    writeMetrics: mnWriteLocalPhase5Metrics,
+    normalizeSmartViews: mnNormalizeSmartViewsForApp,
+    normalizeStartupView: mnNormalizeStartupView,
+    normalizeWorkflowStates: mnNormalizeWorkflowStatesForApp,
+    applyWorkflowStates,
+    loadVaultBundle,
+    setEnabledPacks,
+    setAssistanceEnabled,
+    setCustomThemes,
+    setSavedSmartViews,
+    setTweaks,
+    setVaults,
+    setActiveVaultId,
+    setTags,
+    setNotes,
+    setCanvases,
+    setSelectedId,
+    setView,
+  });
+
   useEffectA(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (!HAS_DISK) {
-          // In-browser fallback: use the same starter vault shape as first-run disk seed.
-          const fallbackSources = Array.isArray(SEED_VAULTS) && SEED_VAULTS.length
-            ? SEED_VAULTS
-            : [{
-              id: 'v_personal',
-              name: 'Personal',
-              slug: 'personal',
-              path: '~/VispNote/personal',
-              notes: SEED_NOTES,
-              tags: SEED_TAGS,
-              novelistMode: false,
-            }];
-          const fallbackVaults = fallbackSources.map((vault, index) => {
-            const slug = vault.slug || String(vault.name || `vault-${index + 1}`).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `vault-${index + 1}`;
-            const seedNotes = normalizeNotes(vault.notes || [], mnMdToBlocks);
-            return {
-              id: vault.id || `v_${slug}`,
-              name: vault.name || 'Personal',
-              slug,
-              path: vault.path || `~/VispNote/${slug}`,
-              notes: seedNotes,
-              tags: vault.tags || [],
-              canvases: [],
-              lastSelectedId: vault.lastSelectedId || seedNotes[0]?.id || null,
-              workflowStates: vault.workflowStates || (vault.novelistMode ? MN_NOVELIST_WORKFLOW_STATES : null),
-              novelistAiConfig: vault.novelistAiConfig || null,
-              novelistMode: !!vault.novelistMode,
-            };
-          });
-          const activeFallback = fallbackVaults[0];
-          if (cancelled) return;
-          setVaults(fallbackVaults);
-          setActiveVaultId(activeFallback?.id || null);
-          setTags(activeFallback?.tags || []);
-          setNotes(activeFallback?.notes || []);
-          setCanvases([]);
-          setSelectedId(activeFallback?.lastSelectedId || activeFallback?.notes?.[0]?.id || null);
-          setBootState('ready');
-          return;
-        }
-
-        const prefsRes = await desktopBridge.getPrefs();
-        if (!prefsRes.ok) throw new Error(prefsRes.error);
-        const prefs = prefsRes.value;
-        setEnabledPacks(MN_FEATURES.normalizePacks ? MN_FEATURES.normalizePacks(prefs.enabledPacks) : []);
-        setAssistanceEnabled(prefs.aiConfig?.enabled === true);
-        setCustomThemes(mnNormalizeCustomThemesForApp(prefs.customThemes));
-        if (prefs.phase5Metrics && MN_APP_HELPERS?.phase5SanitizeMetrics) {
-          mnWriteLocalPhase5Metrics(MN_APP_HELPERS.phase5SanitizeMetrics(prefs.phase5Metrics));
-        }
-        const nextSmartViews = mnNormalizeSmartViewsForApp(prefs.smartViews);
-        setSavedSmartViews(nextSmartViews);
-        if (!Array.isArray(prefs.smartViews) && desktopBridge?.setPrefs) {
-          desktopBridge.setPrefs({ smartViews: nextSmartViews }).catch(e => console.warn('Could not initialize Smart Views preferences', e));
-        }
-        let startupView = 'notes';
-        if (prefs.tweaks) {
-          const mergedTweaks = { ...MN_TWEAK_DEFAULTS, ...prefs.tweaks };
-          startupView = mnNormalizeStartupView(mergedTweaks.startupView);
-          mergedTweaks.startupView = startupView;
-          window.MN_LOGSEQ?.setWorkflowStates?.(mnNormalizeWorkflowStatesForApp(mergedTweaks.workflowStates));
-          setTweaks(t => ({ ...t, ...prefs.tweaks, startupView }));
-        }
-
-        const vlistRes = await MN_NOTES_VAULTS_SERVICE.listVaults(desktopBridge);
-        if (!vlistRes.ok) throw new Error(vlistRes.error);
-        const vlist = vlistRes.value || vlistRes.data?.vaults || [];
-        if (!vlist.length) throw new Error('No vaults found');
-
-        const activeId = vlist.some(vault => vault.id === prefs.activeVaultId)
-          ? prefs.activeVaultId
-          : vlist[0].id;
-        const loaded = await loadVaultBundle(activeId);
-
-        if (cancelled) return;
-        setVaults(vlist.map(meta => meta.id === activeId
-          ? { ...meta, novelistMode: loaded.novelistMode, workflowStates: loaded.workflowStates || meta.workflowStates || null, novelistAiConfig: loaded.novelistAiConfig || meta.novelistAiConfig || null, notes: loaded.notes, tags: loaded.tags, lastSelectedId: loaded.lastSelectedId, canvases: loaded.canvases }
-          : { ...meta, notes: null, tags: null, canvases: null }));
-        setActiveVaultId(activeId);
-        setTags(loaded.tags || []);
-        setNotes(loaded.notes);
-        setCanvases(loaded.canvases);
-        setSelectedId(loaded.lastSelectedId || loaded.notes[0]?.id || null);
-        if (startupView === 'today') setView('today');
-        if (prefs.activeVaultId !== activeId) desktopBridge.setPrefs({ activeVaultId: activeId });
-        setBootState('ready');
-      } catch (e) {
-        console.error('Bootstrap failed', e);
-        if (!cancelled) { setBootError(e.message || String(e)); setBootState('error'); }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [loadVaultBundle]);
+    if (bootState === 'loading') return;
+    const splash = document.getElementById('mn-boot-splash');
+    if (!splash) return;
+    splash.style.opacity = '0';
+    splash.style.pointerEvents = 'none';
+    const handle = setTimeout(() => splash.remove(), 240);
+    return () => clearTimeout(handle);
+  }, [bootState]);
 
   // ── Persist tweaks ─────────────────────────────────────────────────────
   const tweakInitialized = useRefA(false);
@@ -1446,8 +1010,6 @@ function MnApp() {
     setVaults(vs => vs.map(v => v.id === id
       ? { ...v, notes: targetNotes, tags: targetTags, lastSelectedId: targetSel || targetNotes[0]?.id || null, canvases: targetCanvases, novelistMode: targetNovelistMode, workflowStates: targetWorkflowStates, novelistAiConfig: targetNovelistAiConfig }
       : v));
-    setTrashItems([]);
-    setTrashError('');
     setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
     if (HAS_DISK) {
       const selected = await MN_VAULTS_SERVICE.selectVault(desktopBridge, id);
@@ -1522,8 +1084,6 @@ function MnApp() {
       setNotes(setup.notes); setTags(setup.tags); setSelectedId(setup.notes[0]?.id || firstNoteId);
       tagsDirty.current = false;
       setCanvases(newCanvases); setActiveCanvas(null);
-      setTrashItems([]);
-      setTrashError('');
       setActiveVaultId(id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
       if (onboardingMode) recordPhase5Metric('onboarding_mode_selections', { onboardingMode });
       return;
@@ -1554,8 +1114,6 @@ function MnApp() {
       setNotes(loadedNotes); setTags(loadedTags);
       tagsDirty.current = false;
       setCanvases([]); setActiveCanvas(null);
-      setTrashItems([]);
-      setTrashError('');
       setSelectedId(loaded.lastSelectedId || loadedNotes[0]?.id || null);
       setActiveVaultId(v.id); setSelectedTag(null); setSelectedWorkflow(null); navigateView('notes');
       setQuery('');
@@ -1851,94 +1409,20 @@ function MnApp() {
   // we intersect with in-memory notes for tag-filter compatibility.
   // searchHits = null  → no active query
   // searchHits.ids     → matched note ids in rank order for searchHits.vaultId
-  const [searchHits, setSearchHits] = useStateA(null);
-  const [searchDetails, setSearchDetails] = useStateA(new Map());
-  const searchSeq = useRefA(0);
-  // Legacy stabilization invariant: if (seq === searchSeq.current && res.ok) setSearchHits
-  useEffectA(() => {
-    const seq = ++searchSeq.current;
-    const q = query.trim();
-    if (!q) { setSearchHits(null); setSearchDetails(new Map()); return; }
-    const activeVaultHasUnsaved = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
-    if (!HAS_DISK || !activeVaultId || activeVaultHasUnsaved) {
-      // Browser fallback and dirty-note path: in-memory search reflects
-      // unsaved edits. Debounced like the IPC path — typing in the editor
-      // re-fires this effect per keystroke while a query is active, and the
-      // full-vault scan must not run synchronously in that window.
-      const memHandle = setTimeout(() => {
-        const lc = q.toLowerCase();
-        const ids = notesWithBody.filter(n =>
-          n.title.toLowerCase().includes(lc) ||
-          (n.body || '').toLowerCase().includes(lc) ||
-          n.tags.some(t => t.toLowerCase().includes(lc))
-        ).map(n => n.id);
-        if (seq === searchSeq.current) {
-          setSearchHits({ vaultId: activeVaultId || '', query: q, ids });
-          setSearchDetails(new Map());
-        }
-      }, 150);
-      return () => clearTimeout(memHandle);
-    }
-    const handle = setTimeout(async () => {
-      try {
-        const api = desktopBridge.searchDetailed || desktopBridge.search;
-        const res = await api(activeVaultId, q, 100);
-        if (seq !== searchSeq.current) return;
-        if (res.ok) {
-          const rows = res.value || [];
-          setSearchHits({ vaultId: activeVaultId || '', query: q, ids: rows.map(r => r.id) });
-          setSearchDetails(new Map(rows.map(r => [r.id, r])));
-        } else {
-          // Don't leave a previous query's hits on screen as if they matched.
-          setSearchHits({ vaultId: activeVaultId || '', query: q, ids: [] });
-          setSearchDetails(new Map());
-          console.error('search failed', res.error);
-        }
-      } catch (e) { console.error('search failed', e); }
-    }, 150);
-    return () => clearTimeout(handle);
-  }, [query, activeVaultId, notesWithBody, dirtyNotes]);
-
-  const searchHitIds = searchHits?.vaultId === activeVaultId && searchHits.query === query.trim()
-    ? searchHits.ids
-    : null;
-
-  const filteredNotes = useMemoA(() => {
-    let ns = [...notesWithBody];
-    if (view === 'pinned') ns = ns.filter(note => note.pinned);
-    if (selectedTag) ns = ns.filter(n => n.tags.includes(selectedTag));
-    if (selectedWorkflow) {
-      const ids = workflowData.noteIdsByState[selectedWorkflow] || new Set();
-      ns = ns.filter(n => ids.has(n.id));
-    }
-    if (searchHitIds != null) {
-      const order = new Map(searchHitIds.map((id, i) => [id, i]));
-      ns = ns.filter(n => order.has(n.id));
-      ns = MN_APP_HELPERS.decorateNotesWithSearchDetails
-        ? MN_APP_HELPERS.decorateNotesWithSearchDetails(ns, searchDetails)
-        : ns.map(n => {
-          const detail = searchDetails.get(n.id);
-          return detail ? { ...n, __searchSnippet: detail.snippet, __matchedFields: detail.matchedFields } : n;
-        });
-      // Preserve search rank order when querying; otherwise default sort
-      ns.sort((a, b) => order.get(a.id) - order.get(b.id));
-      return ns;
-    }
-    ns.sort((a, b) => {
-      if (tweaks.pinnedFirst !== false) {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
-      }
-      if ((tweaks.sortBy || 'modified') === 'title') {
-        return String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' });
-      }
-      if ((tweaks.sortBy || 'modified') === 'created') {
-        return new Date(b.date || 0) - new Date(a.date || 0);
-      }
-      return new Date(b.modifiedAt || b.date || 0) - new Date(a.modifiedAt || a.date || 0);
-    });
-    return ns;
-  }, [notesWithBody, selectedTag, selectedWorkflow, workflowData, searchHitIds, searchDetails, tweaks.sortBy, tweaks.pinnedFirst, view]);
+  const { filteredNotes } = useSearchController({
+    query,
+    activeVaultId,
+    notes: notesWithBody,
+    dirtyNotes,
+    hasDisk: HAS_DISK,
+    search: desktopBridge.searchDetailed || desktopBridge.search,
+    view,
+    selectedTag,
+    selectedWorkflow,
+    workflowData,
+    tweaks,
+    decorate: MN_APP_HELPERS.decorateNotesWithSearchDetails,
+  });
 
   const graphVisibleNotes = useMemoA(() => {
     if (!activeVault?.novelistMode) return filteredNotes;
@@ -1965,47 +1449,27 @@ function MnApp() {
   );
 
   const selectedNote = notes.find(n => n.id === selectedId);
-  const referenceNote = notesWithBody.find(n => n.id === referenceNoteId) || null;
-  const openReferencePane = useCallbackA((noteId = '') => {
-    const storedId = window.MN_STORAGE?.getJson?.(`mn:referenceNote:${activeVaultId || 'local'}`, '') || '';
-    const target = notesWithBody.find(note => note.id === noteId)
-      || notesWithBody.find(note => note.id === storedId && note.id !== selectedId)
-      || notesWithBody.find(note => note.id !== selectedId)
-      || selectedNote
-      || null;
-    if (!target) return { ok: false, message: 'Create a note before opening the reference pane.' };
-    setReferenceNoteId(target.id);
-    setReferencePaneOpen(true);
-    navigateView('notes');
-    window.MN_STORAGE?.setJson?.(`mn:referenceNote:${activeVaultId || 'local'}`, target.id);
-    if (!noteListHidden) {
-      referenceRestoreNoteListRef.current = true;
-      setTweak('showNoteList', false);
-    }
-    recordFeatureUsage('reference_pane', 'opened');
-    return { message: `Opened ${target.title || 'Untitled'} as a reference.` };
-  }, [activeVaultId, navigateView, noteListHidden, notesWithBody, recordFeatureUsage, selectedId, selectedNote, setTweak]);
-  const closeReferencePane = useCallbackA(() => {
-    setReferencePaneOpen(false);
-    if (referenceRestoreNoteListRef.current) {
-      referenceRestoreNoteListRef.current = false;
-      setTweak('showNoteList', true);
-    }
+  const setReferenceNoteListVisible = useCallbackA((visible) => {
+    setTweak('showNoteList', visible);
   }, [setTweak]);
-  const selectReferenceNote = useCallbackA((noteId) => {
-    const target = notesWithBody.find(note => note.id === noteId);
-    if (!target) return;
-    setReferenceNoteId(target.id);
-    window.MN_STORAGE?.setJson?.(`mn:referenceNote:${activeVaultId || 'local'}`, target.id);
-    recordFeatureUsage('reference_pane', 'used');
-  }, [activeVaultId, notesWithBody, recordFeatureUsage]);
-
-  useEffectA(() => {
-    if (referenceRestoreNoteListRef.current) setTweak('showNoteList', true);
-    setReferencePaneOpen(false);
-    setReferenceNoteId(window.MN_STORAGE?.getJson?.(`mn:referenceNote:${activeVaultId || 'local'}`, '') || '');
-    referenceRestoreNoteListRef.current = false;
-  }, [activeVaultId, setTweak]);
+  const {
+    open: referencePaneOpen,
+    noteId: referenceNoteId,
+    openPane: openReferencePane,
+    closePane: closeReferencePane,
+    selectNote: selectReferenceNote,
+  } = useReferencePaneController({
+    activeVaultId,
+    notes: notesWithBody,
+    selectedId,
+    selectedNote,
+    noteListHidden,
+    navigateView,
+    setNoteListVisible: setReferenceNoteListVisible,
+    recordUsage: recordFeatureUsage,
+    storage: window.MN_STORAGE,
+  });
+  const referenceNote = notesWithBody.find(n => n.id === referenceNoteId) || null;
   const deleteTargetNote = deleteTargetId ? notes.find(n => n.id === deleteTargetId) : null;
   const blockingOverlayOpen = captureOpen || settingsOpen || commandPaletteOpen || quickSwitcherOpen || vaultHealthOpen || !!novelImportDialog || !!deleteTargetNote || !!appNotice || !!conflictNotice || !!versionTargetId;
 
@@ -2058,108 +1522,25 @@ function MnApp() {
     };
   }, [smartViewDefinitions]);
 
-  const todayDailyNote = useMemoA(() => (
-    MN_APP_HELPERS.rollupFindDailyNote
-      ? MN_APP_HELPERS.rollupFindDailyNote(notesWithBody)
-      : notesWithBody.find(note => String(note.title || '').trim() === (MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10))) || null
-  ), [notesWithBody]);
-
-  const todayAgendaItems = useMemoA(() => {
-    const today = MN_APP_HELPERS.todayIsoDate ? MN_APP_HELPERS.todayIsoDate() : new Date().toISOString().slice(0, 10);
-    const items = (calendarTaskItems || [])
-      .filter(item => !(MN_APP_HELPERS.agendaIsDeferred && MN_APP_HELPERS.agendaIsDeferred(item)))
-      .filter(item => item?.remindAt?.date === today)
-      .sort((a, b) => String(a.remindAt?.time || '').localeCompare(String(b.remindAt?.time || '')) || String(a.label || a.text || '').localeCompare(String(b.label || b.text || '')));
-    return MN_APP_HELPERS.digestUniqueActionItems
-      ? MN_APP_HELPERS.digestUniqueActionItems(items, { limit: 5 })
-      : items.slice(0, 5);
-  }, [calendarTaskItems]);
-
-  const todayAiContext = useMemoA(() => (
-    MN_APP_HELPERS.contextualAiBuildTodayRecapContext
-      ? MN_APP_HELPERS.contextualAiBuildTodayRecapContext({
-        notes: notesWithBody,
-        tasks: calendarTaskItems,
-        reminders: reminderCenterItems,
-        agendaItems: todayAgendaItems,
-        links,
-        weekStart: tweaks.weekStart || 'monday',
-      })
-      : null
-  ), [notesWithBody, calendarTaskItems, reminderCenterItems, todayAgendaItems, links, tweaks.weekStart]);
-
-  // Housekeeping digest for the Today view: forgotten open loops and fresh
-  // notes that never got linked into the vault. Only computed while the
-  // Today view is visible.
-  const todayDigest = useMemoA(() => {
-    if (view !== 'today' || !MN_APP_HELPERS.digestStaleTodoItems) return { staleTodos: [], unlinkedNotes: [], resurfacedNotes: [] };
-    const excludeIds = new Set([
-      ...todayAgendaItems.map(item => item.noteId),
-      ...(todayAiContext?.notes || []).map(note => note.id),
-    ].filter(Boolean));
-    const staleTodos = MN_APP_HELPERS.digestStaleTodoItems(calendarTaskItems, notesWithBody, { limit: 5 });
-    const unlinkedNotes = MN_APP_HELPERS.digestUnlinkedRecentNotes(notesWithBody, links, { limit: 5 });
-    staleTodos.forEach(item => item.noteId && excludeIds.add(item.noteId));
-    unlinkedNotes.forEach(note => note.id && excludeIds.add(note.id));
-    return {
-      staleTodos,
-      unlinkedNotes,
-      resurfacedNotes: MN_APP_HELPERS.digestResurfacedNotes
-        ? MN_APP_HELPERS.digestResurfacedNotes(notesWithBody, links, { limit: 5, excludeIds: [...excludeIds] })
-        : [],
-    };
-  }, [view, calendarTaskItems, notesWithBody, links, todayAgendaItems, todayAiContext]);
-
-  const generateTodayAiRecap = useCallbackA(async () => {
-    if (!todayAiContext || !MN_APP_HELPERS.contextualAiBuildTodayRecapPrompt || !MN_APP_HELPERS.contextualAiBuildTodayRecapResult) {
-      setTodayAiRecapError('Today AI recap is unavailable in this build.');
-      return null;
-    }
-    if (!desktopBridge?.ai?.chat) {
-      setTodayAiRecapError('AI chat is unavailable in this build.');
-      return null;
-    }
-    setTodayAiRecapBusy(true);
-    setTodayAiRecapError('');
-    try {
-      let status = null;
-      try {
-        const statusResult = await desktopBridge.ai.status?.();
-        if (statusResult?.ok) status = statusResult.value;
-      } catch (e) {
-        status = null;
-      }
-      const prompt = MN_APP_HELPERS.contextualAiBuildTodayRecapPrompt(todayAiContext);
-      const response = await desktopBridge.ai.chat({
-        messages: [
-          {
-            role: 'system',
-            content: 'You create concise source-linked daily recaps. Keep facts separate from suggestions. Do not claim facts that are not in the supplied context.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        timeoutMs: 60000,
-        maxTokens: 900,
-      });
-      if (!response?.ok) throw new Error(response?.error || 'AI recap failed.');
-      if (response.value && response.value.ok === false) throw new Error(response.value.error || 'AI recap failed.');
-      const aiText = String(response.value?.answer || response.answer || '').trim();
-      const result = MN_APP_HELPERS.contextualAiBuildTodayRecapResult({
-        aiText,
-        context: todayAiContext,
-        status,
-        createdAt: new Date().toISOString(),
-      });
-      setTodayAiRecap(result);
-      return result;
-    } catch (e) {
-      const message = e?.message || String(e) || 'AI recap failed.';
-      setTodayAiRecapError(message);
-      return null;
-    } finally {
-      setTodayAiRecapBusy(false);
-    }
-  }, [todayAiContext]);
+  const {
+    dailyNote: todayDailyNote,
+    agendaItems: todayAgendaItems,
+    aiContext: todayAiContext,
+    digest: todayDigest,
+    recap: todayAiRecap,
+    recapBusy: todayAiRecapBusy,
+    recapError: todayAiRecapError,
+    generateRecap: generateTodayAiRecap,
+  } = useTodayController({
+    view,
+    notes: notesWithBody,
+    tasks: calendarTaskItems,
+    reminders: reminderCenterItems,
+    links,
+    weekStart: tweaks.weekStart,
+    helpers: MN_APP_HELPERS,
+    ai: desktopBridge.ai,
+  });
 
   const nextStoryOrder = useCallbackA((kind, parentId = null) => {
     const noteById = new Map(notesWithBody.map(note => [note.id, note]));
@@ -2769,7 +2150,7 @@ function MnApp() {
         const res = await MN_NOTES_VAULTS_SERVICE.deleteNote(desktopBridge, activeVaultId, id, noteForDisk(n, mnBlocksToMd));
         if (res && res.ok === false) throw new Error(res.error);
         if (res?.value?.trashId) {
-          setTrashItems(items => [res.value, ...items.filter(item => item.trashId !== res.value.trashId)]);
+          prependDeletedItem(res.value);
         }
       }
       catch (e) {
@@ -2792,100 +2173,33 @@ function MnApp() {
     return normalizeNotes([note], mnMdToBlocks)[0] || null;
   }, [mnMdToBlocks]);
 
-  const listDeletedNotes = useCallbackA(async () => {
-    if (!HAS_DISK || !activeVaultId) return [];
-    const [noteRes, canvasRes] = await Promise.all([
-      desktopBridge.listDeletedNotes(activeVaultId),
-      desktopBridge.listDeletedCanvases ? desktopBridge.listDeletedCanvases(activeVaultId) : Promise.resolve({ ok: true, value: [] }),
-    ]);
-    if (!noteRes.ok) throw new Error(noteRes.error || 'Could not load deleted notes');
-    if (!canvasRes.ok) throw new Error(canvasRes.error || 'Could not load deleted canvases');
-    return [...(noteRes.value || []), ...(canvasRes.value || [])]
-      .sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0));
-  }, [activeVaultId]);
-
-  const refreshDeletedItems = useCallbackA(async () => {
-    const seq = ++trashLoadSeq.current;
-    setTrashLoading(true);
-    setTrashError('');
-    try {
-      const next = await listDeletedNotes();
-      if (seq === trashLoadSeq.current) setTrashItems(next);
-      return next;
-    } catch (e) {
-      const message = e.message || String(e);
-      if (seq === trashLoadSeq.current) setTrashError(message);
-      return [];
-    } finally {
-      if (seq === trashLoadSeq.current) setTrashLoading(false);
-    }
-  }, [listDeletedNotes]);
-
-  const restoreDeletedNote = useCallbackA(async (itemOrTrashId) => {
-    const trashId = typeof itemOrTrashId === 'string' ? itemOrTrashId : itemOrTrashId?.trashId;
-    const sourceType = typeof itemOrTrashId === 'object' ? itemOrTrashId?.sourceType : 'note';
-    if (!HAS_DISK || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
-    try {
-      if (sourceType === 'canvas') {
-        const res = await desktopBridge.restoreDeletedCanvas(activeVaultId, trashId);
-        if (!res.ok) throw new Error(res.error || 'Could not restore canvas');
-        const restored = summarizeCanvas(res.value);
-        setCanvases(current => upsertCanvasList(current, restored));
-        setVaults(vs => vs.map(v => v.id === activeVaultId
-          ? { ...v, canvases: upsertCanvasList(v.canvases || [], restored) }
-          : v));
-        setActiveCanvas(res.value);
-        navigateView('canvas');
-        setTrashItems(items => items.filter(item => item.trashId !== trashId));
-        return { ok: true, canvas: res.value };
-      }
-      const res = await desktopBridge.restoreDeletedNote(activeVaultId, trashId);
-      if (!res.ok) throw new Error(res.error || 'Could not restore note');
-      const restored = normalizeRuntimeNote(res.value);
-      if (!restored) throw new Error('Restored note could not be loaded');
-      setNotes(ns => [restored, ...ns.filter(n => n.id !== restored.id)]);
-      setVaults(vs => vs.map(v => v.id === activeVaultId && Array.isArray(v.notes)
-        ? { ...v, notes: [restored, ...v.notes.filter(n => n.id !== restored.id)] }
-        : v));
-      setSelectedId(restored.id);
-      setSelectedTag(null);
-      setSelectedWorkflow(null);
-      navigateView('notes');
-      setTrashItems(items => items.filter(item => item.trashId !== trashId));
-      return { ok: true, note: restored };
-    } catch (e) {
-      console.error('restoreDeletedNote failed', e);
-      showAppNotice('Could not restore note', e.message || String(e));
-      return { ok: false, error: e.message || String(e) };
-    }
-  }, [activeVaultId, normalizeRuntimeNote, navigateView, showAppNotice]);
-
-  const purgeDeletedNote = useCallbackA(async (itemOrTrashId) => {
-    const trashId = typeof itemOrTrashId === 'string' ? itemOrTrashId : itemOrTrashId?.trashId;
-    const sourceType = typeof itemOrTrashId === 'object' ? itemOrTrashId?.sourceType : 'note';
-    if (!HAS_DISK || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
-    try {
-      const res = sourceType === 'canvas' && desktopBridge.purgeDeletedCanvas
-        ? await desktopBridge.purgeDeletedCanvas(activeVaultId, trashId)
-        : await desktopBridge.purgeDeletedNote(activeVaultId, trashId);
-      if (!res.ok) throw new Error(res.error || `Could not permanently delete ${sourceType === 'canvas' ? 'canvas' : 'note'}`);
-      setTrashItems(items => items.filter(item => item.trashId !== trashId));
-      return { ok: true };
-    } catch (e) {
-      console.error('purgeDeletedNote failed', e);
-      showAppNotice('Could not permanently delete note', e.message || String(e));
-      return { ok: false, error: e.message || String(e) };
-    }
-  }, [activeVaultId, showAppNotice]);
-
-  useEffectA(() => {
-    if (!activeVaultId) {
-      setTrashItems([]);
-      setTrashError('');
-      return;
-    }
-    if (view === 'trash') refreshDeletedItems();
-  }, [activeVaultId, view, refreshDeletedItems]);
+  const {
+    items: trashItems,
+    loading: trashLoading,
+    error: trashError,
+    list: listDeletedItems,
+    refresh: refreshDeletedItems,
+    restore: restoreDeletedNote,
+    purge: purgeDeletedNote,
+    prepend: prependDeletedItem,
+  } = useTrashController({
+    activeVaultId,
+    view,
+    hasDisk: HAS_DISK,
+    platform: desktopBridge,
+    normalizeNote: normalizeRuntimeNote,
+    summarizeCanvas: MN_APP_MUTATIONS.summarizeCanvas,
+    upsertCanvasList: MN_APP_MUTATIONS.upsertCanvasList,
+    setNotes,
+    setVaults,
+    setCanvases,
+    setActiveCanvas,
+    setSelectedId,
+    setSelectedTag,
+    setSelectedWorkflow,
+    navigateView,
+    showNotice: showAppNotice,
+  });
 
   const restoreNoteVersion = useCallbackA(async (noteId, versionId) => {
     if (!HAS_DISK || !activeVaultId || !noteId || !versionId) return { ok: false, error: 'No active vault.' };
@@ -2973,22 +2287,24 @@ function MnApp() {
     setSelectedId(duplicateId);
   }, [conflictNotice, notesWithBody, uniqueNoteTitle, mnBlocksToMd, mnMdToBlocks, markDirty, reloadConflictFromDisk]);
 
-  const summarizeCanvas = (canvas) => ({
-    ...MN_APP_MUTATIONS.summarizeCanvas(canvas),
-  });
-
-  const upsertCanvasList = (list, canvas) => {
-    return MN_APP_MUTATIONS.upsertCanvasList(list, canvas);
-  };
-
-  const canvasActionContext = useCallbackA((overrides = {}) => ({
+  const {
+    openDashboard: openCanvasDashboard,
+    openCanvas,
+    createCanvas,
+    saveCanvas,
+    deleteCanvas,
+    addNote: addNoteToCanvas,
+  } = useCanvasController({
     activeVaultId,
     activeCanvas,
     canvases,
+    notes: notesWithBody,
     hasDisk: HAS_DISK,
-    mn: desktopBridge,
+    platform: desktopBridge,
+    canvasActions: MN_APP_CANVAS_ACTIONS,
+    canvasModel: window.MN_CANVAS_MODEL,
     newCanvas: window.mnNewCanvas,
-    upsertCanvasList,
+    upsertCanvasList: MN_APP_MUTATIONS.upsertCanvasList,
     setCanvases,
     setVaults,
     setActiveCanvas,
@@ -2996,78 +2312,8 @@ function MnApp() {
     setSelectedWorkflow,
     setQuery,
     navigateView,
-    showAppNotice,
-    logError: (...args) => console.error(...args),
-    ...overrides,
-  }), [activeVaultId, activeCanvas, canvases, navigateView, showAppNotice]);
-
-  const cacheCanvases = useCallbackA((nextCanvases) => {
-    MN_APP_CANVAS_ACTIONS.cacheCanvases(nextCanvases, canvasActionContext());
-  }, [canvasActionContext]);
-
-  const upsertCanvasSummary = useCallbackA((canvas) => {
-    MN_APP_CANVAS_ACTIONS.upsertCanvasSummary(canvas, canvasActionContext());
-  }, [canvasActionContext]);
-
-  const openCanvasDashboard = useCallbackA(() => {
-    MN_APP_CANVAS_ACTIONS.openCanvasDashboard(canvasActionContext());
-  }, [canvasActionContext]);
-
-  const openCanvas = useCallbackA(async (canvasId) => {
-    return MN_APP_CANVAS_ACTIONS.openCanvas(canvasId, canvasActionContext());
-  }, [canvasActionContext]);
-
-  const createCanvas = useCallbackA(async (title = 'Untitled canvas', options = {}) => {
-    return MN_APP_CANVAS_ACTIONS.createCanvas(title, options, canvasActionContext());
-  }, [canvasActionContext]);
-
-  const saveCanvas = useCallbackA(async (canvas) => {
-    return MN_APP_CANVAS_ACTIONS.saveCanvas(canvas, canvasActionContext());
-  }, [canvasActionContext]);
-
-  const deleteCanvas = useCallbackA(async (canvasId) => {
-    return MN_APP_CANVAS_ACTIONS.deleteCanvas(canvasId, canvasActionContext());
-  }, [canvasActionContext]);
-
-  // Places a note on a canvas as a live card from outside the canvas editor
-  // (palette / note list). Defaults to the most recently modified canvas and
-  // creates one when the vault has none.
-  const addNoteToCanvas = useCallbackA(async (noteId, canvasId = null) => {
-    const model = window.MN_CANVAS_MODEL;
-    const note = (notesWithBody || []).find(n => n.id === noteId);
-    if (!note || !model?.mnCanvasAddNoteCard) return { ok: false, message: 'Note not found.' };
-    let target = canvasId ? (canvases || []).find(c => c.id === canvasId) || null : null;
-    if (!target && !canvasId) {
-      target = [...(canvases || [])].sort((a, b) =>
-        (Date.parse(b.modifiedAt || '') || 0) - (Date.parse(a.modifiedAt || '') || 0))[0] || null;
-    }
-    let doc = null;
-    if (!target) {
-      doc = await createCanvas('Untitled canvas', { open: false });
-      if (!doc) return { ok: false, message: 'Could not create a canvas.' };
-    } else if (HAS_DISK && activeVaultId) {
-      try {
-        const res = await desktopBridge.getCanvas(activeVaultId, target.id);
-        if (!res.ok) throw new Error(res.error);
-        doc = res.value;
-      } catch (e) {
-        return { ok: false, message: `Could not load canvas: ${e.message || String(e)}` };
-      }
-    } else {
-      doc = target;
-    }
-    const placed = model.mnCanvasAddNoteCard(doc, note);
-    const canvasAffected = [{ type: 'canvas', id: doc.id, title: doc.title || 'Untitled canvas' }];
-    if (placed.existing) {
-      return { message: `"${note.title || 'Untitled'}" is already on "${doc.title || 'Untitled canvas'}".`, affected: canvasAffected };
-    }
-    const saved = await saveCanvas(placed.canvas);
-    if (!saved) return { ok: false, message: 'Could not save canvas.' };
-    return {
-      message: `Added "${note.title || 'Untitled'}" to "${saved.title || 'Untitled canvas'}".`,
-      affected: [{ type: 'canvas', id: saved.id, title: saved.title || 'Untitled canvas' }],
-    };
-  }, [notesWithBody, canvases, createCanvas, saveCanvas, activeVaultId]);
+    showNotice: showAppNotice,
+  });
 
   const exportBackup = useCallbackA(async () => {
     if (!desktopBridge?.exportBackup) return showAppNotice('Backup unavailable', 'This build does not expose backup export.');
@@ -3288,996 +2534,70 @@ function MnApp() {
     return { ok: false, message: 'Unsupported plugin type.' };
   }, [createNote, showAppNotice, uniqueNoteTitle]);
 
-  const appActionRegistry = useMemoA(() => {
-    const makeRegistry = MN_APP_ACTIONS_FACTORY.createRegistry || ((actions) => ({
-      list: () => actions,
-      run: (id) => actions.find(action => action.id === id)?.run?.(),
-      preview: () => null,
-      describeForAi: () => [],
-      findForText: () => null,
-    }));
-    const stringArg = (maxLength = 160) => ({ type: 'string', maxLength });
-    const integerArg = (defaultValue = 8) => ({ type: 'integer', default: defaultValue });
-    const objectSchema = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
-    const byNoteId = (id) => notesWithBody.find(note => note.id === id) || null;
-    const normalizeNoteLookupText = (value) => String(value || '')
-      .trim()
-      .toLowerCase()
-      .replace(/^(?:the|a|an)\s+/, '')
-      .replace(/\s+/g, ' ');
-    const normalizeNoteLookupKey = (value) => normalizeNoteLookupText(value).replace(/[^a-z0-9]+/g, '');
-    const noteTitleArg = (args = {}) => String(args.noteTitle || args.targetNoteTitle || '').trim();
-    const zoteroReaderEnabled = plugins.some(plugin => plugin.enabled !== false && plugin.type === 'zotero-reader');
-    const scoreNoteTitleMatch = (note, queryTitle) => {
-      const queryText = normalizeNoteLookupText(queryTitle);
-      const queryKey = normalizeNoteLookupKey(queryTitle);
-      const titleText = normalizeNoteLookupText(note.title || '');
-      const titleKey = normalizeNoteLookupKey(note.title || '');
-      if (!queryKey || !titleKey) return 0;
-      if (titleKey === queryKey) return 1000;
-      let score = 0;
-      if (titleText === queryText) score += 900;
-      if (titleText.includes(queryText) || queryText.includes(titleText)) score += 150;
-      const terms = queryText.split(/[^a-z0-9_-]+/).filter(Boolean);
-      const meaningfulTerms = terms.filter(term => !['note', 'page'].includes(term));
-      let titleHits = 0;
-      let meaningfulHits = 0;
-      for (const term of terms) {
-        if (titleText.includes(term)) {
-          score += term.length >= 4 ? 18 : 8;
-          titleHits += 1;
-          if (!['note', 'page'].includes(term)) meaningfulHits += 1;
-        }
-      }
-      if (meaningfulTerms.length >= 2 && meaningfulHits === meaningfulTerms.length) score += 90;
-      if (terms.length && titleHits === terms.length) score += 80;
-      return score;
-    };
-    const noteByTitle = (title) => {
-      const cleanTitle = String(title || '').trim();
-      if (!cleanTitle) return null;
-      const scored = notesWithBody
-        .map(note => ({ note, score: scoreNoteTitleMatch(note, cleanTitle) }))
-        .filter(item => item.score > 0)
-        .sort((a, b) => b.score - a.score);
-      const best = scored[0];
-      if (!best) return null;
-      if (best.score >= 1000) return best.note;
-      const second = scored[1]?.score || 0;
-      return best.score >= 80 && best.score >= second + 20 ? best.note : null;
-    };
-    const currentOrArgNote = (args = {}) => {
-      if (args.noteId) return byNoteId(args.noteId);
-      const title = noteTitleArg(args);
-      return title ? noteByTitle(title) : selectedNote || null;
-    };
-    const metadataNote = (args = {}) => {
-      if (args.noteId) return byNoteId(args.noteId);
-      const title = noteTitleArg(args);
-      return title ? noteByTitle(title) : selectedNote || null;
-    };
-    const writableMetadataNote = (args = {}) => metadataNote(args);
-    const writableBodyNote = (args = {}) => currentOrArgNote(args);
-    const noteAffected = (note) => note ? [{ type: 'note', id: note.id, title: note.title || 'Untitled' }] : [];
-    const updateNoteTagsById = (noteId, updater) => {
-      if (!noteId) return;
-      setNotes(ns => ns.map(note => {
-        if (note.id !== noteId) return note;
-        const nextTags = typeof updater === 'function' ? updater(note.tags || []) : updater;
-        return MN_APP_MUTATIONS.applyNotePatch(note, { tags: Array.isArray(nextTags) ? nextTags : [] });
-      }));
-      markDirty(noteId);
-    };
-    const appendToBody = (note, content) => {
-      const clean = String(content || '').trim();
-      if (!note || !clean) return false;
-      updateNoteBody(note.id, body => {
-        const base = String(body || '').trimEnd();
-        return `${base}${base ? '\n' : ''}${clean}`;
-      });
-      return true;
-    };
-    const cleanWikiTitle = (title) => String(title || '')
-      .trim()
-      .replace(/^\[\[|\]\]$/g, '')
-      .replace(/[#[\]\n\r]/g, '')
-      .slice(0, 180);
-    const resolveCanvas = (args = {}) => {
-      if (args.canvasId) return (canvases || []).find(item => item.id === args.canvasId) || null;
-      const title = String(args.canvasTitle || args.title || '').trim().toLowerCase();
-      if (!title) return activeCanvas || null;
-      return (canvases || []).find(item => String(item.title || '').trim().toLowerCase() === title)
-        || (canvases || []).find(item => String(item.title || '').trim().toLowerCase().includes(title))
-        || null;
-    };
-    const resolveVault = (args = {}) => {
-      const id = String(args.vaultId || '').trim();
-      if (id) return vaultsForSidebar.find(vault => vault.id === id) || null;
-      const name = String(args.vaultName || args.name || '').trim().toLowerCase();
-      if (!name) return activeVault || null;
-      return vaultsForSidebar.find(vault => String(vault.name || '').trim().toLowerCase() === name)
-        || vaultsForSidebar.find(vault => String(vault.name || '').trim().toLowerCase().includes(name))
-        || null;
-    };
-    const scoreNoteForQuery = (note, terms) => {
-      const title = String(note.title || '').toLowerCase();
-      const tags = (note.tags || []).join(' ').toLowerCase();
-      const body = String(note.body || '').toLowerCase();
-      let score = 0;
-      for (const term of terms) {
-        if (!term) continue;
-        if (title.includes(term)) score += 12;
-        if (tags.includes(term)) score += 8;
-        if (body.includes(term)) score += 2;
-      }
-      return score;
-    };
-    const searchNotesFast = async (query, limit = 8) => {
-      const cleanQuery = String(query || '').trim();
-      const max = Math.max(1, Math.min(Number(limit) || 8, 30));
-      if (!cleanQuery) return [];
-      if (HAS_DISK && activeVaultId && desktopBridge?.searchDetailedStatus) {
-        try {
-          const res = await desktopBridge.searchDetailedStatus(activeVaultId, cleanQuery, max);
-          const value = res?.value;
-          const rows = Array.isArray(value?.results) ? value.results
-            : Array.isArray(value?.value?.results) ? value.value.results
-              : Array.isArray(value) ? value
-                : [];
-          if (rows.length) {
-            return rows.slice(0, max).map(row => ({
-              id: row.id || row.noteId,
-              title: row.title || 'Untitled',
-              snippet: row.snippet || row.preview || row.bodySnippet || '',
-              score: Number(row.score || row.rank || 0),
-            })).filter(row => row.id);
-          }
-        } catch (e) {
-          // Fall back to the in-memory search below; command execution should stay fast.
-        }
-      }
-      const terms = cleanQuery.toLowerCase().split(/[^a-z0-9_-]+/).filter(Boolean);
-      return notesWithBody
-        .map(note => ({
-          id: note.id,
-          title: note.title || 'Untitled',
-          snippet: String(note.body || '').replace(/\s+/g, ' ').trim().slice(0, 220),
-          score: scoreNoteForQuery(note, terms),
-        }))
-        .filter(row => row.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, max);
-    };
-    const clearFilters = () => { setSelectedTag(null); setSelectedWorkflow(null); };
-    const openView = (nextView) => {
-      clearFilters();
-      navigateView(nextView);
-      return { message: `Opened ${nextView}.` };
-    };
-    const noteActionSchema = objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180) });
-    const titleActionSchema = objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), title: stringArg(180) }, ['title']);
-    const tagActionSchema = objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), tag: stringArg(64) }, ['tag']);
-    const canvasActionSchema = objectSchema({ canvasId: stringArg(120), canvasTitle: stringArg(180), title: stringArg(180) });
-    const vaultActionSchema = objectSchema({ vaultId: stringArg(120), vaultName: stringArg(180), name: stringArg(180) });
-
-    const actions = [
-      {
-        id: 'new-note',
-        label: 'New note',
-        description: 'Create a blank note or a note with a supplied title, body, and tags.',
-        section: 'Create',
-        shortcut: 'Ctrl+N',
-        keywords: 'page capture create',
-        inputSchema: objectSchema({ title: stringArg(180), body: stringArg(20000), tags: { type: 'array', items: stringArg(64) }, open: { type: 'boolean' } }),
-        run: (args) => {
-          const title = args.title || undefined;
-          const id = createNote({ title, body: args.body || '', tags: args.tags || [] }, { open: args.open !== false });
-          return { title: 'Note created', message: `Created "${title || 'Untitled'}".`, affected: [{ type: 'note', id, title: title || 'Untitled' }] };
-        },
-      },
-      {
-        id: 'quick-capture',
-        label: 'Quick capture',
-        description: 'Open the quick capture dialog.',
-        section: 'Create',
-        shortcut: 'Ctrl+Shift+N',
-        keywords: 'inbox capture',
-        inputSchema: objectSchema(),
-        run: () => { setCaptureOpen(true); return { message: 'Opened quick capture.' }; },
-      },
-      {
-        id: 'daily-note',
-        label: 'Open daily note',
-        description: 'Open or create today’s daily note.',
-        section: 'Create',
-        keywords: 'today journal daily',
-        inputSchema: objectSchema(),
-        run: () => {
-          const id = createDailyNote();
-          return { message: 'Opened daily note.', affected: id ? [{ type: 'note', id, title: 'Daily note' }] : [] };
-        },
-      },
-      {
-        id: 'reference-pane',
-        label: referencePaneOpen ? 'Close reference pane' : 'Open reference pane',
-        description: 'Keep one note visible beside the editor without opening a second workspace.',
-        section: 'Navigate',
-        shortcut: 'Ctrl+Shift+R',
-        keywords: 'side by side read companion note',
-        enabled: notesWithBody.length > 0,
-        inputSchema: noteActionSchema,
-        run: args => {
-          if (referencePaneOpen) {
-            closeReferencePane();
-            return { message: 'Closed reference pane.' };
-          }
-          const target = args.noteId || args.noteTitle ? resolveNote(args) : null;
-          return openReferencePane(target?.id || '');
-        },
-      },
-      {
-        id: 'ask-ai',
-        label: 'Ask AI',
-        description: 'Open the Ask AI workspace.',
-        section: 'AI',
-        shortcut: 'Ctrl+Shift+K',
-        keywords: 'assistant chat',
-        enabled: HAS_DISK,
-        aiHidden: true,
-        inputSchema: objectSchema({ query: stringArg(1000) }),
-        run: (args) => { openAskAi(args.query || ''); return { message: 'Opened Ask AI.' }; },
-      },
-      {
-        id: 'settings',
-        label: 'Open settings',
-        description: 'Open settings, optionally with a named section request.',
-        section: 'System',
-        keywords: 'preferences configuration',
-        inputSchema: objectSchema({ section: stringArg(80) }),
-        run: () => { setSettingsOpen(true); return { message: 'Opened settings.' }; },
-      },
-      { id: 'graph', label: 'Open graph', description: 'Show the note graph.', section: 'Navigate', shortcut: 'Ctrl+G', inputSchema: objectSchema(), run: () => openView('graph') },
-      { id: 'calendar', label: 'Open Agenda', description: 'Show scheduled todos and reminders.', section: 'Navigate', keywords: 'calendar schedule agenda reminder date', inputSchema: objectSchema(), run: () => openView('calendar') },
-      { id: 'today', label: 'Open Today', description: 'Show the Today dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
-      { id: 'smart-views', label: 'Open Smart Views', description: 'Show saved Smart View dashboards.', section: 'Navigate', keywords: 'saved smart views dashboard query tasks reminders', inputSchema: objectSchema(), run: () => openSmartView() },
-      { id: 'todos', label: 'Open Agenda', description: 'Open the calendar planner for tasks and reminders.', section: 'Navigate', keywords: 'tasks checklist todos agenda calendar', hidden: true, aiHidden: true, inputSchema: objectSchema(), run: () => openView('calendar') },
-      { id: 'canvas', label: 'Open canvas dashboard', description: 'Open the canvas dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => { openCanvasDashboard(); return { message: 'Opened canvas dashboard.' }; } },
-      ...smartViewDefinitions.map(definition => ({
-        id: `smart-view-${definition.id}`,
-        label: `Open ${definition.title}`,
-        description: 'Open a saved Smart View.',
-        section: 'Smart Views',
-        keywords: `smart view saved dashboard ${definition.type || ''}`,
-        inputSchema: objectSchema(),
-        run: () => openSmartView(definition.id),
-      })),
-      {
-        id: 'vault-health',
-        label: 'Open vault health',
-        description: 'Open vault health diagnostics.',
-        section: 'Vault',
-        enabled: HAS_DISK,
-        inputSchema: objectSchema(),
-        run: () => { setVaultHealthOpen(true); return { message: 'Opened vault health.' }; },
-      },
-      {
-        id: 'export-backup',
-        label: 'Export backup',
-        description: 'Export a backup through the operating system save dialog.',
-        section: 'Vault',
-        risk: 'external',
-        enabled: HAS_DISK,
-        inputSchema: objectSchema(),
-        preview: () => ({ title: 'Export backup', message: 'VispNote will open a save dialog and write a backup file to the selected location.', steps: ['Open save dialog', 'Write backup JSON'], affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }] }),
-        run: async () => { await exportBackup(); return { message: 'Backup export finished or was cancelled.' }; },
-      },
-      ...['md', 'html', 'pdf'].map(format => ({
-        id: `export-note-${format}`,
-        label: `Export note as ${format === 'md' ? 'Markdown' : format.toUpperCase()}`,
-        description: `Export the current note to a ${format === 'md' ? 'Markdown' : format.toUpperCase()} file through the operating system save dialog.`,
-        section: 'Note',
-        risk: 'external',
-        enabled: HAS_DISK && !!selectedNote,
-        inputSchema: objectSchema(),
-        preview: () => ({
-          title: `Export note as ${format.toUpperCase()}`,
-          message: 'VispNote will open a save dialog and write the exported file to the selected location.',
-          steps: ['Open save dialog', `Write ${format.toUpperCase()} file`],
-          affected: noteAffected(selectedNote),
-        }),
-        run: async () => {
-          if (!selectedNote) return { message: 'No note is selected.' };
-          const res = await desktopBridge.exportNote(activeVaultId, selectedNote.id, format);
-          if (res?.ok === false) throw new Error(res.error || 'Export failed');
-          return { message: res?.value?.canceled ? 'Export cancelled.' : `Note exported to ${res?.value?.filePath || 'file'}.` };
-        },
-      })),
-      {
-        id: 'memory-import',
-        label: 'Import memories as notes',
-        description: 'Pull memories from the local llm-memory server into this vault as editable notes with provenance.',
-        section: 'Memory',
-        enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
-        inputSchema: objectSchema(),
-        preview: () => ({
-          title: 'Import memories as notes',
-          message: 'VispNote will fetch memories from the local llm-memory server and create a note per memory. Existing memory notes are never overwritten.',
-          steps: ['Fetch memories from 127.0.0.1', 'Create missing memory notes', 'Index new notes'],
-          affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
-        }),
-        run: async () => {
-          const res = await desktopBridge.memory.import(activeVaultId);
-          if (res?.ok === false) throw new Error(res.error || 'Memory import failed');
-          const value = res?.value || {};
-          const created = Array.isArray(value.notes) ? normalizeNotes(value.notes, mnMdToBlocks) : [];
-          if (created.length) setNotes(ns => [...created, ...ns]);
-          return { message: `Imported ${value.imported || 0} memor${(value.imported || 0) === 1 ? 'y' : 'ies'} (${value.skipped || 0} already present).` };
-        },
-      },
-      {
-        id: 'memory-remember',
-        label: 'Remember this note',
-        description: 'Distill the current note into the local llm-memory server so agents can recall it.',
-        section: 'Memory',
-        risk: 'confirm',
-        enabled: HAS_DISK && !!selectedNote && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
-        inputSchema: objectSchema(),
-        preview: () => ({
-          title: 'Remember this note',
-          message: 'VispNote will send this note\'s title and body to the local llm-memory server as a new memory.',
-          steps: ['Send note content to 127.0.0.1', 'Store as an episodic memory'],
-          affected: noteAffected(selectedNote),
-        }),
-        run: async () => {
-          if (!selectedNote) return { message: 'No note is selected.' };
-          const res = await desktopBridge.memory.remember(activeVaultId, selectedNote.id);
-          if (res?.ok === false) throw new Error(res.error || 'Could not store the memory');
-          setConnectionsRefreshToken(token => token + 1);
-          return { message: `Stored “${selectedNote.title || 'Untitled'}” as memory ${res?.value?.id ? res.value.id.slice(0, 8) : ''}.` };
-        },
-      },
-      {
-        id: 'memory-sync-links',
-        label: 'Sync note links to memory graph',
-        description: 'Add or refresh this vault\'s current [[wiki-links]] in the llm-memory graph without overwriting unrelated relationships.',
-        section: 'Memory',
-        enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
-        inputSchema: objectSchema(),
-        preview: () => ({
-          title: 'Sync note links to memory graph',
-          message: 'VispNote adds new relationships and refreshes weights on relationships it previously managed. Unrelated relationships are preserved. Removed wiki-links are reported as stale because the current memory server cannot delete relationships.',
-          steps: ['Map remembered notes within this vault', 'Resolve and weight current [[wiki-links]]', 'Create or refresh VispNote-managed relationships on 127.0.0.1'],
-          affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
-        }),
-        run: async () => {
-          const res = await desktopBridge.memory.syncLinks(activeVaultId);
-          if (res?.ok === false) throw new Error(res.error || 'Link sync failed');
-          const value = res?.value || {};
-          setConnectionsRefreshToken(token => token + 1);
-          return { message: MN_MEMORY_ACTIONS.syncResultMessage(value) };
-        },
-      },
-      {
-        id: 'memory-insights',
-        label: 'Memory graph insights',
-        description: 'Show a health summary of the local llm-memory knowledge graph: memories, relationships, and duplicate candidates.',
-        section: 'Memory',
-        enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
-        inputSchema: objectSchema(),
-        preview: () => ({
-          title: 'Memory graph insights',
-          message: 'VispNote will fetch a summary report from the local llm-memory server: total memories and relationships, active intents, and duplicate candidates.',
-          steps: ['Fetch memory-intelligence report from 127.0.0.1', 'Fetch duplicate candidates', 'Summarize'],
-          affected: [],
-        }),
-        run: async () => {
-          const [reportRes, dupRes] = await Promise.all([
-            desktopBridge.memory.intelligence({ limit: 5 }),
-            desktopBridge.memory.duplicates({ limit: 20 }),
-          ]);
-          return { message: MN_MEMORY_ACTIONS.insightsResultMessage(reportRes, dupRes) };
-        },
-      },
-      {
-        id: 'import-backup',
-        label: 'Import backup',
-        description: 'Import a backup into new vaults through the operating system open dialog.',
-        section: 'Vault',
-        risk: 'destructive',
-        enabled: HAS_DISK,
-        inputSchema: objectSchema(),
-        preview: () => ({ title: 'Import backup', message: 'VispNote will read a selected backup file and create imported vaults.', steps: ['Open file dialog', 'Read backup JSON', 'Create imported vaults'], affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }] }),
-        run: async () => { await importBackup(); return { message: 'Backup import finished or was cancelled.' }; },
-      },
-      {
-        id: 'rebuild-index',
-        label: 'Rebuild search index',
-        description: 'Rebuild the full text search index for the active vault.',
-        section: 'Vault',
-        enabled: HAS_DISK,
-        inputSchema: objectSchema(),
-        run: async () => { await rebuildIndex(); return { message: 'Search index rebuild requested.' }; },
-      },
-      {
-        id: 'ai-backfill',
-        label: 'Refresh AI index',
-        description: 'Backfill missing embeddings for the active vault.',
-        section: 'AI',
-        enabled: HAS_DISK,
-        inputSchema: objectSchema(),
-        run: async () => {
-          const res = await desktopBridge?.ai?.backfill?.(activeVaultId);
-          if (res && !res.ok) throw new Error(res.error || 'AI index backfill failed');
-          const value = res?.value || {};
-          const embedded = Number(value.embedded || 0);
-          showAppNotice('AI index refreshed', value.reason || `${embedded} note${embedded === 1 ? '' : 's'} embedded.`, value.ok === false ? 'warn' : 'info');
-          return { message: value.reason || `AI index refreshed (${embedded} embedded).` };
-        },
-      },
-      {
-        id: 'rename-note',
-        label: 'Rename note',
-        description: 'Rename a note and update wiki links that point to its old title.',
-        section: 'Notes',
-        risk: 'confirm',
-        inputSchema: titleActionSchema,
-        preview: (args) => {
-          const note = currentOrArgNote(args);
-          return { title: 'Rename note', message: `Rename "${note?.title || 'current note'}" to "${args.title}".`, steps: ['Rename note title', 'Update matching wiki links'], affected: noteAffected(note) };
-        },
-        run: (args) => {
-          const note = currentOrArgNote(args);
-          if (!note) return { ok: false, message: 'No note is available to rename.' };
-          renameNoteTitle(note.id, args.title);
-          return { message: `Renamed "${note.title || 'Untitled'}" to "${args.title}".`, affected: noteAffected({ ...note, title: args.title }) };
-        },
-      },
-      {
-        id: 'duplicate-note',
-        label: 'Duplicate note',
-        description: 'Duplicate the current or selected note.',
-        section: 'Notes',
-        inputSchema: noteActionSchema,
-        run: (args) => {
-          const note = currentOrArgNote(args);
-          if (!note) return { ok: false, message: 'No note is available to duplicate.' };
-          const id = duplicateNote(note.id);
-          return { title: 'Note duplicated', message: `Duplicated "${note.title || 'Untitled'}".`, affected: [{ type: 'note', id, title: `${note.title || 'Untitled'} copy` }] };
-        },
-      },
-      {
-        id: 'delete-note',
-        label: 'Delete note',
-        description: 'Move the current or selected note to recently deleted.',
-        section: 'Notes',
-        risk: 'destructive',
-        inputSchema: noteActionSchema,
-        preview: (args) => {
-          const note = currentOrArgNote(args);
-          return { title: 'Delete note', message: `Move "${note?.title || 'current note'}" to recently deleted.`, steps: ['Remove note from the active vault', 'Keep it recoverable in trash'], affected: noteAffected(note) };
-        },
-        run: async (args) => {
-          const note = currentOrArgNote(args);
-          if (!note) return { ok: false, message: 'No note is available to delete.' };
-          await deleteNote(note.id);
-          return { message: `Deleted "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
-        },
-      },
-      {
-        id: 'search-notes',
-        label: 'Search notes',
-        description: 'Search note titles, tags, and indexed content for matching notes. Use this before editing or linking when the target note is not explicit.',
-        section: 'Notes',
-        kind: 'read',
-        readOnly: true,
-        idempotent: true,
-        keywords: 'find lookup content semantic keyword vector full text',
-        examples: ['search notes for reading list', 'find notes about quarterly planning'],
-        inputSchema: objectSchema({ query: stringArg(500), limit: integerArg(8) }, ['query']),
-        outputSchema: objectSchema({ results: { type: 'array', items: { type: 'object', additionalProperties: true } } }),
-        run: async (args) => {
-          const results = await searchNotesFast(args.query, args.limit || 8);
-          const affected = results.map(row => ({ type: 'note', id: row.id, title: row.title || 'Untitled' }));
-          return {
-            title: 'Search complete',
-            message: results.length ? `Found ${results.length} matching note${results.length === 1 ? '' : 's'}.` : 'No matching notes found.',
-            affected,
-            results,
-          };
-        },
-      },
-      {
-        id: 'read-note',
-        label: 'Read note',
-        description: 'Read a note by note id or note title before deciding what action to take.',
-        section: 'Notes',
-        kind: 'read',
-        readOnly: true,
-        idempotent: true,
-        requires: ['noteId or noteTitle'],
-        examples: ['read Daily Updates Checklist', 'inspect the note called Project Plan'],
-        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180) }),
-        outputSchema: objectSchema({ note: { type: 'object', additionalProperties: true } }),
-        run: (args) => {
-          const note = currentOrArgNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note was specified.' };
-          return {
-            title: 'Note read',
-            message: `Read "${note.title || 'Untitled'}".`,
-            affected: noteAffected(note),
-            note: {
-              id: note.id,
-              title: note.title || 'Untitled',
-              tags: note.tags || [],
-              modifiedAt: note.modifiedAt || note.date || null,
-              body: String(note.body || '').slice(0, 12000),
-            },
-          };
-        },
-      },
-      {
-        id: 'open-note',
-        label: 'Open note',
-        description: 'Open a note by note id or note title.',
-        section: 'Notes',
-        kind: 'read',
-        readOnly: true,
-        idempotent: true,
-        requires: ['noteId or noteTitle'],
-        examples: ['open Daily Updates Checklist', 'show the note called Project Plan'],
-        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180) }),
-        run: (args) => {
-          const note = currentOrArgNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note was specified.' };
-          setSelectedId(note.id);
-          navigateView('notes');
-          return { message: `Opened "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
-        },
-      },
-      {
-        id: 'append-to-note',
-        label: 'Append to note',
-        description: 'Append plain Markdown content to the current or selected note.',
-        section: 'Notes',
-        kind: 'write',
-        requires: ['current note unless noteId or noteTitle is provided'],
-        examples: ['append these meeting notes to the current note'],
-        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), content: stringArg(20000) }, ['content']),
-        run: (args) => {
-          const note = writableBodyNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
-          if (!appendToBody(note, args.content)) return { ok: false, message: 'There is no content to append.' };
-          return { message: `Updated "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
-        },
-      },
-      {
-        id: 'add-todo-to-note',
-        label: 'Add todo to note',
-        description: 'Append a Markdown todo item to the current or selected note.',
-        section: 'Notes',
-        kind: 'write',
-        requires: ['current note unless noteId or noteTitle is provided'],
-        examples: ['add todo call Nimal to this note', 'add a task to follow up on the draft'],
-        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), text: stringArg(500) }, ['text']),
-        run: (args) => {
-          const note = writableBodyNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
-          const text = String(args.text || '').replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '').trim();
-          if (!text) return { ok: false, message: 'Todo text is empty.' };
-          appendToBody(note, `- [ ] ${text}`);
-          return { message: `Added a todo to "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
-        },
-      },
-      {
-        id: 'add-reminder-to-note',
-        label: 'Add reminder to note',
-        description: 'Append a todo-style reminder to the current or selected note. Date and time can be supplied when the user gives them.',
-        section: 'Notes',
-        kind: 'write',
-        requires: ['current note unless noteId or noteTitle is provided'],
-        examples: ['remind me to renew the license tomorrow', 'add reminder follow up on invoice on 2026-05-20'],
-        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), text: stringArg(500), date: stringArg(80), time: stringArg(40) }, ['text']),
-        run: (args) => {
-          const note = writableBodyNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
-          const text = String(args.text || '').replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '').trim();
-          if (!text) return { ok: false, message: 'Reminder text is empty.' };
-          const date = String(args.date || '').trim();
-          const time = String(args.time || '').trim();
-          const suffix = [date, time].filter(Boolean).join(' ');
-          appendToBody(note, `- [ ] ${text}${suffix ? ` @remind ${suffix}` : ' @remind'}`);
-          return { message: `Added a reminder to "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
-        },
-      },
-      {
-        id: 'link-note',
-        label: 'Link note',
-        description: 'Add a wiki link from the current or selected note to another note title.',
-        section: 'Notes',
-        kind: 'write',
-        requires: ['current note unless noteId or noteTitle is provided', 'target note title'],
-        examples: ['link this note to Reading List', 'connect the current note with Project Plan'],
-        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), targetTitle: stringArg(180) }, ['targetTitle']),
-        run: (args) => {
-          const note = writableBodyNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
-          const targetTitle = cleanWikiTitle(args.targetTitle);
-          if (!targetTitle) return { ok: false, message: 'Target note title is empty.' };
-          const link = `[[${targetTitle}]]`;
-          if (String(note.body || '').includes(link)) {
-            return { message: `"${note.title || 'Untitled'}" already links to "${targetTitle}".`, affected: noteAffected(note) };
-          }
-          appendToBody(note, `Related: ${link}`);
-          const target = notesWithBody.find(item => String(item.title || '').toLowerCase() === targetTitle.toLowerCase());
-          return {
-            message: `Linked "${note.title || 'Untitled'}" to "${targetTitle}".`,
-            affected: [...noteAffected(note), ...noteAffected(target)],
-          };
-        },
-      },
-      {
-        id: 'tag-note',
-        label: 'Tag note',
-        description: 'Apply a tag to the current, selected, or named note.',
-        section: 'Notes',
-        requires: ['current note unless noteId or noteTitle is provided'],
-        examples: ['tag this note under reading', 'tag Daily update checklist as todo'],
-        inputSchema: tagActionSchema,
-        run: (args) => {
-          const note = writableMetadataNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to tag.' };
-          const clean = addTag(args.tag);
-          if (!clean) return { ok: false, message: 'Tag name is empty.' };
-          if (!(note.tags || []).includes(clean)) updateNoteTagsById(note.id, tags => tags.includes(clean) ? tags : [...tags, clean]);
-          return { message: (note.tags || []).includes(clean) ? `"${note.title}" already has #${clean}.` : `Tagged "${note.title}" with #${clean}.`, affected: noteAffected(note) };
-        },
-      },
-      {
-        id: 'untag-note',
-        label: 'Remove note tag',
-        description: 'Remove a tag from the current, selected, or named note.',
-        section: 'Notes',
-        requires: ['current note unless noteId or noteTitle is provided'],
-        inputSchema: tagActionSchema,
-        run: (args) => {
-          const note = writableMetadataNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to untag.' };
-          const clean = normalizeTagName(args.tag);
-          updateNoteTagsById(note.id, tags => tags.filter(tag => tag !== clean));
-          return { message: `Removed #${clean} from "${note.title}".`, affected: noteAffected(note) };
-        },
-      },
-      {
-        id: 'set-workflow-status',
-        label: 'Set workflow status',
-        description: 'Set the workflow status property on the current, selected, or named note.',
-        section: 'Workflow',
-        keywords: 'todo doing done draft review status',
-        requires: ['current note unless noteId or noteTitle is provided'],
-        examples: ['move Daily update checklist to inprogress', 'set this note status to done'],
-        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), status: stringArg(80) }, ['status']),
-        run: (args) => {
-          const note = writableMetadataNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to update.' };
-          const status = mnNormalizeNoteStatus(args.status, workflowStates) || String(args.status || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 18);
-          updateWorkflowNoteStatus(note.id, null, status);
-          return { message: `Set "${note.title}" to ${status || 'no status'}.`, affected: noteAffected(note) };
-        },
-      },
-      {
-        id: 'archive-workflow-note',
-        label: 'Archive workflow note',
-        description: 'Archive or restore the current or selected workflow note.',
-        section: 'Workflow',
-        inputSchema: objectSchema({ noteId: stringArg(120), noteTitle: stringArg(180), archived: { type: 'boolean', default: true } }),
-        run: (args) => {
-          const note = writableMetadataNote(args);
-          if (!note) return { ok: false, message: noteTitleArg(args) ? `Could not find a note matching "${noteTitleArg(args)}".` : 'No note is available to archive.' };
-          updateWorkflowArchived(note.id, args.archived !== false);
-          return { message: `${args.archived === false ? 'Restored' : 'Archived'} "${note.title}".`, affected: noteAffected(note) };
-        },
-      },
-      {
-        id: 'create-canvas',
-        label: 'Create canvas',
-        description: 'Create a new canvas.',
-        section: 'Canvas',
-        inputSchema: canvasActionSchema,
-        run: async (args) => {
-          const canvas = await createCanvas(args.title || 'Untitled canvas');
-          return { message: `Created "${canvas?.title || args.title || 'Untitled canvas'}".`, affected: canvas ? [{ type: 'canvas', id: canvas.id, title: canvas.title }] : [] };
-        },
-      },
-      {
-        id: 'open-canvas',
-        label: 'Open canvas',
-        description: 'Open a specific canvas or the canvas dashboard.',
-        section: 'Canvas',
-        inputSchema: canvasActionSchema,
-        run: async (args) => {
-          const target = resolveCanvas(args);
-          const canvas = target?.id ? await openCanvas(target.id) : null;
-          if (!target?.id) openCanvasDashboard();
-          return { message: canvas ? `Opened "${canvas.title}".` : 'Opened canvas dashboard.', affected: canvas ? [{ type: 'canvas', id: canvas.id, title: canvas.title }] : [] };
-        },
-      },
-      {
-        id: 'add-note-to-canvas',
-        label: 'Add note to canvas',
-        description: 'Place the current or named note on a canvas as a live note card.',
-        section: 'Canvas',
-        keywords: 'send to canvas note card board place',
-        inputSchema: objectSchema({ title: stringArg(180), noteTitle: stringArg(180), canvasId: stringArg(120), canvasTitle: stringArg(180) }),
-        run: async (args) => {
-          const note = writableMetadataNote({ title: args.noteTitle || args.title });
-          if (!note) return { ok: false, message: 'No note is available to add to a canvas.' };
-          const canvas = args.canvasId || args.canvasTitle ? resolveCanvas({ canvasId: args.canvasId, canvasTitle: args.canvasTitle }) : null;
-          return await addNoteToCanvas(note.id, canvas?.id || null);
-        },
-      },
-      {
-        id: 'delete-canvas',
-        label: 'Delete canvas',
-        description: 'Move a canvas to recently deleted.',
-        section: 'Canvas',
-        risk: 'destructive',
-        inputSchema: canvasActionSchema,
-        preview: (args) => {
-          const canvas = resolveCanvas(args);
-          return { title: 'Delete canvas', message: `Move "${canvas?.title || 'the canvas'}" to recently deleted.`, steps: ['Remove canvas from the dashboard', 'Keep it recoverable in trash'], affected: canvas ? [{ type: 'canvas', id: canvas.id, title: canvas.title }] : [] };
-        },
-        run: async (args) => {
-          const canvasId = resolveCanvas(args)?.id;
-          if (!canvasId) return { ok: false, message: 'No canvas is available to delete.' };
-          await deleteCanvas(canvasId);
-          return { message: 'Canvas deleted.' };
-        },
-      },
-      {
-        id: 'switch-vault',
-        label: 'Switch vault',
-        description: 'Switch to a vault by id or name.',
-        section: 'Vaults',
-        kind: 'read',
-        readOnly: true,
-        idempotent: true,
-        inputSchema: vaultActionSchema,
-        run: (args) => {
-          const vault = resolveVault(args);
-          if (!vault) return { ok: false, message: args.vaultName || args.name ? `Could not find a vault matching "${args.vaultName || args.name}".` : 'No vault was specified.' };
-          selectVault(vault.id);
-          return { message: `Switched to ${vault.name}.`, affected: [{ type: 'vault', id: vault.id, title: vault.name }] };
-        },
-      },
-      {
-        id: 'restore-trash-item',
-        label: 'Restore trash item',
-        description: 'Restore a deleted note or canvas by trash id.',
-        section: 'Vault',
-        risk: 'confirm',
-        enabled: HAS_DISK,
-        inputSchema: objectSchema({ trashId: stringArg(140), sourceType: stringArg(20) }, ['trashId']),
-        preview: (args) => ({ title: 'Restore trash item', message: `Restore trash item ${args.trashId}.`, steps: ['Read recently deleted item', 'Restore it to the active vault'], affected: [{ type: args.sourceType || 'trash', id: args.trashId, title: args.trashId }] }),
-        run: async (args) => {
-          const result = await restoreDeletedNote({ trashId: args.trashId, sourceType: args.sourceType || 'note' });
-          return result?.ok === false ? { ok: false, message: result.error || 'Could not restore trash item.' } : { message: 'Trash item restored.' };
-        },
-      },
-      ...(zoteroReaderEnabled ? [
-        {
-          id: 'zotero-list',
-          label: 'List Zotero papers',
-          description: 'List recent Zotero Desktop papers and references without searching for a title.',
-          section: 'Zotero',
-          keywords: 'zotero paper papers documents references bibliography library list show',
-          risk: 'safe',
-          kind: 'read',
-          readOnly: true,
-          inputSchema: objectSchema({ limit: integerArg(20) }),
-          outputSchema: { type: 'object', additionalProperties: true },
-          run: async (args) => {
-            if (!desktopBridge?.zotero?.list) return { ok: false, message: 'Zotero integration is unavailable.' };
-            const res = await desktopBridge.zotero.list({ limit: args.limit || 20 });
-            if (!res.ok) return { ok: false, message: res.error || 'Could not list Zotero papers.' };
-            const results = res.value?.results || [];
-            return {
-              message: results.length ? `Found ${results.length} Zotero item${results.length === 1 ? '' : 's'}.` : 'No Zotero papers were found.',
-              results,
-              affected: results.map(item => ({ type: 'zotero', id: item.key, title: item.title || item.key })),
-            };
-          },
-        },
-        {
-          id: 'zotero-search',
-          label: 'Search Zotero',
-          description: 'Search Zotero Desktop documents by title, author, abstract, note, and indexed full text.',
-          section: 'Zotero',
-          keywords: 'zotero paper papers documents references bibliography library research pdf search find',
-          risk: 'safe',
-          kind: 'read',
-          readOnly: true,
-          inputSchema: objectSchema({ query: stringArg(300), limit: integerArg(8) }, ['query']),
-          outputSchema: { type: 'object', additionalProperties: true },
-          run: async (args) => {
-            if (!desktopBridge?.zotero?.search) return { ok: false, message: 'Zotero integration is unavailable.' };
-            const res = await desktopBridge.zotero.search({ query: args.query, limit: args.limit || 8 });
-            if (!res.ok) return { ok: false, message: res.error || 'Could not search Zotero.' };
-            const results = res.value?.results || [];
-            return {
-              message: results.length ? `Found ${results.length} Zotero item${results.length === 1 ? '' : 's'}.` : 'No Zotero items matched that search.',
-              results,
-              affected: results.map(item => ({ type: 'zotero', id: item.key, title: item.title || item.key })),
-            };
-          },
-        },
-        {
-          id: 'zotero-read',
-          label: 'Read Zotero item',
-          description: 'Read Zotero item metadata, attachments, and available indexed attachment full text.',
-          section: 'Zotero',
-          keywords: 'zotero read paper document reference attachment full text pdf',
-          risk: 'safe',
-          kind: 'read',
-          readOnly: true,
-          inputSchema: objectSchema({ itemKey: stringArg(80), includeFullText: { type: 'boolean', default: true } }, ['itemKey']),
-          outputSchema: { type: 'object', additionalProperties: true },
-          run: async (args) => {
-            if (!desktopBridge?.zotero?.read) return { ok: false, message: 'Zotero integration is unavailable.' };
-            const res = await desktopBridge.zotero.read({ itemKey: args.itemKey, includeFullText: args.includeFullText !== false });
-            if (!res.ok) return { ok: false, message: res.error || 'Could not read Zotero item.' };
-            const value = res.value || {};
-            const item = value.item || {};
-            return {
-              message: value.fullText
-                ? `Read "${item.title || args.itemKey}" with indexed full text.`
-                : `Read "${item.title || args.itemKey}" metadata${value.fullTextError ? `; ${value.fullTextError}` : '.'}`,
-              item,
-              attachments: value.attachments || [],
-              fullText: value.fullText || '',
-              fullTextItemKey: value.fullTextItemKey || '',
-              fullTextTruncated: !!value.fullTextTruncated,
-              fullTextError: value.fullTextError || '',
-              affected: item.key ? [{ type: 'zotero', id: item.key, title: item.title || item.key }] : [],
-            };
-          },
-        },
-        {
-          id: 'zotero-source-note',
-          label: 'Create Zotero source note',
-          description: 'Create or open a VispNote source note linked to a Zotero item key.',
-          section: 'Zotero',
-          keywords: 'zotero source note paper document reference bibliography create open',
-          risk: 'safe',
-          idempotent: true,
-          inputSchema: objectSchema({ itemKey: stringArg(80), includeFullText: { type: 'boolean', default: true } }, ['itemKey']),
-          outputSchema: { type: 'object', additionalProperties: true },
-          run: async (args) => {
-            const itemKey = MN_APP_HELPERS.zoteroCleanItemKey
-              ? MN_APP_HELPERS.zoteroCleanItemKey(args.itemKey)
-              : String(args.itemKey || '').trim();
-            if (!itemKey) return { ok: false, message: 'A valid Zotero item key is required.' };
-            const existing = MN_APP_HELPERS.zoteroFindSourceNote
-              ? MN_APP_HELPERS.zoteroFindSourceNote(notesWithBody, itemKey)
-              : null;
-            if (existing) {
-              setSelectedId(existing.id);
-              navigateView('notes');
-              return {
-                message: `Opened existing Zotero source note "${existing.title || itemKey}".`,
-                itemKey,
-                noteId: existing.id,
-                mode: 'open',
-                affected: noteAffected(existing),
-              };
-            }
-            if (!desktopBridge?.zotero?.status || !desktopBridge?.zotero?.read) {
-              return { ok: false, message: 'Zotero integration is unavailable.' };
-            }
-            const status = await desktopBridge.zotero.status();
-            if (!status.ok) return { ok: false, message: status.error || 'Could not check Zotero.' };
-            if (!status.value?.reachable) {
-              return { ok: false, message: status.value?.error || 'Zotero Desktop is not reachable.' };
-            }
-            const res = await desktopBridge.zotero.read({ itemKey, includeFullText: args.includeFullText !== false });
-            if (!res.ok) return { ok: false, message: res.error || 'Could not read Zotero item.' };
-            const plan = MN_APP_HELPERS.zoteroBuildSourceNotePlan
-              ? MN_APP_HELPERS.zoteroBuildSourceNotePlan({ readResult: res.value, itemKey, notes: notesWithBody })
-              : null;
-            if (!plan || plan.action === 'unavailable') {
-              return { ok: false, message: plan?.error || 'Could not build Zotero source note.' };
-            }
-            if (plan.action === 'open' && plan.noteId) {
-              setSelectedId(plan.noteId);
-              navigateView('notes');
-              return {
-                message: `Opened existing Zotero source note "${plan.noteTitle || itemKey}".`,
-                itemKey: plan.itemKey || itemKey,
-                noteId: plan.noteId,
-                mode: 'open',
-                affected: noteAffected(plan.existingNote),
-              };
-            }
-            const title = uniqueNoteTitle(plan.createNote.title || plan.source?.title || itemKey);
-            const id = createNote({
-              title,
-              body: plan.createNote.body || '',
-              tags: plan.createNote.tags || [],
-            });
-            recordPhase5Metric('zotero_source_notes', { mode: 'create' });
-            return {
-              message: `Created Zotero source note "${title}".`,
-              itemKey: plan.itemKey || itemKey,
-              noteId: id,
-              mode: 'create',
-              affected: [
-                { type: 'note', id, title },
-                { type: 'zotero', id: plan.itemKey || itemKey, title: plan.source?.title || itemKey },
-              ],
-            };
-          },
-        },
-      ] : []),
-      ...plugins.filter(plugin => plugin.enabled !== false).map(plugin => ({
-        id: `plugin-${plugin.id}`,
-        label: MN_PLUGIN_API.commandTitle ? MN_PLUGIN_API.commandTitle(plugin) : plugin.name,
-        description: plugin.purpose || `Run ${plugin.name || 'plugin'}.`,
-        section: 'Plugins',
-        keywords: `${plugin.type} ${plugin.purpose || ''}`,
-        risk: plugin.type === 'open-url' ? 'external' : 'safe',
-        inputSchema: objectSchema(),
-        preview: () => ({ title: MN_PLUGIN_API.commandTitle ? MN_PLUGIN_API.commandTitle(plugin) : plugin.name, message: `Run plugin "${plugin.name || plugin.id}".`, steps: [plugin.type === 'open-url' ? 'Open external URL' : 'Run plugin action'], affected: [{ type: 'plugin', id: plugin.id, title: plugin.name }] }),
-        run: async () => runPlugin(plugin),
-      })),
-      ...MN_NOTE_TEMPLATES.map(template => ({
-        id: `template-${template.id}`,
-        label: `New ${template.title}`,
-        description: `Create a note from the ${template.title} template.`,
-        section: 'Templates',
-        keywords: `${template.id} template create note`,
-        inputSchema: objectSchema(),
-        run: () => {
-          const id = createNoteFromTemplate(template.id);
-          return { message: `Created ${template.title}.`, affected: id ? [{ type: 'note', id, title: template.title }] : [] };
-        },
-      })),
-      ...vaultsForSidebar.map(vault => ({
-        id: `vault-${vault.id}`,
-        label: `Switch to ${vault.name}`,
-        description: `Switch active vault to ${vault.name}.`,
-        section: 'Vaults',
-        keywords: 'switch workspace vault',
-        enabled: vault.id !== activeVaultId,
-        inputSchema: objectSchema(),
-        run: () => { selectVault(vault.id); return { message: `Switched to ${vault.name}.`, affected: [{ type: 'vault', id: vault.id, title: vault.name }] }; },
-      })),
-      ...canvases.slice(0, 60).map(canvas => ({
-        id: `canvas-${canvas.id}`,
-        label: canvas.title || 'Untitled canvas',
-        description: 'Open canvas.',
-        section: 'Canvases',
-        keywords: 'canvas board',
-        inputSchema: objectSchema(),
-        run: async () => {
-          const opened = await openCanvas(canvas.id);
-          return { message: `Opened ${opened?.title || canvas.title || 'canvas'}.`, affected: [{ type: 'canvas', id: canvas.id, title: canvas.title }] };
-        },
-      })),
-      ...notesWithBody.slice(0, 120).map(note => ({
-        id: `note-${note.id}`,
-        label: note.title || 'Untitled',
-        description: 'Open note.',
-        section: 'Notes',
-        keywords: `${(note.tags || []).join(' ')} ${note.body || ''}`.slice(0, 500),
-        inputSchema: objectSchema(),
-        run: () => {
-          setSelectedId(note.id);
-          navigateView('notes');
-          return { message: `Opened "${note.title || 'Untitled'}".`, affected: noteAffected(note) };
-        },
-      })),
-    ];
-    return makeRegistry(actions);
-  }, [activeCanvas, activeVault?.name, activeVaultId, addNoteToCanvas, canvases, closeReferencePane, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, plugins, rebuildIndex, recordPhase5Metric, referencePaneOpen, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+  const appActionRegistry = useAppActionRegistry({
+    activeCanvas,
+    activeVault,
+    activeVaultId,
+    addNoteToCanvas,
+    canvases,
+    closeReferencePane,
+    createCanvas,
+    createDailyNote,
+    createNote,
+    createNoteFromTemplate,
+    deleteCanvas,
+    deleteNote,
+    duplicateNote,
+    exportBackup,
+    importBackup,
+    markDirty,
+    notesWithBody,
+    openAskAi,
+    openCanvas,
+    openCanvasDashboard,
+    openReferencePane,
+    openSmartView,
+    plugins,
+    rebuildIndex,
+    recordPhase5Metric,
+    referencePaneOpen,
+    restoreDeletedNote,
+    runPlugin,
+    selectVault,
+    selectedNote,
+    smartViewDefinitions,
+    uniqueNoteTitle,
+    updateNote,
+    updateNoteBody,
+    updateWorkflowArchived,
+    updateWorkflowNoteStatus,
+    vaultsForSidebar,
+    workflowStates,
+    navigateView,
+    showAppNotice,
+    appActionsFactory: MN_APP_ACTIONS_FACTORY,
+    appHelpers: MN_APP_HELPERS,
+    appMutations: MN_APP_MUTATIONS,
+    hasDisk: HAS_DISK,
+    platform: desktopBridge,
+    setNotes,
+    setSelectedTag,
+    setSelectedWorkflow,
+    setCaptureOpen,
+    setSettingsOpen,
+    setVaultHealthOpen,
+    normalizeNotes,
+    markdownToBlocks: mnMdToBlocks,
+    setConnectionsRefreshToken,
+    memoryActions: MN_MEMORY_ACTIONS,
+    renameNoteTitle,
+    setSelectedId,
+    addTag,
+    normalizeTagName,
+    normalizeNoteStatus: mnNormalizeNoteStatus,
+    pluginApi: MN_PLUGIN_API,
+    noteTemplates: MN_NOTE_TEMPLATES,
+  });
 
   useEffectA(() => {
     window.MN_APP_ACTIONS = appActionRegistry;
@@ -5045,7 +3365,7 @@ function MnApp() {
             onCreateVault={createVault}
             onDeleteVault={deleteVault}
             onSetVaultNovelistMode={setActiveVaultNovelistMode}
-            onListDeletedNotes={listDeletedNotes}
+            onListDeletedNotes={listDeletedItems}
             onRestoreDeletedNote={restoreDeletedNote}
             onPurgeDeletedNote={purgeDeletedNote}
             onExportBackup={exportBackup}
