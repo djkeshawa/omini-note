@@ -1,7 +1,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_TABLE_OPS = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   const MAX_TABLE_ROWS = 1000;
   const MAX_TABLE_COLUMNS = 80;

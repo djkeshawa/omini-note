@@ -8,69 +8,54 @@ function currentBridge() {
   return window.mn || EMPTY_BRIDGE;
 }
 
-function callBridge(method, ...args) {
-  const fn = currentBridge()[method];
-  if (typeof fn !== 'function') throw new Error(`Desktop bridge method is unavailable: ${method}`);
+function callBridge(namespace, method, ...args) {
+  const fn = currentBridge()[namespace]?.[method];
+  if (typeof fn !== 'function') throw new Error(`Desktop bridge method is unavailable: ${namespace}.${method}`);
   return fn(...args);
 }
 
-function methodGroup(methods) {
+function methodGroup(namespace, methods) {
   return Object.freeze(Object.fromEntries(methods.map(method => [
     method,
-    (...args) => callBridge(method, ...args),
+    (...args) => callBridge(namespace, method, ...args),
   ])));
 }
-
-// Compatibility proxy for modules that are being migrated incrementally.
-// New feature code should prefer the namespaced platformApi below.
-const desktopBridge = new Proxy({}, {
-  get(_target, property) {
-    return currentBridge()[property];
-  },
-  has(_target, property) {
-    return property in currentBridge();
-  },
-  ownKeys() {
-    return Reflect.ownKeys(currentBridge());
-  },
-  getOwnPropertyDescriptor(_target, property) {
-    const descriptor = Object.getOwnPropertyDescriptor(currentBridge(), property);
-    return descriptor || { configurable: true, enumerable: true };
-  },
-});
 
 const platformApi = Object.freeze({
   get available() {
     return currentBridge() !== EMPTY_BRIDGE;
   },
-  notes: methodGroup([
-    'loadVault', 'saveNote', 'deleteNote', 'listDeletedNotes',
+  notes: methodGroup('notes', [
+    'listNotes', 'openNote', 'loadVault', 'saveNote', 'deleteNote', 'listDeletedNotes',
     'restoreDeletedNote', 'purgeDeletedNote', 'listNoteVersions',
-    'getNoteVersion', 'restoreNoteVersion', 'exportNote',
+    'getNoteVersion', 'restoreNoteVersion', 'exportNote', 'saveAttachment',
   ]),
-  vaults: methodGroup([
+  vaults: methodGroup('vaults', [
     'listVaults', 'createVault', 'renameVault', 'deleteVault',
-    'setActiveVault', 'saveVaultMeta', 'exportBackup', 'importBackup',
+    'setActiveVault', 'saveVaultMeta',
   ]),
-  search: methodGroup([
+  search: methodGroup('search', [
     'search', 'searchDetailed', 'searchDetailedStatus', 'backlinks',
     'unlinkedMentions', 'notesByTag', 'tagCounts', 'rebuildIndex', 'vaultHealth',
   ]),
-  canvas: methodGroup([
+  canvas: methodGroup('canvas', [
     'listCanvases', 'getCanvas', 'saveCanvas', 'deleteCanvas',
     'listDeletedCanvases', 'restoreDeletedCanvas', 'purgeDeletedCanvas',
   ]),
-  preferences: methodGroup(['getPrefs', 'setPrefs', 'importThemeFile']),
-  app: methodGroup(['openExternal', 'setTitle', 'spellcheck']),
+  preferences: methodGroup('preferences', ['getPrefs', 'setPrefs', 'importThemeFile', 'spellcheck']),
+  maintenance: methodGroup('maintenance', ['exportBackup', 'importBackup', 'importNovelFiles']),
+  app: methodGroup('app', ['openExternal', 'setTitle', 'shortcutStatus']),
   get ai() {
     return currentBridge().ai || EMPTY_BRIDGE;
   },
+  get updates() {
+    return currentBridge().updates || EMPTY_BRIDGE;
+  },
   get integrations() {
-    return Object.freeze({
-      featureUsage: currentBridge().featureUsage || EMPTY_BRIDGE,
-      memory: currentBridge().memory || EMPTY_BRIDGE,
-      zotero: currentBridge().zotero || EMPTY_BRIDGE,
-    });
+    return currentBridge().integrations || EMPTY_BRIDGE;
+  },
+  get events() {
+    return currentBridge().events || EMPTY_BRIDGE;
   },
 });
 
@@ -78,4 +63,4 @@ function hasDesktopBridge() {
   return currentBridge() !== EMPTY_BRIDGE;
 }
 
-export { desktopBridge, hasDesktopBridge, platformApi };
+export { hasDesktopBridge, platformApi };

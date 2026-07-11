@@ -60,7 +60,7 @@ export function useCanvasController({
       if (!document) return { ok: false, message: 'Could not create a canvas.' };
     } else if (hasDisk && activeVaultId) {
       try {
-        const response = await platform.getCanvas(activeVaultId, target.id);
+        const response = await platform.canvas.getCanvas(activeVaultId, target.id);
         if (!response.ok) throw new Error(response.error);
         document = response.value;
       } catch (error) {

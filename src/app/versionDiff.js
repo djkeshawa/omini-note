@@ -3,7 +3,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_VERSION_DIFF = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   function splitLines(value, maxLines = 800) {
     return String(value == null ? '' : value).replace(/\r\n/g, '\n').split('\n').slice(0, maxLines);

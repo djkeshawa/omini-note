@@ -16,7 +16,4 @@ function SectionHead({ label, count, T }) {
 }
 
 
-window.MN_PANEL_COMPONENTS = {
-  ...(window.MN_PANEL_COMPONENTS || {}),
-  SectionHead,
-};
+export { SectionHead };

@@ -169,7 +169,7 @@ const iconKey = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none" str
 const iconInfo = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 7V11M8 5V5.01" strokeLinecap="round"/></svg>);
 
 
-window.MN_SETTINGS_CONTROLS = {
+export {
   H,
   SettingsCard,
   Row,
@@ -177,15 +177,14 @@ window.MN_SETTINGS_CONTROLS = {
   Toggle,
   Select,
   FontSizeStepper,
-  icons: {
-    iconAppearance,
-    iconEditor,
-    iconNotes,
-    iconBell,
-    iconAI,
-    iconPlugin,
-    iconData,
-    iconKey,
-    iconInfo,
-  },
+  iconAppearance,
+  iconEditor,
+  iconNotes,
+  iconBell,
+  iconAI,
+  iconPlugin,
+  iconData,
+  iconKey,
+  iconInfo,
 };
+import { mnShadow } from '../shared/theme.jsx';

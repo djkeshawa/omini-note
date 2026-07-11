@@ -1,10 +1,10 @@
-function calendarCleanTaskText(value = '', helpers = window.MN_APP_HELPERS || {}) {
+function calendarCleanTaskText(value = '', helpers = {}) {
   if (helpers.agendaCleanActionText) return helpers.agendaCleanActionText(value);
   return String(value || '').replace(/^\s*[-*]\s+\[[ xX]\]\s*/, '')
     .replace(/@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?/g, '').trim();
 }
 
-function calendarTaskContent(text, date = '', time = '', deferUntil = '', helpers = window.MN_APP_HELPERS || {}) {
+function calendarTaskContent(text, date = '', time = '', deferUntil = '', helpers = {}) {
   if (helpers.agendaBuildTaskContent) return helpers.agendaBuildTaskContent(text, date, time, deferUntil);
   const clean = calendarCleanTaskText(text, helpers);
   const cleanDate = String(date || '').trim();

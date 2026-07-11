@@ -550,4 +550,5 @@ function MnGraphControls({
   );
 }
 
-window.MnGraph = MnGraph;
+export { MnGraph };
+import { MN_THEMES, mnGetTagColor, mnShadow } from '../shared/theme.jsx';

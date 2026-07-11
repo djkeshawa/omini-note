@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { appSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 
 const ops = require('../src/editor/editorOps.js');
@@ -14,7 +15,12 @@ const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 
 test('Canvas editor supports expected drawing, color, clipboard, and delete interactions', () => {
-  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas/canvas.jsx'), 'utf8');
+  const canvasRoot = path.join(__dirname, '../src/features/canvas');
+  const canvas = [
+    fs.readFileSync(path.join(canvasRoot, 'CanvasPanel.jsx'), 'utf8'),
+    ...fs.readdirSync(path.join(canvasRoot, 'components')).sort().map(name => fs.readFileSync(path.join(canvasRoot, 'components', name), 'utf8')),
+    fs.readFileSync(path.join(canvasRoot, 'useCanvasKeyboardShortcuts.js'), 'utf8'),
+  ].join('\n');
   const canvasModel = fs.readFileSync(path.join(__dirname, '../src/canvas/canvasModel.js'), 'utf8');
 
   assert.match(canvasModel, /id: 'pen'/);
@@ -124,8 +130,10 @@ test('Renderer regression covers user-centered app workflows', () => {
 });
 
 test('Note delete confirmation uses themed in-app dialog', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
+  const app = appSource(__dirname);
+  const appShellRoot = path.join(__dirname, '../src/app');
+  const appShell = fs.readdirSync(path.join(appShellRoot, 'shell')).sort()
+    .map(name => fs.readFileSync(path.join(appShellRoot, 'shell', name), 'utf8')).join('\n');
 
   assert.match(appShell, /function MnDeleteNoteDialog/);
   assert.match(appShell, /className="mn-delete-note-dialog"/);
@@ -141,8 +149,10 @@ test('Note delete confirmation uses themed in-app dialog', () => {
 
 test('Launch screen uses VispNote logo with pastel blooming light design', () => {
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
+  const app = appSource(__dirname);
+  const appShellRoot = path.join(__dirname, '../src/app');
+  const appShell = fs.readdirSync(path.join(appShellRoot, 'shell')).sort()
+    .map(name => fs.readFileSync(path.join(appShellRoot, 'shell', name), 'utf8')).join('\n');
   const loadingLogo = fs.statSync(path.join(__dirname, '../assets/vispnote-loading-transparent.png'));
   const appIcon = fs.statSync(path.join(__dirname, '../assets/vispnote-icon.png'));
 
@@ -206,11 +216,16 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
 });
 
 test('App and editor font size settings use stepper controls', () => {
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const settingsRoot = path.join(__dirname, '../src/settings');
+  const settings = [
+    path.join(settingsRoot, 'settings.jsx'),
+    path.join(settingsRoot, 'settingsControls.jsx'),
+    ...fs.readdirSync(path.join(settingsRoot, 'sections')).sort().map(name => path.join(settingsRoot, 'sections', name)),
+  ].map(file => fs.readFileSync(file, 'utf8')).join('\n');
   const settingsControls = fs.readFileSync(path.join(__dirname, '../src/settings/settingsControls.jsx'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
 
   assert.match(settingsControls, /function FontSizeStepper/);
   assert.match(settings, /label="App font size"/);

@@ -1,7 +1,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_APP_ACTIONS_FACTORY = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   const CONFIRM_RISKS = new Set(['confirm', 'destructive', 'external']);
   const KNOWN_RISKS = new Set(['safe', 'confirm', 'destructive', 'external']);

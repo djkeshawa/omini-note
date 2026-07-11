@@ -2,7 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { appSource, backendAiSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
+const { loadRendererModule } = require('./helpers/rendererModule.js');
 
 const ops = require('../src/editor/editorOps.js');
 const tableOps = require('../src/editor/tableOps.js');
@@ -825,17 +827,17 @@ test('Vault health resolves wiki links with anchors by note title', async () => 
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = mainProcessSource();
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appActions = fs.readFileSync(path.join(__dirname, '../src/app/actions/useAppActionRegistry.js'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const outlinerRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
   const markdownInlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
   const markdownInputRules = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const storeSource = storeProcessSource();
   const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
-  const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const aiSource = backendAiSource(__dirname);
   const releaseWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
   const store = require('../lib/store');
   const ai = require('../lib/ai');
@@ -919,7 +921,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(outlinerRenderers, /sandbox=""/);
   assert.match(outlinerRenderers, /function mnMermaidSvgHeight/);
   assert.match(outlinerRenderers, /pointerEvents: 'none'/);
-  assert.match(markdownInlineRenderers, /window\.mn\?\.openExternal\?\.\(segment\.url\)/);
+  assert.match(markdownInlineRenderers, /platformApi\.app\.openExternal\(segment\.url\)/);
   assert.doesNotMatch(markdownInputRules, /mnMdToBlocks|mnBlocksToMd|dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
   assert.doesNotMatch(markdownInlineRenderers, /dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
   assert.doesNotMatch(aiSource, /env:\s*\{\s*\.\.\.process\.env/);
@@ -1125,7 +1127,7 @@ test('AI recursive note research is gated for simple specific queries unless for
 });
 
 test('AI high-risk capability policy remains disabled by default', () => {
-  const aiActions = require('../src/ai/aiActions.js');
+  const { aiActions } = loadRendererModule('src/ai/aiActions.js');
   const action = aiActions.classifyPrompt('run python code over my notes').action;
   assert.equal(action.type, 'high-risk-disabled');
   assert.match(action.reason, /not enabled/);
@@ -1211,7 +1213,7 @@ test('Backup import preserves duplicate note and canvas ids without overwriting'
 test('Native file dialog IPC paths report cancel and skipped work explicitly', () => {
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
 
   assert.match(preload, /exportBackup:\(options\) => ipcRenderer\.invoke\('mn:exportBackup', options\)/);
   assert.match(preload, /importBackup:\(options\) => ipcRenderer\.invoke\('mn:importBackup', options\)/);
@@ -1237,11 +1239,17 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const store = storeProcessSource();
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const trashController = fs.readFileSync(path.join(__dirname, '../src/features/trash/useTrashController.js'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const settingsRoot = path.join(__dirname, '../src/settings');
+  const settings = [
+    path.join(settingsRoot, 'settings.jsx'),
+    path.join(settingsRoot, 'settingsControls.jsx'),
+    path.join(settingsRoot, 'settingsPrimitives.jsx'),
+    ...fs.readdirSync(path.join(settingsRoot, 'sections')).sort().map(name => path.join(settingsRoot, 'sections', name)),
+  ].map(file => fs.readFileSync(file, 'utf8')).join('\n');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
-  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
+  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/features/trash/components/RecentlyDeletedPanel.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
 
   assert.match(store, /atomicWriteFile/);

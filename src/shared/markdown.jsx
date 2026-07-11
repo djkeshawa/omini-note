@@ -45,7 +45,7 @@ function mnStripReminder(text) {
   return String(text || '').replace(MN_REMINDER_INLINE_PATTERN, '').trim();
 }
 
-window.MN_REMIND = {
+const MN_REMIND = {
   pattern: MN_REMINDER_PATTERN,
   inlinePattern: MN_REMINDER_INLINE_PATTERN,
   defaultText: mnDefaultReminderText,
@@ -109,7 +109,7 @@ function mnParse(md) {
 
 // Render inline markdown: bold, italic, code, [[wiki-links]], #tags, @remind-directive,
 // ((block-refs)), {{embed inline}}.
-function MnInline({ text, onOpen, onTagClick, T, allNotes }) {
+function MnInline({ text, onOpen, onTagClick, T, allNotes, BlockRefComponent = null }) {
   // Tokenize
   const out = [];
   const re = /(\(\([A-Za-z0-9_-]+\)\))|(\[\[[^\]]+\]\])|(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(#[a-zA-Z][\w-]*)|(@remind\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?)/g;
@@ -119,10 +119,10 @@ function MnInline({ text, onOpen, onTagClick, T, allNotes }) {
     const [whole] = m;
     if (whole.startsWith('((')) {
       const refId = whole.slice(2, -2);
-      if (window.MnBlockRef) {
+      if (BlockRefComponent) {
         out.push(
           <span key={key++}>
-            <window.MnBlockRef refId={refId} allNotes={allNotes} T={T}
+            <BlockRefComponent refId={refId} allNotes={allNotes} T={T}
               onOpenBlock={(noteId, blockId) => onOpen && onOpen(null, noteId, blockId)} />
           </span>
         );
@@ -323,6 +323,4 @@ function MnMarkdown({ md, onOpen, onTagClick, onToggleCheck, T }) {
   );
 }
 
-window.MnMarkdown = MnMarkdown;
-window.mnParse = mnParse;
-window.MnInline = MnInline;
+export { MN_REMIND, MnInline, MnMarkdown, mnParse };

@@ -2,7 +2,6 @@
   const helpers = root.MN_APP_HELPERS || (typeof require === 'function' ? require('./appHelpers.js') : {});
   const api = factory(helpers);
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_APP_NOVELIST = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function (MN_APP_HELPERS) {
 const MN_NOVELIST_TAGS = [
   { name: 'novel-act', hue: 30 },

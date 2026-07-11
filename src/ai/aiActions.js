@@ -1,7 +1,6 @@
-(function (root, factory) {
+const MN_AI_ACTIONS_API = (function (root, factory) {
   const api = factory();
-  if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_AI_ACTIONS = api;
+  return api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   const NOTEISH_RE = /\b(my|this|current|latest|recent|last|note|notes|page|pages|vault|tag|tags|task|tasks|todo|todos|reminder|reminders|decide|decided|wrote|writing|link|links|backlink|backlinks|summarize.*notes|search)\b/;
   const HIGH_RISK_RE = /\b(?:run|execute|exec|eval|spawn|launch|call|invoke|use)\s+(?:code|scripts?|shell|terminal|commands?|cmd|bash|python|node|plugins?)\b|\b(?:read|write|modify|delete|open|inspect|access)\s+(?:files?|filesystem|file system)\b|\b(?:make|send|perform)\s+(?:a\s+)?(?:network|http|https)\s+(?:request|call)\b|\b(?:fetch|curl|wget)\s+(?:url|https?:\/\/|\S+\.\w{2,})\b/;
@@ -189,3 +188,5 @@
     buildActionPlan,
   };
 });
+
+export { MN_AI_ACTIONS_API as aiActions };

@@ -1,23 +1,5 @@
-// Sidebar pane: tags, daily rollup, agenda count, settings.
+import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx'; import { storage } from '../shared/storageUtils.js'; import { mnGetTagColor } from '../shared/theme.jsx';
 const { useMemo: useMemoS } = React;
-const VAULT_ICON_SRC = 'assets/vispnote-icon.png';
-
-function MnVaultIcon({ T, size = 22, active = false }) {
-  return (
-    <span style={{
-      width: size, height: size, borderRadius: Math.max(4, Math.round(size * 0.24)),
-      flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: active ? T.bg : T.bgSub,
-      border: `1px solid ${active ? T.line : T.lineSub}`,
-      padding: Math.max(1, Math.round(size * 0.12)),
-    }}>
-      <img src={VAULT_ICON_SRC} alt="" aria-hidden="true" style={{
-        width: '100%', height: '100%', display: 'block', objectFit: 'contain',
-      }} />
-    </span>
-  );
-}
-
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
   onOpenToday, onOpenPinned, todayActive, pinnedActive = false, agendaActive, graphActive,
@@ -44,23 +26,22 @@ function MnSidebar({
   const [renameId, setRenameId] = React.useState(null);
   const [renameVal, setRenameVal] = React.useState('');
   const sidebarSectionsKey = activeVaultId ? `mn:sidebarSections:${activeVaultId}` : 'mn:sidebarSections';
-  // Collapsible sections — persisted in localStorage
   const [openSections, setOpenSections] = React.useState(() => {
-    return window.MN_STORAGE?.getJson?.(sidebarSectionsKey, null) ||
-      window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
+    return storage.getJson(sidebarSectionsKey, null) ||
+      storage.getJson('mn:sidebarSections', null) ||
       { allnotes: true, vaults: true, workflow: false, tags: true, more: false };
   });
   React.useEffect(() => {
     setOpenSections(
-      window.MN_STORAGE?.getJson?.(sidebarSectionsKey, null) ||
-      window.MN_STORAGE?.getJson?.('mn:sidebarSections', null) ||
+      storage.getJson(sidebarSectionsKey, null) ||
+      storage.getJson('mn:sidebarSections', null) ||
       { allnotes: true, vaults: true, workflow: false, tags: true, more: false }
     );
   }, [sidebarSectionsKey]);
   const toggleSection = (key) => {
     setOpenSections(prev => {
       const next = { ...prev, [key]: !prev[key] };
-      window.MN_STORAGE?.setJson?.(sidebarSectionsKey, next);
+      storage.setJson(sidebarSectionsKey, next);
       return next;
     });
   };
@@ -815,5 +796,4 @@ function MnSidebar({
     </div>
   );
 }
-
-window.MnSidebar = MnSidebar;
+export { MnSidebar };

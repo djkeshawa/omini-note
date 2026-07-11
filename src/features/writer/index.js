@@ -7,3 +7,4 @@ export {
   novelImportToolArgs,
 } from './novelImportModel.js';
 export { NovelImportPreviewDialog } from './components/NovelImportPreviewDialog.jsx';
+export { MnNovelistPanel } from './NovelistPanel.jsx';

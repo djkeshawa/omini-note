@@ -66,9 +66,12 @@ module.exports = [
     },
   },
   {
-    files: ['src/platform/**/*.js', 'src/features/**/*.js', 'src/app/actions/**/*.js'],
+    files: ['src/**/*.{js,jsx}'],
     languageOptions: {
       sourceType: 'module',
+    },
+    rules: {
+      'no-undef': 'error',
     },
   },
   {

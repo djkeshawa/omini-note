@@ -3,7 +3,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_CONNECTIONS_MODEL = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   function connectionNoteId(item) {
     return String(item?.noteId || item?.id || '').trim();

@@ -4,7 +4,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_EDITOR_SEARCH = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   const ALL_HIGHLIGHT = 'mn-search-all';
   const ACTIVE_HIGHLIGHT = 'mn-search-active';

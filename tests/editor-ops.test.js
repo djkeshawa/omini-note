@@ -2,7 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
+const { loadRendererModule } = require('./helpers/rendererModule.js');
 
 const ops = require('../src/editor/editorOps.js');
 const tableOps = require('../src/editor/tableOps.js');
@@ -135,11 +137,7 @@ test('Functional block updates compose in one event', () => {
 });
 
 test('Outliner history preserves unchanged block identity for memoized rows', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerHistory.js'), 'utf8');
-  const context = { window: {} };
-  vm.createContext(context);
-  vm.runInContext(source, context);
-  const history = context.window.MN_OUTLINER_HISTORY;
+  const history = loadRendererModule('src/editor/outlinerHistory.js');
 
   const previous = [
     { id: 'a', content: 'keep', annotations: [], children: [] },
@@ -197,7 +195,7 @@ test('Markdown table rows round-trip through table helpers', () => {
 });
 
 test('Block area selection can delete as one undoable operation and redo it', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
 
   assert.match(outliner, /selectedBlockIds/);
@@ -215,14 +213,13 @@ test('Block area selection can delete as one undoable operation and redo it', ()
 });
 
 test('Typing in a section groups into one undo entry per edit session', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
-  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
+  const outliner = outlinerSource(__dirname);
 
   assert.match(outliner, /contentEditHistoryRef/);
-  assert.match(rendererEntry, /import '\.\/editor\/outlinerHistory\.js';/);
+  assert.match(outliner, /from '\.\/outlinerHistory\.js';/);
   assert.match(outliner, /mnCreateEditorHistory/);
   assert.match(outliner, /mnShareBlockTree/);
-  assert.match(outliner, /const MnMemoBlockRow = React\.memo\(MnBlockRow, mnBlockRowMemoEqual\)/);
+  assert.match(outliner, /const MnMemoBlockRow = React\.memo\(MnBlockRow, blockRowMemoEqual\)/);
   assert.match(outliner, /<MnMemoBlockRow block=\{b\} depth=\{depth\} \{\.\.\.handlers\} \/>/);
   assert.match(outliner, /const pushHistory = !grouped \|\| contentEditHistoryRef\.current\.armed/);
   assert.match(outliner, /if \(grouped\) contentEditHistoryRef\.current\.armed = false/);
@@ -231,7 +228,7 @@ test('Typing in a section groups into one undo entry per edit session', () => {
 });
 
 test('Empty nested blocks can leave nesting with Enter', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const regression = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
 
   assert.match(outliner, /const isEmptyBlock = block\.content\.trim\(\) === ''/);
@@ -248,7 +245,7 @@ test('Empty nested blocks can leave nesting with Enter', () => {
 });
 
 test('Clicking rendered text enters edit mode at the clicked caret offset', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
 
   assert.match(outliner, /displayTextRef/);
   assert.match(outliner, /pendingCaretRef/);
@@ -258,7 +255,7 @@ test('Clicking rendered text enters edit mode at the clicked caret offset', () =
 });
 
 test('Visible block context menu options are wired to real operations', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const operations = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/blockOperations.js'), 'utf8');
 
   assert.match(operations, /position === 'up'/);
@@ -268,13 +265,12 @@ test('Visible block context menu options are wired to real operations', () => {
 
 test('Table blocks are parsed, rendered, copied, and pasted as formatted markdown', () => {
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
 
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  assert.match(rendererEntry, /import '\.\/editor\/tableOps\.js';/);
+  assert.match(outline, /import MN_TABLE_OPS_OUTLINE from '\.\/tableOps\.js';/);
   assert.match(outline, /readMarkdownTable\(lines, i\)/);
   assert.match(outline, /kind: 'table'/);
   assert.match(outline, /b\.kind === 'table'/);
@@ -291,7 +287,7 @@ test('Table blocks are parsed, rendered, copied, and pasted as formatted markdow
 
 test('Code blocks preserve language metadata and expose syntax UI', () => {
   const outlineApi = loadOutlineForTest();
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const renderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
   const highlighter = fs.readFileSync(path.join(__dirname, '../src/editor/codeHighlighter.jsx'), 'utf8');
 
@@ -304,8 +300,8 @@ test('Code blocks preserve language metadata and expose syntax UI', () => {
 
   assert.match(highlighter, /const MN_CODE_LANGUAGES = \[/);
   assert.match(highlighter, /value: 'javascript'/);
-  assert.match(highlighter, /window\.MN_CODE_HIGHLIGHTER/);
-  assert.match(renderers, /function mnRenderCode/);
+  assert.match(highlighter, /export \{ MN_CODE_LANGUAGES,[\s\S]*mnRenderCode/);
+  assert.match(renderers, /import \{ MN_CODE_LANGUAGES, mnCodeLanguageLabel, mnNormalizeCodeLanguage, mnRenderCode \} from '\.\/codeHighlighter\.jsx';/);
   assert.match(outliner, /<select[\s\S]+Code language/);
   assert.match(outliner, /mnRenderCode\(content, block\.language, T\)/);
   assert.match(renderers, /mnMermaidSvgHeight\(svg\)/);
@@ -313,7 +309,7 @@ test('Code blocks preserve language metadata and expose syntax UI', () => {
 });
 
 test('Selection toolbar closes on outside click and keeps overflow actions in More', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
 
   assert.match(outliner, /mn-selection-toolbar/);
   assert.match(outliner, /setSelection\(null\)/);
@@ -323,7 +319,7 @@ test('Selection toolbar closes on outside click and keeps overflow actions in Mo
 });
 
 test('Block clipboard preserves multi-block formatting for copy cut paste', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
 
@@ -364,7 +360,7 @@ test('Block clipboard preserves multi-block formatting for copy cut paste', () =
 });
 
 test('Markdown input rules do not replace paste or clipboard markdown behavior', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
 
   assert.match(outliner, /const handlePaste = \(e\) =>/);
   assert.match(outliner, /mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable\(e\)/);
@@ -375,7 +371,7 @@ test('Markdown input rules do not replace paste or clipboard markdown behavior',
 });
 
 test('Markdown block conversion remains one undoable kind change and leaves text editing hooks intact', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
 
   assert.match(outliner, /const parsed = MN_MARKDOWN_INPUT_RULES\.parseEditableMarkdownBlock\?\.\(\{ block, text: v \}\)/);
   assert.match(outliner, /if \(parsed\?\.patch\) onChangeKind\(block\.id, parsed\.patch\)/);

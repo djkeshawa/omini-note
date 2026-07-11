@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { appSource } = require('./helpers/source.js');
 
 test('notes/vault renderer modules do not use direct privileged APIs', () => {
   const files = [
@@ -18,7 +19,7 @@ test('notes/vault renderer modules do not use direct privileged APIs', () => {
 });
 
 test('core notes/vault app callsites use renderer services', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const source = appSource(__dirname);
   assert.doesNotMatch(source, /window\.mn\.(?:listVaults|createVault|renameVault|deleteVault|setActiveVault|loadVault|saveNote|deleteNote)\(/);
   assert.match(source, /MN_NOTES_VAULTS_SERVICE\.saveNote/);
   assert.match(source, /MN_VAULTS_SERVICE\.selectVault/);

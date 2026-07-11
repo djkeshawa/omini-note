@@ -4,7 +4,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_QUICK_SWITCHER_MODEL = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   function asText(value) {
     return String(value == null ? '' : value);

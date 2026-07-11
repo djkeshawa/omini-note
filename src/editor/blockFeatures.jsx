@@ -66,7 +66,6 @@ function mnNormalizeWorkflowStates(states) {
 
 function mnSetWorkflowStates(states) {
   MN_WORKFLOW_STATES = mnNormalizeWorkflowStates(states);
-  if (window.MN_LOGSEQ) window.MN_LOGSEQ.WORKFLOW_STATES = MN_WORKFLOW_STATES;
   return MN_WORKFLOW_STATES;
 }
 
@@ -502,21 +501,9 @@ function MnZoomBar({ block, noteTitle, onExit, onCopyRef, T, onChangeContent }) 
   );
 }
 
-window.MN_LOGSEQ = {
-  WORKFLOW_STATES: MN_WORKFLOW_STATES,
-  DEFAULT_WORKFLOW_STATES: MN_DEFAULT_WORKFLOW_STATES,
-  mnNormalizeWorkflowId,
-  mnNormalizeWorkflowStates,
-  setWorkflowStates: mnSetWorkflowStates,
-  mnWorkflow,
-  mnWorkflowIsClosed,
-  mnIsPropertyLine, mnParseProperty,
-  mnFindBlockById,
+export {
+  MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES, MnBlockContextMenu, MnBlockEmbed,
+  MnBlockRef, MnPageEmbed, MnPropertyRow, MnWorkflowPill, MnZoomBar,
+  mnFindBlockById, mnIsPropertyLine, mnNormalizeWorkflowId, mnNormalizeWorkflowStates,
+  mnParseProperty, mnSetWorkflowStates, mnWorkflow, mnWorkflowIsClosed,
 };
-window.MnWorkflowPill = MnWorkflowPill;
-window.MnPropertyRow = MnPropertyRow;
-window.MnBlockRef = MnBlockRef;
-window.MnPageEmbed = MnPageEmbed;
-window.MnBlockEmbed = MnBlockEmbed;
-window.MnBlockContextMenu = MnBlockContextMenu;
-window.MnZoomBar = MnZoomBar;

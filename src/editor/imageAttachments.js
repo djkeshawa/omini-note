@@ -4,7 +4,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_IMAGE_ATTACHMENTS = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   function asFileList(value) {
     try {
@@ -40,12 +39,8 @@
   // Saves each image file through the IPC bridge and returns markdown snippets
   // for the ones that succeeded plus error messages for the ones that failed.
   async function mnSaveImageAttachments(files, options = {}) {
-    const bridge = options.bridge || (typeof window !== 'undefined' ? window.mn : null);
-    const vaultId = String(
-      options.vaultId
-      || (typeof window !== 'undefined' ? window.MN_ACTIVE_VAULT_ID : '')
-      || ''
-    );
+    const bridge = options.bridge || null;
+    const vaultId = String(options.vaultId || '');
     const list = asFileList(files);
     if (!list.length) return { markdowns: [], errors: [] };
     if (!vaultId || !bridge || typeof bridge.saveAttachment !== 'function') {

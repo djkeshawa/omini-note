@@ -2,10 +2,9 @@
 // The runtime keeps routing, planning validation, review handling, and traces
 // out of the React component so AI execution is deterministic and inspectable.
 
-(function (root, factory) {
+const MN_AI_RUNTIME_API = (function (root, factory) {
   const api = factory();
-  if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_AI_RUNTIME = api;
+  return api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   const MAX_TOOL_CALLS = 5;
   const MAX_REPAIR_ROUNDS = 1;
@@ -751,3 +750,5 @@
     getRecentTraces,
   };
 });
+
+export { MN_AI_RUNTIME_API as aiRuntime };

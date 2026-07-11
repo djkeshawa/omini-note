@@ -2,7 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { appHelpersSource, appSource, backendAiSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
+const { loadRendererModule } = require('./helpers/rendererModule.js');
 
 const ops = require('../src/editor/editorOps.js');
 const tableOps = require('../src/editor/tableOps.js');
@@ -10,7 +12,6 @@ const appHelpers = require('../src/app/appHelpers.js');
 const appNovelist = require('../src/app/appNovelist.js');
 const appMutations = require('../src/app/appMutations.js');
 const appCanvasActions = require('../src/app/appCanvasActions.js');
-const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 const projectPaths = require('./helpers/paths.js');
 
@@ -23,6 +24,58 @@ function mainProcessSource() {
       .sort()
       .map(name => path.join(root, name)));
   }
+  return files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+}
+
+function settingsSource() {
+  const root = path.join(__dirname, '../src/settings');
+  const files = [
+    path.join(root, 'settings.jsx'),
+    path.join(root, 'settingsControls.jsx'),
+    path.join(root, 'settingsPrimitives.jsx'),
+    ...fs.readdirSync(path.join(root, 'sections')).sort().map(name => path.join(root, 'sections', name)),
+  ];
+  return files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+}
+
+function appShellSource() {
+  const root = path.join(__dirname, '../src/app');
+  return [
+    fs.readFileSync(path.join(root, 'appShell.jsx'), 'utf8'),
+    ...fs.readdirSync(path.join(root, 'shell')).sort().map(name => fs.readFileSync(path.join(root, 'shell', name), 'utf8')),
+  ].join('\n');
+}
+
+function canvasSource() {
+  const root = path.join(__dirname, '../src/features/canvas');
+  return [
+    fs.readFileSync(path.join(root, 'CanvasPanel.jsx'), 'utf8'),
+    ...fs.readdirSync(path.join(root, 'components')).sort().map(name => fs.readFileSync(path.join(root, 'components', name), 'utf8')),
+    fs.readFileSync(path.join(root, 'useCanvasKeyboardShortcuts.js'), 'utf8'),
+  ].join('\n');
+}
+
+function specialistPanelsSource() {
+  const files = [
+    '../src/panels/panels.jsx',
+    '../src/features/writer/NovelistPanel.jsx',
+    '../src/features/writer/NovelistPanelView.jsx',
+    '../src/features/writer/NovelistSections.jsx',
+    '../src/features/writer/SupportingNoteSection.jsx',
+    '../src/features/workflow/WorkflowPanel.jsx',
+    '../src/features/workflow/WorkflowSupportPanels.jsx',
+    '../src/shared/panels/panelStyles.js',
+  ];
+  return files.map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+}
+
+function rendererAiSource() {
+  const root = path.join(__dirname, '../src/ai');
+  const files = fs.readdirSync(root)
+    .filter(name => name === 'ai.jsx' || /^(?:ai.+|AskAi.+|create.+)\.(?:js|jsx)$/.test(name))
+    .sort()
+    .map(name => path.join(root, name));
+  files.push(path.join(__dirname, '../src/features/ai/useAiSessionsController.js'));
   return files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
 }
 
@@ -41,14 +94,14 @@ function storeProcessSource() {
 
 function appCompositionSource() {
   return [
-    '../src/app/app.jsx',
+    appSource(__dirname),
     '../src/app/actions/useAppActionRegistry.js',
     '../src/app/actions/buildDynamicActions.js',
-  ].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+  ].map(file => file.startsWith?.('../') ? fs.readFileSync(path.join(__dirname, file), 'utf8') : file).join('\n');
 }
 
 test('AI menu buttons open option menus instead of running Improve directly', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
 
   assert.match(outliner, /if \(scope === 'section-menu'\)[\s\S]*setAiMenu\(\{ scope: 'section'/);
@@ -68,11 +121,11 @@ test('AI menu buttons open option menus instead of running Improve directly', ()
 });
 
 test('Advertised keyboard shortcuts are wired to handlers', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const settings = settingsSource();
 
   assert.match(app, /const isBackslashKey = key === '\\\\' \|\| key === '\|'/);
   assert.match(app, /e\.code === 'Backslash'/);
@@ -93,7 +146,7 @@ test('Advertised keyboard shortcuts are wired to handlers', () => {
 
 test('Note tag picker can create new tags from the editor', () => {
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
 
@@ -120,7 +173,7 @@ test('Note tag picker can create new tags from the editor', () => {
 });
 
 test('Note metadata edits participate in undo and redo', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
 
   assert.match(app, /noteMetadataHistoryRef/);
@@ -138,9 +191,9 @@ test('Note metadata edits participate in undo and redo', () => {
 });
 
 test('Vaults can be created and deleted from settings with backend cleanup', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const preferenceModels = fs.readFileSync(path.join(__dirname, '../src/features/preferences/models.js'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const settings = settingsSource();
   const store = storeProcessSource();
   const seed = fs.readFileSync(path.join(__dirname, '../lib/seed.js'), 'utf8');
   const main = mainProcessSource();
@@ -159,7 +212,7 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(store, /deleteVault, setActiveVault/);
   assert.match(main, /ipcMain\.handle\('mn:deleteVault'/);
   assert.match(main, /idx\.removeVault\(vaultId\)/);
-  assert.match(preload, /deleteVault: \(id\) => ipcRenderer\.invoke\('mn:deleteVault', id\)/);
+  assert.match(preload, /deleteVault: \(vaultId\) => ipcRenderer\.invoke\(NOTES_VAULTS_CHANNELS\.vaultDelete, \{ vaultId \}\)/);
   assert.match(app, /const deleteVault = useCallbackA\(async \(id\) =>/);
   assert.match(app, /const refreshVaultRegistry = useCallbackA/);
   assert.match(app, /refreshVaultRegistry\(\{ reloadActive: true, reason: 'focus' \}\)/);
@@ -187,11 +240,16 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
 });
 
 test('Reminder center and spellcheck wiring are visible in app shell', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
+  const app = appSource(__dirname);
+  const appShell = appShellSource();
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
-  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
+  const utilityPanels = [
+    '../src/features/today/components/TodayPanel.jsx',
+    '../src/features/trash/components/RecentlyDeletedPanel.jsx',
+    '../src/features/capture/components/QuickCapture.jsx',
+    '../src/features/reminders/components/ReminderToast.jsx',
+  ].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
 
   assert.match(appShell, /function MnReminderCenter/);
   assert.match(appShell, /className="mn-reminder-center"/);
@@ -217,19 +275,19 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   const app = appCompositionSource();
   const sessionsController = fs.readFileSync(path.join(__dirname, '../src/features/ai/useAiSessionsController.js'), 'utf8');
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
-  const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
+  const appShell = appShellSource();
+  const ai = rendererAiSource();
   const aiRuntime = fs.readFileSync(path.join(__dirname, '../src/ai/aiRuntime.js'), 'utf8');
   const aiUi = fs.readFileSync(path.join(__dirname, '../src/ai/aiUi.jsx'), 'utf8');
   const aiReporting = fs.readFileSync(path.join(__dirname, '../src/features/ai/reporting/aiReporting.js'), 'utf8');
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const aiLib = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const aiLib = backendAiSource(__dirname);
   const aiToolSchemas = fs.readFileSync(path.join(__dirname, '../lib/integrations/ai/toolSchemas.js'), 'utf8');
   const aiIntegrationSource = `${aiLib}\n${aiToolSchemas}`;
   const aiRegression = fs.readFileSync(path.join(__dirname, '../scripts/ai-regression-electron.js'), 'utf8');
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const settings = settingsSource();
 
   assert.match(sessionsController, /const \[sessions, setSessions\]/);
   assert.match(sessionsController, /const \[activeSessionId, setActiveSessionId\]/);
@@ -260,10 +318,10 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(app, /id: 'add-todo-to-note'/);
   assert.match(app, /id: 'add-reminder-to-note'/);
   assert.match(app, /id: 'link-note'/);
-  assert.match(app, /desktopBridge\?\.searchDetailedStatus/);
+  assert.match(app, /desktopBridge\.search\?\.searchDetailedStatus/);
 
   assert.match(ai, /const aiSession = session \|\| localSession/);
-  assert.match(ai, /window\.MN_AI_ACTIONS\?\.classifyPrompt/);
+  assert.match(ai, /aiActions\.classifyPrompt/);
   assert.match(ai, /function mnBuildAskThreadMessages\(priorMessages = \[\], currentQuery = '', options = \{\}\)/);
   assert.match(ai, /function mnBuildAskThreadPrompt\(priorMessages = \[\], currentQuery = ''\)/);
   assert.match(ai, /function mnRecentAskThreadNote\(priorMessages = \[\]\)/);
@@ -305,7 +363,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.doesNotMatch(ai, /planner\.fallback_to_notes/);
   assert.match(ai, /const runLlmOrchestrator = async/);
   assert.match(ai, /await runLlmOrchestrator\(\{ q, actionQuery, priorMessages, jobId, run \}\)/);
-  assert.match(ai, /const skipLlmFirst = !window\.mn\?\.ai\?\.toolPlan \|\|[\s\S]*route\.type === 'clarify'/);
+  assert.match(ai, /const skipLlmFirst = !platformApi\.ai\?\.toolPlan \|\|[\s\S]*route\.type === 'clarify'/);
   assert.match(ai, /const scrollVersion = messages\.map/);
   assert.match(ai, /onScroll=\{rememberScrollPosition\}/);
   assert.match(ai, /data-mn-chat-bottom="true"/);
@@ -318,11 +376,11 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /if \(onlyInspectionSteps && isPureInspectionRequest\(q\)\) return plan/);
   assert.match(ai, /planAppActionsWithModel\(actionQuery, route\.plan, jobId, run, priorMessages\)/);
   assert.match(ai, /const actionQuery = mnBuildContextualActionQuery\(priorMessages, q\)/);
-  assert.match(ai, /query: actionQuery, aiActions: window\.MN_AI_ACTIONS, appRegistry: window\.MN_APP_ACTIONS/);
+  assert.match(ai, /query: actionQuery, aiActions, appRegistry: getAppActionRegistry\(\)/);
   assert.match(ai, /const toolMessages = mnBuildAskThreadMessages\(priorMessages, q, \{ limit: 8 \}\)/);
   assert.match(ai, /const qForAsk = mnBuildAskThreadPrompt\(priorMessages, q\)/);
   assert.match(ai, /const chatMessages = mnBuildAskThreadMessages\(priorMessages, q, \{ limit: 8 \}\)/);
-  assert.match(ai, /window\.mn\.ai\.ask\(vaultId, prompt/);
+  assert.match(ai, /platformApi\.ai\.ask\(vaultId, prompt/);
   assert.match(ai, /currentNoteId: currentNote\?\.id \|\| null/);
   assert.match(main, /function sanitizeOptionalIpcId\(value, field\)[\s\S]*IPC_ID_RE\.test\(clean\)/);
   assert.match(main, /currentNoteId: sanitizeOptionalIpcId\(options\.currentNoteId, 'currentNoteId'\)/);
@@ -426,7 +484,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(ai, /Run in background/);
   assert.match(ai, /Stop/);
   assert.match(ai, /const stopRun = async/);
-  assert.match(ai, /window\.mn\?\.ai\?\.cancel\?\.\(jobId\)/);
+  assert.match(ai, /platformApi\.ai\?\.cancel\?\.\(jobId\)/);
   assert.match(ai, /Stopped\./);
   assert.match(ai, /onBackgroundComplete && onBackgroundComplete/);
   assert.match(ai, /completedAt: new Date\(\)\.toISOString\(\)/);
@@ -500,19 +558,19 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const canvasActions = fs.readFileSync(path.join(__dirname, '../src/app/appCanvasActions.js'), 'utf8');
   const canvasController = fs.readFileSync(path.join(__dirname, '../src/features/canvas/useCanvasController.js'), 'utf8');
   const canvasModel = fs.readFileSync(path.join(__dirname, '../src/canvas/canvasModel.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
-  const canvas = fs.readFileSync(path.join(__dirname, '../src/canvas/canvas.jsx'), 'utf8');
+  const canvas = canvasSource();
 
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  assert.match(rendererEntry, /import '\.\/canvas\/canvas\.jsx';/);
+  assert.match(app, /from '\.\.\/features\/canvas\/index\.js'/);
   assert.match(store, /function canvasDir\(slug\)/);
   assert.match(store, /async function listCanvases\(vaultId\)/);
   assert.match(store, /async function saveCanvas\(vaultId, canvas\)/);
@@ -525,12 +583,12 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(sidebar, /canvasActive/);
   assert.match(app, /const \[canvases, setCanvases\]/);
   assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
-  assert.match(app, /desktopBridge\.listCanvases\(vaultId\)/);
-  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
+  assert.match(app, /desktopBridge\.canvas\.listCanvases\(vaultId\)/);
+  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = require\('\.\/appCanvasActions\.js'\)/);
   assert.match(canvasController, /canvasActions\.openCanvas\(canvasId, actionContext\(\)\)/);
   assert.match(canvasController, /canvasActions\.createCanvas\(title, options, actionContext\(\)\)/);
   assert.match(canvasActions, /async function openCanvas\(canvasId, ctx = \{\}\)/);
-  assert.match(canvasActions, /ctx\.mn\.getCanvas\(ctx\.activeVaultId, canvasId\)/);
+  assert.match(canvasActions, /ctx\.mn\.canvas\.getCanvas\(ctx\.activeVaultId, canvasId\)/);
   assert.match(canvasActions, /async function createCanvas/);
   assert.match(canvasActions, /async function saveCanvas/);
   assert.match(canvasActions, /async function deleteCanvas/);
@@ -542,7 +600,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(outliner, /<MnCanvasPicker/);
   assert.match(outliner, /<MnCanvasEmbed/);
   assert.match(canvasModel, /const MN_CANVAS_TOOLS = \[/);
-  assert.match(canvasModel, /window\.MN_CANVAS_MODEL/);
+  assert.doesNotMatch(canvasModel, /window\.MN_CANVAS_MODEL/);
   assert.match(canvas, /function MnCanvasPanel/);
   assert.match(canvas, /function MnCanvasCardMenu/);
   assert.match(canvas, /onContextMenu=\{\(e\) => openCanvasCardMenu\(e, canvas\)\}/);
@@ -555,26 +613,26 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
-  const helpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
+  const helpers = appHelpersSource(__dirname);
   const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/app/appNovelist.js'), 'utf8');
   const panelHelpersSource = fs.readFileSync(path.join(__dirname, '../src/panels/panelHelpers.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
+  const settings = settingsSource();
+  const panels = specialistPanelsSource();
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const graph = fs.readFileSync(path.join(__dirname, '../src/panels/graph.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
-  const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
+  const ai = rendererAiSource();
 
   assert.match(store, /novelistMode: !!meta\.novelistMode/);
   assert.match(store, /workflowStates: Array\.isArray\(meta\.workflowStates\) \? normalizeWorkflowStates\(meta\.workflowStates\) : null/);
   assert.match(store, /async function createVault\(name, options = \{\}\)/);
   assert.match(store, /fs\.existsSync\(vaultDir\(finalSlug\)\)/);
   assert.match(main, /store\.createVault\(name, options\)/);
-  assert.match(preload, /createVault: \(name, options\) => ipcRenderer\.invoke\('mn:createVault', name, options\)/);
+  assert.match(preload, /createVault: \(name, options\) => ipcRenderer\.invoke\(NOTES_VAULTS_CHANNELS\.vaultCreate, \{ name, options \}\)/);
   assert.match(appNovelistSource, /const MN_NOVELIST_TAGS = \[/);
   assert.match(appNovelistSource, /novel-act/);
   assert.match(appNovelistSource, /\[\[Act 1\]\]/);
@@ -595,7 +653,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /noteDiskStampRef\.current\.set\(dirtyKey, diskModifiedAt\)/);
   assert.match(app, /revision: \+\+dirtyRevisionRef\.current/);
   assert.match(app, /current\.revision !== revision/);
-  assert.match(app, /desktopBridge\.onFlushDirtyNotes/);
+  assert.match(app, /desktopBridge\.events\.onFlushDirtyNotes/);
   assert.match(app, /entry\.vaultId === activeVaultId/);
   assert.match(app, /notes: targetNotes, tags: targetTags/);
   assert.match(app, /saveVaultMeta\(activeVaultId, \{ novelistMode: false, workflowStates: null \}\)/);
@@ -655,7 +713,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(app, /novelistStructure=\{activeVault\?\.novelistMode/);
   assert.match(app, /onSetVaultNovelistMode=\{setActiveVaultNovelistMode\}/);
   assert.match(app, /const importNovelFiles = useCallbackA/);
-  assert.match(app, /desktopBridge\.importNovelFiles/);
+  assert.match(app, /desktopBridge\.maintenance\?\.importNovelFiles/);
   assert.match(app, /desktopBridge\.ai\.toolPlan/);
   assert.match(app, /<MnNovelImportPreviewDialog/);
   assert.match(app, /onImportNovelFiles=\{importNovelFiles\}/);
@@ -730,7 +788,8 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(editor, /vaultId=\{vaultId\}/);
   assert.match(outliner, /noteTags = \[\]/);
   assert.match(outliner, /vaultId = ''/);
-  assert.match(outliner, /window\.mnReadNovelistAiConfig\?\.\(vaultId\)/);
+  assert.match(outliner, /import \{ mnReadNovelistAiConfig \} from '\.\.\/panels\/panelHelpers\.js'/);
+  assert.match(outliner, /mnReadNovelistAiConfig\(vaultId\)/);
   assert.match(outliner, /defaultPromptId: config\.defaultPromptId/);
   assert.match(outliner, /Target length: up to \$\{novelConfig\.wordLimit\} words/);
   assert.match(outliner, /Novelist writing prompt \(\$\{activePrompt\.name \|\| 'Default'\}\):/);
@@ -764,7 +823,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panelHelpersSource, /mn_novelist_ai_config_v2/);
   assert.match(panelHelpersSource, /function mnNovelistAiConfigKey\(vaultId = ''\)/);
   assert.match(panelHelpersSource, /function mnReadNovelistAiConfig\(vaultId = ''\)/);
-  assert.match(panelHelpersSource, /root\.mnReadNovelistAiConfig = api\.mnReadNovelistAiConfig/);
+  assert.match(panelHelpersSource, /mnReadNovelistAiConfig, mnWriteNovelistAiConfig/);
   assert.match(panels, /addAiPrompt/);
   assert.match(panels, /updateAiPrompt/);
   assert.doesNotMatch(panels, /AI Actions/);
@@ -780,18 +839,23 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const calendarModel = fs.readFileSync(path.join(__dirname, '../src/features/planning/calendarModel.js'), 'utf8');
   const bootController = fs.readFileSync(path.join(__dirname, '../src/features/boot/useBootController.js'), 'utf8');
   const todayController = fs.readFileSync(path.join(__dirname, '../src/features/today/useTodayController.js'), 'utf8');
-  const appHelpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
+  const appHelpers = appHelpersSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const todosPanel = fs.readFileSync(path.join(__dirname, '../src/panels/todosPanel.jsx'), 'utf8');
   const calendarPanel = fs.readFileSync(path.join(__dirname, '../src/panels/calendarPanel.jsx'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
-  const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/panels/utilityPanels.jsx'), 'utf8');
+  const appShell = appShellSource();
+  const utilityPanels = [
+    '../src/features/today/components/TodayPanel.jsx',
+    '../src/features/trash/components/RecentlyDeletedPanel.jsx',
+    '../src/features/capture/components/QuickCapture.jsx',
+    '../src/features/reminders/components/ReminderToast.jsx',
+  ].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const settings = settingsSource();
   const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
   const store = storeProcessSource();
   const main = mainProcessSource();
@@ -856,10 +920,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(outliner, /indentGuides && Array\.from/);
   assert.match(outliner, /autoLink \? before\.match/);
   assert.match(outliner, /collapseByDefault && cmd\.kind === 'heading'/);
-  assert.match(slashCommands, /window\.MN_REMIND\?\.defaultText/);
+  assert.match(slashCommands, /MN_REMIND\.defaultText\(\)/);
   assert.doesNotMatch(outliner, /@remind\(tomorrow 9am\)/);
 
-  assert.match(markdown, /window\.MN_REMIND/);
+  assert.match(markdown, /const MN_REMIND = \{/);
   assert.match(markdown, /function mnDefaultReminderText/);
   assert.match(todosPanel, /collectTaskItems/);
   assert.match(todosPanel, /isReminderOnly/);
@@ -1000,17 +1064,13 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function smartViewParseDefinitionText/);
   assert.match(appHelpers, /function smartViewParseEmbedBlock/);
   assert.match(appHelpers, /function smartViewUpsertSavedDefinition/);
-  assert.match(appHelpers, /^    SMART_VIEW_FORMAT,$/m);
-  assert.match(appHelpers, /^    smartViewNormalizeDefinition,$/m);
-  assert.match(appHelpers, /^    smartViewMatchesNote,$/m);
-  assert.match(appHelpers, /^    smartViewQueryNotes,$/m);
-  assert.match(appHelpers, /^    smartViewQueryActions,$/m);
-  assert.match(appHelpers, /^    smartViewQuery,$/m);
-  assert.match(appHelpers, /^    smartViewValidateSavedDefinition,$/m);
-  assert.match(appHelpers, /^    smartViewSerializeDefinition,$/m);
-  assert.match(appHelpers, /^    smartViewParseDefinitionText,$/m);
-  assert.match(appHelpers, /^    smartViewParseEmbedBlock,$/m);
-  assert.match(appHelpers, /^    smartViewUpsertSavedDefinition,$/m);
+  assert.match(appHelpers, /"SMART_VIEW_FORMAT"/);
+  for (const name of [
+    'smartViewNormalizeDefinition', 'smartViewMatchesNote', 'smartViewQueryNotes',
+    'smartViewQueryActions', 'smartViewQuery', 'smartViewValidateSavedDefinition',
+    'smartViewSerializeDefinition', 'smartViewParseDefinitionText',
+    'smartViewParseEmbedBlock', 'smartViewUpsertSavedDefinition',
+  ]) assert.match(appHelpers, new RegExp(`"${name}"`));
   assert.match(appHelpers, /function agendaActionStatus/);
   assert.match(appHelpers, /function agendaActionDetail/);
   assert.match(appHelpers, /function agendaFilterActionItems/);
@@ -1019,10 +1079,10 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function agendaIsDeferred/);
   assert.match(appHelpers, /function agendaBodyHasActionText/);
   assert.match(appHelpers, /function agendaReplaceUniqueSourceText/);
-  assert.match(appHelpers, /^    agendaBuildTaskContent,$/m);
-  assert.match(appHelpers, /^    agendaIsDeferred,$/m);
+  assert.match(appHelpers, /"agendaBuildTaskContent"/);
+  assert.match(appHelpers, /"agendaIsDeferred"/);
   assert.match(appHelpers, /function agendaParseScheduleInput/);
-  assert.match(appHelpers, /^    agendaParseScheduleInput,$/m);
+  assert.match(appHelpers, /"agendaParseScheduleInput"/);
   assert.match(appHelpers, /Review notes from \$\{today\} for decisions to keep\./);
   assert.match(appRuntime, /"startupView": "notes"/);
   assert.match(appRuntime, /"rollupDefaultRange": "today"/);
@@ -1042,10 +1102,10 @@ test('Smart Views panel renders shared result presentations', () => {
   const preferenceModels = fs.readFileSync(path.join(__dirname, '../src/features/preferences/models.js'), 'utf8');
   const navigationController = fs.readFileSync(path.join(__dirname, '../src/features/navigation/useNavigationController.js'), 'utf8');
   const bootController = fs.readFileSync(path.join(__dirname, '../src/features/boot/useBootController.js'), 'utf8');
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
+  const panels = specialistPanelsSource();
   const smartViewsPanel = fs.readFileSync(path.join(__dirname, '../src/panels/smartViewsPanel.jsx'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const main = mainProcessSource();
   const store = storeProcessSource();
 
@@ -1071,16 +1131,16 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(smartViewsPanel, /Open Notes/);
   assert.match(smartViewsPanel, /function MnSmartViewActionButton/);
   assert.match(smartViewsPanel, /source\?\.noteId/);
-  assert.match(smartViewsPanel, /window\.MN_PANEL_COMPONENTS = \{/);
-  assert.match(smartViewsPanel, /MnSmartViewsPanel,/);
-  assert.match(app, /const MN_PANEL_COMPONENTS = window\.MN_PANEL_COMPONENTS \|\| \{\}/);
+  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel \}/);
+  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel \}/);
+  assert.match(app, /import \{ MnSmartViewsPanel \} from '\.\.\/panels\/smartViewsPanel\.jsx'/);
   assert.match(app, /MnSmartViewsPanel/);
   assert.match(preferenceModels, /function buildDefaultSmartViewDefinitions/);
   assert.match(preferenceModels, /function normalizeSmartViews/);
   assert.match(navigationController, /const \[savedSmartViews, setSavedSmartViews\]/);
   assert.match(navigationController, /const \[activeSmartViewId, setActiveSmartViewId\]/);
   assert.match(bootController, /setSavedSmartViews\(smartViews\)/);
-  assert.match(bootController, /platform\.setPrefs\(\{ smartViews \}\)/);
+  assert.match(bootController, /platform\.preferences\.setPrefs\(\{ smartViews \}\)/);
   assert.match(navigationController, /const openSmartView = useCallback/);
   assert.match(app, /const smartViewDefinitions = useMemoA/);
   assert.match(app, /MN_APP_HELPERS\.currentSmartViewDefinitions = smartViewDefinitions/);
@@ -1105,7 +1165,7 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(sidebar, /const iconSmartViews =/);
   assert.match(sidebar, /!smartViewsActive/);
   assert.match(sidebar, /label="Smart Views" count=\{smartViewCount\}/);
-  assert.match(outliner, /const MN_APP_HELPERS = window\.MN_APP_HELPERS \|\| \{\}/);
+  assert.match(outliner, /import MN_APP_HELPERS from '\.\.\/app\/appHelpers\.js'/);
   assert.match(outliner, /function MnSmartViewEmbed/);
   assert.match(outliner, /function MnSmartViewEmbedFallback/);
   assert.match(outliner, /data-mn-smart-view-embed="rendered"/);
@@ -1120,14 +1180,13 @@ test('Smart Views panel renders shared result presentations', () => {
 
 test('Pastel theme is selectable and keeps existing theme contracts', () => {
   const themeSource = fs.readFileSync(path.join(__dirname, '../src/shared/theme.jsx'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const settings = settingsSource();
+  const app = appSource(__dirname);
   const bootController = fs.readFileSync(path.join(__dirname, '../src/features/boot/useBootController.js'), 'utf8');
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const themeLib = fs.readFileSync(path.join(__dirname, '../lib/themes.js'), 'utf8');
-  const sandbox = { window: {} };
-  vm.runInNewContext(themeSource, sandbox);
+  const { MN_THEMES: themes } = loadRendererModule('src/shared/theme.jsx');
   const hueOf = (value) => {
     const match = String(value || '').match(/oklch\(\s*[\d.]+\s+[\d.]+\s+(-?[\d.]+)/);
     return match ? Number(match[1]) : null;
@@ -1137,7 +1196,6 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
     assert.ok(hue >= min && hue <= max, `${token} hue ${hue} expected in ${min}-${max}`);
   };
 
-  const themes = sandbox.window.MN_THEMES;
   assert.ok(themes.light);
   assert.ok(themes.dark);
   assert.ok(themes.pastel);
@@ -1181,7 +1239,7 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
   assert.match(bootController, /setCustomThemes\(normalizeThemes\(prefs\.customThemes\)\)/);
   assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
   assert.match(app, /for \(const item of customThemes\) next\[item\.id\] = item\.tokens/);
-  assert.match(app, /desktopBridge\.importThemeFile\(\)/);
+  assert.match(app, /desktopBridge\.preferences\.importThemeFile\(\)/);
   assert.match(preload, /importThemeFile: \(\) => ipcRenderer\.invoke\('mn:importThemeFile'\)/);
   assert.match(main, /async function importThemeFileFromIpc\(\)/);
   assert.match(main, /filters: \[\{ name: 'VispNote Theme', extensions: \['json', 'yaml', 'yml'\] \}\]/);
@@ -1195,9 +1253,9 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
 });
 
 test('Focused product shell and private usage controls are wired end to end', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
+  const settings = settingsSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const main = mainProcessSource();
 
@@ -1311,19 +1369,17 @@ test('URL plugins follow the external URL security policy and surface failures',
   assert.match(app, /const runPlugin = useCallbackA\(async \(plugin\) =>/);
   assert.ok(app.includes("if (!/^(https:\\/\\/|mailto:)/i.test(url)) {"));
   assert.match(app, /must start with https:\/\/ or mailto:/);
-  assert.match(app, /const res = await desktopBridge\.openExternal\(url\)/);
+  assert.match(app, /const res = await desktopBridge\.app\.openExternal\(url\)/);
   assert.match(app, /if \(res && res\.ok === false\) throw new Error/);
   assert.match(app, /showAppNotice\('Could not open link'/);
   assert.doesNotMatch(app, /must start with http:\/\/ or https:\/\//);
 });
 
 test('Plugin ids normalize to AI-safe action names', () => {
-  const pluginsSource = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
   const appActions = require('../src/app/appActions.js');
-  const sandbox = { window: {} };
-  vm.runInNewContext(pluginsSource, sandbox);
+  const { MN_PLUGINS } = loadRendererModule('src/shared/plugins.js');
 
-  const plugin = sandbox.window.MN_PLUGINS.normalize({
+  const plugin = MN_PLUGINS.normalize({
     id: '../bad plugin:id',
     name: 'Open docs',
     purpose: 'Open documentation',
@@ -1344,15 +1400,13 @@ test('Plugin ids normalize to AI-safe action names', () => {
 });
 
 test('Main-process prefs sanitizer accepts every renderer plugin type', () => {
-  const pluginsSource = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
   const main = mainProcessSource();
-  const sandbox = { window: {} };
-  vm.runInNewContext(pluginsSource, sandbox);
+  const { MN_PLUGINS } = loadRendererModule('src/shared/plugins.js');
 
   const allowlist = main.match(/if \(!\[([^\]]+)\]\.includes\(type\)\) throw new Error\('Invalid plugin type'\)/);
   assert.ok(allowlist, 'plugin type allowlist exists in main.js sanitizer');
   const allowedTypes = allowlist[1].split(',').map(entry => entry.trim().replace(/^'|'$/g, ''));
-  for (const type of sandbox.window.MN_PLUGINS.TYPES) {
+  for (const type of MN_PLUGINS.TYPES) {
     assert.ok(allowedTypes.includes(type.id), `main.js prefs sanitizer allows plugin type "${type.id}"`);
   }
 
@@ -1365,8 +1419,8 @@ test('Main-process prefs sanitizer accepts every renderer plugin type', () => {
 test('Zotero reader is wired as a read-only AI app action', () => {
   const app = appCompositionSource();
   const plugins = fs.readFileSync(path.join(__dirname, '../src/shared/plugins.js'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
-  const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
+  const settings = settingsSource();
+  const ai = rendererAiSource();
   const runtime = fs.readFileSync(path.join(__dirname, '../src/ai/aiRuntime.js'), 'utf8');
   const appActions = fs.readFileSync(path.join(__dirname, '../src/app/appActions.js'), 'utf8');
   const main = mainProcessSource();
@@ -1384,9 +1438,9 @@ test('Zotero reader is wired as a read-only AI app action', () => {
   assert.match(app, /label: 'Create Zotero source note'/);
   assert.match(app, /idempotent: true/);
   assert.match(app, /readOnly: true/);
-  assert.match(app, /desktopBridge\.zotero\.search/);
-  assert.match(app, /desktopBridge\.zotero\.read/);
-  assert.match(app, /desktopBridge\.zotero\.status/);
+  assert.match(app, /desktopBridge\.integrations\.zotero\.search/);
+  assert.match(app, /desktopBridge\.integrations\.zotero\.read/);
+  assert.match(app, /desktopBridge\.integrations\.zotero\.status/);
   assert.match(app, /zoteroFindSourceNote\(notesWithBody, itemKey\)/);
   assert.match(app, /zoteroBuildSourceNotePlan/);
   assert.match(app, /Created Zotero source note/);
@@ -1412,8 +1466,8 @@ test('Release metadata targets renamed VispNote repository', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '../package-lock.json'), 'utf8'));
   const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
-  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
-  const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
+  const settings = settingsSource();
+  const aiSource = backendAiSource(__dirname);
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
 
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
@@ -1478,10 +1532,13 @@ test('Release builds omit AppX and MSIX Store package targets', () => {
 });
 
 test('Vault switcher uses VispNote icon instead of letter tiles', () => {
-  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
+  const sidebar = [
+    '../src/panels/sidebar.jsx',
+    '../src/shared/components/VaultIcon.jsx',
+  ].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
 
   assert.match(sidebar, /const VAULT_ICON_SRC = 'assets\/vispnote-icon\.png'/);
-  assert.match(sidebar, /function MnVaultIcon/);
+  assert.match(sidebar, /function VaultIcon/);
   assert.match(sidebar, /<img src=\{VAULT_ICON_SRC\} alt="" aria-hidden="true"/);
   assert.match(sidebar, /<MnVaultIcon T=\{T\} size=\{22\} active \/>/);
   assert.match(sidebar, /<MnVaultIcon T=\{T\} size=\{20\} active=\{active\} \/>/);
@@ -1499,7 +1556,7 @@ test('Vault switcher uses VispNote icon instead of letter tiles', () => {
 test('Fallback spell checker underlines misspellings and offers replacements', () => {
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const spellcheck = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/spellcheck.jsx'), 'utf8');
 
   assert.match(main, /function spellcheckWords/);
@@ -1521,23 +1578,23 @@ test('Fallback spell checker underlines misspellings and offers replacements', (
 });
 
 test('Workflow notes can be archived from workflow boards only', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
+  const appShell = appShellSource();
+  const panels = specialistPanelsSource();
   const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
-  const aiSource = fs.readFileSync(path.join(__dirname, '../lib/ai.js'), 'utf8');
-  const ai = fs.readFileSync(path.join(__dirname, '../src/ai/ai.jsx'), 'utf8');
+  const aiSource = backendAiSource(__dirname);
+  const ai = rendererAiSource();
   const ollama = fs.readFileSync(path.join(__dirname, '../lib/ollama.js'), 'utf8');
-  const helpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
+  const helpers = appHelpersSource(__dirname);
 
   assert.match(helpers, /workflowArchived: !!note\.workflowArchived/);
   assert.match(helpers, /if \(note\.workflowArchived\) \{/);
@@ -1550,7 +1607,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(app, /const normalWorkflowStates = useMemoA/);
   assert.match(app, /const novelistWorkflowStates = useMemoA/);
   assert.match(app, /activeVault\?\.novelistMode \? novelistWorkflowStates : normalWorkflowStates/);
-  assert.match(app, /setWorkflowStates\?\.\(workflowStates\)/);
+  assert.match(app, /mnSetWorkflowStates\(workflowStates\)/);
   assert.match(app, /const updateWorkflowStates = useCallbackA/);
   assert.match(app, /saveVaultMeta\(activeVaultId, \{ workflowStates: next \}\)/);
   assert.match(app, /onWorkflowStatesChange=\{updateWorkflowStates\}/);
@@ -1561,10 +1618,10 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(panels, /ArchiveButton/);
   assert.match(panels, /Archive note from workflow/);
   assert.match(panels, /Archived from workflow/);
-  assert.match(panels, /\{showArchived \? <ArchivedNotes \/> : \(/);
+  assert.match(panels, /\{showArchived \? <ArchivedWorkflowNotes/);
   assert.match(panels, /Restore/);
   assert.match(panels, /archiveNote\(note\.id, false\)/);
-  assert.match(panels, /renderWorkflowStateManager/);
+  assert.match(panels, /WorkflowStateManager/);
   assert.match(panels, /Array\.isArray\(states\) && states\.length === 0 \? \[\]/);
   assert.doesNotMatch(panels, /disabled=\{\(workflowStates \|\| \[\]\)\.length <= 1\}/);
   assert.match(appRuntime, /if \(Array\.isArray\(states\) && states\.length === 0\) return \[\]/);
@@ -1613,9 +1670,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(blockFeatures, /safe\[index \+ 1\]\?\.id \|\| null/);
   assert.match(blockFeatures, /function mnWorkflowIsClosed\(state\)/);
   assert.match(blockFeatures, /mnWorkflowIsClosed,/);
-  assert.match(blockFeatures, /setWorkflowStates: mnSetWorkflowStates/);
+  assert.match(blockFeatures, /mnSetWorkflowStates/);
   assert.match(blockFeatures, /DEFAULT_WORKFLOW_STATES/);
-  assert.match(panels, /const isClosedState = \(state\) => window\.MN_LOGSEQ\?\.mnWorkflowIsClosed/);
+  assert.match(panels, /const isClosedState = mnWorkflowIsClosed/);
   assert.doesNotMatch(panels, /textDecoration: isClosedState\(state\) \? 'line-through' : 'none'/);
   assert.doesNotMatch(panels, /textDecoration:[\s\S]{0,80}line-through[\s\S]{0,80}No preview/);
   assert.doesNotMatch(panels, /state\.id === 'DONE' \|\| state\.id === 'CANCELLED'/);
@@ -1635,7 +1692,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(outliner, /mn-ai-live-dots/);
   assert.match(outliner, /function MnInlineAiPreview/);
   assert.match(outliner, /AI preview/);
-  assert.match(outliner, /window\.MN_AI_REPORT\?\.report/);
+  assert.match(outliner, /mnReportAiOutput\(/);
   assert.match(outliner, /Report AI output/);
   assert.match(outliner, /mn-inline-ai-preview-streaming/);
   assert.match(editor, /noteId=\{note\.id\}/);
@@ -1661,8 +1718,8 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(main, /mn:ai\.editStream/);
   assert.match(aiSource, /async function editTextStream/);
   assert.match(ollama, /async function chatStream/);
-  assert.match(ai, /window\.mn\?\.ai\?\.askStream/);
-  assert.match(ai, /window\.mn\?\.ai\?\.chatStream/);
+  assert.match(ai, /platformApi\.ai\?\.askStream/);
+  assert.match(ai, /platformApi\.ai\?\.chatStream/);
   assert.match(ai, /function mnAskMessageId/);
   assert.match(ai, /key=\{m\.id\}/);
   assert.match(ai, /onToken: appendAssistantToken/);
@@ -1677,7 +1734,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(aiSource, /async function askStream/);
   assert.match(aiSource, /async function chatStream/);
   assert.match(ollama, /const CHAT_TIMEOUT_MS = 180000/);
-  assert.match(outline, /window\.MN_LOGSEQ\?\.WORKFLOW_STATES/);
+  assert.match(outline, /import \{ MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES \} from '\.\/blockFeatures\.jsx'/);
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(notelist, /const workflowPattern = states/);
   assert.doesNotMatch(notelist, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
@@ -1690,39 +1747,34 @@ test('Workflow notes can be archived from workflow boards only', () => {
 });
 
 test('Stabilization wiring avoids stale UI and native dialogs', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const searchController = fs.readFileSync(path.join(__dirname, '../src/features/search/useSearchController.js'), 'utf8');
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
-  const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
+  const appShell = appShellSource();
   const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/app/appNovelist.js'), 'utf8');
   const panelHelpersSource = fs.readFileSync(path.join(__dirname, '../src/panels/panelHelpers.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
-  const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
+  const panels = specialistPanelsSource();
   const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 
   assert.match(appShell, /function MnAppNoticeDialog/);
   assert.match(html, /src="build\/renderer\/app\.js"/);
-  const entryIndex = source => rendererEntry.indexOf(source);
-  assert.ok(entryIndex('app/appHelpers.js') < entryIndex('app/app.jsx'));
-  assert.ok(entryIndex('app/appHelpers.js') < entryIndex('app/appMutations.js'));
-  assert.ok(entryIndex('app/appMutations.js') < entryIndex('app/app.jsx'));
-  assert.ok(entryIndex('app/appMutations.js') < entryIndex('app/appCanvasActions.js'));
-  assert.ok(entryIndex('app/appCanvasActions.js') < entryIndex('app/app.jsx'));
-  assert.match(appRuntime, /const MN_APP_HELPERS = window\.MN_APP_HELPERS/);
-  assert.match(appRuntime, /const MN_APP_MUTATIONS = window\.MN_APP_MUTATIONS/);
-  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = window\.MN_APP_CANVAS_ACTIONS/);
+  assert.match(rendererEntry, /import \{ MnApp \} from '\.\/app\/app\.jsx'/);
+  assert.match(appRuntime, /const MN_APP_HELPERS = require\('\.\/appHelpers\.js'\)/);
+  assert.match(appRuntime, /const MN_APP_MUTATIONS = require\('\.\/appMutations\.js'\)/);
+  assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = require\('\.\/appCanvasActions\.js'\)/);
   assert.match(searchController, /const sequence = useRef\(0\)/);
   assert.match(searchController, /if \(requestId !== sequence\.current\) return/);
   assert.match(app, /Load first, then switch atomically/);
-  assert.match(panelHelpersSource, /root\.mnWriteNovelistAiConfig = api\.mnWriteNovelistAiConfig/);
+  assert.match(panelHelpersSource, /mnReadNovelistAiConfig, mnWriteNovelistAiConfig/);
   assert.match(app, /const duplicateNote = useCallbackA/);
   assert.match(app, /showAppNotice\('Could not create vault'/);
   assert.doesNotMatch(app, /alert\(/);
@@ -1745,45 +1797,39 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(main, /function flushDirtyNotes/);
   assert.match(preload, /onFlushDirtyNotes/);
   assert.match(app, /onNew=\{\(\) => createNote\(\)\}/);
-  assert.match(app, /const baseThemeMap = window\.MN_THEMES \|\| \{\}/);
+  assert.match(app, /const baseThemeMap = MN_THEMES/);
   assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
   assert.match(panels, /initialAiConfig = null/);
   assert.match(panels, /onAiConfigChange && onAiConfigChange\(next\)/);
   assert.match(appNovelistSource, /function mnReplaceWikiLinkTitle/);
-  assert.match(app, /window\.mnWriteNovelistAiConfig\?\.\(activeVault\.novelistAiConfig, activeVaultId\)/);
+  assert.match(app, /mnWriteNovelistAiConfig\(activeVault\.novelistAiConfig, activeVaultId\)/);
 });
 
 test('Markdown input rules load before outliner modules and stay renderer-scoped', () => {
-  const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const renderers = fs.readFileSync(path.join(__dirname, '../src/editor/outlinerRenderers.jsx'), 'utf8');
   const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
 
-  const entryIndex = source => rendererEntry.indexOf(`import './${source}';`);
-  assert.ok(entryIndex('editor/markdownInputRules.js') > entryIndex('editor/editorOps.js'));
-  assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') > entryIndex('editor/markdownInputRules.js'));
-  assert.ok(entryIndex('editor/markdownInlineRenderers.jsx') < entryIndex('editor/outlinerRenderers.jsx'));
-  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/outlinerRenderers.jsx'));
-  assert.ok(entryIndex('editor/markdownInputRules.js') < entryIndex('editor/outliner.jsx'));
-
-  assert.match(helper, /MN_MARKDOWN_INPUT_RULES/);
-  assert.match(inlineRenderers, /window\.MN_MARKDOWN_INLINE_RENDERERS/);
+  assert.match(outliner, /import MN_MARKDOWN_INPUT_RULES from '\.\/markdownInputRules\.js'/);
+  assert.match(inlineRenderers, /import MN_MARKDOWN_INPUT_RULES from '\.\/markdownInputRules\.js'/);
+  assert.match(renderers, /from '\.\/markdownInlineRenderers\.jsx'/);
+  assert.match(helper, /module\.exports = api/);
   assert.match(inlineRenderers, /function mnRenderMarkdownInlineText/);
   assert.match(inlineRenderers, /MN_MARKDOWN_INPUT_RULES\.parseInlineMarkdown/);
-  assert.match(inlineRenderers, /window\.mn\?\.openExternal\?\.\(segment\.url\)/);
+  assert.match(inlineRenderers, /platformApi\.app\.openExternal\(segment\.url\)/);
   assert.match(outliner, /MN_MARKDOWN_INPUT_RULES\.findBlockStarterConversion/);
   assert.match(outliner, /inputType: e\.nativeEvent\?\.inputType/);
   assert.match(outliner, /onChangeKind\(block\.id, blockStarter\.patch\)/);
   assert.match(outliner, /pendingCaretRef\.current = blockStarter\.caret/);
   assert.doesNotMatch(outliner, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
-  assert.match(renderers, /window\.MN_MARKDOWN_INLINE_RENDERERS/);
+  assert.match(renderers, /import \{ mnRenderAnnotated, mnRenderMarkdownInlineText, mnRenderSpecialInlineText \}/);
   assert.doesNotMatch(inlineRenderers, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
   assert.doesNotMatch(renderers, /shell\.openExternal|ipcRenderer|require\('electron'\)/);
 });
 
 test('Markdown input rules preserve paste, slash menu, and selection formatting hooks', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const handlePasteIndex = outliner.indexOf('const handlePaste = (e) =>');
   const inputRuleIndex = outliner.indexOf('MN_MARKDOWN_INPUT_RULES.findBlockStarterConversion');
   const slashIndex = outliner.indexOf('const sm = mnFindSlashCommandTrigger(v, pos)');
@@ -1802,22 +1848,22 @@ test('Markdown input rules preserve paste, slash menu, and selection formatting 
 });
 
 test('Markdown inline rendering is preserved when spellcheck issues are present', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const inlineRenderers = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInlineRenderers.jsx'), 'utf8');
   const spellcheck = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/spellcheck.jsx'), 'utf8');
 
-  assert.match(inlineRenderers, /function mnRenderMarkdownInlineText\(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0\)/);
+  assert.match(inlineRenderers, /function mnRenderMarkdownInlineText\(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0, vaultId = ''\)/);
   assert.match(inlineRenderers, /renderPlainText\(segment\.text, textOffset\)/);
-  assert.match(inlineRenderers, /mnRenderMarkdownInlineText\(sub, T, onOpen, onTagClick, allNotes, renderPlainText, seg\.s\)/);
+  assert.match(inlineRenderers, /mnRenderMarkdownInlineText\(sub, T, onOpen, onTagClick, allNotes, renderPlainText, seg\.s, vaultId\)/);
   assert.match(spellcheck, /function renderSpellCheckedText\(text, issues, theme, onOpenMenu, offset = 0\)/);
   assert.match(spellcheck, /start: baseOffset \+ start/);
   assert.match(outliner, /const renderSpellText = spellCheck && Object\.keys\(spellIssues \|\| \{\}\)\.length/);
-  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText\)/);
+  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText, vaultId\)/);
   assert.doesNotMatch(outliner, /return mnRenderSpellCheckedText\(content, spellIssues, T, setSpellMenu\)/);
 });
 
 test('Structural markdown blocks edit with markdown source prefixes', () => {
-  const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
+  const outliner = outlinerSource(__dirname);
   const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
 
@@ -1835,5 +1881,5 @@ test('Structural markdown blocks edit with markdown source prefixes', () => {
   assert.match(outliner, /contentOffsetToEditorOffset\?\.\(block, contentCaret\)/);
   assert.match(outliner, /editorOffsetToContentOffset\?\.\(block, ta\?\.selectionStart/);
   assert.match(outliner, /displaySourceOffset \+ contentCaret/);
-  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText\)/);
+  assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText, vaultId\)/);
 });

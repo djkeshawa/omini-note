@@ -18,8 +18,8 @@ export function buildDynamicActions(ctx) {
         inputSchema: objectSchema({ limit: integerArg(20) }),
         outputSchema: { type: 'object', additionalProperties: true },
         run: async (args) => {
-          if (!desktopBridge?.zotero?.list) return { ok: false, message: 'Zotero integration is unavailable.' };
-          const res = await desktopBridge.zotero.list({ limit: args.limit || 20 });
+          if (!desktopBridge.integrations?.zotero?.list) return { ok: false, message: 'Zotero integration is unavailable.' };
+          const res = await desktopBridge.integrations.zotero.list({ limit: args.limit || 20 });
           if (!res.ok) return { ok: false, message: res.error || 'Could not list Zotero papers.' };
           const results = res.value?.results || [];
           return {
@@ -41,8 +41,8 @@ export function buildDynamicActions(ctx) {
         inputSchema: objectSchema({ query: stringArg(300), limit: integerArg(8) }, ['query']),
         outputSchema: { type: 'object', additionalProperties: true },
         run: async (args) => {
-          if (!desktopBridge?.zotero?.search) return { ok: false, message: 'Zotero integration is unavailable.' };
-          const res = await desktopBridge.zotero.search({ query: args.query, limit: args.limit || 8 });
+          if (!desktopBridge.integrations?.zotero?.search) return { ok: false, message: 'Zotero integration is unavailable.' };
+          const res = await desktopBridge.integrations.zotero.search({ query: args.query, limit: args.limit || 8 });
           if (!res.ok) return { ok: false, message: res.error || 'Could not search Zotero.' };
           const results = res.value?.results || [];
           return {
@@ -64,8 +64,8 @@ export function buildDynamicActions(ctx) {
         inputSchema: objectSchema({ itemKey: stringArg(80), includeFullText: { type: 'boolean', default: true } }, ['itemKey']),
         outputSchema: { type: 'object', additionalProperties: true },
         run: async (args) => {
-          if (!desktopBridge?.zotero?.read) return { ok: false, message: 'Zotero integration is unavailable.' };
-          const res = await desktopBridge.zotero.read({ itemKey: args.itemKey, includeFullText: args.includeFullText !== false });
+          if (!desktopBridge.integrations?.zotero?.read) return { ok: false, message: 'Zotero integration is unavailable.' };
+          const res = await desktopBridge.integrations.zotero.read({ itemKey: args.itemKey, includeFullText: args.includeFullText !== false });
           if (!res.ok) return { ok: false, message: res.error || 'Could not read Zotero item.' };
           const value = res.value || {};
           const item = value.item || {};
@@ -112,15 +112,15 @@ export function buildDynamicActions(ctx) {
               affected: noteAffected(existing),
             };
           }
-          if (!desktopBridge?.zotero?.status || !desktopBridge?.zotero?.read) {
+          if (!desktopBridge.integrations?.zotero?.status || !desktopBridge.integrations?.zotero?.read) {
             return { ok: false, message: 'Zotero integration is unavailable.' };
           }
-          const status = await desktopBridge.zotero.status();
+          const status = await desktopBridge.integrations.zotero.status();
           if (!status.ok) return { ok: false, message: status.error || 'Could not check Zotero.' };
           if (!status.value?.reachable) {
             return { ok: false, message: status.value?.error || 'Zotero Desktop is not reachable.' };
           }
-          const res = await desktopBridge.zotero.read({ itemKey, includeFullText: args.includeFullText !== false });
+          const res = await desktopBridge.integrations.zotero.read({ itemKey, includeFullText: args.includeFullText !== false });
           if (!res.ok) return { ok: false, message: res.error || 'Could not read Zotero item.' };
           const plan = MN_APP_HELPERS.zoteroBuildSourceNotePlan
             ? MN_APP_HELPERS.zoteroBuildSourceNotePlan({ readResult: res.value, itemKey, notes: notesWithBody })

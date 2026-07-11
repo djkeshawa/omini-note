@@ -127,4 +127,4 @@ function buildLinks(notes) {
   return links;
 }
 
-window.MN_DATA = { SEED_TAGS, SEED_NOTES, SEED_VAULTS, SEED_TAGS_NOVELIST, SEED_NOTES_NOVELIST, buildLinks };
+export { SEED_NOTES, SEED_NOTES_NOVELIST, SEED_TAGS, SEED_TAGS_NOVELIST, SEED_VAULTS, buildLinks };

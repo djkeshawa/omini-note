@@ -1,4 +1,4 @@
-// Live regression for the LLM Memory bridge (lib/llmMemory.js) against a real
+// Live regression for the LLM Memory integration client against a real
 // llm-memory server, e.g. the Docker container from
 // https://github.com/djkeshawa/llm-memory.
 //

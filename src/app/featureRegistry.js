@@ -1,7 +1,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_FEATURES = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   const PACKS = Object.freeze([
     { id: 'planning', label: 'Planning', description: 'Agenda and workflow views for structured work.' },

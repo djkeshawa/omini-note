@@ -146,9 +146,4 @@ function mnIconButtonStyle(T, active = false, size = 28) {
   };
 }
 
-window.MN_THEMES = MN_THEMES;
-window.MN_FONTS = MN_FONTS;
-window.mnGetTagColor = mnGetTagColor;
-window.mnGetTagBg = mnGetTagBg;
-window.mnShadow = mnShadow;
-window.mnIconButtonStyle = mnIconButtonStyle;
+export { MN_FONTS, MN_THEMES, mnGetTagBg, mnGetTagColor, mnIconButtonStyle, mnShadow };

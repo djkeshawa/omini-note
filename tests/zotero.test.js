@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const zotero = require('../lib/zotero');
+const zotero = require('../lib/integrations/zotero/client');
 
 function withMockFetch(handler, fn) {
   const originalFetch = global.fetch;

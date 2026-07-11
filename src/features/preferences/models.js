@@ -29,8 +29,7 @@ function writeLocalPhase5Metrics(metrics) {
   try { window.localStorage.setItem(PHASE5_METRICS_STORAGE_KEY, JSON.stringify(metrics)); } catch {}
 }
 
-function buildDefaultSmartViewDefinitions() {
-  const helpers = window.MN_APP_HELPERS || {};
+function buildDefaultSmartViewDefinitions(helpers = {}) {
   const today = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
   const format = helpers.SMART_VIEW_FORMAT || 'vispnote.smartView.v1';
   return [
@@ -41,9 +40,8 @@ function buildDefaultSmartViewDefinitions() {
   ];
 }
 
-function normalizeSmartViews(value) {
-  const helpers = window.MN_APP_HELPERS || {};
-  const defaults = buildDefaultSmartViewDefinitions();
+function normalizeSmartViews(value, helpers = {}) {
+  const defaults = buildDefaultSmartViewDefinitions(helpers);
   if (!Array.isArray(value)) return defaults;
   const clean = [];
   for (const definition of value.slice(0, 24)) {

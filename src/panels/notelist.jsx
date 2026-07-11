@@ -1,4 +1,7 @@
 // Middle pane: list of notes (filtered). Click to select.
+import { MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES } from '../editor/blockFeatures.jsx';
+import { mnGetTagBg, mnGetTagColor } from '../shared/theme.jsx';
+
 const { useMemo: useMemoL, useState: useStateL, useEffect: useEffectL } = React;
 
 function mnFormatDate(iso) {
@@ -32,7 +35,7 @@ function mnPreview(body) {
 let mnWorkflowRegexCache = { states: null, regex: null };
 
 function mnWorkflowRegex() {
-  const states = window.MN_LOGSEQ?.WORKFLOW_STATES || window.MN_LOGSEQ?.DEFAULT_WORKFLOW_STATES || [];
+  const states = MN_WORKFLOW_STATES || MN_DEFAULT_WORKFLOW_STATES || [];
   if (mnWorkflowRegexCache.states === states) return mnWorkflowRegexCache.regex;
   const workflowPattern = states
     .map(s => s.id)
@@ -662,6 +665,4 @@ function MnNoteList({
   );
 }
 
-window.MnNoteList = MnNoteList;
-window.mnFormatDate = mnFormatDate;
-window.mnHighlight = mnHighlight;
+export { MnNoteList, mnFormatDate, mnHighlight };

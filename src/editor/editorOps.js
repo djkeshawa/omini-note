@@ -1,7 +1,6 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.MN_EDITOR_OPS = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function () {
   function cloneAnnotation(a) {
     return { start: a.start, end: a.end, kind: a.kind };

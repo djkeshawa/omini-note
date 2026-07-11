@@ -1,5 +1,8 @@
 // Agenda panel for dated reminders and todo planning.
 
+import MN_APP_HELPERS from '../app/appHelpers.js';
+import { mnGetTagColor } from '../shared/theme.jsx';
+
 const { useEffect: useEffectC, useMemo: useMemoC, useState: useStateC } = React;
 
 function mnCalendarDateKey(date = new Date()) {
@@ -106,7 +109,7 @@ function MnCalendarPanel({
   const [createWhen, setCreateWhen] = useStateC('');
   const [draftWhen, setDraftWhen] = useStateC('');
   const [scheduleError, setScheduleError] = useStateC('');
-  const helpers = window.MN_APP_HELPERS || {};
+  const helpers = MN_APP_HELPERS;
 
   useEffectC(() => {
     if (selectedNoteId) setCreateNoteId(selectedNoteId);
@@ -790,4 +793,4 @@ function mnCalendarPrimaryButton(T, disabled) {
   };
 }
 
-window.MnCalendarPanel = MnCalendarPanel;
+export { MnCalendarPanel };

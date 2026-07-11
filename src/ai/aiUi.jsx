@@ -427,12 +427,4 @@ function iconBtn(T) {
   };
 }
 
-window.MnAiChatHistory = MnAiChatHistory;
-window.MN_AI_UI = {
-  MnAiChatHistory,
-  StatusPill,
-  mnAskPrimaryButton,
-  mnAskSecondaryButton,
-  mnAskReportButton,
-  iconBtn,
-};
+export { MnAiChatHistory, StatusPill, iconBtn, mnAskPrimaryButton, mnAskReportButton, mnAskSecondaryButton };

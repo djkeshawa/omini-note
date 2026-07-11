@@ -1,10 +1,8 @@
 // Outliner rendering helpers and AI edit action metadata.
 
-const {
-  mnRenderSpecialInlineText,
-  mnRenderMarkdownInlineText,
-  mnRenderAnnotated,
-} = window.MN_MARKDOWN_INLINE_RENDERERS || {};
+import { MN_THEMES } from '../shared/theme.jsx';
+import { mnRenderAnnotated, mnRenderMarkdownInlineText, mnRenderSpecialInlineText } from './markdownInlineRenderers.jsx';
+import { MN_CODE_LANGUAGES, mnCodeLanguageLabel, mnNormalizeCodeLanguage, mnRenderCode } from './codeHighlighter.jsx';
 
 const MN_AI_ACTIONS = [
   {
@@ -78,20 +76,6 @@ function MnAiIcon({ size = 13 }) {
   );
 }
 
-const MN_CODE_LANGUAGES = window.MN_CODE_HIGHLIGHTER?.languages || [];
-
-function mnNormalizeCodeLanguage(value) {
-  return window.MN_CODE_HIGHLIGHTER?.normalizeLanguage?.(value) || '';
-}
-
-function mnCodeLanguageLabel(value) {
-  return window.MN_CODE_HIGHLIGHTER?.languageLabel?.(value) || 'Plain text';
-}
-
-function mnRenderCode(text, language, T) {
-  return window.MN_CODE_HIGHLIGHTER?.render?.(text, language, T) ?? String(text || '');
-}
-
 // KaTeX block renderer. Renders the source as displayMode TeX. KaTeX is
 // loaded as a UMD <script> in vispnote.html so this is a no-op fallback if
 // it failed to load (e.g. user replaced the bundle).
@@ -149,7 +133,7 @@ function mnMermaidInit(theme) {
 }
 
 function mnDetectThemeFromT(T) {
-  return (T && window.MN_THEMES && T === window.MN_THEMES.dark) ? 'dark' : 'light';
+  return T === MN_THEMES.dark ? 'dark' : 'light';
 }
 
 function mnMermaidSvgHeight(svg) {
@@ -219,20 +203,8 @@ function MnMermaidBlock({ source, T }) {
   );
 }
 
-window.MnMathBlock = MnMathBlock;
-window.MnMermaidBlock = MnMermaidBlock;
-
-window.MN_OUTLINER_RENDERERS = {
-  MN_AI_ACTIONS,
-  mnAiAction,
-  MnAiIcon,
-  mnRenderSpecialInlineText,
-  mnRenderMarkdownInlineText,
-  mnRenderAnnotated,
-  MN_CODE_LANGUAGES,
-  mnNormalizeCodeLanguage,
-  mnCodeLanguageLabel,
-  mnRenderCode,
-  MnMathBlock,
-  MnMermaidBlock,
+export {
+  MN_AI_ACTIONS, MN_CODE_LANGUAGES, MnAiIcon, MnMathBlock, MnMermaidBlock,
+  mnAiAction, mnCodeLanguageLabel, mnNormalizeCodeLanguage, mnRenderAnnotated,
+  mnRenderCode, mnRenderMarkdownInlineText, mnRenderSpecialInlineText,
 };
