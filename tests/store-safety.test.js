@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { outlinerSource } = require('./helpers/source.js');
+const { appSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 
 const ops = require('../src/editor/editorOps.js');
@@ -826,7 +826,7 @@ test('Vault health resolves wiki links with anchors by note title', async () => 
 test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpoints', () => {
   const main = mainProcessSource();
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appActions = fs.readFileSync(path.join(__dirname, '../src/app/actions/useAppActionRegistry.js'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
   const outliner = outlinerSource(__dirname);
@@ -1212,7 +1212,7 @@ test('Backup import preserves duplicate note and canvas ids without overwriting'
 test('Native file dialog IPC paths report cancel and skipped work explicitly', () => {
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
 
   assert.match(preload, /exportBackup:\(options\) => ipcRenderer\.invoke\('mn:exportBackup', options\)/);
   assert.match(preload, /importBackup:\(options\) => ipcRenderer\.invoke\('mn:importBackup', options\)/);
@@ -1238,7 +1238,7 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const store = storeProcessSource();
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const trashController = fs.readFileSync(path.join(__dirname, '../src/features/trash/useTrashController.js'), 'utf8');
   const settingsRoot = path.join(__dirname, '../src/settings');
   const settings = [

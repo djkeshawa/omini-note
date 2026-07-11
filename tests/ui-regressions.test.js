@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { outlinerSource } = require('./helpers/source.js');
+const { appSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 
 const ops = require('../src/editor/editorOps.js');
@@ -130,7 +130,7 @@ test('Renderer regression covers user-centered app workflows', () => {
 });
 
 test('Note delete confirmation uses themed in-app dialog', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appShellRoot = path.join(__dirname, '../src/app');
   const appShell = fs.readdirSync(path.join(appShellRoot, 'shell')).sort()
     .map(name => fs.readFileSync(path.join(appShellRoot, 'shell', name), 'utf8')).join('\n');
@@ -149,7 +149,7 @@ test('Note delete confirmation uses themed in-app dialog', () => {
 
 test('Launch screen uses VispNote logo with pastel blooming light design', () => {
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appShellRoot = path.join(__dirname, '../src/app');
   const appShell = fs.readdirSync(path.join(appShellRoot, 'shell')).sort()
     .map(name => fs.readFileSync(path.join(appShellRoot, 'shell', name), 'utf8')).join('\n');
@@ -223,7 +223,7 @@ test('App and editor font size settings use stepper controls', () => {
     ...fs.readdirSync(path.join(settingsRoot, 'sections')).sort().map(name => path.join(settingsRoot, 'sections', name)),
   ].map(file => fs.readFileSync(file, 'utf8')).join('\n');
   const settingsControls = fs.readFileSync(path.join(__dirname, '../src/settings/settingsControls.jsx'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const outliner = outlinerSource(__dirname);
 

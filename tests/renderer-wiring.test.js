@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { outlinerSource } = require('./helpers/source.js');
+const { appSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 
 const ops = require('../src/editor/editorOps.js');
@@ -94,10 +94,10 @@ function storeProcessSource() {
 
 function appCompositionSource() {
   return [
-    '../src/app/app.jsx',
+    appSource(__dirname),
     '../src/app/actions/useAppActionRegistry.js',
     '../src/app/actions/buildDynamicActions.js',
-  ].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
+  ].map(file => file.startsWith?.('../') ? fs.readFileSync(path.join(__dirname, file), 'utf8') : file).join('\n');
 }
 
 test('AI menu buttons open option menus instead of running Improve directly', () => {
@@ -121,7 +121,7 @@ test('AI menu buttons open option menus instead of running Improve directly', ()
 });
 
 test('Advertised keyboard shortcuts are wired to handlers', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const outliner = outlinerSource(__dirname);
   const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
@@ -146,7 +146,7 @@ test('Advertised keyboard shortcuts are wired to handlers', () => {
 
 test('Note tag picker can create new tags from the editor', () => {
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const mutations = fs.readFileSync(path.join(__dirname, '../src/app/appMutations.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
 
@@ -173,7 +173,7 @@ test('Note tag picker can create new tags from the editor', () => {
 });
 
 test('Note metadata edits participate in undo and redo', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
 
   assert.match(app, /noteMetadataHistoryRef/);
@@ -191,7 +191,7 @@ test('Note metadata edits participate in undo and redo', () => {
 });
 
 test('Vaults can be created and deleted from settings with backend cleanup', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const preferenceModels = fs.readFileSync(path.join(__dirname, '../src/features/preferences/models.js'), 'utf8');
   const settings = settingsSource();
   const store = storeProcessSource();
@@ -240,7 +240,7 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
 });
 
 test('Reminder center and spellcheck wiring are visible in app shell', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appShell = appShellSource();
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const outliner = outlinerSource(__dirname);
@@ -558,7 +558,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const canvasActions = fs.readFileSync(path.join(__dirname, '../src/app/appCanvasActions.js'), 'utf8');
   const canvasController = fs.readFileSync(path.join(__dirname, '../src/features/canvas/useCanvasController.js'), 'utf8');
@@ -613,7 +613,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const helpers = fs.readFileSync(path.join(__dirname, '../src/app/appHelpers.js'), 'utf8');
   const appNovelistSource = fs.readFileSync(path.join(__dirname, '../src/app/appNovelist.js'), 'utf8');
@@ -1184,7 +1184,7 @@ test('Smart Views panel renders shared result presentations', () => {
 test('Pastel theme is selectable and keeps existing theme contracts', () => {
   const themeSource = fs.readFileSync(path.join(__dirname, '../src/shared/theme.jsx'), 'utf8');
   const settings = settingsSource();
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const bootController = fs.readFileSync(path.join(__dirname, '../src/features/boot/useBootController.js'), 'utf8');
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -1258,7 +1258,7 @@ test('Pastel theme is selectable and keeps existing theme contracts', () => {
 });
 
 test('Focused product shell and private usage controls are wired end to end', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const settings = settingsSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -1587,7 +1587,7 @@ test('Fallback spell checker underlines misspellings and offers replacements', (
 });
 
 test('Workflow notes can be archived from workflow boards only', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const appShell = appShellSource();
   const panels = specialistPanelsSource();
@@ -1756,7 +1756,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
 });
 
 test('Stabilization wiring avoids stale UI and native dialogs', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
+  const app = appSource(__dirname);
   const searchController = fs.readFileSync(path.join(__dirname, '../src/features/search/useSearchController.js'), 'utf8');
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const appShell = appShellSource();

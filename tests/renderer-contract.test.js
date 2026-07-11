@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const paths = require('./helpers/paths.js');
-const { outlinerSource } = require('./helpers/source.js');
+const { appSource, outlinerSource } = require('./helpers/source.js');
 
 function read(file) {
   return fs.readFileSync(file, 'utf8');
@@ -35,7 +35,7 @@ test('renderer bundle entry and HTML shell contract stay stable', () => {
 });
 
 test('renderer modules declare cross-file globals explicitly during migration', () => {
-  const app = read(paths.src.app);
+  const app = appSource(__dirname);
   const editor = read(paths.src.editor);
   const outliner = outlinerSource(__dirname);
 
@@ -148,7 +148,7 @@ test('modularization target feature folders exist', () => {
 });
 
 test('application composition delegates focused state to feature controllers', () => {
-  const app = read(path.join(paths.srcRoot, 'app/app.jsx'));
+  const app = appSource(__dirname);
   const features = ['ai', 'boot', 'canvas', 'navigation', 'overlays', 'planning', 'preferences', 'reference', 'search', 'today', 'trash', 'writer'];
   for (const feature of features) {
     const entry = path.join(paths.srcRoot, `features/${feature}/index.js`);
@@ -156,11 +156,16 @@ test('application composition delegates focused state to feature controllers', (
     assert.match(app, new RegExp(`from ['\"]\\.\\.\\/features\\/${feature}\\/index\\.js['\"]`));
   }
   assert.doesNotMatch(app, /from ['"]\.\.\/features\/(?![^/]+\/index\.js)[^'"]+['"]/);
-  assert.ok(app.split(/\r?\n/).length <= 3433, 'app composition root regrew beyond the Phase 4 budget');
+  const appModules = [
+    path.join(paths.srcRoot, 'app/app.jsx'),
+    path.join(paths.srcRoot, 'app/AppView.jsx'),
+    ...fs.readdirSync(path.join(paths.srcRoot, 'app/controllers')).map(name => path.join(paths.srcRoot, 'app/controllers', name)),
+  ];
+  for (const file of appModules) assert.ok(read(file).split(/\r?\n/).length <= 800, `${path.basename(file)} exceeds the app hard limit`);
 });
 
 test('trash state mutations stay behind the feature controller', () => {
-  const app = read(path.join(paths.srcRoot, 'app/app.jsx'));
+  const app = appSource(__dirname);
   const controller = read(path.join(paths.srcRoot, 'features/trash/useTrashController.js'));
 
   assert.doesNotMatch(app, /\bsetTrash(?:Items|Error)\b/);

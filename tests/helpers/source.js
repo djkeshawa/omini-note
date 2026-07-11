@@ -10,4 +10,14 @@ function outlinerSource(testDir) {
   ].join('\n');
 }
 
-module.exports = { outlinerSource };
+function appSource(testDir) {
+  const appRoot = path.join(testDir, '../src/app');
+  return [
+    fs.readFileSync(path.join(appRoot, 'app.jsx'), 'utf8'),
+    fs.readFileSync(path.join(appRoot, 'AppView.jsx'), 'utf8'),
+    ...fs.readdirSync(path.join(appRoot, 'controllers')).sort()
+      .map(name => fs.readFileSync(path.join(appRoot, 'controllers', name), 'utf8')),
+  ].join('\n');
+}
+
+module.exports = { appSource, outlinerSource };
