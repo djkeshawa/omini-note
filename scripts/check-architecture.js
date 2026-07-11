@@ -39,7 +39,10 @@ for (const folder of ['src/features', 'src/platform', 'src/shared']) {
 for (const file of checkedFiles) {
   const name = posix(file);
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).length;
-  if (lines > 500) warnings.push(`${name}: ${lines} lines`);
+  if (lines > 500) {
+    const reason = baseline.softLimitExceptions?.[name];
+    warnings.push(reason ? `${name}: ${lines} lines (temporary exception: ${reason})` : `${name}: ${lines} lines`);
+  }
   if (lines <= 800) continue;
   const allowance = baseline.lineBudgets[name];
   if (!allowance) failures.push(`${name} exceeds the 800-line hard limit (${lines})`);

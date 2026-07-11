@@ -26,6 +26,19 @@ function mainProcessSource() {
   return files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
 }
 
+function storeProcessSource() {
+  const files = [path.join(__dirname, '../lib/store.js')];
+  const visit = dir => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const target = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(target);
+      else if (entry.name.endsWith('.js')) files.push(target);
+    }
+  };
+  visit(path.join(__dirname, '../lib/storage'));
+  return files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+}
+
 test('AI menu buttons open option menus instead of running Improve directly', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
 
@@ -117,7 +130,7 @@ test('Note metadata edits participate in undo and redo', () => {
 test('Vaults can be created and deleted from settings with backend cleanup', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
-  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const store = storeProcessSource();
   const seed = fs.readFileSync(path.join(__dirname, '../lib/seed.js'), 'utf8');
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
@@ -131,7 +144,7 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(store, /async function vaultDirectoryExists\(slug\)/);
   assert.match(store, /cfg\.vaults = validVaults/);
   assert.match(store, /Create another vault before deleting this one/);
-  assert.match(store, /moveVaultToTrash\(v\.slug\)/);
+  assert.match(store, /moveVaultToTrash\(removed\.slug\)/);
   assert.match(store, /deleteVault, setActiveVault/);
   assert.match(main, /ipcMain\.handle\('mn:deleteVault'/);
   assert.match(main, /idx\.removeVault\(vaultId\)/);
@@ -469,7 +482,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
 test('Canvas workspace is wired through storage, navigation, and note embeds', () => {
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
-  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
@@ -522,7 +535,7 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
 });
 
 test('Novelist mode is a vault type with settings, templates, workflow, and dashboard wiring', () => {
-  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
@@ -757,7 +770,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const settings = fs.readFileSync(path.join(__dirname, '../src/settings/settings.jsx'), 'utf8');
   const markdown = fs.readFileSync(path.join(__dirname, '../src/shared/markdown.jsx'), 'utf8');
-  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const store = storeProcessSource();
   const main = mainProcessSource();
 
   assert.match(app, /tweaks\.sortBy/);
@@ -898,7 +911,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /function phase5RecordMetric/);
   assert.match(appHelpers, /Unsupported Phase 5 metric key/);
   assert.doesNotMatch(appHelpers, /sendBeacon|XMLHttpRequest|fetch\(/);
-  assert.match(store, /PHASE5_METRIC_KEYS/);
+  assert.match(store, /const KEYS = new Set\(\['capture_saves'/);
   assert.match(store, /sanitizePhase5Metrics\(cleanPatch\.phase5Metrics, \{ rejectUnknown: true \}\)/);
   assert.match(store, /recordPhase5Metric\(cfg\.phase5Metrics, 'theme_installs'/);
   assert.match(store, /recordPhase5Metric\(cfg\.phase5Metrics, 'onboarding_mode_selections'/);
@@ -1008,7 +1021,7 @@ test('Smart Views panel renders shared result presentations', () => {
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const main = mainProcessSource();
-  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const store = storeProcessSource();
 
   assert.match(panels, /import '\.\/smartViewsPanel\.jsx';/);
   assert.match(smartViewsPanel, /function MnSmartViewsPanel/);
@@ -1482,7 +1495,7 @@ test('Workflow notes can be archived from workflow boards only', () => {
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const appShell = fs.readFileSync(path.join(__dirname, '../src/app/appShell.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
-  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
@@ -1658,7 +1671,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const outliner = fs.readFileSync(path.join(__dirname, '../src/editor/outliner.jsx'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
   const panels = fs.readFileSync(path.join(__dirname, '../src/panels/panels.jsx'), 'utf8');
-  const store = fs.readFileSync(path.join(__dirname, '../lib/store.js'), 'utf8');
+  const store = storeProcessSource();
   const main = mainProcessSource();
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
 

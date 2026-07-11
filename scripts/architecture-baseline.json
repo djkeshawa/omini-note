@@ -1,5 +1,8 @@
 {
   "legacyGlobalAssignments": 73,
+  "softLimitExceptions": {
+    "lib/store.js": "Temporary compatibility facade retained until Phase 7 while callers migrate to storage repositories."
+  },
   "directBridgeFiles": [
     "src/ai/ai.jsx",
     "src/app/appShell.jsx",
@@ -21,7 +24,6 @@
     "src/panels/sidebar.jsx": 820,
     "src/panels/utilityPanels.jsx": 1295,
     "src/settings/settings.jsx": 1630,
-    "lib/ai.js": 3064,
-    "lib/store.js": 2009
+    "lib/ai.js": 3064
   }
 }
