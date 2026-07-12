@@ -1,8 +1,9 @@
 import { shortcutLabel, useShortcutPlatform } from '../../../platform/shortcuts.js';
+import { mnGetTagBg, mnGetTagColor } from '../../../shared/theme.jsx';
 
-const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
+const { useState: useStateP, useEffect: useEffectP, useRef: useRefP } = React;
 
-function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = [], T, theme }) {
+function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = [], deriveTitle, T, theme }) {
   const shortcutPlatform = useShortcutPlatform();
   const [title, setTitle] = useStateP('');
   const [body, setBody] = useStateP('');
@@ -10,7 +11,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
   const [destinationId, setDestinationId] = useStateP('today');
   const [templateId, setTemplateId] = useStateP('raw');
   const [moreOpen, setMoreOpen] = useStateP(false);
-  const titleRef = useRefP(null);
+  const bodyRef = useRefP(null);
   const destinationChoices = destinations.length
     ? destinations
     : [{ id: 'new', label: 'New note', noteTitle: 'New note', disabled: false }];
@@ -22,9 +23,10 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
     || destinationChoices.find(item => !item.disabled)
     || destinationChoices[0];
   const activeTemplate = templateChoices.find(item => item.id === templateId) || templateChoices[0];
+  const createsNewNote = activeDestination?.id === 'new';
 
   useEffectP(() => {
-    const focusHandle = setTimeout(() => titleRef.current?.focus(), 60);
+    const focusHandle = setTimeout(() => bodyRef.current?.focus(), 60);
     const esc = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', esc);
     return () => {
@@ -35,8 +37,10 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
 
   const submit = () => {
     if (!title.trim() && !body.trim()) return onClose();
+    const fallbackTitle = String(body || '').split('\n').map(line => line.trim()).find(Boolean) || 'Untitled';
+    const inferredTitle = activeTemplate?.id === 'raw' ? (deriveTitle?.(body) || fallbackTitle) : '';
     onSave({
-      title: title.trim() || 'Untitled',
+      title: createsNewNote ? (title.trim() || inferredTitle) : '',
       body,
       tags: selected,
       destinationId: activeDestination?.id || 'new',
@@ -51,7 +55,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
       paddingTop: 100, animation: 'mnFadeIn 120ms ease',
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" aria-label="Quick capture" onClick={(e) => e.stopPropagation()} style={{
         width: 540, background: T.bg, borderRadius: 12,
         border: `1px solid ${T.line}`,
         boxShadow: `0 24px 60px color-mix(in oklab, ${T.ink} 25%, transparent)`,
@@ -75,7 +79,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
           }}>{shortcutLabel('quickCapture', shortcutPlatform, { compact: true })}</span>
         </div>
         <div style={{ padding: 16 }}>
-          <div style={{
+          <div id="mn-capture-options" style={{
             display: moreOpen ? 'grid' : 'none',
             gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
             gap: 8,
@@ -122,15 +126,25 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
               ))}
             </select>
           </div>
-          <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)}
-            placeholder="Title"
-            style={{
-              width: '100%', border: 'none', outline: 'none', background: 'transparent',
-              fontFamily: 'var(--mn-body)', fontSize: 20, fontWeight: 600,
-              color: T.ink, letterSpacing: 0, marginBottom: 10,
-            }}/>
-          <textarea value={body} onChange={(e) => setBody(e.target.value)}
-            placeholder="Write a note… use [[double brackets]] to link, - [ ] for todos, @remind YYYY-MM-DD to schedule"
+          {createsNewNote && (
+            <input value={title} onChange={(e) => setTitle(e.target.value)}
+              aria-label="New note title"
+              placeholder="Optional title"
+              style={{
+                width: '100%', border: 'none', outline: 'none', background: 'transparent',
+                fontFamily: 'var(--mn-body)', fontSize: 18, fontWeight: 600,
+                color: T.ink, letterSpacing: 0, marginBottom: 8,
+              }}/>
+          )}
+          <textarea ref={bodyRef} value={body} onChange={(e) => setBody(e.target.value)}
+            aria-label="Quick capture text"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault();
+                submit();
+              }
+            }}
+            placeholder="Write what you want to remember…"
             style={{
               width: '100%', minHeight: 120,
               fontFamily: 'var(--mn-body)', fontSize: 14.5, lineHeight: 1.6,
@@ -138,8 +152,8 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
               resize: 'none', padding: 0,
             }} />
 
-          <button type="button" onClick={() => setMoreOpen(value => !value)} style={{
-            marginTop: 8, padding: 0, border: 'none', background: 'transparent',
+          <button type="button" aria-expanded={moreOpen} aria-controls="mn-capture-options" onClick={() => setMoreOpen(value => !value)} style={{
+            minHeight: 32, marginTop: 8, padding: '4px 0', border: 'none', background: 'transparent',
             color: T.inkDim, fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
           }}>{moreOpen ? 'Hide options' : 'More options'}</button>
 
@@ -147,7 +161,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
             {tags.map(t => {
               const on = selected.includes(t.name);
               return (
-                <button key={t.name}
+                <button key={t.name} type="button" aria-pressed={on}
                   onClick={() => setSelected(s => on ? s.filter(x => x !== t.name) : [...s, t.name])}
                   style={{
                     fontFamily: 'var(--mn-mono)', fontSize: 10.5,
@@ -169,12 +183,12 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
           }}>{activeDestination?.label || 'New note'} · {activeTemplate?.title || 'No template'}</div>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{
-            padding: '4px 12px', borderRadius: 5,
+            minHeight: 36, padding: '6px 12px', borderRadius: 5,
             border: `1px solid ${T.line}`, background: T.bg, color: T.inkMed,
             fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
           }}>Cancel</button>
           <button onClick={submit} style={{
-            padding: '4px 14px', borderRadius: 5, border: 'none',
+            minHeight: 36, padding: '6px 14px', borderRadius: 5, border: 'none',
             background: T.ink, color: T.bg,
             fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 500, cursor: 'pointer',
           }}>Save{activeDestination?.id === 'today' ? ' to Today' : ''}</button>
@@ -189,4 +203,3 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
 // ────────────────────────────────────────────────────────────
 
 export { MnQuickCapture };
-import { mnGetTagBg, mnGetTagColor } from '../../../shared/theme.jsx';

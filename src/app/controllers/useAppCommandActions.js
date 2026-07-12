@@ -206,8 +206,8 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
       const h = (e) => {
         const key = e.key || '';
         // While a real modal (settings, dialogs, capture) is up, only Escape
-        // acts — Ctrl+N must not create notes behind it. The palette and quick
-        // switcher stay toggleable since their shortcuts also close them.
+        // acts — Ctrl+N must not create notes behind it. Both shared-palette
+        // modes stay toggleable since their shortcuts also close them.
         const modalBlocksShortcuts = blockingOverlayOpen && !commandPaletteOpen && !quickSwitcherOpen;
         if (modalBlocksShortcuts && key !== 'Escape') return;
         if (matchesShortcut(e, 'quickCapture')) {

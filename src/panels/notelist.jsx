@@ -509,7 +509,8 @@ function MnNoteList({
             value={query || ''}
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') onQueryChange(''); }}
-            placeholder="Search notes…"
+            aria-label="Search note contents"
+            placeholder="Search note contents…"
             style={{
               flex: 1, border: 'none', outline: 'none', background: 'transparent',
               padding: '6px 26px 6px 28px',
