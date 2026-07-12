@@ -1,5 +1,6 @@
 import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx'; import { storage } from '../shared/storageUtils.js'; import { mnGetTagColor } from '../shared/theme.jsx'; import { shortcutLabel } from '../platform/shortcuts.js';
 import { MnContextualTip } from '../features/onboarding/index.js';
+import { SidebarNavRow } from './SidebarNavRow.jsx';
 const { useMemo: useMemoS } = React;
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
@@ -64,7 +65,7 @@ function MnSidebar({
     }).length;
   }, 0), [notes]);
 
-  const rollupCount = Number.isFinite(todayCount) ? todayCount : notes.length;
+  const rollupCount = Number.isFinite(todayCount) ? Math.max(0, todayCount) : 0;
   const pinnedCount = notes.filter(note => note.pinned).length;
   const vaultKindLabel = (v) => v?.novelistMode ? 'Novelist' : 'Notes';
   const vaultNoteLabel = (v) => `${v?.noteCount ?? 0} note${(v?.noteCount ?? 0) === 1 ? '' : 's'}`;
@@ -168,31 +169,7 @@ function MnSidebar({
     );
   };
 
-  const Row = ({ icon, label, count, active, onClick, accent }) => (
-    <div onClick={onClick} style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: `${pad.py}px 10px`, margin: '0 6px', borderRadius: 6,
-      cursor: 'pointer', userSelect: 'none',
-      background: active ? T.selBg : 'transparent',
-      border: `1px solid ${active ? T.selLine : 'transparent'}`,
-      color: active ? T.ink : T.inkMed,
-      fontFamily: 'var(--mn-ui)', fontSize: 13,
-      fontWeight: active ? 500 : 400,
-      transition: 'background 80ms',
-    }}
-    onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
-    onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
-      <span style={{ width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: accent || T.inkDim }}>{icon}</span>
-      <span style={{ flex: 1, color: 'inherit' }}>{label}</span>
-      {count != null && (
-        <span style={{
-          fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-          padding: '1px 5px', borderRadius: 3,
-          background: active ? 'transparent' : T.bgSub,
-        }}>{count}</span>
-      )}
-    </div>
-  );
+  const Row = props => <SidebarNavRow {...props} T={T} pad={pad} />;
 
   const iconInbox = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 9L3 3H13L14 9" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M2 9V13H14V9H10.5L9.5 11H6.5L5.5 9H2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>);
   const iconToday = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5 2V4M11 2V4M2 7H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="8" cy="10.5" r="1.3" fill="currentColor"/></svg>);

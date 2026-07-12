@@ -25,7 +25,7 @@ function createRollupHelpers(scope = {}) {
       const key = rollupNoteDateKey(note, groupBy);
       if (!rollupDateKeyInRange(key, range, now, weekStart)) return;
       if (!groups.has(key)) {
-        groups.set(key, { key, date: new Date(`${key}T00:00:00.000Z`), notes: [] });
+        groups.set(key, { key, date: new Date(`${key}T12:00:00`), notes: [] });
       }
       groups.get(key).notes.push(note);
     });

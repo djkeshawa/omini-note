@@ -95,7 +95,7 @@ function AppView({ model }) {
                 featureState={featureState}
                 contextualTip={model.contextualTip?.placement === 'sidebar' ? model.contextualTip : null}
                 onDismissContextualTip={model.dismissContextualTip}
-                todayCount={model.todaySources?.notes?.length ?? notesWithBody.length}
+                todayCount={model.todayActionableCount ?? 0}
                 newNoteShortcut={shortcutLabel('newNote', shortcutPlatform, { compact: true })}
                 T={T} density={tweaks.density} theme={theme}
               />
@@ -460,19 +460,19 @@ function AppView({ model }) {
                 tasks={model.todaySources?.tasks || calendarTaskItems}
                 reminders={model.todaySources?.reminders || reminderCenterItems}
                 todayNote={todayDailyNote}
-                agendaItems={todayAgendaItems}
-                staleTasks={todayDigest.staleTodos}
-                unlinkedNotes={todayDigest.unlinkedNotes}
-                resurfacedNotes={todayDigest.resurfacedNotes}
+                agendaItems={featureState.showAgenda ? todayAgendaItems : []}
+                reviewItems={model.todayReviewItems || []}
+                onDismissReviewItem={model.dismissTodayReviewItem}
+                onSnoozeReviewItem={model.snoozeTodayReviewItem}
                 onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
                 onOpenOrCreateDailyNote={createDailyNote}
                 onAddQuickTask={addQuickTodayTask}
                 onAddReflection={addTodayReflection}
                 onEndDayRecap={addTodayEndDayRecap}
-                todayAiRecap={todayAiRecap}
-                todayAiRecapBusy={todayAiRecapBusy}
-                todayAiRecapError={todayAiRecapError}
-                onGenerateAiRecap={featureState.showAskAi ? generateTodayAiRecap : null}
+                todayAiRecap={assistanceEnabled ? todayAiRecap : null}
+                todayAiRecapBusy={assistanceEnabled ? todayAiRecapBusy : false}
+                todayAiRecapError={assistanceEnabled ? todayAiRecapError : ''}
+                onGenerateAiRecap={featureState.showAskAi && assistanceEnabled ? generateTodayAiRecap : null}
                 onOpenAgenda={featureState.showAgenda ? () => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); } : null}
                 onPlanItem={featureState.showAgenda ? () => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); } : null}
                 rollupFormat={tweaks.rollupFormat || 'long'}
