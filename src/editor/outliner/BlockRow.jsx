@@ -344,14 +344,10 @@ function MnBlockRow({
     // What kind should the next block be?
     // Default: paragraph (plain text). Bullets/todos continue their kind so
     // a list flows naturally. Headings/quotes/code break out to paragraph.
-    let nextKind = 'paragraph';
-    let nextChecked = null;
-    let nextLevel = 0;
-    if (block.kind === 'bullet') nextKind = 'bullet';
-    else if (block.kind === 'todo') { nextKind = 'todo'; nextChecked = false; }
+    const nextBlock = MN_MARKDOWN_INPUT_RULES.continuationBlockPatch(block);
     // paragraph, heading, quote, code, divider → paragraph
 
-    onSplit(block.id, pos, { kind: nextKind, checked: nextChecked, level: nextLevel });
+    onSplit(block.id, pos, nextBlock);
   };
 
   // ── input handlers ───────────────────────────────────────────────
@@ -662,6 +658,8 @@ function MnBlockRow({
         kind: cmd.kind,
         level: cmd.level || 0,
         checked: cmd.checked != null ? cmd.checked : null,
+        listNumber: cmd.listNumber || 1,
+        listDelimiter: cmd.listDelimiter || '.',
         content: cleanContent || cmd.content || '',
         language: '',
         beats: cmd.beats || block.beats || [],

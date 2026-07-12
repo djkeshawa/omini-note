@@ -43,7 +43,10 @@ const platformApi = Object.freeze({
     'listDeletedCanvases', 'restoreDeletedCanvas', 'purgeDeletedCanvas',
   ]),
   preferences: methodGroup('preferences', ['getPrefs', 'setPrefs', 'importThemeFile', 'spellcheck']),
-  maintenance: methodGroup('maintenance', ['exportBackup', 'importBackup', 'importNovelFiles']),
+  maintenance: methodGroup('maintenance', [
+    'exportBackup', 'importBackup', 'importNovelFiles',
+    'previewMarkdownImport', 'applyMarkdownImport', 'cancelMarkdownImport',
+  ]),
   app: methodGroup('app', ['openExternal', 'setTitle', 'info', 'shortcutStatus', 'openDataFolder']),
   get ai() {
     return currentBridge().ai || EMPTY_BRIDGE;

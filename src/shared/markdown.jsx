@@ -73,14 +73,21 @@ function mnParse(md) {
       blocks.push({ type: 'quote', text: buf.join('\n'), idx: blocks.length });
       continue;
     }
-    // List (todo or bullet)
-    if (/^\s*-\s+/.test(line)) {
+    // List (todo, unordered, or ordered)
+    if (/^\s*(?:-|\d+[.)])\s+/.test(line)) {
       const items = [];
-      while (i < lines.length && /^\s*-\s+/.test(lines[i])) {
-        const m = lines[i].match(/^(\s*)-\s+(\[[ xX]\]\s+)?(.*)$/);
+      while (i < lines.length && /^\s*(?:-|\d+[.)])\s+/.test(lines[i])) {
+        const m = lines[i].match(/^(\s*)(?:(-)\s+(\[[ xX]\]\s+)?|(\d+)([.)])\s+)(.*)$/);
         const indent = m[1].length;
-        const checked = m[2] ? /[xX]/.test(m[2]) : null;
-        items.push({ indent, checked, text: m[3] });
+        const checked = m[3] ? /[xX]/.test(m[3]) : null;
+        items.push({
+          indent,
+          checked,
+          ordered: !!m[4],
+          number: m[4] ? Number(m[4]) : null,
+          delimiter: m[5] || '.',
+          text: m[6],
+        });
         i++;
       }
       blocks.push({ type: 'list', items, idx: blocks.length });
@@ -97,7 +104,7 @@ function mnParse(md) {
     i++;
     while (i < lines.length && lines[i].trim() !== '' &&
            !/^(#{1,4})\s+/.test(lines[i]) &&
-           !/^\s*-\s+/.test(lines[i]) &&
+           !/^\s*(?:-|\d+[.)])\s+/.test(lines[i]) &&
            !lines[i].startsWith('> ') &&
            !/^---+$/.test(lines[i])) {
       buf.push(lines[i]); i++;
@@ -300,6 +307,12 @@ function MnMarkdown({ md, onOpen, onTagClick, onToggleCheck, T }) {
                         </svg>
                       )}
                     </button>
+                  ) : it.ordered ? (
+                    <span style={{
+                      minWidth: 20, marginTop: 2, flexShrink: 0,
+                      color: T.inkDim, fontFamily: 'var(--mn-mono)',
+                      fontSize: 12, textAlign: 'right',
+                    }}>{it.number}{it.delimiter}</span>
                   ) : (
                     <span style={{
                       width: 4, height: 4, marginTop: 11, borderRadius: '50%',

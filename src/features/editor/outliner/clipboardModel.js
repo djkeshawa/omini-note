@@ -1,4 +1,4 @@
-const BLOCK_KINDS = new Set(['paragraph', 'heading', 'bullet', 'todo', 'quote', 'code', 'table', 'divider', 'plot-points']);
+const BLOCK_KINDS = new Set(['paragraph', 'heading', 'bullet', 'ordered', 'todo', 'quote', 'code', 'table', 'divider', 'plot-points']);
 
 export const BLOCK_CLIPBOARD_TYPE = 'application/x-omininote-blocks';
 
@@ -35,5 +35,5 @@ export function looksLikeBlockMarkdown(text) {
   const lines = normalized.split('\n').filter(line => line.trim());
   if (lines.length < 2) return false;
   if (/\n\s*\n/.test(normalized)) return true;
-  return lines.some(line => /^(#{1,3}\s+|>\s+|---+$|\s*-\s+|\|.+\|)/.test(line));
+  return lines.some(line => /^(#{1,3}\s+|>\s+|---+$|\s*(?:-|\d+[.)])\s+|\|.+\|)/.test(line));
 }

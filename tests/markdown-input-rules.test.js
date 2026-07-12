@@ -20,6 +20,7 @@ test('Block starter input rules cover supported starters in eligible plain block
   assert.deepEqual(conversion('##### '), { kind: 'heading', level: 5, checked: null, content: '', language: '' });
   assert.deepEqual(conversion('###### '), { kind: 'heading', level: 6, checked: null, content: '', language: '' });
   assert.deepEqual(conversion('- '), { kind: 'bullet', level: 0, checked: null, content: '', language: '' });
+  assert.deepEqual(conversion('1. '), { kind: 'ordered', level: 0, checked: null, content: '', language: '', listNumber: 1, listDelimiter: '.' });
   assert.deepEqual(conversion('- [ ] '), { kind: 'todo', level: 0, checked: false, content: '', language: '' });
   assert.deepEqual(conversion('- [x] '), { kind: 'todo', level: 0, checked: true, content: '', language: '' });
   assert.deepEqual(conversion('- [X] '), { kind: 'todo', level: 0, checked: true, content: '', language: '' });
@@ -60,9 +61,19 @@ test('Todo continuation converts after immediate bullet starter conversion', () 
   assert.equal(conversion('[ ] ', { kind: 'paragraph' }), null);
 });
 
+test('List continuation retains list kind and advances ordered markers', () => {
+  assert.deepEqual(rules.continuationBlockPatch({ kind: 'bullet' }), { kind: 'bullet', checked: null, level: 0 });
+  assert.deepEqual(rules.continuationBlockPatch({ kind: 'todo', checked: true }), { kind: 'todo', checked: false, level: 0 });
+  assert.deepEqual(rules.continuationBlockPatch({ kind: 'ordered', listNumber: 7, listDelimiter: ')' }), {
+    kind: 'ordered', checked: null, level: 0, listNumber: 8, listDelimiter: ')',
+  });
+  assert.deepEqual(rules.continuationBlockPatch({ kind: 'heading' }), { kind: 'paragraph', checked: null, level: 0 });
+});
+
 test('Structural blocks expose editable markdown source prefixes', () => {
   assert.equal(rules.editableMarkdownForBlock({ kind: 'heading', level: 5, content: 'Origins' }), '##### Origins');
   assert.equal(rules.editableMarkdownForBlock({ kind: 'bullet', content: 'Item' }), '- Item');
+  assert.equal(rules.editableMarkdownForBlock({ kind: 'ordered', listNumber: 3, listDelimiter: ')', content: 'Item' }), '3) Item');
   assert.equal(rules.editableMarkdownForBlock({ kind: 'todo', checked: false, content: 'Task' }), '- [ ] Task');
   assert.equal(rules.editableMarkdownForBlock({ kind: 'todo', checked: true, content: 'Task' }), '- [x] Task');
   assert.equal(rules.editableMarkdownForBlock({ kind: 'quote', content: 'Quote' }), '> Quote');
@@ -183,7 +194,7 @@ test('Specialized syntax contexts are not treated as markdown input-rule targets
 
 test('Supported case matrix stays explicit for success-criteria accounting', () => {
   const matrix = rules.supportedCaseMatrix();
-  assert.equal(matrix.blockStarters.length, 13);
+  assert.equal(matrix.blockStarters.length, 14);
   assert.deepEqual(matrix.inlineMarkers.map(item => item.kind), ['bold', 'italic', 'code', 'strike', 'link', 'image']);
 });
 

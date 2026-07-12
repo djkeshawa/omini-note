@@ -604,7 +604,7 @@ function mnGetFontStyle(block, T, editorFontSize) {
 }
 function mnAffordancePadTop(block) {
   if (block.kind === 'heading') return 0;
-  if (block.kind === 'bullet') return 5;
+  if (block.kind === 'bullet' || block.kind === 'ordered') return 5;
   // Wrapper provides only enough padding so the bullet/grip span sits at the
   // top of the row; per-block fine-tuning happens in mnGripPadTop.
   return 0;
@@ -630,6 +630,7 @@ function mnGripPadTop(block) {
 function mnPlaceholder(block) {
   if (block.kind === 'heading') return `Heading ${block.level || 1}`;
   if (block.kind === 'bullet') return 'List item';
+  if (block.kind === 'ordered') return 'Numbered item';
   if (block.kind === 'todo')   return 'Task';
   if (block.kind === 'quote')  return 'Quote';
   if (block.kind === 'code')   return 'Code';

@@ -611,6 +611,61 @@ test('Vault loading falls back from unsafe note front matter ids', async () => {
   });
 });
 
+test('Saving known fields preserves unknown front matter, comments, and block lists', async () => {
+  await withIsolatedStore(async (store) => {
+    const vault = (await store.listVaults()).find(item => item.name === 'Personal');
+    const notePath = path.join(store.ROOT, vault.slug, 'n_portable.md');
+    fs.writeFileSync(notePath, [
+      '---',
+      '# Imported metadata stays user-owned',
+      'id: n_portable',
+      'title: Before # visible title comment',
+      'tags:',
+      '  # keep this list comment',
+      '  - alpha',
+      'aliases:',
+      '  - First alias',
+      '  - Second alias',
+      'custom:',
+      '  nested: true',
+      'title: Shadow duplicate',
+      '---',
+      '',
+      'Body with [relative](../reference.md).',
+    ].join('\n'), 'utf8');
+
+    const loaded = await store.getNote(vault.id, 'n_portable');
+    assert.deepEqual(loaded.tags, ['alpha']);
+    await store.saveNote(vault.id, { ...loaded, title: 'After', tags: ['alpha', 'beta', 'true'] });
+    const saved = fs.readFileSync(notePath, 'utf8');
+
+    assert.match(saved, /title: After # visible title comment/);
+    assert.equal((saved.match(/^title:/gm) || []).length, 1);
+    assert.match(saved, /tags: \[alpha, beta, "true"\]\n  # keep this list comment/);
+    assert.match(saved, /aliases:\n  - First alias\n  - Second alias/);
+    assert.match(saved, /custom:\n  nested: true/);
+    assert.match(saved, /Body with \[relative\]\(\.\.\/reference\.md\)\./);
+
+    const [version] = await store.listNoteVersions(vault.id, 'n_portable');
+    assert.ok(version);
+    await store.restoreNoteVersion(vault.id, 'n_portable', version.versionId);
+    const versionRestored = fs.readFileSync(notePath, 'utf8');
+    assert.match(versionRestored, /aliases:\n  - First alias\n  - Second alias/);
+    assert.match(versionRestored, /# Imported metadata stays user-owned/);
+
+    const deleted = await store.deleteNote(vault.id, 'n_portable', await store.getNote(vault.id, 'n_portable'));
+    await store.restoreDeletedNote(vault.id, deleted.trashId);
+    const trashRestored = fs.readFileSync(notePath, 'utf8');
+    assert.match(trashRestored, /aliases:\n  - First alias\n  - Second alias/);
+    assert.doesNotMatch(trashRestored, /^(?:trashId|deletedAt|originalId|originalTitle):/m);
+
+    const backup = await store.exportBackup({ vaultId: vault.id });
+    const imported = await store.importBackup(backup, { activate: false, keepNames: false });
+    const importedVault = await store.loadVault(imported.importedVaults[0].id);
+    assert.match(importedVault.notes.find(note => note.id === 'n_portable').frontMatter, /aliases:\n  - First alias\n  - Second alias/);
+  });
+});
+
 test('Vault loading and export ignore symlinked note and canvas files', async () => {
   if (process.platform === 'win32') return;
   await withIsolatedStore(async (store) => {
