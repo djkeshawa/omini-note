@@ -163,7 +163,7 @@ const HAS_DISK = hasDesktopBridge();
 function MnApp() {
   const { overlayNoteList } = useResponsiveLayout();
   const [tweaks, setTweaks] = useStateA(MN_TWEAK_DEFAULTS);
-  const [compactNoteListOpen, setCompactNoteListOpen] = useStateA(true);
+  const [compactNoteListOpen, setCompactNoteListOpen] = useStateA(null);
   const [enabledPacks, setEnabledPacks] = useStateA([]);
   const [assistanceEnabled, setAssistanceEnabled] = useStateA(false);
   const [customThemes, setCustomThemes] = useStateA([]);
@@ -323,11 +323,12 @@ function MnApp() {
     setTweak('showSidebar', !next);
   };
   const preferredNoteListHidden = tweaks.showNoteList === false;
-  const noteListHidden = preferredNoteListHidden || (overlayNoteList && !compactNoteListOpen);
+  const noteListHidden = overlayNoteList
+    ? (compactNoteListOpen === null ? preferredNoteListHidden : !compactNoteListOpen)
+    : preferredNoteListHidden;
   const setNoteListHidden = (v) => {
     const next = typeof v === 'function' ? v(noteListHidden) : v;
     if (overlayNoteList) {
-      if (!next && preferredNoteListHidden) setTweak('showNoteList', true);
       setCompactNoteListOpen(!next);
       return;
     }

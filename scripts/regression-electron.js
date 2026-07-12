@@ -1196,11 +1196,21 @@ async function runCanvasCreateScenario(win) {
   });
 }
 
+async function waitForLayoutMode(win, expectedMode) {
+  return await waitFor(win, `${expectedMode} layout mode`, async () => {
+    const result = await evaluate(win, `({
+      mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
+      width: window.innerWidth,
+    })`);
+    return { ok: result.mode === expectedMode, result };
+  });
+}
+
 async function runViewportAccessibilityScenario(win) {
   const original = win.getBounds();
   try {
     win.setSize(900, 700);
-    await wait(250);
+    await waitForLayoutMode(win, 'compact');
     await assertViewportUsable(win, 'minimum supported window');
     const compact = await evaluate(win, `
       (() => {
@@ -1229,7 +1239,7 @@ async function runViewportAccessibilityScenario(win) {
       return { ok: !result.overlay && result.showButton && result.activeLabel === 'Show note list', result };
     });
     win.setSize(1280, 860);
-    await wait(250);
+    await waitForLayoutMode(win, 'three-pane');
     await assertViewportUsable(win, 'desktop restored after compact selection');
     const restoredDesktopMode = await evaluate(win, `document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || ''`);
     if (restoredDesktopMode !== 'three-pane') {
@@ -1335,7 +1345,7 @@ async function runViewportAccessibilityScenario(win) {
     });
 
     win.setSize(1280, 860);
-    await wait(250);
+    await waitForLayoutMode(win, 'three-pane');
     await assertViewportUsable(win, 'desktop window');
     const desktop = await evaluate(win, `
       (() => ({
@@ -1346,6 +1356,46 @@ async function runViewportAccessibilityScenario(win) {
     if (desktop.mode !== 'three-pane' || desktop.overlay) {
       throw new Error(`Desktop three-pane layout is not active: ${JSON.stringify(desktop)}`);
     }
+
+    await clickButton(win, { titleIncludes: 'Hide note list' });
+    await waitFor(win, 'desktop note-list preference is hidden', async () => {
+      const result = await evaluate(win, `({
+        list: Boolean(document.querySelector('button[title="Hide note list"]')),
+        showButton: Boolean(document.querySelector('button[title="Show note list"]')),
+      })`);
+      return { ok: !result.list && result.showButton, result };
+    });
+    win.setSize(900, 700);
+    await waitForLayoutMode(win, 'compact');
+    if (await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`)) {
+      await pressAccelerator(win, 'Escape');
+    }
+    await waitFor(win, 'compact note-list drawer is closed over a hidden desktop preference', async () => {
+      const result = await evaluate(win, `({
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[aria-label="Show note list"]')),
+      })`);
+      return { ok: !result.overlay && result.showButton, result };
+    });
+    await clickButton(win, { aria: 'Show note list' });
+    await waitFor(win, 'compact note-list drawer opens without changing desktop preference', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
+    win.setSize(1280, 860);
+    await waitFor(win, 'desktop note-list preference remains hidden after compact use', async () => {
+      const result = await evaluate(win, `({
+        mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
+        list: Boolean(document.querySelector('button[title="Hide note list"]')),
+        showButton: Boolean(document.querySelector('button[title="Show note list"]')),
+      })`);
+      return { ok: result.mode === 'three-pane' && !result.list && result.showButton, result };
+    });
+    await clickButton(win, { titleIncludes: 'Show note list' });
+    await waitFor(win, 'desktop note list is restored for later scenarios', async () => {
+      const list = await evaluate(win, `Boolean(document.querySelector('button[title="Hide note list"]'))`);
+      return { ok: list, list };
+    });
   } finally {
     win.setBounds(original);
     await wait(200);

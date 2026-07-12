@@ -13,11 +13,15 @@ function useResponsiveLayout() {
   const [overlayNoteList, setOverlayNoteList] = React.useState(() => usesOverlayNoteList(currentViewportWidth()));
 
   React.useEffect(() => {
-    const query = window.matchMedia(`(max-width: ${DESKTOP_THREE_PANE_MIN_WIDTH - 1}px)`);
-    const update = () => setOverlayNoteList(query.matches);
+    const update = () => setOverlayNoteList(usesOverlayNoteList(currentViewportWidth()));
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : null;
     update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
+    observer?.observe(document.documentElement);
+    window.addEventListener('resize', update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', update);
+    };
   }, []);
 
   return { overlayNoteList };

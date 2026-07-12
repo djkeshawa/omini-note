@@ -227,7 +227,7 @@ function MnEditor({
     if (onCreateTag) onCreateTag(raw);
     setTagDraft('');
     setShowTags(false);
-    requestAnimationFrame(() => tagButtonRef.current?.focus?.());
+    tagButtonRef.current?.focus?.();
   };
 
   return (
@@ -378,7 +378,7 @@ function MnEditor({
                         if (e.key === 'Escape') {
                           e.preventDefault();
                           setShowTags(false);
-                          requestAnimationFrame(() => tagButtonRef.current?.focus?.());
+                          tagButtonRef.current?.focus?.();
                         }
                       }}
                       placeholder="new tag"
@@ -410,7 +410,7 @@ function MnEditor({
                     <button type="button" key={t.name} onClick={() => {
                       onAddTag(t.name);
                       setShowTags(false);
-                      requestAnimationFrame(() => tagButtonRef.current?.focus?.());
+                      tagButtonRef.current?.focus?.();
                     }}
                       style={{
                         width: '100%', minHeight: 32, padding: '5px 8px', borderRadius: 4, cursor: 'pointer',

@@ -65,9 +65,7 @@ function EditorHeader({
 
   useEffect(() => {
     if (!moreOpen) return undefined;
-    const focusHandle = requestAnimationFrame(() => {
-      moreRef.current?.querySelector('[role="menuitem"]')?.focus?.();
-    });
+    moreRef.current?.querySelector('[role="menuitem"]')?.focus?.();
     const closeOutside = event => {
       if (!moreRef.current?.contains(event.target)) setMoreOpen(false);
     };
@@ -81,7 +79,6 @@ function EditorHeader({
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('keydown', closeOnEscape, true);
     return () => {
-      cancelAnimationFrame(focusHandle);
       document.removeEventListener('pointerdown', closeOutside);
       document.removeEventListener('keydown', closeOnEscape, true);
     };
