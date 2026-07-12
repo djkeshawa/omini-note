@@ -48,6 +48,7 @@ test('blank-note chrome hides metadata and moves secondary actions into More', (
   const header = fs.readFileSync(path.join(__dirname, '../src/editor/EditorHeader.jsx'), 'utf8');
   const properties = fs.readFileSync(path.join(__dirname, '../src/features/editor/metadata/PropertiesPanel.jsx'), 'utf8');
   const view = fs.readFileSync(path.join(__dirname, '../src/app/AppView.jsx'), 'utf8');
+  const commandActions = fs.readFileSync(path.join(__dirname, '../src/app/controllers/useAppCommandActions.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
 
   assert.match(properties, /if \(!expanded\) return null/);
@@ -73,6 +74,7 @@ test('blank-note chrome hides metadata and moves secondary actions into More', (
   assert.match(app, /compactNoteListOpen === null \? preferredNoteListHidden : !compactNoteListOpen/);
   assert.match(app, /setCompactNoteListOpen\(!next\)/);
   assert.doesNotMatch(app, /preferredNoteListHidden\) setTweak\('showNoteList', true\)/);
+  assert.match(commandActions, /setNoteListHidden, setSidebarHidden, settingsOpen/);
   assert.match(html, /outline: 2px solid var\(--mn-focus, #4f6fd5\) !important/);
 });
 

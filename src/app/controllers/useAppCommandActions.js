@@ -252,7 +252,7 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
       };
       window.addEventListener('keydown', h);
       return () => window.removeEventListener('keydown', h);
-    }, [appNotice, blockingOverlayOpen, closeReferencePane, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, featureState, navigateView, openAskAi, openReferencePane, referencePaneOpen, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
+    }, [appNotice, blockingOverlayOpen, closeReferencePane, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, featureState, navigateView, openAskAi, openReferencePane, referencePaneOpen, reminderCenterOpen, setNoteListHidden, setSidebarHidden, settingsOpen, vaultHealthOpen, versionTargetId, view]);
   
     useEffectA(() => {
       if (!toast?.key) return;

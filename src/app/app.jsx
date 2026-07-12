@@ -318,22 +318,22 @@ function MnApp() {
   }, [activeVaultId, activeVault?.novelistAiConfig]);
 
   const sidebarHidden = tweaks.showSidebar === false;
-  const setSidebarHidden = (v) => {
+  const setSidebarHidden = useCallbackA((v) => {
     const next = typeof v === 'function' ? v(sidebarHidden) : v;
     setTweak('showSidebar', !next);
-  };
+  }, [setTweak, sidebarHidden]);
   const preferredNoteListHidden = tweaks.showNoteList === false;
   const noteListHidden = overlayNoteList
     ? (compactNoteListOpen === null ? preferredNoteListHidden : !compactNoteListOpen)
     : preferredNoteListHidden;
-  const setNoteListHidden = (v) => {
+  const setNoteListHidden = useCallbackA((v) => {
     const next = typeof v === 'function' ? v(noteListHidden) : v;
     if (overlayNoteList) {
       setCompactNoteListOpen(!next);
       return;
     }
     setTweak('showNoteList', !next);
-  };
+  }, [noteListHidden, overlayNoteList, setTweak]);
 
   // Keep body (markdown) in sync for backlinks / search / save
   const notesWithBody = useMemoA(() => {

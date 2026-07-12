@@ -1377,8 +1377,8 @@ async function runViewportAccessibilityScenario(win) {
       })`);
       return { ok: !result.overlay && result.showButton, result };
     });
-    await clickButton(win, { aria: 'Show note list' });
-    await waitFor(win, 'compact note-list drawer opens without changing desktop preference', async () => {
+    await pressAccelerator(win, '\\', ['control', 'shift']);
+    await waitFor(win, 'compact note-list shortcut opens without changing desktop preference', async () => {
       const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
       return { ok: overlay, overlay };
     });
