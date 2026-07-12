@@ -2,6 +2,7 @@
 
 import { platformApi } from '../platform/index.js';
 import { MnBlockRef } from './blockFeatures.jsx';
+import { AttachmentChip } from './AttachmentChip.jsx';
 import { MnInline } from '../shared/markdown.jsx';
 import MN_MARKDOWN_INPUT_RULES from './markdownInputRules.js';
 
@@ -172,6 +173,9 @@ function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, rende
           );
         }
         if (segment.kind === 'link') {
+          if (segment.source === 'attachment') {
+            return <AttachmentChip key={index} label={segment.label} url={segment.url} vaultId={vaultId} T={T} />;
+          }
           return (
             <a
               key={index}

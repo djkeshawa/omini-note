@@ -6,11 +6,17 @@ function ResponsiveListPane({ overlay, left = 0, label, returnFocusLabel, onDism
   returnFocusLabelRef.current = returnFocusLabel;
   const dismiss = () => {
     dismissRef.current?.();
-    requestAnimationFrame(() => {
+    const started = performance.now();
+    const focusWhenReady = () => {
       const target = [...document.querySelectorAll('button[aria-label]')]
         .find(button => button.getAttribute('aria-label') === returnFocusLabelRef.current);
-      target?.focus?.();
-    });
+      if (target) {
+        target.focus();
+        return;
+      }
+      if (performance.now() - started < 500) setTimeout(focusWhenReady, 16);
+    };
+    setTimeout(focusWhenReady, 0);
   };
   React.useEffect(() => {
     if (!overlay) return undefined;
@@ -18,10 +24,13 @@ function ResponsiveListPane({ overlay, left = 0, label, returnFocusLabel, onDism
       paneRef.current?.querySelector('input, [role="option"], button')?.focus?.();
     });
     const closeOnEscape = event => {
-      if (event.key === 'Escape' && paneRef.current?.contains(event.target)) {
-        event.preventDefault();
-        dismiss();
-      }
+      if (event.key !== 'Escape' || !paneRef.current) return;
+      const anotherModalIsOpen = [...document.querySelectorAll('[aria-modal="true"]')]
+        .some(element => element !== paneRef.current && element.getClientRects().length > 0);
+      if (anotherModalIsOpen) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dismiss();
     };
     document.addEventListener('keydown', closeOnEscape, true);
     return () => {
@@ -46,6 +55,7 @@ function ResponsiveListPane({ overlay, left = 0, label, returnFocusLabel, onDism
       <div
         ref={paneRef}
         role="dialog"
+        aria-modal="true"
         aria-label={label}
         data-mn-note-list-mode="overlay"
         style={{

@@ -29,6 +29,7 @@ const platformApi = Object.freeze({
     'listNotes', 'openNote', 'loadVault', 'saveNote', 'deleteNote', 'listDeletedNotes',
     'restoreDeletedNote', 'purgeDeletedNote', 'listNoteVersions',
     'getNoteVersion', 'restoreNoteVersion', 'exportNote', 'saveAttachment',
+    'describeAttachment', 'openAttachment',
   ]),
   vaults: methodGroup('vaults', [
     'listVaults', 'createVault', 'renameVault', 'deleteVault',

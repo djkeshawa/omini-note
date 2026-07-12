@@ -221,6 +221,7 @@ test('Inline images reject unsafe or traversal-shaped sources', () => {
     '![x](file:///etc/passwd)',
     '![x](attachments/../secret.png)',
     '![x](attachments/sub/dir.png)',
+    '![x](attachments/brief.pdf)',
     '![x](../outside.png)',
     '![x](//evil.example/x.png)',
   ];
@@ -232,6 +233,22 @@ test('Inline images reject unsafe or traversal-shaped sources', () => {
   assert.equal(rules.isVaultAttachmentPath('attachments/pic.png'), true);
   assert.equal(rules.isVaultAttachmentPath('attachments/../pic.png'), false);
   assert.equal(rules.isVaultAttachmentPath('elsewhere/pic.png'), false);
+});
+
+test('General vault attachments parse as safe links and round-trip', () => {
+  const source = 'Read [Project brief.pdf](attachments/Project-brief-20260713000000.pdf) today';
+  const segments = rules.parseInlineMarkdown(source);
+  assert.deepEqual(segments.map(segment => segment.kind), ['text', 'link', 'text']);
+  assert.equal(segments[1].source, 'attachment');
+  assert.equal(rules.serializeInlineMarkdown(segments), source);
+
+  for (const unsafe of [
+    '[secret](attachments/../secret.pdf)',
+    '[secret](attachments/folder/secret.pdf)',
+    '[program](attachments/tool.exe)',
+  ]) {
+    assert.deepEqual(rules.parseInlineMarkdown(unsafe).map(segment => segment.kind), ['text']);
+  }
 });
 
 test('Inline images round-trip through serialize and respect escapes', () => {

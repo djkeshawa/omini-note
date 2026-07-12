@@ -115,6 +115,7 @@ test('Renderer regression covers user-centered app workflows', () => {
   assert.match(regression, /data-mn-note-list-mode="overlay"/);
   assert.match(regression, /desktop\.mode !== 'three-pane'/);
   assert.match(regression, /runScenario\(win, 'Notes', 'create, edit, and persist a note'/);
+  assert.match(regression, /runScenario\(win, 'Attachments', 'drops a PDF into the vault and renders a safe file chip'/);
   assert.match(regression, /runScenario\(win, 'Capture', 'quick capture saves a task note and closes cleanly'/);
   assert.match(regression, /runScenario\(win, 'Search', 'note search finds expected content and Escape clears it'/);
   assert.match(regression, /runScenario\(win, 'Navigation', 'sidebar opens agenda planner and graph panels'/);

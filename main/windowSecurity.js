@@ -51,6 +51,8 @@ function createWindowSecurity({ Menu, protocol, assetScheme, attachments, isAllo
         const segments = url.pathname.split('/').filter(Boolean).map(part => decodeURIComponent(part));
         if (segments.length !== 2) return new Response('Not found', { status: 404 });
         const [vaultId, fileName] = segments;
+        const descriptor = await attachments.describeAttachment(vaultId, fileName);
+        if (!descriptor.isImage) return new Response('Not found', { status: 404 });
         const { buffer, mimeType } = await attachments.readAttachment(vaultId, fileName);
         return new Response(buffer, {
           headers: {

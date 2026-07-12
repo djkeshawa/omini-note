@@ -5,6 +5,7 @@ export function blockRowMemoEqual(prev, next) {
     prev.T === next.T &&
     prev.allNotes === next.allNotes &&
     prev.allCanvases === next.allCanvases &&
+    prev.vaultId === next.vaultId &&
     prev.aiEnabled === next.aiEnabled &&
     prev.aiPreview === next.aiPreview &&
     prev.aiTarget === next.aiTarget &&

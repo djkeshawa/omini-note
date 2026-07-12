@@ -730,6 +730,8 @@ function MnOutliner({
     collapseByDefault,
     novelistMode,
     parseClipboardBlocks,
+    vaultId,
+    onShowToast,
   };
 
   // Find zoomed block.
