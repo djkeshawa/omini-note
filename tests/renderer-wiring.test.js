@@ -1043,7 +1043,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.doesNotMatch(sidebar, /label="Daily rollup"/);
   assert.match(sidebar, /label="Agenda"/);
   assert.match(sidebar, /onOpenAgenda/);
-  assert.match(sidebar, /const rollupCount = notes\.length/);
+  assert.match(sidebar, /const rollupCount = Number\.isFinite\(todayCount\) \? todayCount : notes\.length/);
 
   assert.match(settings, /<StaticValue T=\{T\}>Markdown<\/StaticValue>/);
   assert.match(settings, /<StaticValue T=\{T\}>Local only<\/StaticValue>/);

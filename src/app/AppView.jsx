@@ -16,7 +16,7 @@ function AppView({ model }) {
       ? 'Conflict'
       : selectedNoteIsDirty ? 'Saving' : 'Saved';
     if (bootState !== 'ready') {
-      return <MnLaunchScreen state={bootState} error={bootError} T={T} />;
+      return <MnLaunchScreen state={bootState} error={bootError} onRetry={model.retryBoot} onOpenDataFolder={model.openDataFolder} T={T} />;
     }
   
     return (
@@ -93,6 +93,9 @@ function AppView({ model }) {
                 onRenameVault={renameVault}
                 onDeleteVault={deleteVault}
                 featureState={featureState}
+                contextualTip={model.contextualTip?.placement === 'sidebar' ? model.contextualTip : null}
+                onDismissContextualTip={model.dismissContextualTip}
+                todayCount={model.todaySources?.notes?.length ?? notesWithBody.length}
                 newNoteShortcut={shortcutLabel('newNote', shortcutPlatform, { compact: true })}
                 T={T} density={tweaks.density} theme={theme}
               />
@@ -280,6 +283,8 @@ function AppView({ model }) {
                 )}
                 onSetWorkflowStatus={featureState.showWorkflow ? (status) => updateWorkflowNoteStatus(selectedNote.id, null, status) : null}
                 saveStatus={editorSaveStatus}
+                contextualTip={model.contextualTip?.placement === 'editor' ? model.contextualTip : null}
+                onDismissContextualTip={model.dismissContextualTip}
                 theme={theme} T={T}
               />
             )}
@@ -450,10 +455,10 @@ function AppView({ model }) {
             {view === 'today' && (
               <MnTodayPanel
                 helpers={MN_APP_HELPERS}
-                notes={notesWithBody}
+                notes={model.todaySources?.notes || notesWithBody}
                 tags={tags}
-                tasks={calendarTaskItems}
-                reminders={reminderCenterItems}
+                tasks={model.todaySources?.tasks || calendarTaskItems}
+                reminders={model.todaySources?.reminders || reminderCenterItems}
                 todayNote={todayDailyNote}
                 agendaItems={todayAgendaItems}
                 staleTasks={todayDigest.staleTodos}

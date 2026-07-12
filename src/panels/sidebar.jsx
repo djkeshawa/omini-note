@@ -1,4 +1,5 @@
 import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx'; import { storage } from '../shared/storageUtils.js'; import { mnGetTagColor } from '../shared/theme.jsx'; import { shortcutLabel } from '../platform/shortcuts.js';
+import { MnContextualTip } from '../features/onboarding/index.js';
 const { useMemo: useMemoS } = React;
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
@@ -14,7 +15,8 @@ function MnSidebar({
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
-  featureState = {}, newNoteShortcut = shortcutLabel('newNote', undefined, { compact: true }), T, density, theme
+  featureState = {}, contextualTip = null, onDismissContextualTip, todayCount,
+  newNoteShortcut = shortcutLabel('newNote', undefined, { compact: true }), T, density, theme
 }) {
   const [vaultOpen, setVaultOpen] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
@@ -62,7 +64,7 @@ function MnSidebar({
     }).length;
   }, 0), [notes]);
 
-  const rollupCount = notes.length;
+  const rollupCount = Number.isFinite(todayCount) ? todayCount : notes.length;
   const pinnedCount = notes.filter(note => note.pinned).length;
   const vaultKindLabel = (v) => v?.novelistMode ? 'Novelist' : 'Notes';
   const vaultNoteLabel = (v) => `${v?.noteCount ?? 0} note${(v?.noteCount ?? 0) === 1 ? '' : 's'}`;
@@ -211,7 +213,6 @@ function MnSidebar({
       display: 'flex', flexDirection: 'column', flexShrink: 0,
       paddingTop: 10,
     }}>
-      {/* Vault switcher header */}
       <div style={{
         padding: '4px 10px 14px', position: 'relative',
       }}>
@@ -483,9 +484,9 @@ function MnSidebar({
             <span>New note</span>
           </button>
         </div>
+        <MnContextualTip tip={contextualTip} onDismiss={onDismissContextualTip} T={T} compact />
       </div>
 
-      {/* Main nav (collapsible: All Notes section) */}
       <SectionHeader label="All Notes" sectionKey="allnotes" />
       {openSections.allnotes && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
@@ -540,7 +541,6 @@ function MnSidebar({
       )}
       <div style={{ borderTop: `1px solid ${T.lineSub}`, margin: '14px 14px 0' }} />
 
-      {/* Workflow (collapsible) */}
       {featureState.showWorkflow && (
         <div style={{ marginTop: pad.header }}>
           <SectionHeader label="Workflow" sectionKey="workflow" count={workflowTotal || 0} />
@@ -586,7 +586,6 @@ function MnSidebar({
         </div>
       )}
 
-      {/* Tags (collapsible) */}
       <div style={{ marginTop: pad.header }}>
         <SectionHeader
           label="Tags"
@@ -761,7 +760,6 @@ function MnSidebar({
         </div>
       )}
 
-      {/* Footer */}
       <div style={{
         padding: '10px 12px', borderTop: `1px solid ${T.lineSub}`,
         display: 'flex', alignItems: 'center', gap: 8,

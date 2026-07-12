@@ -92,6 +92,7 @@ function SectionAbout({ T, stats, updateState, setUpdateState }) {
     if (platformApi.updates.install) await platformApi.updates.install();
   };
   const openReleases = () => platformApi.app.openExternal(updateState?.manualUrl || 'https://github.com/djkeshawa/visp-note/releases/latest');
+  const openFeedback = () => platformApi.app.openExternal('https://github.com/djkeshawa/visp-note/issues/new');
   return (
     <div>
       <H T={T} label="About VispNote" sub="Local-first, markdown-native notes." />
@@ -108,7 +109,7 @@ function SectionAbout({ T, stats, updateState, setUpdateState }) {
         </div>
         <div style={{
           fontFamily: 'var(--mn-body)', fontSize: 13, color: T.inkMed, lineHeight: 1.55,
-        }}>Notes you actually keep. Everything is a block, blocks nest, and every file on disk is plain markdown you own.</div>
+        }}><strong>Write · Connect · Act.</strong> Everything is a block, blocks nest, and every file on disk is plain Markdown you own.</div>
       </SettingsCard>
       <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <Stat T={T} label="Notes" value={stats.noteCount} />
@@ -127,7 +128,7 @@ function SectionAbout({ T, stats, updateState, setUpdateState }) {
       </SettingsCard>
       <div style={{ display: 'flex', gap: 8 }}>
         <BtnOutline T={T} onClick={openReleases}>Release notes</BtnOutline>
-        <BtnOutline T={T}>Send feedback</BtnOutline>
+        <BtnOutline T={T} onClick={openFeedback}>Send feedback</BtnOutline>
       </div>
     </div>
   );

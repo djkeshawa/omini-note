@@ -324,6 +324,12 @@ registerWindowHandlers(ipcMain, {
   sanitizeExternalUrl,
   getAppInfo: () => ({ platform: process.platform }),
   getShortcutState: windowLifecycle.getShortcutState,
+  openDataFolder: async () => {
+    await fs.promises.mkdir(store.ROOT, { recursive: true });
+    const error = await shell.openPath(store.ROOT);
+    if (error) throw new Error('Could not open the VispNote data folder');
+    return { opened: true };
+  },
   emitUpdateState: updateService.emitState,
   checkForUpdates: updateService.check,
   getUpdateState: updateService.getState,
@@ -379,7 +385,6 @@ if (singleInstanceLock) app.whenReady().then(async () => {
     loadSpellWords().catch(e => console.error('spell dictionary preload failed', e));
   } catch (e) {
     console.error('boot init failed', e);
-    dialog.showErrorBox('VispNote failed to initialize', e?.message || String(e));
   }
   initializeSearchIndex();      // opens / creates the local search index
   registerAssetProtocol();

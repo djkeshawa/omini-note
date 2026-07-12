@@ -678,6 +678,74 @@ async function setAssistanceEnabledForRegression(win, enabled) {
   });
 }
 
+async function runFirstRunGuidanceScenario(win) {
+  const vault = await loadActiveVault(win);
+  const welcome = (vault.notes || []).find(note => note.title === 'Welcome to VispNote');
+  const welcomeTime = Date.parse(welcome?.date || '');
+  const welcomeAge = Date.now() - welcomeTime;
+  if (!welcome
+    || welcome.pinned !== false
+    || !String(welcome.body || '').includes('Write · Connect · Act.')
+    || /^\s*\d+[.)]\s+/m.test(String(welcome.body || ''))
+    || !Number.isFinite(welcomeTime)
+    || welcomeAge < 0
+    || welcomeAge > 5 * 60 * 1000) {
+    throw new Error(`First-run welcome is not installation-time guidance: ${JSON.stringify(welcome)}`);
+  }
+
+  await waitFor(win, 'new-note guidance and calm Today count', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const tip = document.querySelector('[data-mn-onboarding-tip]');
+        const todayLabel = [...document.querySelectorAll('span')]
+          .find(element => (element.textContent || '').trim() === 'Today');
+        const row = todayLabel?.parentElement;
+        const count = row ? [...row.querySelectorAll('span')].at(-1)?.textContent?.trim() : '';
+        return { tip: tip?.getAttribute('data-mn-onboarding-tip') || '', count };
+      })()
+    `);
+    return { ok: result.tip === 'new-note' && result.count === '0', result };
+  });
+
+  await clickButton(win, { aria: 'Dismiss new-note tip' });
+  await waitFor(win, 'new-note guidance dismissed', async () => {
+    const tip = await evaluate(win, `document.querySelector('[data-mn-onboarding-tip]')?.getAttribute('data-mn-onboarding-tip') || ''`);
+    return { ok: tip === '', tip };
+  });
+
+  await clickButton(win, { text: 'New note' });
+  await waitFor(win, 'linking guidance shown on the first user note', async () => {
+    const result = await evaluate(win, `({
+      title: document.querySelector('.mn-note-title-input')?.value || '',
+      tip: document.querySelector('[data-mn-onboarding-tip]')?.getAttribute('data-mn-onboarding-tip') || ''
+    })`);
+    return { ok: result.title === 'Untitled' && result.tip === 'linking', result };
+  });
+  await setTitleInput(win, 'First useful note');
+  await ensureEditorRowTypingFocus(win, 0, 'first useful note body ready');
+  await setActiveEditorText(win, 'A thought worth keeping.');
+  await waitForPersistedNote(win, 'First useful note', note => String(note.body || '').includes('thought worth keeping'));
+
+  await clickButton(win, { aria: 'Dismiss linking tip' });
+  await waitFor(win, 'checkbox guidance shown after linking guidance', async () => {
+    const tip = await evaluate(win, `document.querySelector('[data-mn-onboarding-tip]')?.getAttribute('data-mn-onboarding-tip') || ''`);
+    return { ok: tip === 'checkboxes', tip };
+  });
+  await clickButton(win, { aria: 'Dismiss checkboxes tip' });
+  await waitFor(win, 'all contextual guidance dismissed and persisted', async () => {
+    const result = await evaluate(win, `
+      (async () => {
+        const prefs = await window.mn.preferences.getPrefs();
+        return {
+          tip: document.querySelector('[data-mn-onboarding-tip]')?.getAttribute('data-mn-onboarding-tip') || '',
+          dismissed: (prefs?.data || prefs?.value || {}).tweaks?.onboardingTipsDismissed || ''
+        };
+      })()
+    `);
+    return { ok: result.tip === '' && result.dismissed === 'new-note,linking,checkboxes', result };
+  });
+}
+
 async function openEditorMoreMenu(win) {
   await clickButton(win, { aria: 'More note actions' });
   await waitFor(win, 'editor More menu open', async () => {
@@ -1498,6 +1566,10 @@ async function runRegression() {
     ]) {
       if (ids.includes(commandId)) throw new Error(`default command surface exposed ${commandId}`);
     }
+  });
+
+  await runScenario(win, 'First run', 'creates a useful note with optional contextual guidance', async () => {
+    await runFirstRunGuidanceScenario(win);
   });
 
   await runScenario(win, 'Focus', 'each optional pack stays isolated when enabled alone', async () => {
