@@ -61,6 +61,8 @@ export function insertBlocksAt(blocks, id, start, end, insertedBlocks, dependenc
     kind: location.block.kind,
     level: location.block.level || 0,
     checked: location.block.checked,
+    listNumber: location.block.listNumber,
+    listDelimiter: location.block.listDelimiter,
     content: tailText,
     annotations: afterSplit.after,
     workflow: location.block.workflow || null,

@@ -84,6 +84,9 @@ contextBridge.exposeInMainWorld('mn', {
   exportBackup:(options) => ipcRenderer.invoke('mn:exportBackup', options),
   importBackup:(options) => ipcRenderer.invoke('mn:importBackup', options),
   importNovelFiles:(options) => ipcRenderer.invoke('mn:importNovelFiles', options),
+  previewMarkdownImport:(options) => ipcRenderer.invoke('mn:previewMarkdownImport', options),
+  applyMarkdownImport:(options) => ipcRenderer.invoke('mn:applyMarkdownImport', options),
+  cancelMarkdownImport:(options) => ipcRenderer.invoke('mn:cancelMarkdownImport', options),
   },
 
   // AI (Ollama)

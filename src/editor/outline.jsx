@@ -29,6 +29,8 @@ function mkBlock(opts = {}) {
     content: opts.content || '',
     level: opts.level || 0,
     checked: opts.checked != null ? opts.checked : null,
+    listNumber: Math.max(1, Number(opts.listNumber) || 1),
+    listDelimiter: opts.listDelimiter === ')' ? ')' : '.',
     children: opts.children || [],
     collapsed: !!opts.collapsed,
     annotations: opts.annotations || [],
@@ -115,7 +117,7 @@ function mnCleanCodeLanguage(value) {
 function mnMdToBlocks(md) {
   const lines = md.split('\n');
   const out = [];
-  let bulletStack = []; // entries: { block, indent }
+  let listStack = []; // entries: { block, indent }
   let paraBuf = [];
   // Track the most-recent heading at each level so we can nest bullets
   // and content underneath their section heading.
@@ -160,7 +162,7 @@ function mnMdToBlocks(md) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (/^:::\s*plot-points\s*$/i.test(line)) {
-      flushPara(); bulletStack = [];
+      flushPara(); listStack = [];
       const beats = [];
       const contexts = [];
       i++;
@@ -176,7 +178,7 @@ function mnMdToBlocks(md) {
     }
     const codeFence = line.match(/^```\s*([A-Za-z0-9_+#.-]*)\s*$/);
     if (codeFence) {
-      flushPara(); bulletStack = [];
+      flushPara(); listStack = [];
       const language = mnCleanCodeLanguage(codeFence[1]);
       const buf = [];
       i++;
@@ -189,7 +191,7 @@ function mnMdToBlocks(md) {
     }
     const h = line.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
-      flushPara(); bulletStack = [];
+      flushPara(); listStack = [];
       const level = h[1].length;
       const { workflow, content, labels } = splitBlockMeta(h[2]);
       const blk = mkBlock({ kind: 'heading', level, content, workflow, labels });
@@ -202,19 +204,19 @@ function mnMdToBlocks(md) {
       continue;
     }
     if (line.startsWith('> ')) {
-      flushPara(); bulletStack = [];
+      flushPara(); listStack = [];
       const { workflow, content, labels } = splitBlockMeta(line.slice(2));
       currentParentList().push(mkBlock({ kind: 'quote', content, workflow, labels }));
       continue;
     }
     if (/^---+$/.test(line)) {
-      flushPara(); bulletStack = [];
+      flushPara(); listStack = [];
       currentParentList().push(mkBlock({ kind: 'divider' }));
       continue;
     }
     const table = MN_TABLE_OPS_OUTLINE.readMarkdownTable && MN_TABLE_OPS_OUTLINE.readMarkdownTable(lines, i);
     if (table) {
-      flushPara(); bulletStack = [];
+      flushPara(); listStack = [];
       currentParentList().push(mkBlock({ kind: 'table', content: table.markdown }));
       i = table.endIndex;
       continue;
@@ -223,39 +225,43 @@ function mnMdToBlocks(md) {
     // here so metadata does not appear as ordinary list content.
     const propertyLine = line.match(/^\s*(?:-\s*)?([a-zA-Z][a-zA-Z0-9_-]*)::\s*(.*)$/);
     if (propertyLine) {
-      flushPara(); bulletStack = [];
+      flushPara(); listStack = [];
       currentParentList().push(mkBlock({
         kind: 'paragraph',
         content: `${propertyLine[1]}:: ${propertyLine[2] || ''}`.trimEnd(),
       }));
       continue;
     }
-    // Bullet or todo
-    const bm = line.match(/^(\s*)-\s+(\[([ xX])\]\s+)?(.*)$/);
+    // Unordered, task, or ordered list item. Any list kind may nest under any
+    // other list kind, and ordered markers retain their number and delimiter.
+    const bm = line.match(/^(\s*)(?:(-)\s+(\[([ xX])\]\s+)?|(\d+)([.)])\s+)(.*)$/);
     if (bm) {
       flushPara();
       const indent = bm[1].length;
-      const isTodo = !!bm[2];
-      const checked = bm[3] && /[xX]/.test(bm[3]);
-      const { workflow, content, labels } = splitBlockMeta(bm[4]);
+      const isOrdered = !!bm[5];
+      const isTodo = !isOrdered && !!bm[3];
+      const checked = bm[4] && /[xX]/.test(bm[4]);
+      const { workflow, content, labels } = splitBlockMeta(bm[7]);
       const blk = mkBlock({
-        kind: isTodo ? 'todo' : 'bullet',
+        kind: isOrdered ? 'ordered' : isTodo ? 'todo' : 'bullet',
         content,
         checked: isTodo ? checked : null,
+        listNumber: isOrdered ? Number(bm[5]) : 1,
+        listDelimiter: isOrdered ? bm[6] : '.',
         workflow,
         labels,
       });
-      while (bulletStack.length && bulletStack[bulletStack.length - 1].indent >= indent) bulletStack.pop();
-      if (bulletStack.length === 0) currentParentList().push(blk);
-      else bulletStack[bulletStack.length - 1].block.children.push(blk);
-      bulletStack.push({ block: blk, indent });
+      while (listStack.length && listStack[listStack.length - 1].indent >= indent) listStack.pop();
+      if (listStack.length === 0) currentParentList().push(blk);
+      else listStack[listStack.length - 1].block.children.push(blk);
+      listStack.push({ block: blk, indent });
       continue;
     }
     if (line.trim() === '') {
-      flushPara(); bulletStack = [];
+      flushPara(); listStack = [];
       continue;
     }
-    bulletStack = [];
+    listStack = [];
     paraBuf.push(line);
   }
   flushPara();
@@ -276,6 +282,7 @@ function mnBlocksToMd(blocks, depth = 0) {
     b.kind !== 'table' &&
     b.kind !== 'plot-points' &&
     b.kind !== 'bullet' &&
+    b.kind !== 'ordered' &&
     b.kind !== 'todo'
   );
   const isPropertyParagraph = (b) => isPlainParagraph(b) && /^\s*[a-zA-Z][a-zA-Z0-9_-]*::/.test(b.content || '');
@@ -311,10 +318,13 @@ function mnBlocksToMd(blocks, depth = 0) {
       (b.beats && b.beats.length ? b.beats : ['']).forEach(beat => out.push('- ' + String(beat || '')));
       (b.contexts || []).forEach(context => out.push('  - context:: ' + String(context || '')));
       out.push(':::');
-    } else if (b.kind === 'bullet' || b.kind === 'todo') {
+    } else if (b.kind === 'bullet' || b.kind === 'ordered' || b.kind === 'todo') {
       const pad = '  '.repeat(depth);
       const chk = b.kind === 'todo' ? (b.checked ? '[x] ' : '[ ] ') : '';
-      pushBlock(b, pad + '- ' + chk + labelPrefix(b) + wfPrefix(b) + b.content);
+      const marker = b.kind === 'ordered'
+        ? `${Math.max(1, Number(b.listNumber) || 1)}${b.listDelimiter === ')' ? ')' : '.'} `
+        : `- ${chk}`;
+      pushBlock(b, pad + marker + labelPrefix(b) + wfPrefix(b) + b.content);
       if (b.children.length) out.push(mnBlocksToMd(b.children, depth + 1));
     } else {
       // paragraph
@@ -375,7 +385,7 @@ function mnFlatten(blocks, depth = 0, respectCollapsed = true, acc = []) {
 }
 
 // Block kind helpers
-function mnIsListLike(kind) { return kind === 'bullet' || kind === 'todo'; }
+function mnIsListLike(kind) { return kind === 'bullet' || kind === 'ordered' || kind === 'todo'; }
 // Any block can have children.
 function mnCanHaveChildren(kind) { return kind !== 'divider'; }
 

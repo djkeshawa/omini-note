@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -12,6 +12,31 @@ const ownsRegressionHome = !suppliedRegressionHome;
 const regressionHome = suppliedRegressionHome || fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-regression-'));
 process.env.VISPNOTE_HOME = regressionHome;
 configureIsolatedUserData(app, regressionHome);
+
+const markdownImportFixture = path.join(regressionHome, '.regression-markdown-import');
+fs.mkdirSync(path.join(markdownImportFixture, 'assets'), { recursive: true });
+fs.writeFileSync(path.join(markdownImportFixture, 'assets', 'pixel.png'), Buffer.from([137, 80, 78, 71]));
+fs.writeFileSync(path.join(markdownImportFixture, 'QE User Scenario Note.md'), [
+  '---',
+  'title: QE User Scenario Note',
+  'aliases: [Portable source]',
+  '---',
+  '',
+  '# Portable source',
+  '',
+  '[Child](Child.md)',
+  '![Pixel](assets/pixel.png)',
+  '![Unsafe](../outside.png)',
+].join('\n'));
+fs.writeFileSync(path.join(markdownImportFixture, 'Child.md'), '# Child\n\nSee [[QE User Scenario Note]].\n');
+const nativeShowOpenDialog = dialog.showOpenDialog.bind(dialog);
+dialog.showOpenDialog = async (...args) => {
+  const options = args.length > 1 ? args[1] : args[0];
+  if (options?.title === 'Import Markdown folder') {
+    return { canceled: false, filePaths: [markdownImportFixture] };
+  }
+  return nativeShowOpenDialog(...args);
+};
 
 require('../main');
 
@@ -1138,6 +1163,15 @@ async function runMarkdownTypingScenario(win) {
   await waitForEditorLayout(win, 'empty todo exits to paragraph', rows => rows.length >= 4 && rows[3]?.kind === 'paragraph' && rows[3]?.editing && rows[3]?.active);
   await typeEditorRowText(win, 3, 'Safe [Example](https://example.com) and literal [Bad](javascript:alert(1)) plus ~~strike~~.');
   await waitForEditorLayout(win, 'inline markdown content is preserved as source', rows => rows[3]?.value.includes('[Example](https://example.com)') && rows[3]?.value.includes('~~strike~~'));
+
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await typeEditorRowText(win, 4, '1. ');
+  await waitForEditorLayout(win, 'ordered starter converts immediately', rows => rows[4]?.kind === 'ordered' && rows[4]?.value === '1. ' && rows[4]?.active);
+  await typeEditorRowText(win, 4, 'First ordered item');
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'ordered Enter advances the portable marker', rows => rows[5]?.kind === 'ordered' && rows[5]?.value === '2. ' && rows[5]?.active);
 }
 
 async function runMarkdownCompatibilityScenario(win) {
@@ -1861,6 +1895,41 @@ async function runRegression() {
       const current = await state(win);
       return {
         ok: current.settingsOpen && current.buttons.some(btn => String(btn.text || '').includes('General')),
+        current,
+      };
+    });
+    await clickVisibleText(win, 'Data & Privacy');
+    await waitFor(win, 'Markdown import offers file and folder previews', async () => {
+      const current = await state(win);
+      return {
+        ok: current.buttons.some(button => button.text === 'Choose files')
+          && current.buttons.some(button => button.text === 'Choose folder'),
+        current,
+      };
+    });
+    const sourceBeforePreview = fs.readFileSync(path.join(markdownImportFixture, 'QE User Scenario Note.md'), 'utf8');
+    await clickButton(win, { text: 'Choose folder' });
+    await waitFor(win, 'Markdown import previews collisions, attachments, and warnings', async () => {
+      const previewState = await evaluate(win, `({
+        text: document.querySelector('section[aria-labelledby="mn-markdown-import-title"]')?.textContent || '',
+        active: document.activeElement?.textContent || '',
+      })`);
+      return {
+        ok: previewState.text.includes('2 notes')
+          && previewState.text.includes('1 safe attachment')
+          && previewState.text.includes('Renamed')
+          && previewState.text.includes('warning')
+          && previewState.active.trim() === 'Cancel',
+        previewState,
+      };
+    });
+    await pressAccelerator(win, 'Escape');
+    await waitFor(win, 'canceling Markdown import returns to settings without writes', async () => {
+      const current = await state(win);
+      return {
+        ok: !current.dialogs.some(text => text.includes('Preview Markdown import'))
+          && current.buttons.some(button => button.aria === 'Close settings')
+          && fs.readFileSync(path.join(markdownImportFixture, 'QE User Scenario Note.md'), 'utf8') === sourceBeforePreview,
         current,
       };
     });

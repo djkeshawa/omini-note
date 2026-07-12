@@ -7,7 +7,7 @@ function SectionData({
   tweaks, setTweak, T, stats, vaults, activeVaultId, activeVault,
   onCreateVault, onDeleteVault, onSetVaultNovelistMode,
   onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
-  onExportBackup, onImportBackup, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
+  onExportBackup, onImportBackup, onImportMarkdown, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
   writerEnabled = false,
 }) {
   const [newVaultName, setNewVaultName] = useStateS('');
@@ -142,6 +142,12 @@ function SectionData({
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <BtnOutline T={T} disabled={!onExportBackup} onClick={onExportBackup}>Export backup</BtnOutline>
             <BtnOutline T={T} disabled={!onImportBackup} onClick={onImportBackup}>Import backup</BtnOutline>
+          </div>
+        </Row>
+        <Row T={T} label="Import Markdown" sub="Preview notes, title collisions, links, and safe relative attachments before adding anything.">
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <BtnOutline T={T} disabled={!onImportMarkdown} onClick={() => onImportMarkdown?.('files')}>Choose files</BtnOutline>
+            <BtnOutline T={T} disabled={!onImportMarkdown} onClick={() => onImportMarkdown?.('folder')}>Choose folder</BtnOutline>
           </div>
         </Row>
         {writerEnabled && <Row T={T} label="Import novel files" sub={currentVault?.novelistMode ? "Analyze text files and preview generated novel notes before applying them." : "Switch this vault to Writer mode before importing novel files."}>
@@ -396,11 +402,6 @@ function SectionData({
           </div>
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-        <BtnOutline T={T}>Export vault…</BtnOutline>
-        <BtnOutline T={T}>Import notes…</BtnOutline>
-        <BtnOutline T={T} danger>Reset app data</BtnOutline>
-      </div>
       <div style={{
         marginTop: 16, fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim,
       }}>Vault: {stats.noteCount} notes · approx. {(stats.charCount / 1024).toFixed(1)} KB</div>

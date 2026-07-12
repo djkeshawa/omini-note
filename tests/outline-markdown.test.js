@@ -108,6 +108,28 @@ test('Existing markdown bodies round-trip without storage-format changes', () =>
   assert.match(roundTrip, /^---$/m);
 });
 
+test('Ordered and mixed nested lists retain numbers, delimiters, and structure', () => {
+  const outlineApi = loadOutlineForTest();
+  const markdown = [
+    '3. Prepare launch',
+    '  - Confirm owners',
+    '    1) Design',
+    '    2) Engineering',
+    '4. Ship',
+    '  - [ ] Announce',
+  ].join('\n');
+
+  const blocks = outlineApi.mnMdToBlocks(markdown);
+  assert.equal(blocks.length, 2);
+  assert.equal(blocks[0].kind, 'ordered');
+  assert.equal(blocks[0].listNumber, 3);
+  assert.equal(blocks[0].children[0].kind, 'bullet');
+  assert.equal(blocks[0].children[0].children[0].kind, 'ordered');
+  assert.equal(blocks[0].children[0].children[0].listDelimiter, ')');
+  assert.equal(blocks[1].children[0].kind, 'todo');
+  assert.equal(outlineApi.mnBlocksToMd(blocks), markdown);
+});
+
 test('Specialized markdown blocks keep current parse and serialization behavior', () => {
   const outlineApi = loadOutlineForTest();
   const markdown = [

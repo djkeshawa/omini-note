@@ -7,6 +7,7 @@ export const BASE_SLASH_COMMANDS = [
   { id: 'h3', label: 'Heading 3', hint: 'Subsection', kbd: '###', icon: 'H3', kind: 'heading', level: 3 },
   { id: 'p', label: 'Paragraph', hint: 'Plain text', kbd: '', icon: '¶', kind: 'paragraph' },
   { id: 'bullet', label: 'Bullet', hint: 'List item', kbd: '-', icon: '•', kind: 'bullet' },
+  { id: 'ordered', label: 'Numbered list', hint: 'Ordered list item', kbd: '1.', icon: '1.', kind: 'ordered', listNumber: 1, listDelimiter: '.' },
   { id: 'todo', label: 'To-do', hint: 'Task with checkbox', kbd: '[ ]', icon: '☐', kind: 'todo', checked: false },
   { id: 'quote', label: 'Quote', hint: 'Blockquote', kbd: '>', icon: '❝', kind: 'quote' },
   { id: 'code', label: 'Code block', hint: 'Monospaced fenced', kbd: '```', icon: '{}', kind: 'code' },

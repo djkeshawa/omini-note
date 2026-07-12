@@ -123,6 +123,17 @@ function MnBlockRowView({ model }) {
                 </svg>
               )}
             </button>
+          ) : block.kind === 'ordered' ? (
+            <span style={{
+              minWidth: 18,
+              color: T.inkMed,
+              fontFamily: 'var(--mn-mono)',
+              fontSize: 11.5,
+              lineHeight: '14px',
+              textAlign: 'right',
+            }}>
+              {Math.max(1, Number(block.listNumber) || 1)}{block.listDelimiter === ')' ? ')' : '.'}
+            </span>
           ) : block.kind === 'bullet' ? (
             // Real bullet — a small filled dot. Becomes filled-with-halo when collapsed.
             <span style={{

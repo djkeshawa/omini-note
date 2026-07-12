@@ -478,6 +478,7 @@ function createNovelistHelpers(scope = {}) {
       tags: normalizeNovelistLegacyTags(Array.isArray(note.tags) ? note.tags : []),
       pinned: !!note.pinned,
       workflowArchived: !!note.workflowArchived,
+      frontMatter: note.frontMatter || '',
       body: normalizeNoteBody(ensureScenePlotPoints(normalizeNovelistLegacyBody(sourceBody), note.tags || []), note.title || 'Untitled'),
     };
   }

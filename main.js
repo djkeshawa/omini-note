@@ -10,6 +10,7 @@ const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, globalShor
 const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const store = require('./lib/store');
 const attachments = require('./lib/attachments');
 const linkRename = require('./lib/linkRename');
@@ -31,6 +32,7 @@ const { createWindowLifecycle } = require('./main/windowLifecycle');
 const { createUpdateService } = require('./main/updateService');
 const { createIpcRuntime } = require('./main/ipcRuntime');
 const { createNovelImportService } = require('./main/novelImportService');
+const { createMarkdownImportService } = require('./main/markdownImportService');
 const {
   sanitizeAttachmentPayload,
   sanitizeZoteroSearchPayload,
@@ -228,6 +230,15 @@ const novelImportService = createNovelImportService({
     totalTextBytes: NOVEL_IMPORT_TOTAL_TEXT_BYTES_LIMIT,
   },
 });
+const markdownImportService = createMarkdownImportService({
+  fs,
+  path,
+  crypto,
+  dialog,
+  store,
+  attachments,
+  getMainWindow: windowLifecycle.getMainWindow,
+});
 
 registerVaultNoteHandlers(ipcMain, {
   wrap,
@@ -285,6 +296,7 @@ registerBackupHandlers(ipcMain, {
   getMainWindow: windowLifecycle.getMainWindow,
   runOptionalSearchIndexTask,
   importNovelFilesFromIpc: novelImportService.importFiles,
+  markdownImportService,
   exportNote: noteExportService.exportNote,
   backupImportFileLimit: BACKUP_IMPORT_FILE_LIMIT,
 });

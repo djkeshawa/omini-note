@@ -1,4 +1,4 @@
-function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVEL_IMPORT_TOOL, activeCanvas, activeVault, activeVaultId, addTag, buildNovelImportPlan, canvases, conflictNotice, createRuntimeNoteId, desktopBridge, dirtyNotes, markDirty, markTagsDirty, mnBlocksToMd, mnDirtyNoteKey, mnEnsureNovelistTags, mnMdToBlocks, mnNormalizeNoteBody, mnNovelImportChunks, mnNovelImportConsolidationPrompt, mnNovelImportExistingSummary, mnNovelImportExtractionPrompt, mnNovelImportToolArgs, navigateView, normalizeNotes, normalizeNovelImportCandidates, noteForDisk, notes, notesWithBody, novelImportDialog, novelImportSeq, refreshVaultRegistry, selectedId, setActiveCanvas, setCanvases, setConflictNotice, setDeleteTargetId, setNotes, setNovelImportDialog, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, uniqueNoteTitle, updateDirtyNotes, useCallbackA, useCanvasController, useTrashController, view }) {
+function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVEL_IMPORT_TOOL, activeCanvas, activeVault, activeVaultId, addTag, buildNovelImportPlan, canvases, conflictNotice, createRuntimeNoteId, desktopBridge, dirtyNotes, markDirty, markTagsDirty, markdownImportDialog, mnBlocksToMd, mnDirtyNoteKey, mnEnsureNovelistTags, mnMdToBlocks, mnNormalizeNoteBody, mnNovelImportChunks, mnNovelImportConsolidationPrompt, mnNovelImportExistingSummary, mnNovelImportExtractionPrompt, mnNovelImportToolArgs, navigateView, normalizeNotes, normalizeNovelImportCandidates, noteForDisk, notes, notesWithBody, novelImportDialog, novelImportSeq, refreshVaultRegistry, saveDirtyNotesNow, selectedId, setActiveCanvas, setCanvases, setConflictNotice, setDeleteTargetId, setMarkdownImportDialog, setNotes, setNovelImportDialog, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, uniqueNoteTitle, updateDirtyNotes, useCallbackA, useCanvasController, useTrashController, view }) {
   const promptNewTag = (name) => {
       if (typeof name === 'string') addTag(name);
     };
@@ -220,6 +220,65 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
         showAppNotice('Could not import backup', e.message || String(e));
       }
     }, [refreshVaultRegistry, showAppNotice]);
+
+    const flushDirtyNotesForImport = useCallbackA(async () => {
+      if (!dirtyNotes.size || !saveDirtyNotesNow) return;
+      const result = await saveDirtyNotesNow([...dirtyNotes.values()]);
+      if (result?.deferred) throw new Error('A note is still saving. Wait a moment and try the import again.');
+      if (result?.failures?.length) throw new Error('Save the current note before importing Markdown.');
+    }, [dirtyNotes, saveDirtyNotesNow]);
+
+    const previewMarkdownImport = useCallbackA(async (sourceType = 'files') => {
+      if (!activeVaultId || !desktopBridge.maintenance?.previewMarkdownImport) {
+        return showAppNotice('Markdown import unavailable', 'This build does not expose portable Markdown import.');
+      }
+      try {
+        await flushDirtyNotesForImport();
+        const res = await desktopBridge.maintenance.previewMarkdownImport({ vaultId: activeVaultId, sourceType });
+        if (!res.ok) throw new Error(res.error || 'Could not preview Markdown import.');
+        if (res.value?.canceled) return;
+        const preview = MN_IMPORT_PREVIEW.normalizeImportPreview(res.value?.preview);
+        if (!preview.token || !preview.noteCount) throw new Error('The Markdown import preview was invalid.');
+        setMarkdownImportDialog({ phase: 'ready', preview });
+      } catch (error) {
+        console.error('Markdown import preview failed', error);
+        showAppNotice('Could not preview Markdown import', error.message || String(error));
+      }
+    }, [activeVaultId, flushDirtyNotesForImport, showAppNotice]);
+
+    const applyMarkdownImport = useCallbackA(async () => {
+      const preview = markdownImportDialog?.preview;
+      if (!preview?.token || !activeVaultId) return;
+      setMarkdownImportDialog(current => current ? { ...current, phase: 'applying', error: '' } : current);
+      try {
+        await flushDirtyNotesForImport();
+        const res = await desktopBridge.maintenance.applyMarkdownImport({ vaultId: activeVaultId, token: preview.token });
+        if (!res.ok) throw new Error(res.error || 'Could not import Markdown.');
+        await refreshVaultRegistry({ reloadActive: true, reason: 'markdown-import' });
+        const firstImportedId = res.value?.noteIds?.[0] || null;
+        if (firstImportedId) {
+          setSelectedId(firstImportedId);
+          navigateView('notes');
+        }
+        setMarkdownImportDialog(null);
+        showAppNotice(
+          'Markdown imported',
+          `${res.value?.imported || 0} note${res.value?.imported === 1 ? '' : 's'} and ${res.value?.attachments || 0} attachment${res.value?.attachments === 1 ? '' : 's'} added.`,
+          'info'
+        );
+      } catch (error) {
+        console.error('Markdown import apply failed', error);
+        setMarkdownImportDialog(current => current ? { ...current, phase: 'error', error: error.message || String(error) } : current);
+      }
+    }, [activeVaultId, flushDirtyNotesForImport, markdownImportDialog, navigateView, refreshVaultRegistry, showAppNotice]);
+
+    const closeMarkdownImportDialog = useCallbackA(async () => {
+      const token = markdownImportDialog?.preview?.token;
+      setMarkdownImportDialog(null);
+      if (!token || !desktopBridge.maintenance?.cancelMarkdownImport) return;
+      try { await desktopBridge.maintenance.cancelMarkdownImport({ vaultId: activeVaultId, token }); }
+      catch (error) { console.warn('Markdown import preview cleanup failed', error); }
+    }, [activeVaultId, markdownImportDialog]);
   
     const analyzeNovelImportFiles = useCallbackA(async (files, skipped = [], importSeq = 0) => {
       if (!desktopBridge?.ai?.toolPlan) throw new Error('AI tool planning is unavailable in this build.');
@@ -345,8 +404,9 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
         showAppNotice('Could not rebuild index', e.message || String(e));
       }
     }, [activeVaultId, showAppNotice]);
-  return { promptNewTag, requestDeleteNote, deleteNote, normalizeRuntimeNote, trashItems, trashLoading, trashError, listDeletedItems, refreshDeletedItems, restoreDeletedNote, purgeDeletedNote, prependDeletedItem, restoreNoteVersion, reloadConflictFromDisk, keepConflictAsDuplicate, openCanvasDashboard, openCanvas, createCanvas, saveCanvas, deleteCanvas, addNoteToCanvas, exportBackup, importBackup, analyzeNovelImportFiles, importNovelFiles, applyNovelImportPreview, closeNovelImportDialog, rebuildIndex };
+  return { promptNewTag, requestDeleteNote, deleteNote, normalizeRuntimeNote, trashItems, trashLoading, trashError, listDeletedItems, refreshDeletedItems, restoreDeletedNote, purgeDeletedNote, prependDeletedItem, restoreNoteVersion, reloadConflictFromDisk, keepConflictAsDuplicate, openCanvasDashboard, openCanvas, createCanvas, saveCanvas, deleteCanvas, addNoteToCanvas, exportBackup, importBackup, previewMarkdownImport, applyMarkdownImport, closeMarkdownImportDialog, analyzeNovelImportFiles, importNovelFiles, applyNovelImportPreview, closeNovelImportDialog, rebuildIndex };
 }
 
 export { useAppDataActions };
 import MN_CANVAS_MODEL from '../../canvas/canvasModel.js';
+import MN_IMPORT_PREVIEW from '../../shared/importPreviewModel.js';

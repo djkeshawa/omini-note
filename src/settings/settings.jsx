@@ -11,7 +11,7 @@ function MnSettingsModal({
   themeOptions = [],
   onCreateVault, onDeleteVault, onSetVaultNovelistMode,
   onListDeletedNotes, onRestoreDeletedNote, onPurgeDeletedNote,
-  onExportBackup, onImportBackup, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
+  onExportBackup, onImportBackup, onImportMarkdown, onImportNovelFiles, onOpenVaultHealth, onRebuildIndex,
   enabledPacks = [], featureState = {}, onSetPack, assistanceEnabled = false, onAssistanceChange,
 }) {
   const [section, setSection] = useStateS('general');
@@ -216,6 +216,7 @@ function MnSettingsModal({
                 onPurgeDeletedNote={onPurgeDeletedNote}
                 onExportBackup={onExportBackup}
                 onImportBackup={onImportBackup}
+                onImportMarkdown={onImportMarkdown}
                 onImportNovelFiles={onImportNovelFiles}
                 onOpenVaultHealth={onOpenVaultHealth}
                 onRebuildIndex={onRebuildIndex}

@@ -13,6 +13,7 @@
     { marker: '## ', kind: 'heading', level: 2 },
     { marker: '# ', kind: 'heading', level: 1 },
     { marker: '- ', kind: 'bullet' },
+    { marker: '1. ', kind: 'ordered', listNumber: 1, listDelimiter: '.' },
     { marker: '> ', kind: 'quote' },
     { marker: '```', kind: 'code', language: '' },
     { marker: '---', kind: 'divider' },
@@ -30,7 +31,7 @@
   const VAULT_ATTACHMENT_PATH_RE = /^attachments\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
 
   const SPECIALIZED_BLOCK_KINDS = new Set(['code', 'table', 'plot-points']);
-  const NON_PLAIN_BLOCK_KINDS = new Set(['heading', 'bullet', 'todo', 'quote', 'code', 'table', 'divider', 'plot-points']);
+  const NON_PLAIN_BLOCK_KINDS = new Set(['heading', 'bullet', 'ordered', 'todo', 'quote', 'code', 'table', 'divider', 'plot-points']);
   const TODO_CONTINUATION_MARKERS = [
     { marker: '[ ] ', checked: false },
     { marker: '[x] ', checked: true },
@@ -75,19 +76,25 @@
   }
 
   function blockStarterPatch(starter) {
-    return {
+    const patch = {
       kind: starter.kind,
       level: starter.level || 0,
       checked: Object.prototype.hasOwnProperty.call(starter, 'checked') ? starter.checked : null,
       content: '',
       language: starter.language || '',
     };
+    if (starter.kind === 'ordered') {
+      patch.listNumber = starter.listNumber || 1;
+      patch.listDelimiter = starter.listDelimiter || '.';
+    }
+    return patch;
   }
 
   function structuralEditPrefix(block) {
     const kind = asText(block?.kind || 'paragraph');
     if (kind === 'heading') return `${'#'.repeat(Math.max(1, Math.min(6, Number(block?.level) || 1)))} `;
     if (kind === 'bullet') return '- ';
+    if (kind === 'ordered') return `${Math.max(1, Number(block?.listNumber) || 1)}${block?.listDelimiter === ')' ? ')' : '.'} `;
     if (kind === 'todo') return block?.checked ? '- [x] ' : '- [ ] ';
     if (kind === 'quote') return '> ';
     return '';
@@ -107,6 +114,22 @@
   function contentOffsetToEditorOffset(block, offset) {
     const prefix = structuralEditPrefix(block);
     return prefix.length + Math.max(0, Number(offset) || 0);
+  }
+
+  function continuationBlockPatch(block = {}) {
+    const kind = asText(block.kind);
+    if (kind === 'ordered') {
+      return {
+        kind,
+        checked: null,
+        level: 0,
+        listNumber: Math.max(1, Number(block.listNumber) || 1) + 1,
+        listDelimiter: block.listDelimiter === ')' ? ')' : '.',
+      };
+    }
+    if (kind === 'bullet') return { kind, checked: null, level: 0 };
+    if (kind === 'todo') return { kind, checked: false, level: 0 };
+    return { kind: 'paragraph', checked: null, level: 0 };
   }
 
   function displayProjectionForMarkdownSourceBlock(block) {
@@ -147,6 +170,15 @@
         patch: { kind: 'bullet', level: 0, checked: null, content: bullet[1], language: '' },
       };
     }
+    const ordered = value.match(/^(\d+)([.)])\s(.*)$/s);
+    if (ordered) {
+      return {
+        patch: {
+          kind: 'ordered', level: 0, checked: null, content: ordered[3], language: '',
+          listNumber: Number(ordered[1]), listDelimiter: ordered[2],
+        },
+      };
+    }
     const quote = value.match(/^>\s?(.*)$/s);
     if (quote) {
       return {
@@ -158,7 +190,7 @@
         patch: { kind: 'divider', level: 0, checked: null, content: '', language: '' },
       };
     }
-    if (['heading', 'bullet', 'todo', 'quote', 'divider'].includes(asText(block?.kind))) {
+    if (['heading', 'bullet', 'ordered', 'todo', 'quote', 'divider'].includes(asText(block?.kind))) {
       return {
         patch: { kind: 'paragraph', level: 0, checked: null, content: value, language: '' },
       };
@@ -452,6 +484,7 @@
     parseEditableMarkdownBlock,
     editorOffsetToContentOffset,
     contentOffsetToEditorOffset,
+    continuationBlockPatch,
     supportedCaseMatrix,
   };
 });

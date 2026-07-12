@@ -240,6 +240,7 @@ function MnPageEmbed({ title, allNotes, T, onOpenNote }) {
           padding: '1px 0',
         }}>
           {b.kind === 'bullet' && '• '}
+          {b.kind === 'ordered' && `${Math.max(1, Number(b.listNumber) || 1)}${b.listDelimiter === ')' ? ')' : '.'} `}
           {b.kind === 'todo' && (b.checked ? '☑ ' : '☐ ')}
           {b.kind === 'heading' && `${'#'.repeat(b.level || 1)} `}
           {b.content || <em style={{color: T.inkDim}}>empty</em>}
@@ -274,6 +275,7 @@ function MnBlockEmbed({ refId, allNotes, T, onOpenBlock }) {
         fontFamily: 'var(--mn-body)', fontSize: 13, color: T.inkMed,
       }}>
         {b.kind === 'bullet' && '• '}
+        {b.kind === 'ordered' && `${Math.max(1, Number(b.listNumber) || 1)}${b.listDelimiter === ')' ? ')' : '.'} `}
         {b.kind === 'todo' && (b.checked ? '☑ ' : '☐ ')}
         {b.kind === 'heading' && (
           <span style={{ fontWeight: 600, color: T.ink }}>{'#'.repeat(b.level || 1)} </span>
@@ -391,6 +393,7 @@ function MnBlockContextMenu({
       {[
         { kind: 'paragraph', label: 'Paragraph', icon: '¶' },
         { kind: 'bullet',    label: 'Bullet',    icon: '•' },
+        { kind: 'ordered',   label: 'Numbered',  icon: '1.' },
         { kind: 'todo',      label: 'To-do',     icon: '☐' },
         { kind: 'heading',   label: 'Heading',   icon: 'H', level: 2 },
         { kind: 'quote',     label: 'Quote',     icon: '❝' },
