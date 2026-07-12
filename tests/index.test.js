@@ -60,6 +60,18 @@ test('index search handles unicode, tags, and removed notes', async () => {
   });
 });
 
+test('index search finds general attachment filenames from ordinary Markdown', async () => {
+  await withIsolatedIndex(async (idx) => {
+    idx.init();
+    idx.rescanVault('vault_a', [{
+      id: 'n1', title: 'Quarterly review', date: '2026-01-01', tags: [],
+      body: '[Workbook](attachments/financial-model-20260713000000.xlsx)',
+    }]);
+    assert.equal(idx.search('vault_a', 'financial', 10)[0].id, 'n1');
+    assert.equal(idx.search('vault_a', 'xlsx', 10)[0].id, 'n1');
+  });
+});
+
 test('index search clamps oversized limits from callers', async () => {
   await withIsolatedIndex(async (idx) => {
     idx.init();

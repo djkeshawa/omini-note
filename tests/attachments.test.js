@@ -28,7 +28,7 @@ async function withIsolatedAttachments(fn) {
   }
 }
 
-test('saveAttachment writes image bytes under the vault attachments folder', async () => {
+test('saveAttachment writes portable descriptors under the vault attachments folder', async () => {
   await withIsolatedAttachments(async (attachments, { cfg, tmpHome }) => {
     const vault = cfg.vaults[0];
     const saved = await attachments.saveAttachment(vault.id, {
@@ -39,6 +39,8 @@ test('saveAttachment writes image bytes under the vault attachments folder', asy
     assert.match(saved.fileName, /^My-Screen-Shot-\d{14}\.png$/);
     assert.equal(saved.relPath, `attachments/${saved.fileName}`);
     assert.equal(saved.mimeType, 'image/png');
+    assert.equal(saved.kind, 'image');
+    assert.equal(saved.isImage, true);
     const onDisk = fs.readFileSync(path.join(tmpHome, vault.slug, 'attachments', saved.fileName));
     assert.deepEqual(onDisk, PNG_BYTES);
     assert.equal(attachments.isValidAttachmentFileName(saved.fileName), true);
@@ -46,12 +48,31 @@ test('saveAttachment writes image bytes under the vault attachments folder', asy
   });
 });
 
+test('saveAttachment accepts common documents and audio with matching extension and MIME', async () => {
+  await withIsolatedAttachments(async (attachments, { cfg, tmpHome }) => {
+    const vault = cfg.vaults[0];
+    const pdf = await attachments.saveAttachment(vault.id, {
+      name: 'Project brief.pdf', mimeType: 'application/pdf', bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+    });
+    const audio = await attachments.saveAttachment(vault.id, {
+      name: 'Interview.mp3', mimeType: 'audio/mpeg', bytes: new Uint8Array([0x49, 0x44, 0x33]),
+    });
+    assert.match(pdf.fileName, /^Project-brief-\d{14}\.pdf$/);
+    assert.equal(pdf.typeLabel, 'PDF');
+    assert.equal(pdf.kind, 'document');
+    assert.equal(audio.kind, 'audio');
+    assert.equal(fs.existsSync(path.join(tmpHome, vault.slug, pdf.relPath)), true);
+  });
+});
+
 test('saveAttachment derives extension from mime type and de-dupes names', async () => {
   await withIsolatedAttachments(async (attachments, { cfg }) => {
     const vault = cfg.vaults[0];
     const payload = { name: '', mimeType: 'image/png', bytes: new Uint8Array(PNG_BYTES) };
-    const first = await attachments.saveAttachment(vault.id, payload);
-    const second = await attachments.saveAttachment(vault.id, payload);
+    const [first, second] = await Promise.all([
+      attachments.saveAttachment(vault.id, payload),
+      attachments.saveAttachment(vault.id, payload),
+    ]);
     assert.match(first.fileName, /^pasted-image-\d{14}\.png$/);
     assert.notEqual(first.fileName, second.fileName);
   });
@@ -69,8 +90,8 @@ test('saveAttachment rejects invalid payloads', async () => {
       /empty/
     );
     await assert.rejects(
-      attachments.saveAttachment(vault.id, { name: 'notes.txt', mimeType: 'text/plain', bytes: new Uint8Array(PNG_BYTES) }),
-      /images only/
+      attachments.saveAttachment(vault.id, { name: 'notes.txt', mimeType: 'application/pdf', bytes: new Uint8Array(PNG_BYTES) }),
+      /mismatched MIME/
     );
     await assert.rejects(
       attachments.saveAttachment(vault.id, { name: 'a.png', mimeType: 'image/png', bytes: 'not-binary' }),
@@ -97,7 +118,7 @@ test('readAttachment returns saved bytes and blocks unsafe names', async () => {
     assert.deepEqual(read.buffer, PNG_BYTES);
     assert.equal(read.mimeType, 'image/png');
 
-    for (const name of ['../secret.png', 'a/b.png', '.hidden.png', 'notes.txt', 'a..b.png', '']) {
+    for (const name of ['../secret.png', 'a/b.png', '.hidden.png', 'notes.exe', 'a..b.png', '']) {
       await assert.rejects(attachments.readAttachment(vault.id, name), /Invalid attachment name/, name);
     }
 
@@ -110,6 +131,29 @@ test('readAttachment returns saved bytes and blocks unsafe names', async () => {
   });
 });
 
+test('describe and open revalidate regular files without exposing vault paths', async () => {
+  await withIsolatedAttachments(async (attachments, { cfg }) => {
+    const vault = cfg.vaults[0];
+    const saved = await attachments.saveAttachment(vault.id, {
+      name: 'brief.pdf', mimeType: 'application/pdf', bytes: new Uint8Array([1, 2, 3, 4]),
+    });
+    const described = await attachments.describeAttachment(vault.id, saved.fileName);
+    assert.deepEqual(described, saved);
+    assert.equal(Object.hasOwn(described, 'filePath'), false);
+    let openedPath = '';
+    const opened = await attachments.openAttachment(vault.id, saved.fileName, async filePath => {
+      openedPath = filePath;
+      return '';
+    });
+    assert.equal(opened.opened, true);
+    assert.equal(path.basename(openedPath), saved.fileName);
+    await assert.rejects(
+      attachments.openAttachment(vault.id, saved.fileName, async () => 'No associated application'),
+      /Could not open/
+    );
+  });
+});
+
 test('attachment name helpers sanitize hostile inputs', async () => {
   await withIsolatedAttachments(async (attachments) => {
     const { sanitizeAttachmentBaseName, attachmentExtension } = attachments.__test;
@@ -119,6 +163,8 @@ test('attachment name helpers sanitize hostile inputs', async () => {
     assert.equal(sanitizeAttachmentBaseName('###'), 'pasted-image');
     assert.equal(attachmentExtension('a.PNG', ''), 'png');
     assert.equal(attachmentExtension('', 'image/jpeg'), 'jpg');
+    assert.equal(attachmentExtension('brief.PDF', 'application/pdf'), 'pdf');
+    assert.equal(attachmentExtension('brief.pdf', 'image/png'), '');
     assert.equal(attachmentExtension('a.exe', 'application/octet-stream'), '');
   });
 });

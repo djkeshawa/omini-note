@@ -1,7 +1,10 @@
 (function (root, factory) {
-  const api = factory();
+  const descriptorApi = typeof module === 'object' && module.exports
+    ? require('../shared/attachmentDescriptor.js')
+    : root.MN_ATTACHMENT_DESCRIPTOR;
+  const api = factory(descriptorApi);
   if (typeof module === 'object' && module.exports) module.exports = api;
-})(typeof globalThis !== 'undefined' ? globalThis : window, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : window, function (descriptorApi) {
   const BLOCK_STARTERS = [
     { marker: '- [ ] ', kind: 'todo', checked: false },
     { marker: '- [x] ', kind: 'todo', checked: true },
@@ -29,6 +32,7 @@
   ];
 
   const VAULT_ATTACHMENT_PATH_RE = /^attachments\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
+  const VAULT_IMAGE_EXTENSION_RE = /\.(?:png|jpe?g|gif|webp|avif|bmp|svg)$/i;
 
   const SPECIALIZED_BLOCK_KINDS = new Set(['code', 'table', 'plot-points']);
   const NON_PLAIN_BLOCK_KINDS = new Set(['heading', 'bullet', 'ordered', 'todo', 'quote', 'code', 'table', 'divider', 'plot-points']);
@@ -290,6 +294,9 @@
     if (/[\s\x00-\x1f\x7f]/.test(rawUrl)) return safeUrlFailure('url-control-or-space', cleanLabel, rawUrl);
     if (rawUrl.startsWith('//')) return safeUrlFailure('protocol-relative', cleanLabel, rawUrl);
     if (rawUrl.includes('(') || rawUrl.includes(')')) return safeUrlFailure('nested-parentheses', cleanLabel, rawUrl);
+    if (isVaultAttachmentPath(rawUrl)) {
+      return { safe: true, reason: 'safe', label: cleanLabel, url: rawUrl, source: 'attachment' };
+    }
     let parsed = null;
     try {
       parsed = new URL(rawUrl);
@@ -308,7 +315,15 @@
   }
 
   function isVaultAttachmentPath(url) {
-    return VAULT_ATTACHMENT_PATH_RE.test(asText(url));
+    const value = asText(url);
+    if (!VAULT_ATTACHMENT_PATH_RE.test(value)) return false;
+    const fileName = value.slice('attachments/'.length);
+    return !!descriptorApi?.classifyAttachment(fileName, '');
+  }
+
+  function isVaultImageAttachmentPath(url) {
+    const value = asText(url);
+    return isVaultAttachmentPath(value) && VAULT_IMAGE_EXTENSION_RE.test(value);
   }
 
   function classifyMarkdownImage(alt, url) {
@@ -319,7 +334,7 @@
     if (/[\s\x00-\x1f\x7f]/.test(rawUrl)) return safeUrlFailure('url-control-or-space', cleanAlt, rawUrl);
     if (rawUrl.startsWith('//')) return safeUrlFailure('protocol-relative', cleanAlt, rawUrl);
     if (rawUrl.includes('(') || rawUrl.includes(')')) return safeUrlFailure('nested-parentheses', cleanAlt, rawUrl);
-    if (isVaultAttachmentPath(rawUrl)) {
+    if (isVaultImageAttachmentPath(rawUrl)) {
       return { safe: true, reason: 'safe', label: cleanAlt, url: rawUrl, source: 'attachment' };
     }
     let parsed = null;
@@ -351,7 +366,10 @@
     const classified = classifyMarkdownLink(label, url);
     if (!classified.safe) return { invalid: true, whole, classified };
     return {
-      segment: { kind: 'link', text: label, label, url, safe: true },
+      segment: {
+        kind: 'link', text: label, label, url, safe: true,
+        ...(classified.source ? { source: classified.source } : {}),
+      },
       end: urlEnd + 1,
     };
   }
@@ -477,6 +495,7 @@
     classifyMarkdownLink,
     classifyMarkdownImage,
     isVaultAttachmentPath,
+    isVaultImageAttachmentPath,
     isSafeMarkdownUrl,
     structuralEditPrefix,
     editableMarkdownForBlock,

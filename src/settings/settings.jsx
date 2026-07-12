@@ -53,7 +53,11 @@ function MnSettingsModal({
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       animation: 'mnFadeIn 140ms ease', backdropFilter: 'blur(2px)',
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mn-settings-title"
+        onClick={(e) => e.stopPropagation()} style={{
         width: 'min(980px, calc(100vw - 48px))',
         height: 'min(720px, calc(100vh - 48px))',
         minHeight: 'min(560px, calc(100vh - 48px))',
@@ -88,7 +92,7 @@ function MnSettingsModal({
             </svg>
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink }}>Settings</div>
+            <div id="mn-settings-title" style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink }}>Settings</div>
             <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, marginTop: 2 }}>
               {activeSection.label} · {activeSection.sub}
             </div>

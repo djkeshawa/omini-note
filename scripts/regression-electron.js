@@ -1497,10 +1497,50 @@ async function waitForLayoutMode(win, expectedMode) {
   });
 }
 
+async function clearRegressionViewportOverride(win) {
+  if (!win.__vispnoteViewportOverride) return;
+  try {
+    await win.webContents.debugger.sendCommand('Emulation.clearDeviceMetricsOverride');
+  } finally {
+    if (win.webContents.debugger.isAttached()) win.webContents.debugger.detach();
+    win.__vispnoteViewportOverride = false;
+  }
+  await wait(80);
+}
+
+async function setRegressionWindowSize(win, width, height) {
+  await clearRegressionViewportOverride(win);
+  win.setSize(width, height);
+  await wait(80);
+  const innerWidth = await evaluate(win, `window.innerWidth`);
+  if (width >= 1200 && innerWidth < 1200) {
+    win.webContents.debugger.attach('1.3');
+    try {
+      await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile: false,
+        screenWidth: width,
+        screenHeight: height,
+      });
+      win.__vispnoteViewportOverride = true;
+    } catch (error) {
+      if (win.webContents.debugger.isAttached()) win.webContents.debugger.detach();
+      throw error;
+    }
+    await wait(80);
+  }
+  // Electron's programmatic resize can update innerWidth without delivering a
+  // renderer resize event on some Windows runners. Dispatch the browser event
+  // so this regression deterministically exercises the production listener.
+  await evaluate(win, `window.dispatchEvent(new Event('resize'))`);
+}
+
 async function runViewportAccessibilityScenario(win) {
   const original = win.getBounds();
   try {
-    win.setSize(900, 700);
+    await setRegressionWindowSize(win, 900, 700);
     await waitForLayoutMode(win, 'compact');
     await assertViewportUsable(win, 'minimum supported window');
     const compact = await evaluate(win, `
@@ -1529,14 +1569,14 @@ async function runViewportAccessibilityScenario(win) {
       })`);
       return { ok: !result.overlay && result.showButton && result.activeLabel === 'Show note list', result };
     });
-    win.setSize(1280, 860);
+    await setRegressionWindowSize(win, 1280, 860);
     await waitForLayoutMode(win, 'three-pane');
     await assertViewportUsable(win, 'desktop restored after compact selection');
     const restoredDesktopMode = await evaluate(win, `document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || ''`);
     if (restoredDesktopMode !== 'three-pane') {
       throw new Error(`Desktop layout did not restore after closing the compact drawer: ${restoredDesktopMode}`);
     }
-    win.setSize(900, 700);
+    await setRegressionWindowSize(win, 900, 700);
     await waitFor(win, 'compact editor remains focused after resize round trip', async () => {
       const result = await evaluate(win, `({
         mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
@@ -1647,7 +1687,7 @@ async function runViewportAccessibilityScenario(win) {
       return { ok: !current.settingsOpen, current };
     });
 
-    win.setSize(1280, 860);
+    await setRegressionWindowSize(win, 1280, 860);
     await waitForLayoutMode(win, 'three-pane');
     await assertViewportUsable(win, 'desktop window');
     const desktop = await evaluate(win, `
@@ -1668,7 +1708,7 @@ async function runViewportAccessibilityScenario(win) {
       })`);
       return { ok: !result.list && result.showButton, result };
     });
-    win.setSize(900, 700);
+    await setRegressionWindowSize(win, 900, 700);
     await waitForLayoutMode(win, 'compact');
     if (await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`)) {
       await pressAccelerator(win, 'Escape');
@@ -1685,7 +1725,7 @@ async function runViewportAccessibilityScenario(win) {
       const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
       return { ok: overlay, overlay };
     });
-    win.setSize(1280, 860);
+    await setRegressionWindowSize(win, 1280, 860);
     await waitFor(win, 'desktop note-list preference remains hidden after compact use', async () => {
       const result = await evaluate(win, `({
         mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
@@ -1700,8 +1740,11 @@ async function runViewportAccessibilityScenario(win) {
       return { ok: list, list };
     });
   } finally {
+    await clearRegressionViewportOverride(win);
     win.setBounds(original);
-    await wait(200);
+    await wait(80);
+    await evaluate(win, `window.dispatchEvent(new Event('resize'))`);
+    await wait(120);
   }
 }
 
@@ -1741,6 +1784,95 @@ async function runDeleteRestoreScenario(win) {
     return { ok: current.selectedTitle === title, current };
   });
   await waitForPersistedNote(win, title, note => String(note.body || '').includes('create, edit, and persist'));
+}
+
+async function runGeneralAttachmentScenario(win) {
+  await seedEditorNote(win, {
+    id: 'qe_general_attachment',
+    title: 'QE General Attachment',
+    body: 'Parent',
+  });
+  await focusEditorRow(win, 0);
+  const dispatched = await evaluate(win, `
+    (() => {
+      const row = document.querySelector('.mn-block-row[data-block-id]');
+      if (!row || typeof DataTransfer !== 'function' || typeof File !== 'function') return false;
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(
+        [new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52])],
+        'QE Project Brief.pdf',
+        { type: 'application/pdf' }
+      ));
+      row.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+      row.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+      return true;
+    })()
+  `);
+  if (!dispatched) throw new Error('Could not dispatch a general attachment drop');
+  await waitForEditorLayout(win, 'general attachment markdown inserted', rows => (
+    rows[0]?.editing
+      && rows[0]?.value.includes('[QE Project Brief.pdf](attachments/QE-Project-Brief-')
+      && rows[0]?.value.endsWith('.pdf)')
+  ));
+  await evaluate(win, `document.querySelector('.mn-note-title-input')?.focus()`);
+  await waitFor(win, 'general attachment renders as a described chip', async () => {
+    const chip = await evaluate(win, `
+      (() => {
+        const el = document.querySelector('[data-mn-attachment-chip="true"]');
+        const button = el?.querySelector('button');
+        return {
+          text: el?.textContent || '',
+          aria: button?.getAttribute('aria-label') || '',
+          disabled: Boolean(button?.disabled),
+        };
+      })()
+    `);
+    return {
+      ok: chip.text.includes('QE Project Brief.pdf')
+        && chip.text.includes('PDF')
+        && chip.text.includes('8 B')
+        && chip.aria === 'Open attachment QE Project Brief.pdf'
+        && !chip.disabled,
+      chip,
+    };
+  });
+  if (process.env.VISPNOTE_ATTACHMENT_SCREENSHOT) {
+    const bounds = await evaluate(win, `
+      (() => {
+        const rect = document.querySelector('[data-mn-attachment-chip="true"]')?.getBoundingClientRect();
+        if (!rect) return null;
+        return {
+          x: 0,
+          y: Math.max(0, Math.floor(rect.top - 12)),
+          width: Math.max(1, Math.ceil(rect.right + 12)),
+          height: Math.max(1, Math.ceil(rect.height + 24)),
+        };
+      })()
+    `);
+    if (!bounds) throw new Error('Could not locate attachment chip for screenshot');
+    const screenshotPath = path.resolve(process.env.VISPNOTE_ATTACHMENT_SCREENSHOT);
+    fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
+    win.webContents.debugger.attach('1.3');
+    try {
+      const capture = await win.webContents.debugger.sendCommand('Page.captureScreenshot', {
+        format: 'png',
+        fromSurface: true,
+        clip: { ...bounds, scale: 1 },
+      });
+      fs.writeFileSync(screenshotPath, Buffer.from(capture.data, 'base64'));
+    } finally {
+      if (win.webContents.debugger.isAttached()) win.webContents.debugger.detach();
+    }
+  }
+  const storedFiles = fs.readdirSync(regressionHome, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
+    .flatMap(entry => {
+      try { return fs.readdirSync(path.join(regressionHome, entry.name, 'attachments')); }
+      catch { return []; }
+    });
+  if (!storedFiles.some(name => /^QE-Project-Brief-\d{14}\.pdf$/.test(name))) {
+    throw new Error(`General attachment was not stored in the vault: ${JSON.stringify(storedFiles)}`);
+  }
 }
 
 async function runRegression() {
@@ -1821,6 +1953,9 @@ async function runRegression() {
 
   await runScenario(win, 'Notes', 'create, edit, and persist a note', async () => {
     await runNoteCreateEditPersistenceScenario(win);
+  });
+  await runScenario(win, 'Attachments', 'drops a PDF into the vault and renders a safe file chip', async () => {
+    await runGeneralAttachmentScenario(win);
   });
   await runScenario(win, 'Reference', 'keeps a read-only note beside the editor and restores the note list', async () => {
     const mainTitle = (await state(win)).selectedTitle;

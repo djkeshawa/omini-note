@@ -264,7 +264,7 @@ memoryConnector = registerMemoryHandlers(ipcMain, {
 });
 
 registerWorkspaceHandlers(ipcMain, {
-  wrap, store, attachments, sanitizeAttachmentPayload, vaultWatcher,
+  wrap, store, attachments, sanitizeAttachmentPayload, shell, vaultWatcher,
   withIndexVaultLock, idx, ai, runOptionalSearchIndexTask,
 });
 

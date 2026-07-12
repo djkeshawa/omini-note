@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('mn', {
   saveNote: (vaultId, note, options) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteSave, { vaultId, noteId: note?.id, note, options }),
   deleteNote: (vaultId, noteId, noteSnapshot) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteDelete, { vaultId, noteId, noteSnapshot }),
   saveAttachment: (vaultId, payload) => ipcRenderer.invoke('mn:saveAttachment', vaultId, payload),
+  describeAttachment: (vaultId, fileName) => ipcRenderer.invoke('mn:describeAttachment', vaultId, fileName),
+  openAttachment: (vaultId, fileName) => ipcRenderer.invoke('mn:openAttachment', vaultId, fileName),
   listDeletedNotes: (vaultId) => ipcRenderer.invoke('mn:listDeletedNotes', vaultId),
   restoreDeletedNote: (vaultId, trashId) => ipcRenderer.invoke('mn:restoreDeletedNote', vaultId, trashId),
   purgeDeletedNote: (vaultId, trashId) => ipcRenderer.invoke('mn:purgeDeletedNote', vaultId, trashId),
