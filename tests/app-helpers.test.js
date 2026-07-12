@@ -70,6 +70,10 @@ test('Capture helpers expose deterministic destinations and templates', () => {
   const task = appHelpers.expandCaptureTemplate('task', { date: '2026-06-06', text: 'Email Sam' });
   assert.equal(task.noteTitle, 'Task - 2026-06-06');
   assert.match(task.body, /- \[ \] Email Sam/);
+
+  assert.equal(appHelpers.captureTitleFromBody('\nstatus:: TODO\n# Project kickoff\nDetails'), 'Project kickoff');
+  assert.equal(appHelpers.captureTitleFromBody('- [ ] Buy milk before six'), 'Buy milk before six');
+  assert.equal(appHelpers.captureTitleFromBody('See [[Roadmap|the roadmap]] next'), 'See the roadmap next');
 });
 
 test('Capture save plans describe append and create behavior without mutation', () => {

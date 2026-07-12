@@ -89,6 +89,30 @@ function createCaptureHelpers(scope = {}) {
       .replace(/\u0000/g, '')
       .slice(0, max);
   }
+
+  function captureTitleFromBody(value = '', fallback = 'Untitled', maxLength = 80) {
+    const max = Math.max(16, Math.min(160, Number(maxLength) || 80));
+    const lines = captureCleanText(value).split('\n');
+    for (const rawLine of lines) {
+      let line = rawLine.trim();
+      if (!line || /^(?:```|~~~|---|\*\*\*)$/.test(line)) continue;
+      if (/^[A-Za-z][A-Za-z0-9 _-]{0,40}::/.test(line)) continue;
+      line = line
+        .replace(/^#{1,6}\s+/, '')
+        .replace(/^>\s*/, '')
+        .replace(/^[-*+]\s+(?:\[[ xX]\]\s+)?/, '')
+        .replace(/^\d+[.)]\s+/, '')
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/g, (_match, target, alias) => alias || target)
+        .replace(/[*_~`]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!line) continue;
+      return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+    }
+    return captureCleanText(fallback, max).trim() || 'Untitled';
+  }
   
   function captureSlug(value = '', fallback = '') {
     const clean = String(value || '').trim().toLowerCase();
@@ -357,7 +381,7 @@ function createCaptureHelpers(scope = {}) {
     if (!metricKey) return 0;
     return phase5SanitizeMetrics(metrics).counters[metricKey] || 0;
   }
-  return { NOTE_TEMPLATES, CAPTURE_DESTINATIONS, CAPTURE_TEMPLATES, SMART_VIEW_FORMAT, SMART_VIEW_TYPES, SMART_VIEW_SORT_FIELDS, CONTEXTUAL_AI_SECTION_KINDS, ZOTERO_ITEM_KEY_RE, ZOTERO_SOURCE_TAGS, PHASE5_METRICS_FORMAT, PHASE5_METRIC_KEYS, PHASE5_METRIC_DETAIL_KEYS, CONTEXTUAL_AI_PROVIDER_LABELS, todayIsoDate, captureCleanText, captureSlug, captureUniqueTags, captureReplaceTokens, expandTemplate, templateById, captureTemplateById, captureTemplateChoices, expandCaptureTemplate, captureFindInboxNote, captureDestinationChoices, captureDestinationById, captureBuildAppendMarkdown, captureBuildSavePlan, phase5MetricChoices, phase5NormalizeMetricKey, phase5CleanMetricDetailValue, phase5SanitizeMetricDetails, phase5SanitizeMetrics, phase5RecordMetric, phase5MetricCount };
+  return { NOTE_TEMPLATES, CAPTURE_DESTINATIONS, CAPTURE_TEMPLATES, SMART_VIEW_FORMAT, SMART_VIEW_TYPES, SMART_VIEW_SORT_FIELDS, CONTEXTUAL_AI_SECTION_KINDS, ZOTERO_ITEM_KEY_RE, ZOTERO_SOURCE_TAGS, PHASE5_METRICS_FORMAT, PHASE5_METRIC_KEYS, PHASE5_METRIC_DETAIL_KEYS, CONTEXTUAL_AI_PROVIDER_LABELS, todayIsoDate, captureCleanText, captureTitleFromBody, captureSlug, captureUniqueTags, captureReplaceTokens, expandTemplate, templateById, captureTemplateById, captureTemplateChoices, expandCaptureTemplate, captureFindInboxNote, captureDestinationChoices, captureDestinationById, captureBuildAppendMarkdown, captureBuildSavePlan, phase5MetricChoices, phase5NormalizeMetricKey, phase5CleanMetricDetailValue, phase5SanitizeMetricDetails, phase5SanitizeMetrics, phase5RecordMetric, phase5MetricCount };
 }
 
 module.exports = { createCaptureHelpers };

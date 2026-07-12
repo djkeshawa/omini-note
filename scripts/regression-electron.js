@@ -79,7 +79,7 @@ function rendererStateScript() {
         editorBodyVisible: Boolean(document.querySelector('.mn-block-row')) || bodyText.includes('Try the basics'),
         quickCaptureOpen: bodyText.includes('Quick capture') && buttons.some(btn => btn.text.startsWith('Save')),
         settingsOpen: dialogs.some(text => text.includes('Settings')) || bodyText.includes('General · A calm default experience'),
-        commandPaletteOpen: dialogs.some(text => text.includes('Command palette')) || Boolean(document.querySelector('input[placeholder="Run a command or open a note..."]')),
+        commandPaletteOpen: Boolean(document.querySelector('[data-mn-palette-root="true"]')),
         dialogs,
         buttons,
         text: bodyText.slice(0, 2000),
@@ -154,6 +154,21 @@ async function setControlByPlaceholder(win, placeholder, value) {
     })()
   `);
   if (!result.ok) throw new Error(`Control not found for placeholder ${JSON.stringify(placeholder)}: ${JSON.stringify(result.placeholders)}`);
+}
+
+async function setSelectByAria(win, ariaLabel, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const el = document.querySelector('select[aria-label=${JSON.stringify(ariaLabel)}]');
+      if (!el) return { ok: false };
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, ${JSON.stringify(value)});
+      else el.value = ${JSON.stringify(value)};
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return { ok: el.value === ${JSON.stringify(value)}, value: el.value };
+    })()
+  `);
+  if (!result.ok) throw new Error(`Select not found or unchanged for ${ariaLabel}: ${JSON.stringify(result)}`);
 }
 
 async function setTitleInput(win, value) {
@@ -322,7 +337,7 @@ async function runCommandPaletteCommand(win, query, resultText) {
     const current = await state(win);
     return { ok: current.commandPaletteOpen, current };
   });
-  await setControlByPlaceholder(win, 'Run a command or open a note...', query);
+  await setControlByPlaceholder(win, 'Search notes and actions', query);
   await waitFor(win, `command palette result ${resultText}`, async () => {
     const current = await state(win);
     return {
@@ -624,7 +639,7 @@ async function assertViewportUsable(win, label) {
         hasNewNote: buttons.some(btn => btn.text === 'New note'),
         hasQuickCapture: buttons.some(btn => String(btn.title || '').includes('Quick capture')),
         hasSettings: buttons.some(btn => String(btn.title || '').includes('Settings')),
-        hasSearch: [...document.querySelectorAll('input')].filter(visible).some(el => (el.getAttribute('placeholder') || '').includes('Search notes')),
+        hasSearch: [...document.querySelectorAll('input')].filter(visible).some(el => el.getAttribute('aria-label') === 'Search note contents'),
       };
     })()
   `);
@@ -1099,21 +1114,51 @@ async function runNoteCreateEditPersistenceScenario(win) {
 }
 
 async function runQuickCaptureSaveScenario(win) {
-  const title = 'QE Quick Capture Task';
   const body = '- [ ] QE quick capture todo';
   await clickButton(win, { titleIncludes: 'Quick capture' });
-  await waitFor(win, 'quick capture open for save scenario', async () => {
-    const current = await state(win);
-    return { ok: current.quickCaptureOpen, current };
+  await waitFor(win, 'body-first quick capture open for save scenario', async () => {
+    const result = await evaluate(win, `
+      (() => ({
+        open: Boolean(document.querySelector('[role="dialog"][aria-label="Quick capture"]')),
+        bodyFocused: document.activeElement?.getAttribute('aria-label') === 'Quick capture text',
+        titleVisible: Boolean(document.querySelector('input[aria-label="New note title"]')),
+        optionsVisible: [...document.querySelectorAll('select[aria-label^="Capture "]')].some(select => select.getClientRects().length > 0),
+      }))()
+    `);
+    return { ok: result.open && result.bodyFocused && !result.titleVisible && !result.optionsVisible, result };
   });
-  await setControlByPlaceholder(win, 'Title', title);
-  await setControlByPlaceholder(win, 'Write a note', body);
+  await setControlByPlaceholder(win, 'Write what you want to remember', body);
   await clickButton(win, { text: 'Save to Today' });
   await waitFor(win, 'quick capture saved and closed', async () => {
     const current = await state(win);
     return { ok: !current.quickCaptureOpen, current };
   });
-  await waitForPersistedBody(win, 'QE quick capture todo');
+  const persisted = await waitForPersistedBody(win, 'QE quick capture todo');
+  if (String(persisted.note?.body || '').includes('Untitled')) {
+    throw new Error(`Today capture leaked a synthetic title: ${persisted.note.body}`);
+  }
+
+  await clickButton(win, { titleIncludes: 'Quick capture' });
+  await waitFor(win, 'second body-first capture ready', async () => {
+    const focused = await evaluate(win, `document.activeElement?.getAttribute('aria-label') === 'Quick capture text'`);
+    return { ok: focused, focused };
+  });
+  await clickButton(win, { text: 'More options' });
+  await waitFor(win, 'capture destination and template disclosed together', async () => {
+    const result = await evaluate(win, `({
+      destination: Boolean(document.querySelector('select[aria-label="Capture destination"]')?.getClientRects().length),
+      template: Boolean(document.querySelector('select[aria-label="Capture template"]')?.getClientRects().length)
+    })`);
+    return { ok: result.destination && result.template, result };
+  });
+  await setSelectByAria(win, 'Capture destination', 'new');
+  await waitFor(win, 'new-note-only title field appears', async () => {
+    const visible = await evaluate(win, `Boolean(document.querySelector('input[aria-label="New note title"]'))`);
+    return { ok: visible, visible };
+  });
+  await setControlByPlaceholder(win, 'Write what you want to remember', '# Derived capture title\nSupporting detail.');
+  await clickButton(win, { text: 'Save' });
+  await waitForPersistedNote(win, 'Derived capture title', note => String(note.body || '').includes('Supporting detail.'));
 }
 
 async function runSearchAndClearScenario(win) {
@@ -1123,15 +1168,82 @@ async function runSearchAndClearScenario(win) {
     const current = await state(win);
     return { ok: current.text.includes('All notes'), current };
   });
-  await setControlByPlaceholder(win, 'Search notes', 'QE User Scenario');
+  await setControlByPlaceholder(win, 'Search note contents', 'QE User Scenario');
   await waitFor(win, 'search filters to user scenario note', async () => {
     const current = await state(win);
     return { ok: current.text.includes('Search') && current.text.includes(title), current };
   });
   await pressAccelerator(win, 'Escape');
   await waitFor(win, 'search clears with Escape', async () => {
-    const value = await evaluate(win, `document.querySelector('input[placeholder="Search notes…"]')?.value || ''`);
+    const value = await evaluate(win, `document.querySelector('input[aria-label="Search note contents"]')?.value || ''`);
     return { ok: value === '', value };
+  });
+}
+
+async function runUnifiedPaletteScenario(win) {
+  await pressAccelerator(win, 'K', ['control']);
+  await waitFor(win, 'mixed Notes and Actions palette opens', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const root = document.querySelector('[data-mn-palette-root="true"]');
+        if (root) root.dataset.mnRegressionIdentity = 'shared-palette';
+        const frequent = [...document.querySelectorAll('[data-mn-frequent-action="true"]')];
+        return {
+          mode: root?.getAttribute('data-mn-palette-mode') || '',
+          noteCount: document.querySelectorAll('[data-mn-palette-kind="note"]').length,
+          frequentIds: frequent.map(item => item.getAttribute('data-mn-command-id')),
+        };
+      })()
+    `);
+    return {
+      ok: result.mode === 'mixed'
+        && result.noteCount > 0
+        && JSON.stringify(result.frequentIds) === JSON.stringify(['new-note', 'quick-capture', 'today', 'settings']),
+      result,
+    };
+  });
+
+  await pressAccelerator(win, 'P', ['control']);
+  await waitFor(win, 'same palette switches to notes-first mode', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const root = document.querySelector('[data-mn-palette-root="true"]');
+        return {
+          mode: root?.getAttribute('data-mn-palette-mode') || '',
+          identity: root?.dataset.mnRegressionIdentity || '',
+          placeholder: root?.querySelector('input')?.getAttribute('placeholder') || '',
+        };
+      })()
+    `);
+    return { ok: result.mode === 'notes' && result.identity === 'shared-palette' && result.placeholder.includes('Open or create a note'), result };
+  });
+
+  const createdTitle = 'QE Palette Created Zyzzy';
+  await setControlByPlaceholder(win, 'Open or create a note', createdTitle);
+  await waitFor(win, 'unmatched palette text offers note creation', async () => {
+    const result = await evaluate(win, `({
+      createTitle: document.querySelector('[data-mn-palette-kind="create"]')?.textContent?.trim() || '',
+      firstKind: document.querySelector('[data-mn-palette-kind]')?.getAttribute('data-mn-palette-kind') || ''
+    })`);
+    return { ok: result.firstKind === 'create' && result.createTitle.includes(createdTitle), result };
+  });
+  await pressAccelerator(win, 'Enter');
+  await waitForPersistedNote(win, createdTitle);
+
+  await pressAccelerator(win, 'P', ['control']);
+  await waitFor(win, 'notes-first palette reopens', async () => {
+    const mode = await evaluate(win, `document.querySelector('[data-mn-palette-root="true"]')?.getAttribute('data-mn-palette-mode') || ''`);
+    return { ok: mode === 'notes', mode };
+  });
+  await setControlByPlaceholder(win, 'Open or create a note', 'Welcome to VispNote');
+  await waitFor(win, 'existing note ranks before actions', async () => {
+    const firstKind = await evaluate(win, `document.querySelector('[data-mn-palette-kind]')?.getAttribute('data-mn-palette-kind') || ''`);
+    return { ok: firstKind === 'note', firstKind };
+  });
+  await pressAccelerator(win, 'Enter');
+  await waitFor(win, 'palette opens the selected note', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle === 'Welcome to VispNote' && !current.commandPaletteOpen, current };
   });
 }
 
@@ -1473,7 +1585,7 @@ async function runViewportAccessibilityScenario(win) {
 async function runDeleteRestoreScenario(win) {
   const title = 'QE User Scenario Note';
   await clickVisibleText(win, 'All notes');
-  await setControlByPlaceholder(win, 'Search notes', title);
+  await setControlByPlaceholder(win, 'Search note contents', title);
   await waitFor(win, 'delete target visible in note search', async () => {
     const current = await state(win);
     return { ok: current.text.includes(title), current };
@@ -1595,7 +1707,7 @@ async function runRegression() {
           return {
             ok: Boolean(pane && select && select.options.length >= 2),
             title: document.querySelector('.mn-note-title-input')?.value || '',
-            noteListVisible: Boolean(document.querySelector('input[placeholder^="Search notes"]')),
+            noteListVisible: Boolean(document.querySelector('input[aria-label="Search note contents"]')),
             text: pane?.textContent || '',
           };
         })()
@@ -1619,7 +1731,7 @@ async function runRegression() {
       const current = await evaluate(win, `
         (() => ({
           paneOpen: Boolean(document.querySelector('aside[aria-label="Reference note"]')),
-          noteListVisible: Boolean(document.querySelector('input[placeholder^="Search notes"]')),
+          noteListVisible: Boolean(document.querySelector('input[aria-label="Search note contents"]')),
           title: document.querySelector('.mn-note-title-input')?.value || '',
         }))()
       `);
@@ -1665,17 +1777,8 @@ async function runRegression() {
   await runScenario(win, 'Layout', 'minimum and desktop windows keep core controls usable', async () => {
     await runViewportAccessibilityScenario(win);
   });
-  await runScenario(win, 'Command Palette', 'opens and closes without changing context', async () => {
-    await pressAccelerator(win, 'K', ['control']);
-    await waitFor(win, 'command palette open', async () => {
-      const current = await state(win);
-      return { ok: current.commandPaletteOpen, current };
-    });
-    await pressAccelerator(win, 'Escape');
-    await waitFor(win, 'command palette close', async () => {
-      const current = await state(win);
-      return { ok: !current.commandPaletteOpen, current };
-    });
+  await runScenario(win, 'Palette', 'shares Notes and Actions across mixed and notes-first modes', async () => {
+    await runUnifiedPaletteScenario(win);
   });
 
   await runScenario(win, 'Editor', 'empty paragraph Enter-Tab-Enter returns to parent level', async () => {

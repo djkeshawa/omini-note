@@ -23,6 +23,7 @@ const PUBLIC_HELPERS = [
   "PHASE5_METRICS_FORMAT",
   "PHASE5_METRIC_KEYS",
   "todayIsoDate",
+  "captureTitleFromBody",
   "expandTemplate",
   "templateById",
   "captureTemplateById",

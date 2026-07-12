@@ -997,6 +997,11 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(utilityPanels, /templates = \[\]/);
   assert.match(utilityPanels, /aria-label="Capture destination"/);
   assert.match(utilityPanels, /aria-label="Capture template"/);
+  assert.match(utilityPanels, /aria-label="Quick capture text"/);
+  assert.match(utilityPanels, /createsNewNote && \(/);
+  assert.match(utilityPanels, /placeholder="Optional title"/);
+  assert.match(utilityPanels, /bodyRef\.current\?\.focus\(\)/);
+  assert.match(utilityPanels, /aria-controls="mn-capture-options"/);
   assert.match(utilityPanels, /No template/);
   assert.match(utilityPanels, /destinationId: activeDestination\?\.id \|\| 'new'/);
   assert.match(utilityPanels, /templateId: activeTemplate\?\.id === 'raw' \? '' : activeTemplate\?\.id/);

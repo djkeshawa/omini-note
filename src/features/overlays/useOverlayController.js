@@ -2,8 +2,7 @@ const { useCallback, useState } = React;
 
 export function useOverlayController() {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
+  const [paletteMode, setPaletteMode] = useState(null);
   const [vaultHealthOpen, setVaultHealthOpen] = useState(false);
   const [novelImportDialog, setNovelImportDialog] = useState(null);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -16,6 +15,18 @@ export function useOverlayController() {
   const showAppNotice = useCallback((title, message, tone = 'error') => {
     setAppNotice({ title, message: message || 'The operation could not be completed.', tone });
   }, []);
+  const setPaletteOpenForMode = useCallback((mode, nextValue) => {
+    setPaletteMode(current => {
+      const currentlyOpen = current === mode;
+      const shouldOpen = typeof nextValue === 'function' ? nextValue(currentlyOpen) : !!nextValue;
+      if (shouldOpen) return mode;
+      return currentlyOpen ? null : current;
+    });
+  }, []);
+  const setCommandPaletteOpen = useCallback(nextValue => setPaletteOpenForMode('mixed', nextValue), [setPaletteOpenForMode]);
+  const setQuickSwitcherOpen = useCallback(nextValue => setPaletteOpenForMode('notes', nextValue), [setPaletteOpenForMode]);
+  const commandPaletteOpen = paletteMode === 'mixed';
+  const quickSwitcherOpen = paletteMode === 'notes';
 
   return {
     settingsOpen,

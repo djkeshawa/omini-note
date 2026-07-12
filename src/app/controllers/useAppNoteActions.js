@@ -194,19 +194,26 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
       return [left, right].filter(Boolean).join('\n\n') + (right ? '\n' : '');
     }, []);
   
-    const saveQuickCapture = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [], destinationId = 'new', templateId = '' } = {}) => {
-      const cleanTitle = String(title || '').trim() || 'Untitled';
+    const saveQuickCapture = useCallbackA(({ title = '', body = '', tags: noteTags = [], destinationId = 'today', templateId = '' } = {}) => {
+      const requestedTitle = String(title || '').trim();
       const destinationOptions = { notes: notesWithBody, currentNote: selectedNote };
       const templateSelected = !!String(templateId || '').trim();
+      const destination = MN_APP_HELPERS.captureDestinationById
+        ? MN_APP_HELPERS.captureDestinationById(destinationId, destinationOptions)
+        : { id: 'new' };
+      const activeDestination = destination?.disabled && destination.fallbackDestinationId && MN_APP_HELPERS.captureDestinationById
+        ? MN_APP_HELPERS.captureDestinationById(destination.fallbackDestinationId, destinationOptions)
+        : destination;
+      const cleanTitle = requestedTitle || (!templateSelected && MN_APP_HELPERS.captureTitleFromBody
+        ? MN_APP_HELPERS.captureTitleFromBody(body)
+        : 'Untitled');
       if (templateSelected && MN_APP_HELPERS.captureBuildSavePlan) {
-        const text = destinationId === 'new'
-          ? (String(body || '').trim() || cleanTitle)
-          : [cleanTitle, body].map(value => String(value || '').trim()).filter(Boolean).join('\n\n');
+        const text = String(body || '').trim() || (activeDestination?.id === 'new' ? requestedTitle : '');
         const plan = MN_APP_HELPERS.captureBuildSavePlan({
           destinationId,
           templateId,
           text,
-          noteTitle: cleanTitle,
+          noteTitle: requestedTitle,
           notes: notesWithBody,
           currentNote: selectedNote,
         });
@@ -229,15 +236,9 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
         return id;
       }
   
-      const destination = MN_APP_HELPERS.captureDestinationById
-        ? MN_APP_HELPERS.captureDestinationById(destinationId, destinationOptions)
-        : { id: 'new' };
-      const activeDestination = destination?.disabled && destination.fallbackDestinationId && MN_APP_HELPERS.captureDestinationById
-        ? MN_APP_HELPERS.captureDestinationById(destination.fallbackDestinationId, destinationOptions)
-        : destination;
       const rawBody = activeDestination?.id === 'new'
         ? body
-        : quickCaptureRawMarkdown({ title: cleanTitle, body });
+        : quickCaptureRawMarkdown({ title: requestedTitle, body });
       if (activeDestination?.noteId) {
         updateNoteBody(activeDestination.noteId, previous => quickCaptureAppendBody(previous, rawBody));
         setSelectedId(activeDestination.noteId);
