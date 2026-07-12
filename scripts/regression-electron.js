@@ -761,6 +761,83 @@ async function runFirstRunGuidanceScenario(win) {
   });
 }
 
+async function runEmptyTodayScenario(win) {
+  const focused = await evaluate(win, `
+    (() => {
+      const row = document.querySelector('[role="button"][aria-label^="Today,"]');
+      row?.focus();
+      return document.activeElement === row;
+    })()
+  `);
+  if (!focused) throw new Error('Today navigation row could not receive keyboard focus');
+  await pressAccelerator(win, 'Enter');
+  await waitFor(win, 'calm empty Today surface', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const root = document.querySelector('[data-mn-today-root="true"]');
+        const buttons = root ? [...root.querySelectorAll('button')].map(button => (button.textContent || '').trim()) : [];
+        const sections = root ? [...root.querySelectorAll('[data-mn-today-section]')].map(section => section.getAttribute('data-mn-today-section')) : [];
+        return {
+          empty: root?.getAttribute('data-mn-today-empty') || '',
+          createDaily: buttons.filter(text => text === 'Create daily note').length,
+          quickTask: Boolean(root?.querySelector('input[aria-label="Quick task"]')),
+          secondaryActions: buttons.filter(text => ['Add reflection', 'End-day recap', 'AI recap'].includes(text)),
+          sections,
+        };
+      })()
+    `);
+    return {
+      ok: result.empty === 'true'
+        && result.createDaily === 1
+        && result.quickTask
+        && result.secondaryActions.length === 0
+        && result.sections.length === 0,
+      result,
+    };
+  });
+  await clickVisibleText(win, 'All notes');
+  await waitFor(win, 'note editor restored after empty Today check', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle && current.editorBodyVisible, current };
+  });
+}
+
+async function runPopulatedTodayScenario(win) {
+  await clickVisibleText(win, 'Today');
+  await waitFor(win, 'populated Today adapts without duplicate daily actions', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const root = document.querySelector('[data-mn-today-root="true"]');
+        const buttons = root ? [...root.querySelectorAll('button')].map(button => (button.textContent || '').trim()) : [];
+        const sections = root ? [...root.querySelectorAll('[data-mn-today-section]')].map(section => section.getAttribute('data-mn-today-section')) : [];
+        const todayLabel = [...document.querySelectorAll('span')].find(element => (element.textContent || '').trim() === 'Today');
+        const row = todayLabel?.parentElement;
+        const count = row ? [...row.querySelectorAll('span')].at(-1)?.textContent?.trim() : '';
+        return {
+          empty: root?.getAttribute('data-mn-today-empty') || '',
+          dailyActions: buttons.filter(text => text === 'Create daily note' || text === 'Open daily note').length,
+          sections,
+          count,
+        };
+      })()
+    `);
+    return {
+      ok: result.empty === 'false'
+        && result.dailyActions === 1
+        && result.sections.includes('agenda')
+        && result.sections.includes('notes')
+        && result.sections.includes('open-loops')
+        && result.count === '1',
+      result,
+    };
+  });
+  await clickVisibleText(win, 'All notes');
+  await waitFor(win, 'note editor restored after populated Today check', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle && current.editorBodyVisible, current };
+  });
+}
+
 async function openEditorMoreMenu(win) {
   await clickButton(win, { aria: 'More note actions' });
   await waitFor(win, 'editor More menu open', async () => {
@@ -1479,6 +1556,18 @@ async function runViewportAccessibilityScenario(win) {
     });
 
     await setAssistanceEnabledForRegression(win, true);
+    await waitFor(win, 'compact Ask AI navigation ready', async () => {
+      const visible = await evaluate(win, `
+        (() => {
+          const row = document.querySelector('[role="button"][aria-label="Ask AI"]');
+          if (!row) return false;
+          const style = getComputedStyle(row);
+          const rect = row.getBoundingClientRect();
+          return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+        })()
+      `);
+      return { ok: visible, visible };
+    });
     await clickVisibleText(win, 'Ask AI');
     await waitFor(win, 'compact Ask AI exposes its hidden chat history', async () => {
       const result = await evaluate(win, `({
@@ -1680,6 +1769,10 @@ async function runRegression() {
     }
   });
 
+  await runScenario(win, 'Today', 'fresh vault shows only calm capture actions', async () => {
+    await runEmptyTodayScenario(win);
+  });
+
   await runScenario(win, 'First run', 'creates a useful note with optional contextual guidance', async () => {
     await runFirstRunGuidanceScenario(win);
   });
@@ -1751,6 +1844,9 @@ async function runRegression() {
   });
   await runScenario(win, 'Agenda', 'agenda creates dated reminders and todos', async () => {
     await runCalendarPlannerScenario(win);
+  });
+  await runScenario(win, 'Today', 'populated vault surfaces current work without duplicate daily actions', async () => {
+    await runPopulatedTodayScenario(win);
   });
   await runScenario(win, 'Canvas', 'create, draw, move, undo, and redo a canvas object', async () => {
     await setPackEnabledForRegression(win, 'canvas', true);

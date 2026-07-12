@@ -1,3 +1,5 @@
+const { localDateKey } = require('../../shared/dateUtils.js');
+
 function createCaptureHelpers(scope = {}) {
   const rollupFindDailyNote = (...args) => scope.rollupFindDailyNote(...args);
   const NOTE_TEMPLATES = [
@@ -80,7 +82,7 @@ function createCaptureHelpers(scope = {}) {
   };
   
   function todayIsoDate(now = new Date()) {
-    return new Date(now).toISOString().slice(0, 10);
+    return localDateKey(now);
   }
   
   function captureCleanText(value = '', max = 8000) {

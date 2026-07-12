@@ -1,11 +1,35 @@
-const { useCallback, useMemo, useState } = React;
+import TODAY_MODEL from './todayModel.js';
+import { storage } from '../../shared/storageUtils.js';
+
+const { useCallback, useEffect, useMemo, useState } = React;
 
 const EMPTY_DIGEST = Object.freeze({ staleTodos: [], unlinkedNotes: [], resurfacedNotes: [] });
+const EMPTY_REVIEW_STATE = Object.freeze({ version: TODAY_MODEL.REVIEW_STATE_VERSION, items: {} });
 
-export function useTodayController({ view, notes, tasks, reminders, links, weekStart, helpers, ai }) {
+function reviewStateKey(vaultId) {
+  return `mn:todayReviewState:${String(vaultId || 'local')}`;
+}
+
+function readReviewState(key) {
+  return TODAY_MODEL.normalizeTodayReviewState(storage.getJson(key, EMPTY_REVIEW_STATE));
+}
+
+export function useTodayController({
+  view, notes, tasks, reminders, links, weekStart, helpers, ai, vaultId, assistanceEnabled = false,
+}) {
   const [recap, setRecap] = useState(null);
   const [recapBusy, setRecapBusy] = useState(false);
   const [recapError, setRecapError] = useState('');
+  const stateKey = reviewStateKey(vaultId);
+  const [reviewStore, setReviewStore] = useState(() => ({ key: stateKey, value: readReviewState(stateKey) }));
+
+  useEffect(() => {
+    setReviewStore(current => (
+      current.key === stateKey ? current : { key: stateKey, value: readReviewState(stateKey) }
+    ));
+  }, [stateKey]);
+
+  const reviewState = reviewStore.key === stateKey ? reviewStore.value : readReviewState(stateKey);
 
   const dailyNote = useMemo(() => (
     helpers.rollupFindDailyNote
@@ -16,6 +40,7 @@ export function useTodayController({ view, notes, tasks, reminders, links, weekS
   const agendaItems = useMemo(() => {
     const today = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
     const items = tasks
+      .filter(item => !item?.checked)
       .filter(item => !(helpers.agendaIsDeferred && helpers.agendaIsDeferred(item)))
       .filter(item => item?.remindAt?.date === today)
       .sort((a, b) => String(a.remindAt?.time || '').localeCompare(String(b.remindAt?.time || ''))
@@ -24,10 +49,10 @@ export function useTodayController({ view, notes, tasks, reminders, links, weekS
   }, [helpers, tasks]);
 
   const aiContext = useMemo(() => (
-    helpers.contextualAiBuildTodayRecapContext
+    view === 'today' && assistanceEnabled && helpers.contextualAiBuildTodayRecapContext
       ? helpers.contextualAiBuildTodayRecapContext({ notes, tasks, reminders, agendaItems, links, weekStart: weekStart || 'monday' })
       : null
-  ), [agendaItems, helpers, links, notes, reminders, tasks, weekStart]);
+  ), [agendaItems, assistanceEnabled, helpers, links, notes, reminders, tasks, view, weekStart]);
 
   const digest = useMemo(() => {
     if (view !== 'today' || !helpers.digestStaleTodoItems) return EMPTY_DIGEST;
@@ -35,8 +60,16 @@ export function useTodayController({ view, notes, tasks, reminders, links, weekS
       ...agendaItems.map(item => item.noteId),
       ...(aiContext?.notes || []).map(note => note.id),
     ].filter(Boolean));
-    const staleTodos = helpers.digestStaleTodoItems(tasks, notes, { limit: 5 });
-    const unlinkedNotes = helpers.digestUnlinkedRecentNotes(notes, links, { limit: 5 });
+    notes.forEach(note => {
+      if (note?.id && TODAY_MODEL.noteTouchesToday(note)) excludeIds.add(note.id);
+    });
+    const eligibleTasks = helpers.agendaIsDeferred
+      ? tasks.filter(item => !helpers.agendaIsDeferred(item))
+      : tasks;
+    const staleTodos = helpers.digestStaleTodoItems(eligibleTasks, notes, { limit: 5 });
+    const unlinkedNotes = helpers.digestUnlinkedRecentNotes(notes, links, { limit: 10 })
+      .filter(note => !excludeIds.has(note.id))
+      .slice(0, 5);
     staleTodos.forEach(item => item.noteId && excludeIds.add(item.noteId));
     unlinkedNotes.forEach(note => note.id && excludeIds.add(note.id));
     return {
@@ -47,6 +80,28 @@ export function useTodayController({ view, notes, tasks, reminders, links, weekS
         : [],
     };
   }, [agendaItems, aiContext, helpers, links, notes, tasks, view]);
+
+  const actionableCount = useMemo(() => TODAY_MODEL.todayActionableCount({ tasks, reminders }), [reminders, tasks]);
+
+  const reviewItems = useMemo(() => TODAY_MODEL.todayReviewItems({
+    staleTasks: digest.staleTodos,
+    unlinkedNotes: digest.unlinkedNotes,
+    resurfacedNotes: digest.resurfacedNotes,
+    reviewState,
+    limit: 3,
+  }), [digest, reviewState]);
+
+  const updateReviewItem = useCallback((itemId, action) => {
+    setReviewStore(current => {
+      const base = current.key === stateKey ? current.value : readReviewState(stateKey);
+      const value = TODAY_MODEL.updateTodayReviewState(base, itemId, action);
+      storage.setJson(stateKey, value);
+      return { key: stateKey, value };
+    });
+  }, [stateKey]);
+
+  const dismissReviewItem = useCallback(itemId => updateReviewItem(itemId, 'dismissed'), [updateReviewItem]);
+  const snoozeReviewItem = useCallback(itemId => updateReviewItem(itemId, 'snoozed'), [updateReviewItem]);
 
   const generateRecap = useCallback(async () => {
     if (!aiContext || !helpers.contextualAiBuildTodayRecapPrompt || !helpers.contextualAiBuildTodayRecapResult) {
@@ -91,5 +146,18 @@ export function useTodayController({ view, notes, tasks, reminders, links, weekS
     }
   }, [ai, aiContext, helpers]);
 
-  return { dailyNote, agendaItems, aiContext, digest, recap, recapBusy, recapError, generateRecap };
+  return {
+    dailyNote,
+    agendaItems,
+    aiContext,
+    digest,
+    actionableCount,
+    reviewItems,
+    dismissReviewItem,
+    snoozeReviewItem,
+    recap,
+    recapBusy,
+    recapError,
+    generateRecap,
+  };
 }

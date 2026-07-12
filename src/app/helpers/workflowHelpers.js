@@ -1,3 +1,5 @@
+const { isValidDateKey, localDateKey, shiftDateKey } = require('../../shared/dateUtils.js');
+
 function createWorkflowHelpers(scope = {}) {
   const ZOTERO_ITEM_KEY_RE = scope.ZOTERO_ITEM_KEY_RE;
   const ZOTERO_SOURCE_TAGS = scope.ZOTERO_SOURCE_TAGS;
@@ -488,45 +490,33 @@ function createWorkflowHelpers(scope = {}) {
   }
   
   function rollupDateKey(value) {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toISOString().slice(0, 10);
+    return value ? localDateKey(value) : '';
   }
   
   function rollupIsValidIsoDateKey(value = '') {
-    const key = String(value || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return false;
-    return rollupDateKey(`${key}T00:00:00.000Z`) === key;
+    return isValidDateKey(value);
   }
   
   function rollupShiftDateKey(key, days) {
-    if (!rollupIsValidIsoDateKey(key)) return '';
-    const date = new Date(`${key}T00:00:00.000Z`);
-    date.setUTCDate(date.getUTCDate() + days);
-    return rollupDateKey(date);
+    return shiftDateKey(key, days);
   }
   
   function rollupDateRangeBounds(range = 'today', now = new Date(), weekStart = 'monday') {
     const today = rollupDateKey(now) || todayIsoDate();
-    const start = new Date(`${today}T00:00:00.000Z`);
-    const end = new Date(start);
+    let start = today;
+    let end = today;
     const normalized = rollupNormalizeRange(range);
     if (normalized === 'yesterday') {
-      start.setUTCDate(start.getUTCDate() - 1);
-      end.setUTCDate(end.getUTCDate() - 1);
+      start = rollupShiftDateKey(today, -1);
+      end = start;
     } else if (normalized === 'week') {
-      const day = start.getUTCDay();
+      const day = new Date(`${today}T12:00:00`).getDay();
       const offset = weekStart === 'sunday' ? day : (day + 6) % 7;
-      start.setUTCDate(start.getUTCDate() - offset);
+      start = rollupShiftDateKey(today, -offset);
     } else if (normalized === 'month') {
-      start.setUTCDate(1);
+      start = `${today.slice(0, 8)}01`;
     }
-    return {
-      start: rollupDateKey(start),
-      end: rollupDateKey(end),
-      today,
-    };
+    return { start, end, today };
   }
   
   function rollupDateKeyInRange(key, range = 'today', now = new Date(), weekStart = 'monday') {
