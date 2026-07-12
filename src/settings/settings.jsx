@@ -225,7 +225,7 @@ function MnSettingsModal({
             {section === 'about' && (
               <div style={{ display: 'grid', gap: 40 }}>
                 <SectionAbout T={T} stats={stats} updateState={updateState} setUpdateState={setUpdateState} />
-                <SectionShortcuts T={T} shortcutStatus={shortcutStatus} />
+                <SectionShortcuts T={T} shortcutStatus={shortcutStatus} featureState={featureState} />
               </div>
             )}
           </div>

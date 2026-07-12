@@ -1,4 +1,4 @@
-import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx'; import { storage } from '../shared/storageUtils.js'; import { mnGetTagColor } from '../shared/theme.jsx';
+import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx'; import { storage } from '../shared/storageUtils.js'; import { mnGetTagColor } from '../shared/theme.jsx'; import { shortcutLabel } from '../platform/shortcuts.js';
 const { useMemo: useMemoS } = React;
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
@@ -14,7 +14,7 @@ function MnSidebar({
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
-  featureState = {}, T, density, theme
+  featureState = {}, newNoteShortcut = shortcutLabel('newNote', undefined, { compact: true }), T, density, theme
 }) {
   const [vaultOpen, setVaultOpen] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
@@ -470,7 +470,7 @@ function MnSidebar({
         )}
 
         <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-          <button onClick={onNew} title="New note (⌘N)" style={{
+          <button type="button" onClick={onNew} title={`New note (${newNoteShortcut})`} style={{
             flex: 1, padding: '8px 10px', borderRadius: 7, cursor: 'pointer',
             background: T.ink, border: `1px solid ${T.ink}`,
             color: T.bg, fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 650,

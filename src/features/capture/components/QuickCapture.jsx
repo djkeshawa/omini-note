@@ -1,6 +1,9 @@
+import { shortcutLabel, useShortcutPlatform } from '../../../platform/shortcuts.js';
+
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
 
 function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = [], T, theme }) {
+  const shortcutPlatform = useShortcutPlatform();
   const [title, setTitle] = useStateP('');
   const [body, setBody] = useStateP('');
   const [selected, setSelected] = useStateP([]);
@@ -69,7 +72,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
             fontFamily: 'var(--mn-mono)', fontSize: 10,
             padding: '2px 5px', borderRadius: 3,
             background: T.bgSub, border: `1px solid ${T.lineSub}`,
-          }}>⌘⇧N</span>
+          }}>{shortcutLabel('quickCapture', shortcutPlatform, { compact: true })}</span>
         </div>
         <div style={{ padding: 16 }}>
           <div style={{

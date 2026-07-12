@@ -634,6 +634,106 @@ async function assertViewportUsable(win, label) {
   return metrics;
 }
 
+async function openEditorMoreMenu(win) {
+  await clickButton(win, { aria: 'More note actions' });
+  await waitFor(win, 'editor More menu open', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const menu = document.querySelector('[role="menu"][aria-label="More note actions"]');
+        return { ok: Boolean(menu), text: menu?.textContent || '' };
+      })()
+    `);
+    return { ok: result.ok, result };
+  });
+}
+
+async function runEditorUsabilityScenario(win) {
+  await clickButton(win, { text: 'New note' });
+  await waitFor(win, 'blank note editor ready', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const title = document.querySelector('.mn-note-title-input');
+        const header = document.querySelector('[data-mn-editor-header="true"]');
+        const properties = document.querySelector('[data-mn-properties-panel="true"]');
+        const firstBlock = document.querySelector('.mn-block-row');
+        const headerButtons = [...(header?.querySelectorAll('button') || [])].map(button => ({
+          text: (button.textContent || '').trim(),
+          aria: button.getAttribute('aria-label') || '',
+        }));
+        return {
+          ok: Boolean(title && header && firstBlock)
+            && !properties
+            && header.textContent.includes('Saved')
+            && header.textContent.includes('0 words')
+            && headerButtons.some(button => button.text === 'Pin')
+            && headerButtons.some(button => button.text.startsWith('More'))
+            && !headerButtons.some(button => ['Duplicate note', 'Version history', 'Delete note', 'Open Graph', 'Open Agenda'].includes(button.text)),
+          title: title?.value || '',
+          properties: Boolean(properties),
+          headerText: header?.textContent || '',
+          headerButtons,
+          titleTop: title?.getBoundingClientRect().top || 0,
+          firstBlockTop: firstBlock?.getBoundingClientRect().top || 0,
+        };
+      })()
+    `);
+    return { ok: result.ok && result.titleTop < result.firstBlockTop, result };
+  });
+
+  await openEditorMoreMenu(win);
+  const menuState = await evaluate(win, `
+    (() => {
+      const menu = document.querySelector('[role="menu"][aria-label="More note actions"]');
+      const text = menu?.textContent || '';
+      return {
+        text,
+        hasCoreActions: ['Duplicate note', 'Version history', 'Export as Markdown', 'Delete note'].every(label => text.includes(label)),
+        hasDisabledPackActions: text.includes('Open Graph') || text.includes('Open Agenda'),
+      };
+    })()
+  `);
+  if (!menuState.hasCoreActions || menuState.hasDisabledPackActions) {
+    throw new Error(`Editor More menu is not focused: ${JSON.stringify(menuState)}`);
+  }
+  await waitFor(win, 'editor More menu focuses its first action', async () => {
+    const activeLabel = await evaluate(win, `document.activeElement?.getAttribute('aria-label') || ''`);
+    return { ok: activeLabel === 'Duplicate note', activeLabel };
+  });
+  await pressAccelerator(win, 'Down');
+  await waitFor(win, 'editor More menu supports arrow navigation', async () => {
+    const activeLabel = await evaluate(win, `document.activeElement?.getAttribute('aria-label') || ''`);
+    return { ok: activeLabel === 'Version history', activeLabel };
+  });
+  await pressAccelerator(win, 'Escape');
+
+  await clickButton(win, { text: '+ Tag' });
+  await waitFor(win, 'tag picker focuses its input', async () => {
+    const activeLabel = await evaluate(win, `document.activeElement?.getAttribute('aria-label') || ''`);
+    return { ok: activeLabel === 'New tag name', activeLabel };
+  });
+  await pressAccelerator(win, 'Escape');
+  await waitFor(win, 'tag picker returns focus to its trigger', async () => {
+    const activeText = await evaluate(win, `(document.activeElement?.textContent || '').trim()`);
+    return { ok: activeText === '+ Tag', activeText };
+  });
+
+  await clickButton(win, { text: '+ Property' });
+  await waitFor(win, 'property editor opens on demand', async () => {
+    const result = await evaluate(win, `
+      (() => ({
+        panel: Boolean(document.querySelector('[data-mn-properties-panel="true"]')),
+        propertyName: Boolean(document.querySelector('input[aria-label="Property name"]')),
+      }))()
+    `);
+    return { ok: result.panel && result.propertyName, result };
+  });
+  await pressAccelerator(win, 'Escape');
+  await waitFor(win, 'empty property editor dismisses without metadata', async () => {
+    const panel = await evaluate(win, `Boolean(document.querySelector('[data-mn-properties-panel="true"]'))`);
+    return { ok: !panel, panel };
+  });
+}
+
 async function editorRows(win) {
   return await evaluate(win, `
     (() => {
@@ -943,8 +1043,9 @@ async function runCalendarPlannerScenario(win) {
     return { ok: current.selectedTitle && current.editorBodyVisible, current };
   });
   const title = (await state(win)).selectedTitle;
-  await clickButton(win, { titleIncludes: 'Agenda' });
-  await waitFor(win, 'agenda panel opens from editor toolbar', async () => {
+  await openEditorMoreMenu(win);
+  await clickButton(win, { aria: 'Open Agenda' });
+  await waitFor(win, 'agenda panel opens from editor More menu', async () => {
     const visible = await evaluate(win, `document.body.textContent.includes('Agenda') && document.body.textContent.includes('Inbox todos')`);
     return { ok: visible, visible };
   });
@@ -1057,6 +1158,53 @@ async function runViewportAccessibilityScenario(win) {
     win.setSize(900, 700);
     await wait(250);
     await assertViewportUsable(win, 'minimum supported window');
+    const compact = await evaluate(win, `
+      (() => {
+        const root = document.querySelector('[data-mn-layout]');
+        const overlay = document.querySelector('[data-mn-note-list-mode="overlay"]');
+        const headerButtons = [...document.querySelectorAll('[data-mn-editor-header="true"] button')]
+          .map(button => button.getBoundingClientRect())
+          .filter(rect => rect.width > 0 && rect.height > 0);
+        return {
+          mode: root?.getAttribute('data-mn-layout') || '',
+          overlay: Boolean(overlay),
+          targetsMeetMinimum: headerButtons.every(rect => rect.width >= 24 && rect.height >= 24),
+        };
+      })()
+    `);
+    if (compact.mode !== 'compact' || !compact.overlay || !compact.targetsMeetMinimum) {
+      throw new Error(`Compact note-list layout is not usable: ${JSON.stringify(compact)}`);
+    }
+    await pressAccelerator(win, 'Escape');
+    await waitFor(win, 'compact note list closes with Escape', async () => {
+      const result = await evaluate(win, `({
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[aria-label="Show note list"]')),
+        activeLabel: document.activeElement?.getAttribute('aria-label') || '',
+      })`);
+      return { ok: !result.overlay && result.showButton && result.activeLabel === 'Show note list', result };
+    });
+    win.setSize(1280, 860);
+    await wait(250);
+    await assertViewportUsable(win, 'desktop restored after compact selection');
+    const restoredDesktopMode = await evaluate(win, `document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || ''`);
+    if (restoredDesktopMode !== 'three-pane') {
+      throw new Error(`Desktop layout did not restore after closing the compact drawer: ${restoredDesktopMode}`);
+    }
+    win.setSize(900, 700);
+    await waitFor(win, 'compact editor remains focused after resize round trip', async () => {
+      const result = await evaluate(win, `({
+        mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[aria-label="Show note list"]')),
+      })`);
+      return { ok: result.mode === 'compact' && !result.overlay && result.showButton, result };
+    });
+    await clickButton(win, { aria: 'Show note list' });
+    await waitFor(win, 'compact note list reopens from editor navigation', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
     await clickButton(win, { titleIncludes: 'Settings' });
     await waitFor(win, 'settings open at minimum supported window', async () => {
       const current = await state(win);
@@ -1071,6 +1219,15 @@ async function runViewportAccessibilityScenario(win) {
     win.setSize(1280, 860);
     await wait(250);
     await assertViewportUsable(win, 'desktop window');
+    const desktop = await evaluate(win, `
+      (() => ({
+        mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+      }))()
+    `);
+    if (desktop.mode !== 'three-pane' || desktop.overlay) {
+      throw new Error(`Desktop three-pane layout is not active: ${JSON.stringify(desktop)}`);
+    }
   } finally {
     win.setBounds(original);
     await wait(200);
@@ -1090,7 +1247,8 @@ async function runDeleteRestoreScenario(win) {
     const current = await state(win);
     return { ok: current.selectedTitle === title, current };
   });
-  await clickButton(win, { titleIncludes: 'Delete' });
+  await openEditorMoreMenu(win);
+  await clickButton(win, { aria: 'Delete note' });
   await waitFor(win, 'delete note dialog explains recoverability', async () => {
     const current = await state(win);
     return { ok: current.dialogs.some(text => text.includes('Delete note') && text.includes('Recently deleted')), current };
@@ -1178,11 +1336,16 @@ async function runRegression() {
     await runPackIsolationScenario(win);
   });
 
+  await runScenario(win, 'Editor', 'blank notes prioritize writing and disclose secondary actions', async () => {
+    await runEditorUsabilityScenario(win);
+  });
+
   await runScenario(win, 'Notes', 'create, edit, and persist a note', async () => {
     await runNoteCreateEditPersistenceScenario(win);
   });
   await runScenario(win, 'Reference', 'keeps a read-only note beside the editor and restores the note list', async () => {
     const mainTitle = (await state(win)).selectedTitle;
+    await openEditorMoreMenu(win);
     await clickButton(win, { aria: 'Open reference pane' });
     await waitFor(win, 'reference pane open', async () => {
       const current = await evaluate(win, `

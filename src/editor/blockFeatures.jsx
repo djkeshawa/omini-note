@@ -11,6 +11,8 @@
 //
 // Right-click context menu on bullet: copy ref, copy embed, zoom in, move, indent/outdent, delete
 
+import { shortcutLabel, useShortcutPlatform } from '../platform/shortcuts.js';
+
 const MN_DEFAULT_WORKFLOW_STATES = [
   { id: 'TODO',      next: 'DOING',     color: 'oklch(0.55 0.18 30)',  bg: 'oklch(0.96 0.04 30)'  },
   { id: 'DOING',     next: 'DONE',      color: 'oklch(0.55 0.18 250)', bg: 'oklch(0.95 0.04 250)' },
@@ -305,6 +307,7 @@ function MnBlockContextMenu({
   onPasteAfter, onZoom, onIndent, onOutdent, onMoveUp, onMoveDown,
   onDelete, onDuplicate, onAddLabel, onSetWorkflow, onChangeKind, workflowEnabled = false, T
 }) {
+  const shortcutPlatform = useShortcutPlatform();
   React.useEffect(() => {
     const onDown = (e) => {
       // Close on click outside menu
@@ -324,10 +327,11 @@ function MnBlockContextMenu({
     if (divider) return <div style={{ height: 1, background: T.lineSub, margin: '4px 0' }} />;
     return (
       <button
+        type="button"
         onMouseDown={(e) => { e.preventDefault(); onClick(); onClose(); }}
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
-          width: '100%', padding: '5px 10px',
+          width: '100%', minHeight: 32, padding: '5px 10px',
           background: 'transparent', border: 'none', cursor: 'pointer',
           textAlign: 'left',
           fontFamily: 'var(--mn-ui)', fontSize: 12.5,
@@ -363,20 +367,20 @@ function MnBlockContextMenu({
         fontFamily: 'var(--mn-mono)', fontSize: 9, color: T.inkDim,
         letterSpacing: '0.1em', textTransform: 'uppercase',
       }}>Block · {block.id.slice(-6)}</div>
-      <Item icon="⤓" label="Zoom into block"      kbd="⌘↵"   onClick={onZoom} />
+      <Item icon="⤓" label="Zoom into block" kbd={shortcutLabel('zoomBlock', shortcutPlatform, { compact: true })} onClick={onZoom} />
       <Item divider />
-      <Item icon="⌘"  label="Copy block ref"      onClick={onCopyRef} />
+      <Item icon="R"  label="Copy block ref"      onClick={onCopyRef} />
       <Item icon="⎘"  label="Copy block embed"    onClick={onCopyEmbed} />
-      <Item icon="C"  label="Copy block"          kbd="⌘C"   onClick={onCopyBlock} />
-      <Item icon="X"  label="Cut block"           kbd="⌘X"   onClick={onCutBlock} />
-      <Item icon="V"  label="Paste after"         kbd="⌘V"   onClick={onPasteAfter} />
+      <Item icon="C" label="Copy block" kbd={shortcutLabel('copyBlock', shortcutPlatform, { compact: true })} onClick={onCopyBlock} />
+      <Item icon="X" label="Cut block" kbd={shortcutLabel('cutBlock', shortcutPlatform, { compact: true })} onClick={onCutBlock} />
+      <Item icon="V" label="Paste after" kbd={shortcutLabel('pasteBlock', shortcutPlatform, { compact: true })} onClick={onPasteAfter} />
       <Item divider />
-      <Item icon="→"  label="Indent"               kbd="Tab"   onClick={onIndent} />
-      <Item icon="←"  label="Outdent"              kbd="⇧Tab"  onClick={onOutdent} />
-      <Item icon="↑"  label="Move up"              kbd="⌥↑"   onClick={onMoveUp} />
-      <Item icon="↓"  label="Move down"            kbd="⌥↓"   onClick={onMoveDown} />
+      <Item icon="→" label="Indent" kbd={shortcutLabel('indent', shortcutPlatform, { compact: true })} onClick={onIndent} />
+      <Item icon="←" label="Outdent" kbd={shortcutLabel('outdent', shortcutPlatform, { compact: true })} onClick={onOutdent} />
+      <Item icon="↑" label="Move up" kbd={shortcutLabel('moveBlockUp', shortcutPlatform, { compact: true })} onClick={onMoveUp} />
+      <Item icon="↓" label="Move down" kbd={shortcutLabel('moveBlockDown', shortcutPlatform, { compact: true })} onClick={onMoveDown} />
       <Item divider />
-      <Item icon="⊕"  label="Duplicate"            kbd="⌘D"   onClick={onDuplicate} />
+      <Item icon="⊕" label="Duplicate" kbd={shortcutLabel('duplicateBlock', shortcutPlatform, { compact: true })} onClick={onDuplicate} />
       <Item icon="L"  label="Add label"            kbd="/label" onClick={onAddLabel} />
       <Item divider />
       <div style={{
@@ -427,7 +431,7 @@ function MnBlockContextMenu({
         </>
       )}
       <Item divider />
-      <Item icon="🗑" label="Delete block"          kbd="⌘⌫"  onClick={onDelete} danger />
+      <Item icon="🗑" label="Delete block" kbd={shortcutLabel('deleteBlock', shortcutPlatform, { compact: true })} onClick={onDelete} danger />
     </div>
   );
 }

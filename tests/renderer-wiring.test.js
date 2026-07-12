@@ -126,9 +126,12 @@ test('Advertised keyboard shortcuts are wired to handlers', () => {
   const outliner = outlinerSource(__dirname);
   const keyboard = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/useOutlinerKeyboardShortcuts.js'), 'utf8');
   const settings = settingsSource();
+  const shortcuts = fs.readFileSync(path.join(__dirname, '../src/platform/shortcuts.js'), 'utf8');
 
-  assert.match(app, /const isBackslashKey = key === '\\\\' \|\| key === '\|'/);
-  assert.match(app, /e\.code === 'Backslash'/);
+  assert.match(app, /matchesShortcut\(e, 'toggleSidebar'\)/);
+  assert.match(app, /matchesShortcut\(e, 'toggleNoteList'\)/);
+  assert.match(app, /matchesShortcut\(e, 'commandPalette'\)/);
+  assert.match(shortcuts, /event\?\.code === 'Backslash'/);
   assert.match(keyboard, /const isBlockZoom = isMod && key === 'Enter'/);
   assert.match(keyboard, /const isBlockMoveUp = event\.altKey && !isMod && key === 'ArrowUp'/);
   assert.match(keyboard, /const isBlockMoveDown = event\.altKey && !isMod && key === 'ArrowDown'/);
@@ -139,9 +142,9 @@ test('Advertised keyboard shortcuts are wired to handlers', () => {
   assert.match(keyboard, /deleteBlockRef\.current\?\.\(activeBlockId\(\)\)/);
   assert.match(keyboard, /zoomBlockRef\.current\?\.\(activeBlockId\(\)\)/);
   assert.match(outliner, /if \(srcId === destId && position !== 'up' && position !== 'down'\) return/);
-  assert.match(settings, /⌘ K/);
-  assert.match(settings, /⌘ Z/);
-  assert.match(settings, /⌥ ↑ \/ ⌥ ↓/);
+  assert.match(settings, /shortcutLabel\('commandPalette', platform\)/);
+  assert.match(settings, /shortcutLabel\('undo', platform\)/);
+  assert.match(settings, /shortcutLabel\('moveBlockUp', platform\)/);
 });
 
 test('Note tag picker can create new tags from the editor', () => {
@@ -255,6 +258,7 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   const app = appSource(__dirname);
   const appShell = appShellSource();
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const editorHeader = fs.readFileSync(path.join(__dirname, '../src/editor/EditorHeader.jsx'), 'utf8');
   const outliner = outlinerSource(__dirname);
   const utilityPanels = [
     '../src/features/today/components/TodayPanel.jsx',
@@ -273,8 +277,9 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   assert.match(app, /setReminderCenterOpen\(false\)/);
   assert.match(appShell, /const visibleItems = items/);
   assert.doesNotMatch(appShell, /items\.slice\(0, 12\)/);
-  assert.match(editor, /padding: '12px clamp\(18px, 4vw, 76px\) 10px clamp\(18px, 3vw, 28px\)'/);
-  assert.match(editor, /borderBottom: `1px solid \$\{T\.lineSub\}`/);
+  assert.match(editorHeader, /data-mn-editor-header="true"/);
+  assert.match(editorHeader, /minHeight: 56/);
+  assert.match(editorHeader, /borderBottom: `1px solid \$\{T\.lineSub\}`/);
 
   assert.match(editor, /spellCheck=\{spellCheck\}/);
   assert.match(outliner, /spellCheck=\{block\.kind === 'code' \? false : spellCheck\}/);
@@ -857,6 +862,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const editorHeader = fs.readFileSync(path.join(__dirname, '../src/editor/EditorHeader.jsx'), 'utf8');
   const todosPanel = fs.readFileSync(path.join(__dirname, '../src/panels/todosPanel.jsx'), 'utf8');
   const calendarPanel = fs.readFileSync(path.join(__dirname, '../src/panels/calendarPanel.jsx'), 'utf8');
   const appShell = appShellSource();
@@ -968,7 +974,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(calendarPanel, /onSnoozeItem/);
   assert.doesNotMatch(appShell, /function MnAppTopToolbar/);
   assert.match(editor, /onOpenCalendar/);
-  assert.match(editor, /title="Agenda"/);
+  assert.match(editorHeader, />Open Agenda<\/MenuItem>/);
   assert.match(utilityPanels, /onSnooze \|\| onDismiss/);
   assert.match(utilityPanels, /rollupFormat === 'short'/);
   assert.match(utilityPanels, /tasks = \[\], reminders = \[\], todayNote = null, agendaItems = \[\]/);
@@ -1299,6 +1305,7 @@ test('Reference pane and bounded note list stay optional and keyboard accessible
   const app = appCompositionSource();
   const referenceController = fs.readFileSync(path.join(__dirname, '../src/features/reference/useReferencePaneController.js'), 'utf8');
   const editor = fs.readFileSync(projectPaths.src.editor, 'utf8');
+  const editorHeader = fs.readFileSync(path.join(__dirname, '../src/editor/EditorHeader.jsx'), 'utf8');
   const noteList = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
   const reference = fs.readFileSync(path.join(__dirname, '../src/features/reference/components/ReferencePane.jsx'), 'utf8');
   const entry = fs.readFileSync(projectPaths.src.main, 'utf8');
@@ -1307,8 +1314,9 @@ test('Reference pane and bounded note list stay optional and keyboard accessible
   assert.match(app, /id: 'reference-pane'/);
   assert.match(app, /args\.noteId \|\| args\.noteTitle \? currentOrArgNote\(args\) : null/);
   assert.match(referenceController, /recordUsage\('reference_pane', 'opened'\)/);
-  assert.match(app, /isMod && e\.shiftKey && lowerKey === 'r'/);
-  assert.match(editor, /aria-label=\{referencePaneOpen \? 'Close reference pane' : 'Open reference pane'\}/);
+  assert.match(app, /matchesShortcut\(e, 'referencePane'\)/);
+  assert.match(editor, /onToggleReferencePane/);
+  assert.match(editorHeader, /referencePaneOpen \? 'Close reference pane' : 'Open reference pane'/);
   assert.match(noteList, /role="listbox"/);
   assert.match(noteList, /visibleLimit < notes\.length/);
   assert.match(noteList, /Open as reference/);
@@ -1772,6 +1780,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   const rendererEntry = fs.readFileSync(projectPaths.src.main, 'utf8');
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const editorHeader = fs.readFileSync(path.join(__dirname, '../src/editor/EditorHeader.jsx'), 'utf8');
   const outliner = outlinerSource(__dirname);
   const slashCommands = fs.readFileSync(path.join(__dirname, '../src/features/editor/outliner/slashCommands.js'), 'utf8');
   const blockFeatures = fs.readFileSync(path.join(__dirname, '../src/editor/blockFeatures.jsx'), 'utf8');
@@ -1800,7 +1809,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(notelist, /onDeleteNote/);
   assert.match(notelist, /onContextMenu=\{\(e\) =>/);
   assert.match(editor, /onDuplicate/);
-  assert.match(editor, /title="Duplicate note"/);
+  assert.match(editorHeader, />Duplicate note<\/MenuItem>/);
 
   assert.match(outliner, /const \[aiPrompt, setAiPrompt\]/);
   assert.match(outliner, /role="dialog"/);
@@ -1811,7 +1820,7 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(store, /novelistAiConfig/);
   assert.match(main, /function flushDirtyNotes/);
   assert.match(preload, /onFlushDirtyNotes/);
-  assert.match(app, /onNew=\{\(\) => createNote\(\)\}/);
+  assert.match(app, /onNew=\{\(\) => \{ createNote\(\); if \(overlayNoteList\) setNoteListHidden\(true\); \}\}/);
   assert.match(app, /const baseThemeMap = MN_THEMES/);
   assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
   assert.match(panels, /initialAiConfig = null/);

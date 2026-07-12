@@ -1,9 +1,12 @@
 import { H, SettingsCard, Row, Segmented, Toggle, Select, FontSizeStepper } from '../settingsControls.jsx';
 import { MN_PLUGINS as MN_SETTINGS_PLUGINS } from '../../shared/plugins.js';
 import { BtnOutline, StaticValue, mnSettingsInput } from '../settingsPrimitives.jsx';
+import { shortcutLabel, useShortcutPlatform } from '../../platform/shortcuts.js';
 const { useState: useStateS } = React;
 
 function SectionPlugins({ tweaks, setTweak, T }) {
+  const shortcutPlatform = useShortcutPlatform();
+  const paletteShortcut = shortcutLabel('commandPalette', shortcutPlatform, { compact: true });
   const types = MN_SETTINGS_PLUGINS.TYPES || [];
   const normalizeAll = MN_SETTINGS_PLUGINS.normalizeAll || (() => []);
   const makeId = MN_SETTINGS_PLUGINS.id || (() => `plg_${Date.now()}`);
@@ -91,7 +94,7 @@ function SectionPlugins({ tweaks, setTweak, T }) {
       <SettingsCard T={T}>
         {plugins.length === 0 && (
           <div style={{ padding: 18, fontFamily: 'var(--mn-body)', fontSize: 13, color: T.inkMed, lineHeight: 1.55 }}>
-            No plugins yet. Add a template, quick capture, or URL plugin above; then run it from the command palette with Ctrl+K.
+            No plugins yet. Add a template, quick capture, or URL plugin above; then run it from the command palette with {paletteShortcut}.
           </div>
         )}
         {plugins.map((plugin, index) => {
@@ -128,7 +131,7 @@ function SectionPlugins({ tweaks, setTweak, T }) {
                       <input value={plugin.config.repoId || ''} onChange={e => updatePluginConfig(plugin.id, { repoId: e.target.value })} placeholder="Project id (optional — empty creates one from the note name)" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
                       <input type="password" value={plugin.config.apiKey || ''} onChange={e => updatePluginConfig(plugin.id, { apiKey: e.target.value })} placeholder="API key (optional)" style={mnSettingsInput(T, { width: '100%', minWidth: 0 })} />
                       <div style={{ fontFamily: 'var(--mn-body)', fontSize: 12, color: T.inkMed, lineHeight: 1.5 }}>
-                        Palette commands (Ctrl+K): "Import memories as notes", "Remember this note", and "Sync note links to memory graph" — the last mirrors your [[wiki-links]] into the memory graph so Ask AI can follow how pages connect. Ask AI automatically blends graph-aware memory recall into answers when this bridge is on. The server must run on this machine.
+                        Palette commands ({paletteShortcut}): "Import memories as notes", "Remember this note", and "Sync note links to memory graph" — the last mirrors your [[wiki-links]] into the memory graph so Ask AI can follow how pages connect. Ask AI automatically blends graph-aware memory recall into answers when this bridge is on. The server must run on this machine.
                       </div>
                     </div>
                   )}

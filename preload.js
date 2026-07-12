@@ -189,6 +189,7 @@ contextBridge.exposeInMainWorld('mn', {
   app: {
   setTitle: (title) => ipcRenderer.invoke('mn:setTitle', title),
   openExternal: (url) => ipcRenderer.invoke('mn:openExternal', url),
+  info: () => ipcRenderer.invoke('mn:appInfo'),
   shortcutStatus: () => ipcRenderer.invoke('mn:shortcutStatus'),
   },
   updates: {
