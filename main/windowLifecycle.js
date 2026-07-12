@@ -131,7 +131,9 @@ function createWindowLifecycle({
       width: 1440, height: 900, minWidth: 900, minHeight: 700,
       backgroundColor: '#f6f7f9', icon: createAppIcon(), title: appName,
       webPreferences: {
-        ...(process.env.VISPNOTE_EPHEMERAL_SESSION === '1' ? { partition: `vispnote-test-${process.pid}` } : {}),
+        ...(process.env.VISPNOTE_EPHEMERAL_SESSION === '1'
+          ? { partition: `vispnote-test-${process.pid}`, backgroundThrottling: false }
+          : {}),
         contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
         allowRunningInsecureContent: false, spellcheck: true,
         preload: path.join(rootDir, 'preload.js'),

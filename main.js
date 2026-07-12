@@ -322,6 +322,7 @@ registerWindowHandlers(ipcMain, {
   shell,
   autoUpdater,
   sanitizeExternalUrl,
+  getAppInfo: () => ({ platform: process.platform }),
   getShortcutState: windowLifecycle.getShortcutState,
   emitUpdateState: updateService.emitState,
   checkForUpdates: updateService.check,

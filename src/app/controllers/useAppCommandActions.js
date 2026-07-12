@@ -1,3 +1,5 @@
+import { matchesShortcut } from '../../platform/shortcuts.js';
+
 function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS, MN_APP_MUTATIONS, MN_FEATURES, MN_MEMORY_ACTIONS, MN_NOTE_TEMPLATES, MN_PLUGIN_API, activeCanvas, activeVault, activeVaultId, addNoteToCanvas, addTag, appNotice, assistanceEnabled, blockingOverlayOpen, bootState, canvasTextEditing, canvases, clearInterval, closeReferencePane, commandPaletteOpen, conflictNotice, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, deleteTargetId, desktopBridge, dismissedReminderKeys, duplicateNote, enabledPacks, exportBackup, importBackup, markDirty, mnCollectReminderItems, mnMdToBlocks, mnNormalizeNoteStatus, mnPlayReminderSound, mnReadSnoozedReminders, navigateView, normalizeNotes, normalizeTagName, notesWithBody, notesWithBodyRef, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, quickSwitcherOpen, quietedReminderKeys, rebuildIndex, recordPhase5Metric, referencePaneOpen, reminderCenterOpen, renameNoteTitle, restoreDeletedNote, selectVault, selectedNote, setAppNotice, setCaptureOpen, setCommandPaletteOpen, setConflictNotice, setConnectionsRefreshToken, setDeleteTargetId, setInterval, setNoteListHidden, setNotes, setQuickSwitcherOpen, setReminderCenterOpen, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setSidebarHidden, setToast, setVaultHealthOpen, setVersionTargetId, settingsOpen, showAppNotice, smartViewDefinitions, titleUpdateTimerRef, toast, toastRef, todayAgendaItems, tweaks, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, useAppActionRegistry, useCallbackA, useEffectA, useMemoA, vaultHealthOpen, vaults, vaultsForSidebar, versionTargetId, view, workflowData, workflowStates }) {
   const plugins = useMemoA(() => (MN_PLUGIN_API.normalizeAll ? MN_PLUGIN_API.normalizeAll(tweaks.plugins) : []), [tweaks.plugins]);
   const featureArtifacts = useMemoA(() => (
@@ -202,39 +204,36 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
   
     useEffectA(() => {
       const h = (e) => {
-        const isMod = e.metaKey || e.ctrlKey;
         const key = e.key || '';
-        const lowerKey = key.toLowerCase();
-        const isBackslashKey = key === '\\' || key === '|' || e.code === 'Backslash';
         // While a real modal (settings, dialogs, capture) is up, only Escape
         // acts — Ctrl+N must not create notes behind it. The palette and quick
         // switcher stay toggleable since their shortcuts also close them.
         const modalBlocksShortcuts = blockingOverlayOpen && !commandPaletteOpen && !quickSwitcherOpen;
         if (modalBlocksShortcuts && key !== 'Escape') return;
-        if (isMod && e.shiftKey && lowerKey === 'n') {
+        if (matchesShortcut(e, 'quickCapture')) {
           e.preventDefault(); setCaptureOpen(true);
-        } else if (isMod && lowerKey === 'n' && !e.shiftKey) {
+        } else if (matchesShortcut(e, 'newNote')) {
           e.preventDefault(); createNote();
-        } else if (isMod && lowerKey === 'g' && (!MN_FEATURES.isActionAvailable || MN_FEATURES.isActionAvailable('graph', featureState))) {
+        } else if (matchesShortcut(e, 'graph') && (!MN_FEATURES.isActionAvailable || MN_FEATURES.isActionAvailable('graph', featureState))) {
           e.preventDefault();
           navigateView(view === 'graph' ? 'notes' : 'graph');
           setSelectedTag(null); setSelectedWorkflow(null);
-        } else if (isMod && e.shiftKey && lowerKey === 'k' && (!MN_FEATURES.isActionAvailable || MN_FEATURES.isActionAvailable('ask-ai', featureState))) {
+        } else if (matchesShortcut(e, 'askAi') && (!MN_FEATURES.isActionAvailable || MN_FEATURES.isActionAvailable('ask-ai', featureState))) {
           e.preventDefault();
           openAskAi();
-        } else if (isMod && lowerKey === 'k') {
+        } else if (matchesShortcut(e, 'commandPalette')) {
           e.preventDefault();
           setCommandPaletteOpen(v => !v);
-        } else if (isMod && lowerKey === 'p' && !e.shiftKey) {
+        } else if (matchesShortcut(e, 'quickSwitcher')) {
           e.preventDefault();
           setQuickSwitcherOpen(v => !v);
-        } else if (isMod && e.shiftKey && lowerKey === 'r') {
+        } else if (matchesShortcut(e, 'referencePane')) {
           e.preventDefault();
           if (referencePaneOpen) closeReferencePane();
           else openReferencePane();
-        } else if (isMod && e.shiftKey && isBackslashKey) {
+        } else if (matchesShortcut(e, 'toggleNoteList')) {
           e.preventDefault(); setNoteListHidden(v => !v);
-        } else if (isMod && isBackslashKey && !e.shiftKey) {
+        } else if (matchesShortcut(e, 'toggleSidebar')) {
           e.preventDefault(); setSidebarHidden(v => !v);
         } else if (e.key === 'Escape') {
           if (commandPaletteOpen || quickSwitcherOpen || settingsOpen || reminderCenterOpen || vaultHealthOpen || appNotice || conflictNotice || versionTargetId || deleteTargetId) {
@@ -253,7 +252,7 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
       };
       window.addEventListener('keydown', h);
       return () => window.removeEventListener('keydown', h);
-    }, [appNotice, blockingOverlayOpen, closeReferencePane, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, featureState, navigateView, openAskAi, openReferencePane, referencePaneOpen, reminderCenterOpen, settingsOpen, vaultHealthOpen, versionTargetId, view]);
+    }, [appNotice, blockingOverlayOpen, closeReferencePane, commandPaletteOpen, quickSwitcherOpen, conflictNotice, createNote, deleteTargetId, featureState, navigateView, openAskAi, openReferencePane, referencePaneOpen, reminderCenterOpen, setNoteListHidden, setSidebarHidden, settingsOpen, vaultHealthOpen, versionTargetId, view]);
   
     useEffectA(() => {
       if (!toast?.key) return;

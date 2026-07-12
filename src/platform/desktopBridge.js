@@ -44,7 +44,7 @@ const platformApi = Object.freeze({
   ]),
   preferences: methodGroup('preferences', ['getPrefs', 'setPrefs', 'importThemeFile', 'spellcheck']),
   maintenance: methodGroup('maintenance', ['exportBackup', 'importBackup', 'importNovelFiles']),
-  app: methodGroup('app', ['openExternal', 'setTitle', 'shortcutStatus']),
+  app: methodGroup('app', ['openExternal', 'setTitle', 'info', 'shortcutStatus']),
   get ai() {
     return currentBridge().ai || EMPTY_BRIDGE;
   },

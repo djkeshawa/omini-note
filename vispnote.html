@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <title>VispNote</title>
-<meta name="viewport" content="width=1400" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: vispnote-asset: https:; connect-src 'self' http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'self'; form-action 'none'" />
 <link rel="icon" type="image/png" href="assets/vispnote-icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -21,8 +21,12 @@
   textarea:focus-visible,
   select:focus-visible,
   [role="button"]:focus-visible {
-    outline: 2px solid var(--mn-focus, #4f6fd5);
+    outline: 2px solid var(--mn-focus, #4f6fd5) !important;
     outline-offset: 2px;
+  }
+  .mn-note-title-input:focus-visible {
+    outline: none !important;
+    box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--mn-focus, #4f6fd5) 70%, transparent);
   }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }

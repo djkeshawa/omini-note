@@ -634,6 +634,150 @@ async function assertViewportUsable(win, label) {
   return metrics;
 }
 
+async function setAssistanceEnabledForRegression(win, enabled) {
+  await clickButton(win, { titleIncludes: 'Settings' });
+  await waitFor(win, 'settings open for assistance', async () => {
+    const current = await state(win);
+    return { ok: current.settingsOpen, current };
+  });
+  await clickVisibleText(win, 'Assistance');
+  await waitFor(win, 'assistance toggle ready', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const label = [...document.querySelectorAll('div')]
+          .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
+        const toggle = label?.parentElement?.parentElement?.querySelector('button[aria-pressed]');
+        return { found: Boolean(toggle), pressed: toggle?.getAttribute('aria-pressed') === 'true' };
+      })()
+    `);
+    return { ok: result.found, result };
+  });
+  await evaluate(win, `
+    (() => {
+      const label = [...document.querySelectorAll('div')]
+        .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
+      const toggle = label?.parentElement?.parentElement?.querySelector('button[aria-pressed]');
+      const next = ${enabled ? 'true' : 'false'};
+      if (toggle && (toggle.getAttribute('aria-pressed') === 'true') !== next) toggle.click();
+    })()
+  `);
+  await waitFor(win, `assistance ${enabled ? 'enabled' : 'disabled'}`, async () => {
+    const pressed = await evaluate(win, `
+      (() => {
+        const label = [...document.querySelectorAll('div')]
+          .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
+        return label?.parentElement?.parentElement?.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed') === 'true';
+      })()
+    `);
+    return { ok: pressed === enabled, pressed };
+  });
+  await clickButton(win, { aria: 'Close settings' });
+  await waitFor(win, 'settings closed after assistance change', async () => {
+    const current = await state(win);
+    return { ok: !current.settingsOpen, current };
+  });
+}
+
+async function openEditorMoreMenu(win) {
+  await clickButton(win, { aria: 'More note actions' });
+  await waitFor(win, 'editor More menu open', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const menu = document.querySelector('[role="menu"][aria-label="More note actions"]');
+        return { ok: Boolean(menu), text: menu?.textContent || '' };
+      })()
+    `);
+    return { ok: result.ok, result };
+  });
+}
+
+async function runEditorUsabilityScenario(win) {
+  await clickButton(win, { text: 'New note' });
+  await waitFor(win, 'blank note editor ready', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const title = document.querySelector('.mn-note-title-input');
+        const header = document.querySelector('[data-mn-editor-header="true"]');
+        const properties = document.querySelector('[data-mn-properties-panel="true"]');
+        const firstBlock = document.querySelector('.mn-block-row');
+        const headerButtons = [...(header?.querySelectorAll('button') || [])].map(button => ({
+          text: (button.textContent || '').trim(),
+          aria: button.getAttribute('aria-label') || '',
+        }));
+        return {
+          ok: Boolean(title && header && firstBlock)
+            && !properties
+            && header.textContent.includes('Saved')
+            && header.textContent.includes('0 words')
+            && headerButtons.some(button => button.text === 'Pin')
+            && headerButtons.some(button => button.text.startsWith('More'))
+            && !headerButtons.some(button => ['Duplicate note', 'Version history', 'Delete note', 'Open Graph', 'Open Agenda'].includes(button.text)),
+          title: title?.value || '',
+          properties: Boolean(properties),
+          headerText: header?.textContent || '',
+          headerButtons,
+          titleTop: title?.getBoundingClientRect().top || 0,
+          firstBlockTop: firstBlock?.getBoundingClientRect().top || 0,
+        };
+      })()
+    `);
+    return { ok: result.ok && result.titleTop < result.firstBlockTop, result };
+  });
+
+  await openEditorMoreMenu(win);
+  const menuState = await evaluate(win, `
+    (() => {
+      const menu = document.querySelector('[role="menu"][aria-label="More note actions"]');
+      const text = menu?.textContent || '';
+      return {
+        text,
+        hasCoreActions: ['Duplicate note', 'Version history', 'Export as Markdown', 'Delete note'].every(label => text.includes(label)),
+        hasDisabledPackActions: text.includes('Open Graph') || text.includes('Open Agenda'),
+      };
+    })()
+  `);
+  if (!menuState.hasCoreActions || menuState.hasDisabledPackActions) {
+    throw new Error(`Editor More menu is not focused: ${JSON.stringify(menuState)}`);
+  }
+  await waitFor(win, 'editor More menu focuses its first action', async () => {
+    const activeLabel = await evaluate(win, `document.activeElement?.getAttribute('aria-label') || ''`);
+    return { ok: activeLabel === 'Duplicate note', activeLabel };
+  });
+  await pressAccelerator(win, 'Down');
+  await waitFor(win, 'editor More menu supports arrow navigation', async () => {
+    const activeLabel = await evaluate(win, `document.activeElement?.getAttribute('aria-label') || ''`);
+    return { ok: activeLabel === 'Version history', activeLabel };
+  });
+  await pressAccelerator(win, 'Escape');
+
+  await clickButton(win, { text: '+ Tag' });
+  await waitFor(win, 'tag picker focuses its input', async () => {
+    const activeLabel = await evaluate(win, `document.activeElement?.getAttribute('aria-label') || ''`);
+    return { ok: activeLabel === 'New tag name', activeLabel };
+  });
+  await pressAccelerator(win, 'Escape');
+  await waitFor(win, 'tag picker returns focus to its trigger', async () => {
+    const activeText = await evaluate(win, `(document.activeElement?.textContent || '').trim()`);
+    return { ok: activeText === '+ Tag', activeText };
+  });
+
+  await clickButton(win, { text: '+ Property' });
+  await waitFor(win, 'property editor opens on demand', async () => {
+    const result = await evaluate(win, `
+      (() => ({
+        panel: Boolean(document.querySelector('[data-mn-properties-panel="true"]')),
+        propertyName: Boolean(document.querySelector('input[aria-label="Property name"]')),
+      }))()
+    `);
+    return { ok: result.panel && result.propertyName, result };
+  });
+  await pressAccelerator(win, 'Escape');
+  await waitFor(win, 'empty property editor dismisses without metadata', async () => {
+    const panel = await evaluate(win, `Boolean(document.querySelector('[data-mn-properties-panel="true"]'))`);
+    return { ok: !panel, panel };
+  });
+}
+
 async function editorRows(win) {
   return await evaluate(win, `
     (() => {
@@ -943,8 +1087,9 @@ async function runCalendarPlannerScenario(win) {
     return { ok: current.selectedTitle && current.editorBodyVisible, current };
   });
   const title = (await state(win)).selectedTitle;
-  await clickButton(win, { titleIncludes: 'Agenda' });
-  await waitFor(win, 'agenda panel opens from editor toolbar', async () => {
+  await openEditorMoreMenu(win);
+  await clickButton(win, { aria: 'Open Agenda' });
+  await waitFor(win, 'agenda panel opens from editor More menu', async () => {
     const visible = await evaluate(win, `document.body.textContent.includes('Agenda') && document.body.textContent.includes('Inbox todos')`);
     return { ok: visible, visible };
   });
@@ -1051,12 +1196,143 @@ async function runCanvasCreateScenario(win) {
   });
 }
 
+async function waitForLayoutMode(win, expectedMode) {
+  return await waitFor(win, `${expectedMode} layout mode`, async () => {
+    const result = await evaluate(win, `({
+      mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
+      width: window.innerWidth,
+    })`);
+    return { ok: result.mode === expectedMode, result };
+  });
+}
+
 async function runViewportAccessibilityScenario(win) {
   const original = win.getBounds();
   try {
     win.setSize(900, 700);
-    await wait(250);
+    await waitForLayoutMode(win, 'compact');
     await assertViewportUsable(win, 'minimum supported window');
+    const compact = await evaluate(win, `
+      (() => {
+        const root = document.querySelector('[data-mn-layout]');
+        const overlay = document.querySelector('[data-mn-note-list-mode="overlay"]');
+        const headerButtons = [...document.querySelectorAll('[data-mn-editor-header="true"] button')]
+          .map(button => button.getBoundingClientRect())
+          .filter(rect => rect.width > 0 && rect.height > 0);
+        return {
+          mode: root?.getAttribute('data-mn-layout') || '',
+          overlay: Boolean(overlay),
+          targetsMeetMinimum: headerButtons.every(rect => rect.width >= 24 && rect.height >= 24),
+        };
+      })()
+    `);
+    if (compact.mode !== 'compact' || !compact.overlay || !compact.targetsMeetMinimum) {
+      throw new Error(`Compact note-list layout is not usable: ${JSON.stringify(compact)}`);
+    }
+    await pressAccelerator(win, 'Escape');
+    await waitFor(win, 'compact note list closes with Escape', async () => {
+      const result = await evaluate(win, `({
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[aria-label="Show note list"]')),
+        activeLabel: document.activeElement?.getAttribute('aria-label') || '',
+      })`);
+      return { ok: !result.overlay && result.showButton && result.activeLabel === 'Show note list', result };
+    });
+    win.setSize(1280, 860);
+    await waitForLayoutMode(win, 'three-pane');
+    await assertViewportUsable(win, 'desktop restored after compact selection');
+    const restoredDesktopMode = await evaluate(win, `document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || ''`);
+    if (restoredDesktopMode !== 'three-pane') {
+      throw new Error(`Desktop layout did not restore after closing the compact drawer: ${restoredDesktopMode}`);
+    }
+    win.setSize(900, 700);
+    await waitFor(win, 'compact editor remains focused after resize round trip', async () => {
+      const result = await evaluate(win, `({
+        mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[aria-label="Show note list"]')),
+      })`);
+      return { ok: result.mode === 'compact' && !result.overlay && result.showButton, result };
+    });
+    await clickButton(win, { aria: 'Show note list' });
+    await waitFor(win, 'compact note list reopens from editor navigation', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
+
+    await clickVisibleText(win, 'Graph');
+    await waitFor(win, 'compact graph keeps its note list drawer', async () => {
+      const result = await evaluate(win, `({
+        graph: document.body.textContent.includes('Graph'),
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+      })`);
+      return { ok: result.graph && result.overlay, result };
+    });
+    await clickButton(win, { titleIncludes: 'Hide note list' });
+    await waitFor(win, 'compact graph exposes an external note list opener', async () => {
+      const result = await evaluate(win, `({
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[title="Show note list"]')),
+        editorHeader: Boolean(document.querySelector('[data-mn-editor-header="true"]')),
+      })`);
+      return { ok: !result.overlay && result.showButton && !result.editorHeader, result };
+    });
+    await clickButton(win, { titleIncludes: 'Show note list' });
+    await waitFor(win, 'compact graph note list reopens', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
+    const openedGraphNote = await evaluate(win, `
+      (() => {
+        const option = document.querySelector('[data-mn-note-list-mode="overlay"] [role="option"]');
+        option?.click();
+        return Boolean(option);
+      })()
+    `);
+    if (!openedGraphNote) throw new Error('Compact graph note list did not contain a note to open');
+    await waitFor(win, 'compact graph note selection returns to the editor', async () => {
+      const result = await evaluate(win, `({
+        editor: Boolean(document.querySelector('.mn-note-title-input')),
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+      })`);
+      return { ok: result.editor && !result.overlay, result };
+    });
+
+    await setAssistanceEnabledForRegression(win, true);
+    await clickVisibleText(win, 'Ask AI');
+    await waitFor(win, 'compact Ask AI exposes its hidden chat history', async () => {
+      const result = await evaluate(win, `({
+        askAi: document.body.textContent.includes('Ask AI'),
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[title="Show AI chats"]')),
+      })`);
+      return { ok: result.askAi && !result.overlay && result.showButton, result };
+    });
+    await clickButton(win, { titleIncludes: 'Show AI chats' });
+    await waitFor(win, 'compact Ask AI chat history opens', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
+    await clickButton(win, { titleIncludes: 'Hide note list' });
+    await waitFor(win, 'compact Ask AI exposes a chat history opener', async () => {
+      const result = await evaluate(win, `({
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[title="Show AI chats"]')),
+      })`);
+      return { ok: !result.overlay && result.showButton, result };
+    });
+    await clickButton(win, { titleIncludes: 'Show AI chats' });
+    await waitFor(win, 'compact Ask AI chat history reopens', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
+    await clickVisibleText(win, 'All notes');
+    await waitFor(win, 'compact Ask AI returns to notes', async () => {
+      const editor = await evaluate(win, `Boolean(document.querySelector('.mn-note-title-input'))`);
+      return { ok: editor, editor };
+    });
+    await setAssistanceEnabledForRegression(win, false);
+
     await clickButton(win, { titleIncludes: 'Settings' });
     await waitFor(win, 'settings open at minimum supported window', async () => {
       const current = await state(win);
@@ -1069,8 +1345,57 @@ async function runViewportAccessibilityScenario(win) {
     });
 
     win.setSize(1280, 860);
-    await wait(250);
+    await waitForLayoutMode(win, 'three-pane');
     await assertViewportUsable(win, 'desktop window');
+    const desktop = await evaluate(win, `
+      (() => ({
+        mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+      }))()
+    `);
+    if (desktop.mode !== 'three-pane' || desktop.overlay) {
+      throw new Error(`Desktop three-pane layout is not active: ${JSON.stringify(desktop)}`);
+    }
+
+    await clickButton(win, { titleIncludes: 'Hide note list' });
+    await waitFor(win, 'desktop note-list preference is hidden', async () => {
+      const result = await evaluate(win, `({
+        list: Boolean(document.querySelector('button[title="Hide note list"]')),
+        showButton: Boolean(document.querySelector('button[title="Show note list"]')),
+      })`);
+      return { ok: !result.list && result.showButton, result };
+    });
+    win.setSize(900, 700);
+    await waitForLayoutMode(win, 'compact');
+    if (await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`)) {
+      await pressAccelerator(win, 'Escape');
+    }
+    await waitFor(win, 'compact note-list drawer is closed over a hidden desktop preference', async () => {
+      const result = await evaluate(win, `({
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[aria-label="Show note list"]')),
+      })`);
+      return { ok: !result.overlay && result.showButton, result };
+    });
+    await pressAccelerator(win, '\\', ['control', 'shift']);
+    await waitFor(win, 'compact note-list shortcut opens without changing desktop preference', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
+    win.setSize(1280, 860);
+    await waitFor(win, 'desktop note-list preference remains hidden after compact use', async () => {
+      const result = await evaluate(win, `({
+        mode: document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || '',
+        list: Boolean(document.querySelector('button[title="Hide note list"]')),
+        showButton: Boolean(document.querySelector('button[title="Show note list"]')),
+      })`);
+      return { ok: result.mode === 'three-pane' && !result.list && result.showButton, result };
+    });
+    await clickButton(win, { titleIncludes: 'Show note list' });
+    await waitFor(win, 'desktop note list is restored for later scenarios', async () => {
+      const list = await evaluate(win, `Boolean(document.querySelector('button[title="Hide note list"]'))`);
+      return { ok: list, list };
+    });
   } finally {
     win.setBounds(original);
     await wait(200);
@@ -1090,7 +1415,8 @@ async function runDeleteRestoreScenario(win) {
     const current = await state(win);
     return { ok: current.selectedTitle === title, current };
   });
-  await clickButton(win, { titleIncludes: 'Delete' });
+  await openEditorMoreMenu(win);
+  await clickButton(win, { aria: 'Delete note' });
   await waitFor(win, 'delete note dialog explains recoverability', async () => {
     const current = await state(win);
     return { ok: current.dialogs.some(text => text.includes('Delete note') && text.includes('Recently deleted')), current };
@@ -1178,11 +1504,16 @@ async function runRegression() {
     await runPackIsolationScenario(win);
   });
 
+  await runScenario(win, 'Editor', 'blank notes prioritize writing and disclose secondary actions', async () => {
+    await runEditorUsabilityScenario(win);
+  });
+
   await runScenario(win, 'Notes', 'create, edit, and persist a note', async () => {
     await runNoteCreateEditPersistenceScenario(win);
   });
   await runScenario(win, 'Reference', 'keeps a read-only note beside the editor and restores the note list', async () => {
     const mainTitle = (await state(win)).selectedTitle;
+    await openEditorMoreMenu(win);
     await clickButton(win, { aria: 'Open reference pane' });
     await waitFor(win, 'reference pane open', async () => {
       const current = await evaluate(win, `

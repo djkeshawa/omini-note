@@ -110,6 +110,10 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
 test('Renderer regression covers user-centered app workflows', () => {
   const regression = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
 
+  assert.match(regression, /runScenario\(win, 'Editor', 'blank notes prioritize writing and disclose secondary actions'/);
+  assert.match(regression, /data-mn-properties-panel/);
+  assert.match(regression, /data-mn-note-list-mode="overlay"/);
+  assert.match(regression, /desktop\.mode !== 'three-pane'/);
   assert.match(regression, /runScenario\(win, 'Notes', 'create, edit, and persist a note'/);
   assert.match(regression, /runScenario\(win, 'Capture', 'quick capture saves a task note and closes cleanly'/);
   assert.match(regression, /runScenario\(win, 'Search', 'note search finds expected content and Escape clears it'/);

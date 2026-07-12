@@ -1,9 +1,11 @@
 import { buildDynamicActions } from './buildDynamicActions.js';
 import { createActionResolvers } from './actionResolvers.js';
+import { shortcutLabel, useShortcutPlatform } from '../../platform/shortcuts.js';
 
 const { useMemo } = React;
 
 export function useAppActionRegistry(ctx) {
+  const shortcutPlatform = useShortcutPlatform();
   const {
     activeCanvas, activeVault, activeVaultId, addNoteToCanvas, canvases, closeReferencePane,
     createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote,
@@ -158,7 +160,7 @@ export function useAppActionRegistry(ctx) {
         label: 'New note',
         description: 'Create a blank note or a note with a supplied title, body, and tags.',
         section: 'Create',
-        shortcut: 'Ctrl+N',
+        shortcut: shortcutLabel('newNote', shortcutPlatform, { compact: true }),
         keywords: 'page capture create',
         inputSchema: objectSchema({ title: stringArg(180), body: stringArg(20000), tags: { type: 'array', items: stringArg(64) }, open: { type: 'boolean' } }),
         run: (args) => {
@@ -172,7 +174,7 @@ export function useAppActionRegistry(ctx) {
         label: 'Quick capture',
         description: 'Open the quick capture dialog.',
         section: 'Create',
-        shortcut: 'Ctrl+Shift+N',
+        shortcut: shortcutLabel('quickCapture', shortcutPlatform, { compact: true }),
         keywords: 'inbox capture',
         inputSchema: objectSchema(),
         run: () => { setCaptureOpen(true); return { message: 'Opened quick capture.' }; },
@@ -194,7 +196,7 @@ export function useAppActionRegistry(ctx) {
         label: referencePaneOpen ? 'Close reference pane' : 'Open reference pane',
         description: 'Keep one note visible beside the editor without opening a second workspace.',
         section: 'Navigate',
-        shortcut: 'Ctrl+Shift+R',
+        shortcut: shortcutLabel('referencePane', shortcutPlatform, { compact: true }),
         keywords: 'side by side read companion note',
         enabled: notesWithBody.length > 0,
         inputSchema: noteActionSchema,
@@ -212,7 +214,7 @@ export function useAppActionRegistry(ctx) {
         label: 'Ask AI',
         description: 'Open the Ask AI workspace.',
         section: 'AI',
-        shortcut: 'Ctrl+Shift+K',
+        shortcut: shortcutLabel('askAi', shortcutPlatform, { compact: true }),
         keywords: 'assistant chat',
         enabled: HAS_DISK,
         aiHidden: true,
@@ -228,7 +230,7 @@ export function useAppActionRegistry(ctx) {
         inputSchema: objectSchema({ section: stringArg(80) }),
         run: () => { setSettingsOpen(true); return { message: 'Opened settings.' }; },
       },
-      { id: 'graph', label: 'Open graph', description: 'Show the note graph.', section: 'Navigate', shortcut: 'Ctrl+G', inputSchema: objectSchema(), run: () => openView('graph') },
+      { id: 'graph', label: 'Open graph', description: 'Show the note graph.', section: 'Navigate', shortcut: shortcutLabel('graph', shortcutPlatform, { compact: true }), inputSchema: objectSchema(), run: () => openView('graph') },
       { id: 'calendar', label: 'Open Agenda', description: 'Show scheduled todos and reminders.', section: 'Navigate', keywords: 'calendar schedule agenda reminder date', inputSchema: objectSchema(), run: () => openView('calendar') },
       { id: 'today', label: 'Open Today', description: 'Show the Today dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
       { id: 'smart-views', label: 'Open Smart Views', description: 'Show saved Smart View dashboards.', section: 'Navigate', keywords: 'saved smart views dashboard query tasks reminders', inputSchema: objectSchema(), run: () => openSmartView() },
@@ -785,5 +787,5 @@ export function useAppActionRegistry(ctx) {
       ? actions.filter(action => MN_FEATURES.isActionAvailable(action.id, featureState))
       : actions;
     return makeRegistry(availableActions);
-  }, [activeCanvas, activeVault?.name, activeVaultId, addNoteToCanvas, canvases, closeReferencePane, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, featureState, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, plugins, rebuildIndex, recordPhase5Metric, referencePaneOpen, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
+  }, [activeCanvas, activeVault?.name, activeVaultId, addNoteToCanvas, canvases, closeReferencePane, createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote, duplicateNote, exportBackup, featureState, importBackup, markDirty, notesWithBody, openAskAi, openCanvas, openCanvasDashboard, openReferencePane, openSmartView, plugins, rebuildIndex, recordPhase5Metric, referencePaneOpen, restoreDeletedNote, runPlugin, selectVault, selectedNote, shortcutPlatform, smartViewDefinitions, uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus, vaultsForSidebar, workflowStates, navigateView, showAppNotice]);
 }

@@ -1,13 +1,26 @@
 import MN_FEATURES from './featureRegistry.js';
+import { ResponsiveListPane } from '../shared/layout/ResponsiveListPane.jsx';
+import { shortcutLabel, useShortcutPlatform } from '../platform/shortcuts.js';
 
 function AppView({ model }) {
-  const { HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATIONS, MnAiChatHistory, MnAiNotice, MnAppNoticeDialog, MnAskAI, MnCalendarPanel, MnCanvasPanel, MnCommandPalette, MnDeleteNoteDialog, MnEditor, MnGraph, MnLaunchScreen, MnNoteList, MnNovelImportPreviewDialog, MnNovelistPanel, MnPanelGrip, MnPanelGripPeek, MnQuickCapture, MnQuickSwitcher, MnRecentlyDeletedPanel, MnReferencePane, MnReminderCenter, MnReminderToast, MnSaveConflictDialog, MnSettingsModal, MnSidebar, MnSmartViewsPanel, MnTodayPanel, MnTodosPanel, MnVaultHealthDialog, MnVersionHistoryDialog, MnWorkflowPanel, SEED_NOTES, SEED_TAGS, SEED_VAULTS, T, acceptSuggestedConnection, activeAskAiSession, activeCanvas, activeSmartViewId, activeVault, activeVaultId, addNoteToCanvas, addQuickTodayTask, addTag, addTodayEndDayRecap, addTodayReflection, aiChatListVisible, aiNoteBodyRestoreRef, aiNotice, analyzeNovelImportFiles, appActionRegistry, appNotice, appStats, appendToTodayDailyNote, applyAiCurrentPageBody, applyLinkedNoteUpdates, applyNovelImportPreview, applyWorkflowStates, archiveAskAiChat, askAiSeed, askAiSessions, assistanceEnabled, baseThemeMap, blockingOverlayOpen, bootError, bootState, buildLinks, calendarActionItems, calendarTaskItems, canvasTextEditing, canvases, captureOpen, cloneNoteForMetadataHistory, closeNovelImportDialog, closeReferencePane, commandPaletteOpen, commands, conflictNotice, connectionsRefreshToken, convertNovelistType, createAskAiChat, createCalendarTaskItem, createCanvas, createDailyNote, createNote, createNoteFromTemplate, createRuntimeNoteId, createVault, customThemes, deleteAskAiChat, deleteCanvas, deleteNote, deleteTargetId, deleteTargetNote, deleteVault, dirtyMissingWarnedRef, dirtyNotes, dirtyNotesRef, dirtyRevisionRef, dismissedReminderKeys, duplicateNote, enabledPacks, endNoteMetadataEdit, exportBackup, featureState, filteredNotes, findNotesForVault, fontMap, fonts, generateTodayAiRecap, goBackView, graphFilter, graphVisibleNotes, handleAppActionResult, importBackup, importNovelFiles, importThemeFile, keepConflictAsDuplicate, linkNovelistChapter, linkNovelistScene, links, listDeletedItems, loadVaultBundle, markDirty, markTagsDirty, mkBlock, mnBlocksToMd, mnBodyPropertyValue, mnCloneBlocks, mnLocate, mnMdToBlocks, mnNormalizeNoteBody, mnNormalizeNoteStatus, mnShadow, mnWalk, mnWriteSnoozedReminder, navigateView, nextStoryOrder, normalWorkflowStates, normalizeFeaturePacks, normalizeRuntimeNote, noteDiskStampRef, noteListHidden, noteListSubtitle, noteListTitle, noteListVisible, noteMetadataHistoryRef, notes, notesRef, notesWithBody, notesWithBodyCacheRef, notesWithBodyRef, notifyAskAiComplete, novelImportDialog, novelImportSeq, novelistNotes, novelistStructure, novelistWorkflowStates, openAskAi, openCanvas, openCanvasDashboard, openNoteById, openReferencePane, openSmartView, pendingDirtyKeysRef, persistNovelistSetup, plugins, prependDeletedItem, promptNewTag, purgeDeletedNote, query, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, quickSwitcherOpen, quietedReminderKeys, rebuildIndex, recentNoteIds, recordFeatureUsage, recordNoteMetadataHistory, recordPhase5Metric, redoNoteMetadataEdit, referenceNote, referenceNoteId, referencePaneOpen, refreshDeletedItems, refreshVaultRegistry, reloadConflictFromDisk, reminderCenterItems, reminderCenterOpen, reminderCenterTop, reminderDueCount, removeNovelistSupportingType, removeTag, renameAskAiChat, renameNoteTitle, renameVault, requestDeleteNote, restoreAiCurrentPageBody, restoreDeletedNote, restoreNoteMetadataSnapshot, restoreNoteVersion, runNaturalCommand, runPlugin, saveCanvas, saveDirtyNotesNow, saveQuickCapture, saveVaultMetaNow, savedSmartViews, savingDirtyKeysRef, searchUsageActiveRef, selectReferenceNote, selectVault, selectedId, selectedNote, selectedTag, selectedWorkflow, setActiveAskAiSession, setActiveAskAiSessionId, setActiveCanvas, setActiveSmartViewId, setActiveVaultId, setActiveVaultNovelistMode, setAiNotice, setAppNotice, setAssistanceEnabled, setCanvasTextEditing, setCanvases, setCaptureOpen, setCommandPaletteOpen, setConflictNotice, setConnectionsRefreshToken, setCustomThemes, setDeleteTargetId, setDirtyNotes, setEnabledPacks, setGraphFilter, setNoteListHidden, setNotes, setNovelImportDialog, setNovelistOrder, setPackEnabled, setQuery, setQuickSwitcherOpen, setRecentNoteIds, setReferenceNoteListVisible, setReminderCenterOpen, setSavedSmartViews, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setSidebarHidden, setTags, setToast, setTweak, setTweaks, setVaultHealthOpen, setVaults, setVersionTargetId, setView, settingsOpen, showAppNotice, sidebarHidden, smartViewDefinitions, snoozeCalendarTaskItem, tagCurrentNoteFromAi, tags, tagsDirty, theme, themeMap, themeOptions, titleUpdateTimerRef, toast, toastRef, todayAgendaItems, todayAiContext, todayAiRecap, todayAiRecapBusy, todayAiRecapError, todayDailyNote, todayDigest, toggleCheckFromAggregate, trashError, trashItems, trashLoading, tweakInitialized, tweaks, undoNoteMetadataEdit, uniqueNoteTitle, updateDirtyNotes, updateNote, updateNoteBlocks, updateNoteBodies, updateNoteBody, updateNoteTags, updateNovelistAiConfig, updateTaskItemSource, updateWorkflowArchived, updateWorkflowNoteStatus, updateWorkflowStates, vaultActivationSeq, vaultHealthOpen, vaults, vaultsForSidebar, vaultsRef, versionTargetId, view, workflowData, workflowStates, workflowViewData } = model;
+  const { HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATIONS, MnAiChatHistory, MnAiNotice, MnAppNoticeDialog, MnAskAI, MnCalendarPanel, MnCanvasPanel, MnCommandPalette, MnDeleteNoteDialog, MnEditor, MnGraph, MnLaunchScreen, MnNoteList, MnNovelImportPreviewDialog, MnNovelistPanel, MnPanelGrip, MnPanelGripPeek, MnQuickCapture, MnQuickSwitcher, MnRecentlyDeletedPanel, MnReferencePane, MnReminderCenter, MnReminderToast, MnSaveConflictDialog, MnSettingsModal, MnSidebar, MnSmartViewsPanel, MnTodayPanel, MnTodosPanel, MnVaultHealthDialog, MnVersionHistoryDialog, MnWorkflowPanel, SEED_NOTES, SEED_TAGS, SEED_VAULTS, T, acceptSuggestedConnection, activeAskAiSession, activeCanvas, activeSmartViewId, activeVault, activeVaultId, addNoteToCanvas, addQuickTodayTask, addTag, addTodayEndDayRecap, addTodayReflection, aiChatListVisible, aiNoteBodyRestoreRef, aiNotice, analyzeNovelImportFiles, appActionRegistry, appNotice, appStats, appendToTodayDailyNote, applyAiCurrentPageBody, applyLinkedNoteUpdates, applyNovelImportPreview, applyWorkflowStates, archiveAskAiChat, askAiSeed, askAiSessions, assistanceEnabled, baseThemeMap, blockingOverlayOpen, bootError, bootState, buildLinks, calendarActionItems, calendarTaskItems, canvasTextEditing, canvases, captureOpen, cloneNoteForMetadataHistory, closeNovelImportDialog, closeReferencePane, commandPaletteOpen, commands, conflictNotice, connectionsRefreshToken, convertNovelistType, createAskAiChat, createCalendarTaskItem, createCanvas, createDailyNote, createNote, createNoteFromTemplate, createRuntimeNoteId, createVault, customThemes, deleteAskAiChat, deleteCanvas, deleteNote, deleteTargetId, deleteTargetNote, deleteVault, dirtyMissingWarnedRef, dirtyNotes, dirtyNotesRef, dirtyRevisionRef, dismissedReminderKeys, duplicateNote, enabledPacks, endNoteMetadataEdit, exportBackup, featureState, filteredNotes, findNotesForVault, fontMap, fonts, generateTodayAiRecap, goBackView, graphFilter, graphVisibleNotes, handleAppActionResult, importBackup, importNovelFiles, importThemeFile, keepConflictAsDuplicate, linkNovelistChapter, linkNovelistScene, links, listDeletedItems, loadVaultBundle, markDirty, markTagsDirty, mkBlock, mnBlocksToMd, mnBodyPropertyValue, mnCloneBlocks, mnLocate, mnMdToBlocks, mnNormalizeNoteBody, mnNormalizeNoteStatus, mnShadow, mnWalk, mnWriteSnoozedReminder, navigateView, nextStoryOrder, normalWorkflowStates, normalizeFeaturePacks, normalizeRuntimeNote, noteDiskStampRef, noteListHidden, noteListSubtitle, noteListTitle, noteListVisible, noteMetadataHistoryRef, notes, notesRef, notesWithBody, notesWithBodyCacheRef, notesWithBodyRef, notifyAskAiComplete, novelImportDialog, novelImportSeq, novelistNotes, novelistStructure, novelistWorkflowStates, openAskAi, openCanvas, openCanvasDashboard, openNoteById, openReferencePane, openSmartView, overlayNoteList, pendingDirtyKeysRef, persistNovelistSetup, plugins, prependDeletedItem, promptNewTag, purgeDeletedNote, query, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, quickSwitcherOpen, quietedReminderKeys, rebuildIndex, recentNoteIds, recordFeatureUsage, recordNoteMetadataHistory, recordPhase5Metric, redoNoteMetadataEdit, referenceNote, referenceNoteId, referencePaneOpen, refreshDeletedItems, refreshVaultRegistry, reloadConflictFromDisk, reminderCenterItems, reminderCenterOpen, reminderCenterTop, reminderDueCount, removeNovelistSupportingType, removeTag, renameAskAiChat, renameNoteTitle, renameVault, requestDeleteNote, restoreAiCurrentPageBody, restoreDeletedNote, restoreNoteMetadataSnapshot, restoreNoteVersion, runNaturalCommand, runPlugin, saveCanvas, saveDirtyNotesNow, saveQuickCapture, saveVaultMetaNow, savedSmartViews, savingDirtyKeysRef, searchUsageActiveRef, selectReferenceNote, selectVault, selectedId, selectedNote, selectedTag, selectedWorkflow, setActiveAskAiSession, setActiveAskAiSessionId, setActiveCanvas, setActiveSmartViewId, setActiveVaultId, setActiveVaultNovelistMode, setAiNotice, setAppNotice, setAssistanceEnabled, setCanvasTextEditing, setCanvases, setCaptureOpen, setCommandPaletteOpen, setConflictNotice, setConnectionsRefreshToken, setCustomThemes, setDeleteTargetId, setDirtyNotes, setEnabledPacks, setGraphFilter, setNoteListHidden, setNotes, setNovelImportDialog, setNovelistOrder, setPackEnabled, setQuery, setQuickSwitcherOpen, setRecentNoteIds, setReferenceNoteListVisible, setReminderCenterOpen, setSavedSmartViews, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setSidebarHidden, setTags, setToast, setTweak, setTweaks, setVaultHealthOpen, setVaults, setVersionTargetId, setView, settingsOpen, showAppNotice, sidebarHidden, smartViewDefinitions, snoozeCalendarTaskItem, tagCurrentNoteFromAi, tags, tagsDirty, theme, themeMap, themeOptions, titleUpdateTimerRef, toast, toastRef, todayAgendaItems, todayAiContext, todayAiRecap, todayAiRecapBusy, todayAiRecapError, todayDailyNote, todayDigest, toggleCheckFromAggregate, trashError, trashItems, trashLoading, tweakInitialized, tweaks, undoNoteMetadataEdit, uniqueNoteTitle, updateDirtyNotes, updateNote, updateNoteBlocks, updateNoteBodies, updateNoteBody, updateNoteTags, updateNovelistAiConfig, updateTaskItemSource, updateWorkflowArchived, updateWorkflowNoteStatus, updateWorkflowStates, vaultActivationSeq, vaultHealthOpen, vaults, vaultsForSidebar, vaultsRef, versionTargetId, view, workflowData, workflowStates, workflowViewData } = model;
+    const shortcutPlatform = useShortcutPlatform();
+    const listPaneLeft = sidebarHidden ? 0 : (tweaks.density === 'compact' ? 221 : 261);
+    const compactEditorOwnsNoteListTrigger = overlayNoteList
+      && (view === 'notes' || view === 'pinned')
+      && !!selectedNote;
+    const selectedNoteIsDirty = HAS_DISK && selectedNote && [...dirtyNotes.values()].some(entry => (
+      entry?.vaultId === activeVaultId && entry?.id === selectedNote.id
+    ));
+    const editorSaveStatus = selectedNote && conflictNotice?.vaultId === activeVaultId && conflictNotice?.noteId === selectedNote.id
+      ? 'Conflict'
+      : selectedNoteIsDirty ? 'Saving' : 'Saved';
     if (bootState !== 'ready') {
       return <MnLaunchScreen state={bootState} error={bootError} T={T} />;
     }
   
     return (
-      <div style={{
+      <div data-mn-layout={overlayNoteList ? 'compact' : 'three-pane'} style={{
         width: '100vw',
         height: '100vh',
         background: `
@@ -39,13 +52,13 @@ function AppView({ model }) {
                 workflowStates={workflowStates}
                 workflowCounts={workflowData.counts}
                 workflowTotal={workflowData.total}
-                onSelectTag={(t) => { setSelectedTag(t); setSelectedWorkflow(null); navigateView('notes'); }}
-                onSelectWorkflow={(wf) => { setSelectedWorkflow(wf); setSelectedTag(null); navigateView('notes'); }}
-                onOpenWorkflowPanel={() => { navigateView('workflow'); setSelectedTag(null); setSelectedWorkflow(null); }}
+                onSelectTag={(t) => { setSelectedTag(t); setSelectedWorkflow(null); navigateView('notes'); if (overlayNoteList) setNoteListHidden(false); }}
+                onSelectWorkflow={(wf) => { setSelectedWorkflow(wf); setSelectedTag(null); navigateView('notes'); if (overlayNoteList) setNoteListHidden(false); }}
+                onOpenWorkflowPanel={() => { navigateView('workflow'); setSelectedTag(null); setSelectedWorkflow(null); if (overlayNoteList) setNoteListHidden(false); }}
                 onOpenNovelist={() => { navigateView('novelist'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
                 onOpenAgenda={() => { navigateView('calendar'); setSelectedTag(null); setSelectedWorkflow(null); }}
                 onOpenToday={() => { navigateView('today'); setSelectedTag(null); setSelectedWorkflow(null); }}
-                onOpenPinned={() => { navigateView('pinned'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); }}
+                onOpenPinned={() => { navigateView('pinned'); setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); if (overlayNoteList) setNoteListHidden(false); }}
                 onOpenSmartViews={() => openSmartView()}
                 onOpenGraph={() => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); }}
                 onOpenCanvas={openCanvasDashboard}
@@ -69,7 +82,7 @@ function AppView({ model }) {
                 aiActive={view === 'ai'}
                 onNewTag={promptNewTag}
                 onDeleteTag={removeTag}
-                onNew={() => createNote()}
+                onNew={() => { createNote(); if (overlayNoteList) setNoteListHidden(true); }}
                 onOpenSettings={() => setSettingsOpen(true)}
                 onCollapse={() => setSidebarHidden(true)}
                 vaults={vaultsForSidebar}
@@ -80,6 +93,7 @@ function AppView({ model }) {
                 onRenameVault={renameVault}
                 onDeleteVault={deleteVault}
                 featureState={featureState}
+                newNoteShortcut={shortcutLabel('newNote', shortcutPlatform, { compact: true })}
                 T={T} density={tweaks.density} theme={theme}
               />
             )}
@@ -92,49 +106,61 @@ function AppView({ model }) {
             )}
   
             {noteListVisible && !noteListHidden && (
-              <MnNoteList
-                notes={filteredNotes}
-                selectedId={selectedId}
-                onSelect={(id) => {
-                  setSelectedId(id);
-                  if (view === 'notes' || view === 'pinned') return;
-                }}
-                title={noteListTitle}
-                subtitle={noteListSubtitle}
-                query={query}
-                onQueryChange={setQuery}
-                novelistStructure={activeVault?.novelistMode && view === 'notes' && !query.trim() && !selectedTag && !selectedWorkflow ? novelistStructure : null}
-                allNotes={notesWithBody}
-                onRenameNote={renameNoteTitle}
-                onDuplicateNote={duplicateNote}
-                onDeleteNote={requestDeleteNote}
-                onAddToCanvas={featureState.showCanvas ? async (id) => handleAppActionResult(await addNoteToCanvas(id)) : null}
-                onOpenReference={openReferencePane}
-                tags={tags} theme={theme} density={tweaks.density} T={T}
-              />
+              <ResponsiveListPane
+                overlay={overlayNoteList}
+                left={listPaneLeft}
+                label="Note list"
+                returnFocusLabel="Show note list"
+                onDismiss={() => setNoteListHidden(true)}
+                T={T}>
+                <MnNoteList
+                  notes={filteredNotes}
+                  selectedId={selectedId}
+                  onSelect={(id) => {
+                    setSelectedId(id);
+                    if (overlayNoteList) setNoteListHidden(true);
+                    if (view !== 'notes' && view !== 'pinned') navigateView('notes');
+                  }}
+                  title={noteListTitle}
+                  subtitle={noteListSubtitle}
+                  query={query}
+                  onQueryChange={setQuery}
+                  novelistStructure={activeVault?.novelistMode && view === 'notes' && !query.trim() && !selectedTag && !selectedWorkflow ? novelistStructure : null}
+                  allNotes={notesWithBody}
+                  onRenameNote={renameNoteTitle}
+                  onDuplicateNote={duplicateNote}
+                  onDeleteNote={requestDeleteNote}
+                  onAddToCanvas={featureState.showCanvas ? async (id) => handleAppActionResult(await addNoteToCanvas(id)) : null}
+                  onOpenReference={openReferencePane}
+                  tags={tags} theme={theme} density={tweaks.density} T={T}
+                />
+                <MnPanelGrip side="notelist" onCollapse={() => setNoteListHidden(true)} T={T} />
+              </ResponsiveListPane>
             )}
-  
-            {noteListVisible && !noteListHidden && (
-              <MnPanelGrip side="notelist" onCollapse={() => setNoteListHidden(true)} T={T} />
-            )}
-            {noteListVisible && noteListHidden && (
+            {noteListVisible && noteListHidden && !compactEditorOwnsNoteListTrigger && (
               <MnPanelGripPeek onExpand={() => setNoteListHidden(false)} T={T} title="Show note list" />
             )}
   
             {aiChatListVisible && !noteListHidden && (
-              <MnAiChatHistory
-                sessions={askAiSessions}
-                activeId={activeAskAiSession?.id || ''}
-                onSelect={setActiveAskAiSessionId}
-                onNew={createAskAiChat}
-                onDelete={deleteAskAiChat}
-                onArchive={archiveAskAiChat}
-                onRename={renameAskAiChat}
-                T={T}
-              />
-            )}
-            {aiChatListVisible && !noteListHidden && (
-              <MnPanelGrip side="notelist" onCollapse={() => setNoteListHidden(true)} T={T} />
+              <ResponsiveListPane
+                overlay={overlayNoteList}
+                left={listPaneLeft}
+                label="AI chat list"
+                returnFocusLabel="Show AI chats"
+                onDismiss={() => setNoteListHidden(true)}
+                T={T}>
+                <MnAiChatHistory
+                  sessions={askAiSessions}
+                  activeId={activeAskAiSession?.id || ''}
+                  onSelect={(id) => { setActiveAskAiSessionId(id); if (overlayNoteList) setNoteListHidden(true); }}
+                  onNew={createAskAiChat}
+                  onDelete={deleteAskAiChat}
+                  onArchive={archiveAskAiChat}
+                  onRename={renameAskAiChat}
+                  T={T}
+                />
+                <MnPanelGrip side="notelist" onCollapse={() => setNoteListHidden(true)} T={T} />
+              </ResponsiveListPane>
             )}
             {aiChatListVisible && noteListHidden && (
               <MnPanelGripPeek onExpand={() => setNoteListHidden(false)} T={T} title="Show AI chats" />
@@ -222,6 +248,14 @@ function AppView({ model }) {
                 onDuplicate={() => duplicateNote(selectedNote.id)}
                 onDelete={() => requestDeleteNote(selectedNote.id)}
                 onOpenVersions={HAS_DISK ? () => setVersionTargetId(selectedNote.id) : null}
+                onExport={HAS_DISK ? async (format) => {
+                  try {
+                    const result = await appActionRegistry.run(`export-note-${format}`, {}, { confirmed: true });
+                    handleAppActionResult(result);
+                  } catch (error) {
+                    showAppNotice('Export failed', error.message || String(error), 'warn');
+                  }
+                } : null}
                 referencePaneOpen={referencePaneOpen}
                 onToggleReferencePane={() => referencePaneOpen ? closeReferencePane() : openReferencePane()}
                 onOpenGraph={featureState.showLabs ? () => { navigateView('graph'); setSelectedTag(null); setSelectedWorkflow(null); } : null}
@@ -245,6 +279,7 @@ function AppView({ model }) {
                   featureState.showWorkflow ? workflowStates : []
                 )}
                 onSetWorkflowStatus={featureState.showWorkflow ? (status) => updateWorkflowNoteStatus(selectedNote.id, null, status) : null}
+                saveStatus={editorSaveStatus}
                 theme={theme} T={T}
               />
             )}
@@ -566,7 +601,7 @@ function AppView({ model }) {
   
           {/* FAB */}
           {view !== 'ai' && (
-            <button onClick={() => setCaptureOpen(true)} title="Quick capture (⌘⇧N)"
+            <button type="button" onClick={() => setCaptureOpen(true)} title={`Quick capture (${shortcutLabel('quickCapture', shortcutPlatform, { compact: true })})`}
               style={{
                 position: 'absolute', bottom: 22, right: 22, zIndex: 20,
                 width: 44, height: 44, borderRadius: '50%', cursor: 'pointer',

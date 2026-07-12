@@ -1250,7 +1250,7 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   ].map(file => fs.readFileSync(file, 'utf8')).join('\n');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const utilityPanels = fs.readFileSync(path.join(__dirname, '../src/features/trash/components/RecentlyDeletedPanel.jsx'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const editorHeader = fs.readFileSync(path.join(__dirname, '../src/editor/EditorHeader.jsx'), 'utf8');
 
   assert.match(store, /atomicWriteFile/);
   assert.match(store, /NOTE_CONFLICT/);
@@ -1285,5 +1285,5 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   assert.match(store, /validateTrashId\(trashId\)/);
   assert.match(settings, /Recently deleted/);
   assert.match(settings, /onRestoreDeletedNote/);
-  assert.match(editor, /Version history/);
+  assert.match(editorHeader, /Version history/);
 });

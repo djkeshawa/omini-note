@@ -96,6 +96,19 @@ test('AI status explains fresh local setup when Ollama is unavailable', async ()
   }
 });
 
+test('disabling AI clears queued embeddings without throwing', () => {
+  const ai = require('../lib/ai');
+  ai.setConfig({ provider: 'ollama', chatModel: 'gemma3', enabled: true }, { rejectUnknown: false });
+  ai.scheduleEmbed('test-vault', { id: 'queued-note', title: 'Queued note', body: 'Pending embedding work.' });
+
+  assert.doesNotThrow(() => {
+    ai.setConfig({ enabled: false }, { rejectUnknown: false });
+  });
+  assert.equal(ai.getConfig().enabled, false);
+
+  ai.setConfig({ enabled: true }, { rejectUnknown: false });
+});
+
 test('AI status explains cloud provider setup when API key is missing', async () => {
   const ai = require('../lib/ai');
   ai.setConfig({

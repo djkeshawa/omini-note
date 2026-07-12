@@ -1,4 +1,4 @@
-// Editor pane: VispNote block outliner. Shows note title, date, tags, backlinks.
+// Editor pane: VispNote block outliner with focused title, tags, metadata, and connections.
 
 import {
   cleanPropertyKey,
@@ -10,6 +10,7 @@ import {
   useConnectionsController,
 } from '../features/editor/index.js';
 import { MnOutliner } from './outliner.jsx';
+import { EditorHeader } from './EditorHeader.jsx';
 import { mkBlock, mnBlocksToMd, mnWalk } from './outline.jsx';
 import { mnGetTagBg, mnGetTagColor, mnIconButtonStyle } from '../shared/theme.jsx';
 import MN_EDITOR_SEARCH from './searchNavigation.js';
@@ -30,7 +31,7 @@ function MnEditor({
   onOpen, onCreateLinkedNote, onOpenTag, onLinkMention, onAcceptSuggestedConnection, onIgnoreSuggestedConnection,
   onBlocksChange, onTitleChange, onAddTag, onCreateTag, onRemoveTag,
   onEndNoteMetadataEdit, onUndoNoteEdit, onRedoNoteEdit,
-  onPinToggle, onDuplicate, onDelete, onOpenVersions, onOpenGraph, onOpenCalendar, onBack,
+  onPinToggle, onDuplicate, onDelete, onOpenVersions, onExport, onOpenGraph, onOpenCalendar, onBack,
   referencePaneOpen = false, onToggleReferencePane,
   onToggleSidebar, sidebarHidden,
   onToggleNoteList, noteListHidden,
@@ -38,14 +39,17 @@ function MnEditor({
   indentGuides = true, spellCheck = true, autoLink = true, collapseByDefault = false,
   novelistPath = null, novelistMode = false,
   workflowStates = [], workflowStatus = '', onSetWorkflowStatus,
+  saveStatus = 'Saved',
   theme, T,
 }) {
   const [showTags, setShowTags] = useStateE(false);
   const [tagDraft, setTagDraft] = useStateE('');
+  const tagButtonRef = useRefE(null);
   const [zoomBlockId, setZoomBlockId] = useStateE(null);
   const [toast, setToast] = useStateE(null);
   const toastTimerRef = useRefE(null);
   const editorSearchScopeRef = useRefE(null);
+  const connectionsRef = useRefE(null);
   const [searchMatch, setSearchMatch] = useStateE({ count: 0, activeIndex: 0 });
   const propertySplit = useMemoE(
     () => mnEditorSplitPropertyBlocks(note.blocks || []),
@@ -53,9 +57,12 @@ function MnEditor({
   );
   const metadataProperties = propertySplit.properties || [];
   const contentBlocks = propertySplit.contentBlocks || [];
-  const visibleMetadataProperties = metadataProperties.filter(prop => String(prop.key || '').toLowerCase() !== 'status');
   const hasStatusProperty = metadataProperties.some(prop => String(prop.key || '').toLowerCase() === 'status');
-  const hasStatusRow = workflowStates.length > 0 || hasStatusProperty;
+  const workflowStatusEnabled = workflowStates.length > 0 && typeof onSetWorkflowStatus === 'function';
+  const visibleMetadataProperties = metadataProperties.filter(prop => (
+    !workflowStatusEnabled || String(prop.key || '').toLowerCase() !== 'status'
+  ));
+  const hasStatusRow = workflowStatusEnabled && hasStatusProperty;
   const [addingProperty, setAddingProperty] = useStateE(false);
   const [propertyKeyDraft, setPropertyKeyDraft] = useStateE('');
   const [propertyValueDraft, setPropertyValueDraft] = useStateE('');
@@ -107,12 +114,6 @@ function MnEditor({
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
   }, [tags]);
 
-  const d = new Date(note.date);
-  const dateText = d.toLocaleDateString([], {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
-  });
-  const timeText = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
   const {
     backlinks,
     mentions,
@@ -144,6 +145,11 @@ function MnEditor({
     });
     return count;
   }, [contentBlocks]);
+  const connectionCount = suggestedConnections.length
+    + backlinks.length
+    + mentions.length
+    + passiveRelatedItems.length
+    + connected.items.length;
 
   const setBlocks = (updater) => {
     onBlocksChange(prevBlocks => {
@@ -170,8 +176,8 @@ function MnEditor({
 
   const removeMetadataProperty = (key) => {
     const lowerKey = String(key || '').toLowerCase();
-    if (lowerKey === 'status') {
-      onSetWorkflowStatus && onSetWorkflowStatus(null);
+    if (lowerKey === 'status' && workflowStatusEnabled) {
+      onSetWorkflowStatus(null);
       return;
     }
     onBlocksChange(prevBlocks => {
@@ -188,8 +194,8 @@ function MnEditor({
     const cleanKey = mnEditorCleanPropertyKey(propertyKeyDraft);
     if (!cleanKey) return;
     const cleanValue = String(propertyValueDraft || '').trim();
-    if (cleanKey === 'status') {
-      onSetWorkflowStatus && onSetWorkflowStatus(cleanValue || null);
+    if (cleanKey === 'status' && workflowStatusEnabled) {
+      onSetWorkflowStatus(cleanValue || null);
       setPropertyKeyDraft('');
       setPropertyValueDraft('');
       setAddingProperty(false);
@@ -221,6 +227,7 @@ function MnEditor({
     if (onCreateTag) onCreateTag(raw);
     setTagDraft('');
     setShowTags(false);
+    tagButtonRef.current?.focus?.();
   };
 
   return (
@@ -231,130 +238,30 @@ function MnEditor({
       display: 'flex', flexDirection: 'column', position: 'relative',
       minWidth: 0,
     }}>
-      {/* Toolbar */}
-      <div style={{
-        padding: '12px clamp(18px, 4vw, 76px) 10px clamp(18px, 3vw, 28px)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        minHeight: 54,
-        borderBottom: `1px solid ${T.lineSub}`,
-        background: `color-mix(in oklab, ${T.bgElevated || T.bg} 88%, transparent)`,
-        backdropFilter: 'blur(12px)',
-      }}>
-        {onBack && (
-          <button onClick={onBack} title="Back to previous view" style={iconBtn(T)}>
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
-              <path d="M10 3L5 8L10 13" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
-        {Array.isArray(novelistPath) && novelistPath.length > 1 && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5,
-            flexWrap: 'wrap',
-            minWidth: 0,
-            fontFamily: 'var(--mn-ui)',
-            fontSize: 11.5,
-            color: T.inkDim,
-          }}>
-            {novelistPath.map((item, index) => (
-              <React.Fragment key={item.id}>
-                {index > 0 && <span style={{ color: T.line }}>›</span>}
-                <button
-                  onClick={() => onOpen && onOpen(item.id)}
-                  disabled={item.id === note.id}
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: item.id === note.id ? T.inkDim : T.inkMed,
-                    cursor: item.id === note.id ? 'default' : 'pointer',
-                    padding: '1px 2px',
-                    fontFamily: 'var(--mn-ui)',
-                    fontSize: 11.5,
-                    maxWidth: 170,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                  {item.title || 'Untitled'}
-                </button>
-              </React.Fragment>
-            ))}
-          </div>
-        )}
-        <div style={{ flex: 1 }} />
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 7,
-          fontFamily: 'var(--mn-mono)',
-          fontSize: 10.5,
-          color: T.inkDim,
-          textTransform: 'uppercase',
-          whiteSpace: 'nowrap',
-          maxWidth: 'min(48vw, 560px)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
-          <span>{dateText}</span>
-          <span style={{ color: T.lineSub }}>·</span>
-          <span>{timeText}</span>
-          <span style={{ color: T.lineSub }}>·</span>
-          <span>{wordCount} words</span>
-        </div>
-
-        <button onClick={onPinToggle} title="Pin" style={iconBtn(T, note.pinned)}>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill={note.pinned ? T.accent : 'none'} stroke={note.pinned ? T.accent : 'currentColor'} strokeWidth="1.3">
-            <path d="M10 1.5L14.5 6L11 7L8 10L6 8L9 5L10 1.5Z"/>
-            <path d="M6 8L2.5 11.5" strokeLinecap="round"/>
-          </svg>
-        </button>
-        {onOpenGraph && <button onClick={onOpenGraph} title="Graph (⌘G)" style={iconBtn(T)}>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-            <circle cx="4" cy="4" r="1.6"/><circle cx="12" cy="4" r="1.6"/><circle cx="8" cy="12" r="1.6"/>
-            <path d="M5.5 5L10.5 5M5.3 5.8L6.8 10.4M10.7 5.8L9.2 10.4"/>
-          </svg>
-        </button>}
-        {onOpenCalendar && (
-          <button onClick={onOpenCalendar} title="Agenda" aria-label="Agenda" style={iconBtn(T)}>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-              <rect x="2.5" y="3.5" width="11" height="10" rx="1.4"/>
-              <path d="M5 2.5V5M11 2.5V5M2.5 7H13.5" strokeLinecap="round"/>
-              <circle cx="8" cy="10.3" r="1.3" fill="currentColor" stroke="none"/>
-            </svg>
-          </button>
-        )}
-        <button onClick={onDuplicate} title="Duplicate note" style={iconBtn(T)}>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-            <rect x="5" y="5" width="8" height="8" rx="1.2"/>
-            <path d="M3 10.5V3H10.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-        {onOpenVersions && (
-          <button onClick={onOpenVersions} title="Version history" style={iconBtn(T)}>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-              <path d="M4 4.5C5 3.3 6.5 2.5 8.2 2.5C11.2 2.5 13.5 4.8 13.5 7.8C13.5 10.8 11.2 13.2 8.2 13.2C5.7 13.2 3.7 11.6 3 9.4" strokeLinecap="round"/>
-              <path d="M3 4.5H4.8V2.7M8 5.4V8.2L10 9.3" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-        )}
-        {onToggleReferencePane && (
-          <button onClick={onToggleReferencePane} title={referencePaneOpen ? 'Close reference pane' : 'Open reference pane'} aria-label={referencePaneOpen ? 'Close reference pane' : 'Open reference pane'} style={iconBtn(T, referencePaneOpen)}>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-              <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
-              <path d="M9 2.5v11M10.8 5h1" strokeLinecap="round" />
-            </svg>
-          </button>
-        )}
-        <button onClick={onDelete} title="Delete" style={iconBtn(T)}>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-            <path d="M3 4.5H13M6 4.5V3C6 2.5 6.5 2 7 2H9C9.5 2 10 2.5 10 3V4.5M5 4.5V13C5 13.5 5.5 14 6 14H10C10.5 14 11 13.5 11 13V4.5" strokeLinecap="round"/>
-          </svg>
-        </button>
-      </div>
+      <EditorHeader
+        T={T}
+        note={note}
+        saveStatus={saveStatus}
+        wordCount={wordCount}
+        connectionCount={connectionCount}
+        novelistPath={novelistPath}
+        onOpen={onOpen}
+        onBack={onBack}
+        sidebarHidden={sidebarHidden}
+        noteListHidden={noteListHidden}
+        onToggleSidebar={onToggleSidebar}
+        onToggleNoteList={onToggleNoteList}
+        onPinToggle={onPinToggle}
+        onScrollToConnections={() => connectionsRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })}
+        onDuplicate={onDuplicate}
+        onOpenVersions={onOpenVersions}
+        onExport={onExport}
+        referencePaneOpen={referencePaneOpen}
+        onToggleReferencePane={onToggleReferencePane}
+        onOpenGraph={onOpenGraph}
+        onOpenCalendar={onOpenCalendar}
+        onDelete={onDelete}
+      />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 clamp(18px, 4.5vw, 56px) 44px' }}>
         <div ref={editorSearchScopeRef} style={{
@@ -367,6 +274,7 @@ function MnEditor({
         }}>
           <input
             className="mn-note-title-input"
+            aria-label="Note title"
             value={note.title}
             onChange={(e) => onTitleChange(e.target.value)}
             onBlur={() => onEndNoteMetadataEdit && onEndNoteMetadataEdit()}
@@ -436,23 +344,24 @@ function MnEditor({
             display: 'flex', gap: 6, marginBottom: 9, alignItems: 'center', flexWrap: 'wrap'
           }}>
             {note.tags.map(t => (
-              <span key={t} onClick={() => onRemoveTag(t)} style={{
+              <button type="button" key={t} onClick={() => onRemoveTag(t)} aria-label={`Remove tag ${t}`} style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 10.5,
                 color: mnGetTagColor(tagHue[t] ?? 240, theme),
-                padding: '2px 7px', borderRadius: 4,
+                minHeight: 28, padding: '2px 8px', borderRadius: 5,
                 background: mnGetTagBg(tagHue[t] ?? 240, theme),
+                border: `1px solid color-mix(in oklab, ${mnGetTagColor(tagHue[t] ?? 240, theme)} 20%, transparent)`,
                 cursor: 'pointer',
-              }} title="Click to remove">#{t}</span>
+              }} title={`Remove tag ${t}`}>#{t}</button>
             ))}
             <div style={{ position: 'relative' }}>
-              <button onClick={() => setShowTags(v => !v)} style={{
+              <button ref={tagButtonRef} type="button" aria-haspopup="dialog" aria-expanded={showTags} onClick={() => setShowTags(v => !v)} style={{
                 fontFamily: 'var(--mn-mono)', fontSize: 10.5,
-                color: T.inkDim, padding: '2px 7px', borderRadius: 4,
+                color: T.inkDim, minHeight: 28, padding: '2px 8px', borderRadius: 5,
                 background: 'transparent', border: `1px dashed ${T.line}`,
                 cursor: 'pointer',
-              }}>+ tag</button>
+              }}>+ Tag</button>
               {showTags && (
-                <div style={{
+                <div role="dialog" aria-label="Add tag" style={{
                   position: 'absolute', top: '100%', left: 0, marginTop: 4,
                   background: T.bg, border: `1px solid ${T.line}`,
                   borderRadius: 6, padding: 4, zIndex: 10, minWidth: 180,
@@ -460,11 +369,17 @@ function MnEditor({
                 }}>
                   <div style={{ display: 'flex', gap: 4, padding: 4 }}>
                     <input
+                      autoFocus
+                      aria-label="New tag name"
                       value={tagDraft}
                       onChange={(e) => setTagDraft(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') { e.preventDefault(); createAndApplyTag(); }
-                        if (e.key === 'Escape') { e.preventDefault(); setShowTags(false); }
+                        if (e.key === 'Escape') {
+                          e.preventDefault();
+                          setShowTags(false);
+                          tagButtonRef.current?.focus?.();
+                        }
                       }}
                       placeholder="new tag"
                       style={{
@@ -476,6 +391,8 @@ function MnEditor({
                       }}
                     />
                     <button
+                      type="button"
+                      aria-label="Create tag"
                       onMouseDown={(e) => { e.preventDefault(); createAndApplyTag(); }}
                       disabled={!tagDraft.trim()}
                       title="Create tag"
@@ -490,18 +407,23 @@ function MnEditor({
                   </div>
                   <div style={{ height: 1, background: T.lineSub, margin: '2px 4px 4px' }} />
                   {tags.filter(t => !note.tags.includes(t.name)).map(t => (
-                    <div key={t.name} onClick={() => { onAddTag(t.name); setShowTags(false); }}
+                    <button type="button" key={t.name} onClick={() => {
+                      onAddTag(t.name);
+                      setShowTags(false);
+                      tagButtonRef.current?.focus?.();
+                    }}
                       style={{
-                        padding: '5px 8px', borderRadius: 4, cursor: 'pointer',
+                        width: '100%', minHeight: 32, padding: '5px 8px', borderRadius: 4, cursor: 'pointer',
                         fontFamily: 'var(--mn-ui)', fontSize: 12.5,
                         display: 'flex', alignItems: 'center', gap: 6,
+                        border: 0, background: 'transparent', color: T.ink, textAlign: 'left',
                       }}
                       onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%',
                         background: mnGetTagColor(t.hue, theme) }} />
                       {t.name}
-                    </div>
+                    </button>
                   ))}
                   {tags.filter(t => !note.tags.includes(t.name)).length === 0 && (
                     <div style={{ padding: '6px 8px', fontSize: 11.5, color: T.inkDim, fontStyle: 'italic' }}>all tags applied</div>
@@ -509,6 +431,21 @@ function MnEditor({
                 </div>
               )}
             </div>
+            <button
+              type="button"
+              aria-controls="mn-properties-panel"
+              aria-expanded={addingProperty}
+              onClick={() => setAddingProperty(true)}
+              style={{
+                minHeight: 28, padding: '2px 8px', borderRadius: 5,
+                border: `1px dashed ${addingProperty ? T.accent : T.line}`,
+                background: addingProperty ? T.accentSoft : 'transparent',
+                color: addingProperty ? T.accent : T.inkDim,
+                cursor: addingProperty ? 'default' : 'pointer',
+                fontFamily: 'var(--mn-ui)', fontSize: 10.5, fontWeight: 650,
+              }}>
+              + Property
+            </button>
           </div>
 
           <PropertiesPanel
@@ -572,21 +509,23 @@ function MnEditor({
             T={T}
           />
 
-          <ConnectionsSection
-            suggestedConnections={suggestedConnections}
-            backlinks={backlinks}
-            mentions={mentions}
-            passiveRelatedItems={passiveRelatedItems}
-            connected={connected}
-            related={related}
-            onOpen={onOpen}
-            onLinkMention={onLinkMention}
-            linkMention={linkMention}
-            note={note}
-            acceptSuggestedConnection={acceptSuggestedConnection}
-            ignoreSuggestedConnection={ignoreSuggestedConnection}
-            T={T}
-          />
+          <div ref={connectionsRef}>
+            <ConnectionsSection
+              suggestedConnections={suggestedConnections}
+              backlinks={backlinks}
+              mentions={mentions}
+              passiveRelatedItems={passiveRelatedItems}
+              connected={connected}
+              related={related}
+              onOpen={onOpen}
+              onLinkMention={onLinkMention}
+              linkMention={linkMention}
+              note={note}
+              acceptSuggestedConnection={acceptSuggestedConnection}
+              ignoreSuggestedConnection={ignoreSuggestedConnection}
+              T={T}
+            />
+          </div>
 
         </div>
       </div>
@@ -615,8 +554,8 @@ function MnEditor({
 
 function iconBtn(T, active) {
   return {
-    ...(typeof mnIconButtonStyle === 'function' ? mnIconButtonStyle(T, active, 28) : {}),
-    height: 26,
+    ...(typeof mnIconButtonStyle === 'function' ? mnIconButtonStyle(T, active, 32) : {}),
+    height: 32,
     borderRadius: 6,
     border: `1px solid ${active ? T.selLine || T.accent : T.lineSub}`,
     background: active ? T.accentSoft : (T.bgElevated || T.bg),

@@ -1,26 +1,29 @@
 import { H, SettingsCard, Row, Segmented, Toggle, Select, FontSizeStepper } from '../settingsControls.jsx';
 import { platformApi } from '../../platform/index.js';
+import { shortcutLabel, useShortcutPlatform } from '../../platform/shortcuts.js';
 import { BtnOutline } from '../settingsPrimitives.jsx';
 
-function SectionShortcuts({ T, shortcutStatus }) {
+function SectionShortcuts({ T, shortcutStatus, featureState = {} }) {
+  const platform = useShortcutPlatform();
   const sc = [
-    { k: '⌘ N', v: 'New note' },
-    { k: '⌘ ⇧ N', v: 'Quick capture' },
-    { k: '⌘ G', v: 'Open graph' },
-    { k: '⌘ P', v: 'Quick switcher' },
-    { k: '⌘ K', v: 'Open Ask AI' },
-    { k: '⌘ \\', v: 'Toggle sidebar' },
-    { k: '⌘ ⇧ \\', v: 'Toggle note list' },
-    { k: '⌘ Z', v: 'Undo editor change' },
-    { k: '⌘ ⇧ Z / ⌘ Y', v: 'Redo editor change' },
-    { k: 'Tab', v: 'Indent bullet' },
-    { k: '⇧ Tab', v: 'Outdent bullet' },
-    { k: 'Enter', v: 'New sibling bullet' },
-    { k: 'Backspace (empty)', v: 'Delete bullet' },
-    { k: '⌘ Enter', v: 'Zoom into focused block' },
-    { k: '⌥ ↑ / ⌥ ↓', v: 'Move focused block' },
-    { k: '⌘ D', v: 'Duplicate focused block' },
-    { k: '⌘ Backspace', v: 'Delete focused block' },
+    { k: shortcutLabel('newNote', platform), v: 'New note' },
+    { k: shortcutLabel('quickCapture', platform), v: 'Quick capture' },
+    ...(featureState.showLabs ? [{ k: shortcutLabel('graph', platform), v: 'Open graph' }] : []),
+    { k: shortcutLabel('quickSwitcher', platform), v: 'Quick switcher' },
+    { k: shortcutLabel('commandPalette', platform), v: 'Command palette' },
+    ...(featureState.showAskAi ? [{ k: shortcutLabel('askAi', platform), v: 'Open Ask AI' }] : []),
+    { k: shortcutLabel('toggleSidebar', platform), v: 'Toggle sidebar' },
+    { k: shortcutLabel('toggleNoteList', platform), v: 'Toggle note list' },
+    { k: shortcutLabel('undo', platform), v: 'Undo editor change' },
+    { k: shortcutLabel('redo', platform), v: 'Redo editor change' },
+    { k: shortcutLabel('indent', platform), v: 'Indent block' },
+    { k: shortcutLabel('outdent', platform), v: 'Outdent block' },
+    { k: shortcutLabel('newSibling', platform), v: 'New sibling block' },
+    { k: `${shortcutLabel('deleteEmpty', platform)} (empty)`, v: 'Delete block' },
+    { k: shortcutLabel('zoomBlock', platform), v: 'Zoom into focused block' },
+    { k: `${shortcutLabel('moveBlockUp', platform)} / ${shortcutLabel('moveBlockDown', platform)}`, v: 'Move focused block' },
+    { k: shortcutLabel('duplicateBlock', platform), v: 'Duplicate focused block' },
+    { k: shortcutLabel('deleteBlock', platform), v: 'Delete focused block' },
     { k: '[[', v: 'Start wiki-link suggestion' },
     { k: '#', v: 'Start tag' },
     { k: '@remind YYYY-MM-DD', v: 'Schedule reminder' },
@@ -39,7 +42,7 @@ function SectionShortcuts({ T, shortcutStatus }) {
             color: T.ink,
             fontFamily: 'var(--mn-ui)', fontSize: 12.5,
           }}>
-            Global Quick Capture shortcut {shortcutStatus.accelerator || 'Ctrl+Shift+N'} is unavailable.
+            Global Quick Capture shortcut {shortcutLabel('quickCapture', platform, { compact: true })} is unavailable.
           </div>
         )}
         {sc.map((s, i) => (

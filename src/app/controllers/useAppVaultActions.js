@@ -1,3 +1,5 @@
+import { shortcutLabel } from '../../platform/shortcuts.js';
+
 function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WORKFLOW_STATES, MN_VAULTS_SERVICE, activeVaultId, canvases, desktopBridge, dirtyNotes, mnBlocksToMd, mnBuildNovelistStarterNotes, mnEnsureNovelistTags, mnEnsureScenePlotPoints, mnMdToBlocks, mnNormalizeNoteBody, mnNormalizeNovelistLegacyBody, mnNormalizeNovelistLegacyTags, mnNormalizeOnboardingMode, mnNormalizeWorkflowStatesForApp, navigateView, normalizeNotes, noteForDisk, notes, recordPhase5Metric, refreshVaultRegistry, saveDirtyNotesNow, saveVaultMetaNow, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, vaultActivationSeq, vaults, view }) {
   const selectVault = useCallbackA(async (id) => {
       if (id === activeVaultId) return;
@@ -110,8 +112,8 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
             ? 'Research workspace welcome'
             : 'Welcome to ' + name;
         const fallbackBody = onboardingMode
-          ? `# ${fallbackTitle}\n\n- This vault was created with ${onboardingMode} onboarding\n- Create notes with ⌘N`
-          : `- This is your new vault\n- Create notes with ⌘N`;
+          ? `# ${fallbackTitle}\n\n- This vault was created with ${onboardingMode} onboarding\n- Create notes with ${shortcutLabel('newNote', undefined, { compact: true })}`
+          : `- This is your new vault\n- Create notes with ${shortcutLabel('newNote', undefined, { compact: true })}`;
         const newNotes = isNovelistVault ? mnBuildNovelistStarterNotes([], mnMdToBlocks, id).slice(0, 3) : [{
           id: firstNoteId,
           title: fallbackTitle,
