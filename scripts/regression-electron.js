@@ -634,6 +634,50 @@ async function assertViewportUsable(win, label) {
   return metrics;
 }
 
+async function setAssistanceEnabledForRegression(win, enabled) {
+  await clickButton(win, { titleIncludes: 'Settings' });
+  await waitFor(win, 'settings open for assistance', async () => {
+    const current = await state(win);
+    return { ok: current.settingsOpen, current };
+  });
+  await clickVisibleText(win, 'Assistance');
+  await waitFor(win, 'assistance toggle ready', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const label = [...document.querySelectorAll('div')]
+          .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
+        const toggle = label?.parentElement?.parentElement?.querySelector('button[aria-pressed]');
+        return { found: Boolean(toggle), pressed: toggle?.getAttribute('aria-pressed') === 'true' };
+      })()
+    `);
+    return { ok: result.found, result };
+  });
+  await evaluate(win, `
+    (() => {
+      const label = [...document.querySelectorAll('div')]
+        .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
+      const toggle = label?.parentElement?.parentElement?.querySelector('button[aria-pressed]');
+      const next = ${enabled ? 'true' : 'false'};
+      if (toggle && (toggle.getAttribute('aria-pressed') === 'true') !== next) toggle.click();
+    })()
+  `);
+  await waitFor(win, `assistance ${enabled ? 'enabled' : 'disabled'}`, async () => {
+    const pressed = await evaluate(win, `
+      (() => {
+        const label = [...document.querySelectorAll('div')]
+          .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
+        return label?.parentElement?.parentElement?.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed') === 'true';
+      })()
+    `);
+    return { ok: pressed === enabled, pressed };
+  });
+  await clickButton(win, { aria: 'Close settings' });
+  await waitFor(win, 'settings closed after assistance change', async () => {
+    const current = await state(win);
+    return { ok: !current.settingsOpen, current };
+  });
+}
+
 async function openEditorMoreMenu(win) {
   await clickButton(win, { aria: 'More note actions' });
   await waitFor(win, 'editor More menu open', async () => {
@@ -1205,6 +1249,80 @@ async function runViewportAccessibilityScenario(win) {
       const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
       return { ok: overlay, overlay };
     });
+
+    await clickVisibleText(win, 'Graph');
+    await waitFor(win, 'compact graph keeps its note list drawer', async () => {
+      const result = await evaluate(win, `({
+        graph: document.body.textContent.includes('Graph'),
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+      })`);
+      return { ok: result.graph && result.overlay, result };
+    });
+    await clickButton(win, { titleIncludes: 'Hide note list' });
+    await waitFor(win, 'compact graph exposes an external note list opener', async () => {
+      const result = await evaluate(win, `({
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[title="Show note list"]')),
+        editorHeader: Boolean(document.querySelector('[data-mn-editor-header="true"]')),
+      })`);
+      return { ok: !result.overlay && result.showButton && !result.editorHeader, result };
+    });
+    await clickButton(win, { titleIncludes: 'Show note list' });
+    await waitFor(win, 'compact graph note list reopens', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
+    const openedGraphNote = await evaluate(win, `
+      (() => {
+        const option = document.querySelector('[data-mn-note-list-mode="overlay"] [role="option"]');
+        option?.click();
+        return Boolean(option);
+      })()
+    `);
+    if (!openedGraphNote) throw new Error('Compact graph note list did not contain a note to open');
+    await waitFor(win, 'compact graph note selection returns to the editor', async () => {
+      const result = await evaluate(win, `({
+        editor: Boolean(document.querySelector('.mn-note-title-input')),
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+      })`);
+      return { ok: result.editor && !result.overlay, result };
+    });
+
+    await setAssistanceEnabledForRegression(win, true);
+    await clickVisibleText(win, 'Ask AI');
+    await waitFor(win, 'compact Ask AI exposes its hidden chat history', async () => {
+      const result = await evaluate(win, `({
+        askAi: document.body.textContent.includes('Ask AI'),
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[title="Show AI chats"]')),
+      })`);
+      return { ok: result.askAi && !result.overlay && result.showButton, result };
+    });
+    await clickButton(win, { titleIncludes: 'Show AI chats' });
+    await waitFor(win, 'compact Ask AI chat history opens', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
+    await clickButton(win, { titleIncludes: 'Hide note list' });
+    await waitFor(win, 'compact Ask AI exposes a chat history opener', async () => {
+      const result = await evaluate(win, `({
+        overlay: Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]')),
+        showButton: Boolean(document.querySelector('button[title="Show AI chats"]')),
+      })`);
+      return { ok: !result.overlay && result.showButton, result };
+    });
+    await clickButton(win, { titleIncludes: 'Show AI chats' });
+    await waitFor(win, 'compact Ask AI chat history reopens', async () => {
+      const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+      return { ok: overlay, overlay };
+    });
+    await clickVisibleText(win, 'All notes');
+    await waitFor(win, 'compact Ask AI returns to notes', async () => {
+      const editor = await evaluate(win, `Boolean(document.querySelector('.mn-note-title-input'))`);
+      return { ok: editor, editor };
+    });
+    await setAssistanceEnabledForRegression(win, false);
+
     await clickButton(win, { titleIncludes: 'Settings' });
     await waitFor(win, 'settings open at minimum supported window', async () => {
       const current = await state(win);

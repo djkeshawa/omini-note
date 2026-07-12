@@ -64,6 +64,9 @@ test('blank-note chrome hides metadata and moves secondary actions into More', (
   assert.match(view, /data-mn-layout=\{overlayNoteList \? 'compact' : 'three-pane'\}/);
   assert.match(view, /<ResponsiveListPane/);
   assert.doesNotMatch(view, /useResponsiveLayout/);
+  assert.match(view, /compactEditorOwnsNoteListTrigger/);
+  assert.match(view, /noteListVisible && noteListHidden && !compactEditorOwnsNoteListTrigger/);
+  assert.match(view, /aiChatListVisible && noteListHidden && \(/);
   const app = fs.readFileSync(path.join(__dirname, '../src/app/app.jsx'), 'utf8');
   assert.match(app, /const \{ overlayNoteList \} = useResponsiveLayout\(\)/);
   assert.match(app, /openSmartView, overlayNoteList, pendingDirtyKeysRef/);
