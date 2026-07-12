@@ -3,23 +3,24 @@
 const SEED_TAGS = [
   { name: 'welcome', hue: 200 },
 ];
+const SEED_CREATED_AT = new Date().toISOString();
 
 const SEED_NOTES = [
   {
     id: 'n1',
     title: 'Welcome to VispNote',
-    date: '2026-04-19T09:12:00',
+    date: SEED_CREATED_AT,
     tags: ['welcome'],
-    pinned: true,
+    pinned: false,
     body:
 `# Welcome to VispNote
 
-VispNote helps you **write, connect, and act** without setting up a system first.
+**Write · Connect · Act.** Start without setting up a system first.
 
 ## Start here
-1. **Write:** create a note and put one useful thought in it.
-2. **Connect:** type double square brackets to link that thought to another note.
-3. **Act:** add one Markdown checkbox as a next action, then review it in Today.
+- **Write:** create a note and put one useful thought in it.
+- **Connect:** type double square brackets to link that thought to another note.
+- **Act:** add one Markdown checkbox as a next action, then review it in Today.
 
 That is enough to begin. Everything else can stay out of the way until you need it.`
   },
@@ -35,7 +36,7 @@ const SEED_NOTES_NOVELIST = [
   {
     id: 'novel_act_1',
     title: 'Act 1',
-    date: '2026-04-19T09:12:00',
+    date: SEED_CREATED_AT,
     tags: ['novel-act'],
     pinned: true,
     body:
@@ -51,7 +52,7 @@ Keep act notes broad: the goal, the major turn, and the unanswered question.`
   {
     id: 'novel_chapter_1',
     title: 'Chapter 1',
-    date: '2026-04-19T09:15:00',
+    date: SEED_CREATED_AT,
     tags: ['novel-chapter'],
     pinned: false,
     body:
@@ -67,7 +68,7 @@ Use chapter notes for pacing, point of view, and what changes by the end.`
   {
     id: 'novel_scene_1',
     title: 'Scene 1',
-    date: '2026-04-19T09:18:00',
+    date: SEED_CREATED_AT,
     tags: ['novel-scene'],
     pinned: false,
     body:

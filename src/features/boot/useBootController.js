@@ -1,4 +1,4 @@
-const { useEffect, useState } = React;
+const { useCallback, useEffect, useState } = React;
 
 export function useBootController({
   hasDisk,
@@ -35,6 +35,13 @@ export function useBootController({
 }) {
   const [state, setState] = useState('loading');
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setState('loading');
+    setAttempt(current => current + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,7 +128,7 @@ export function useBootController({
       }
     })();
     return () => { cancelled = true; };
-  }, [applyWorkflowStates, defaultTweaks, hasDisk, loadVaultBundle, markdownToBlocks, normalizeNotes, normalizePacks, normalizeSmartViews, normalizeStartupView, normalizeThemes, normalizeWorkflowStates, notesVaultsService, novelistWorkflowStates, platform, sanitizeMetrics, seedNotes, seedTags, seedVaults, setActiveVaultId, setAssistanceEnabled, setCanvases, setCustomThemes, setEnabledPacks, setNotes, setSavedSmartViews, setSelectedId, setTags, setTweaks, setVaults, setView, writeMetrics]);
+  }, [applyWorkflowStates, attempt, defaultTweaks, hasDisk, loadVaultBundle, markdownToBlocks, normalizeNotes, normalizePacks, normalizeSmartViews, normalizeStartupView, normalizeThemes, normalizeWorkflowStates, notesVaultsService, novelistWorkflowStates, platform, sanitizeMetrics, seedNotes, seedTags, seedVaults, setActiveVaultId, setAssistanceEnabled, setCanvases, setCustomThemes, setEnabledPacks, setNotes, setSavedSmartViews, setSelectedId, setTags, setTweaks, setVaults, setView, writeMetrics]);
 
-  return { state, error };
+  return { state, error, retry };
 }

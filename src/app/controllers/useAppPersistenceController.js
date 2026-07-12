@@ -202,7 +202,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       value => mnSetWorkflowStates(value),
       []
     );
-    const { state: bootState, error: bootError } = useBootController({
+    const { state: bootState, error: bootError, retry: retryBoot } = useBootController({
       hasDisk: HAS_DISK,
       platform: desktopBridge,
       notesVaultsService: MN_NOTES_VAULTS_SERVICE,
@@ -487,7 +487,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       }, 1000);
       return () => clearTimeout(t);
     }, [selectedId, activeVaultId, tags, saveVaultMetaNow]);
-  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, searchUsageActiveRef, noteDiskStampRef, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
+  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, searchUsageActiveRef, noteDiskStampRef, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, retryBoot, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
 }
 
 export { useAppPersistenceController };

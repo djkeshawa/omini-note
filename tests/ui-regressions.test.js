@@ -191,7 +191,7 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
   assert.match(html, /mix-blend-mode: multiply/);
   assert.match(html, /mn-boot-title mn-boot-wordmark">VispNote/);
   assert.ok(loadingLogo.size > 0);
-  assert.match(html, /Capture<\/span><i><\/i><span>Organize<\/span><i><\/i><span>Remember/);
+  assert.match(html, /Write<\/span><i><\/i><span>Connect<\/span><i><\/i><span>Act/);
   assert.match(html, /class="mn-boot-status">Opening vault and indexing notes/);
   assert.match(html, /class="mn-boot-progress"><div><\/div><\/div>/);
   assert.match(html, /prefers-reduced-motion: reduce/);

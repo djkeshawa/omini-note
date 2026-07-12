@@ -87,8 +87,11 @@ test('First-run seed creates one focused Personal vault', async () => {
     const personal = await store.loadVault(personalVault.id);
     assert.equal(personal.notes.length, 1);
     assert.deepEqual(personal.notes.map(note => note.title), ['Welcome to VispNote']);
-    assert.match(personal.notes[0].body, /write, connect, and act/i);
+    assert.match(personal.notes[0].body, /Write · Connect · Act\./);
     assert.match(personal.notes[0].body, /review it in Today/);
+    assert.equal(personal.notes[0].pinned, false);
+    assert.ok(Math.abs(Date.now() - Date.parse(personal.notes[0].date)) < 60_000);
+    assert.doesNotMatch(personal.notes[0].body, /^\d+\.\s/m);
   });
 });
 

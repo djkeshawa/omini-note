@@ -11,6 +11,7 @@ import {
 } from '../features/editor/index.js';
 import { MnOutliner } from './outliner.jsx';
 import { EditorHeader } from './EditorHeader.jsx';
+import { MnContextualTip } from '../features/onboarding/index.js';
 import { mkBlock, mnBlocksToMd, mnWalk } from './outline.jsx';
 import { mnGetTagBg, mnGetTagColor, mnIconButtonStyle } from '../shared/theme.jsx';
 import MN_EDITOR_SEARCH from './searchNavigation.js';
@@ -40,6 +41,7 @@ function MnEditor({
   novelistPath = null, novelistMode = false,
   workflowStates = [], workflowStatus = '', onSetWorkflowStatus,
   saveStatus = 'Saved',
+  contextualTip = null, onDismissContextualTip,
   theme, T,
 }) {
   const [showTags, setShowTags] = useStateE(false);
@@ -272,6 +274,7 @@ function MnEditor({
           margin: '0 auto', paddingTop: 22,
           fontSize: fontSize === 'small' ? '13px' : fontSize === 'large' ? '16px' : '14.5px',
         }}>
+          <MnContextualTip tip={contextualTip} onDismiss={onDismissContextualTip} T={T} />
           <input
             className="mn-note-title-input"
             aria-label="Note title"

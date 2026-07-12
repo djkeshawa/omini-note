@@ -19,6 +19,7 @@ const MN_TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "sortBy": "modified",
   "defaultTags": "",
   "pinnedFirst": true,
+  "onboardingTipsDismissed": "",
   "startupView": "notes",
   "rollupFormat": "long",
   "rollupDefaultRange": "today",
