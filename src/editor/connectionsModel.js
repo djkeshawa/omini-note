@@ -20,20 +20,20 @@
     const currentTokens = new Set(connectionTitleTokens(currentNote?.title));
     const sharedTitleTokens = connectionTitleTokens(candidate?.title).filter(token => currentTokens.has(token));
     let score = 0;
-    let reason = '';
+    const reasons = [];
     if (relatedRank >= 0) {
       score += 100 - Math.min(60, relatedRank * 4);
-      reason = mode === 'semantic' ? 'Semantically related' : 'Similar wording';
+      reasons.push(mode === 'semantic' ? 'Similar meaning' : 'Similar wording');
     }
     if (sharedTags.length) {
       score += 38 + Math.min(24, sharedTags.length * 8);
-      reason = `Shares #${sharedTags[0]}`;
+      reasons.push(`Shares #${sharedTags[0]}`);
     }
     if (sharedTitleTokens.length) {
       score += 24 + Math.min(18, sharedTitleTokens.length * 6);
-      if (!reason) reason = `Shared topic: ${sharedTitleTokens[0]}`;
+      reasons.push(`Both mention ${sharedTitleTokens[0]}`);
     }
-    return { score, reason, sharedTags, sharedTitleTokens };
+    return { score, reason: reasons.slice(0, 2).join(' · '), reasons, sharedTags, sharedTitleTokens };
   }
 
   function suggestedConnections({ noteId = '', currentNote = null, notes = [], related = [], mode = '', links = [], ignoredIds = [], limit = 4, candidateLimit = 800 } = {}) {
@@ -64,7 +64,7 @@
       if (!id || id === currentId || ignored.has(id) || connected.has(id)) continue;
       const signal = connectionCandidateScore(currentNote, item, relatedRank.has(id) ? relatedRank.get(id) : -1, mode);
       if (signal.score <= 0) continue;
-      ranked.push({ ...item, noteId: id, reason: signal.reason, connectionScore: signal.score });
+      ranked.push({ ...item, noteId: id, reason: signal.reason, reasons: signal.reasons, connectionScore: signal.score });
     }
     return ranked
       .sort((a, b) => b.connectionScore - a.connectionScore || String(a.title || '').localeCompare(String(b.title || '')))

@@ -13,6 +13,7 @@ const MN_AI_ACTIONS = [
     selectionLabel: 'Improve selected text',
     hint: 'Polish wording while preserving meaning',
     instruction: 'Improve the writing. Keep the meaning, tone, markdown structure, wiki-links, tags, and tasks intact.',
+    preview: true,
   },
   {
     id: 'format',
@@ -22,6 +23,7 @@ const MN_AI_ACTIONS = [
     selectionLabel: 'Format selected text',
     hint: 'Clean up structure and markdown',
     instruction: 'Format and organize the text. Improve markdown structure without adding new facts.',
+    preview: true,
   },
   {
     id: 'summarize',
@@ -31,6 +33,7 @@ const MN_AI_ACTIONS = [
     selectionLabel: 'Summarize selected text',
     hint: 'Replace with a concise summary',
     instruction: 'Summarize the text concisely. Preserve concrete decisions, tasks, dates, and named references.',
+    preview: true,
   },
   {
     id: 'concise',
@@ -40,6 +43,7 @@ const MN_AI_ACTIONS = [
     selectionLabel: 'Make selected text concise',
     hint: 'Shorten without losing meaning',
     instruction: 'Make the text more concise while preserving the important meaning and markdown structure.',
+    preview: true,
   },
   {
     id: 'fix',
@@ -49,6 +53,7 @@ const MN_AI_ACTIONS = [
     selectionLabel: 'Fix selected text',
     hint: 'Correct spelling and grammar',
     instruction: 'Fix spelling, grammar, and punctuation only. Do not rewrite more than necessary.',
+    preview: true,
   },
   {
     id: 'write',

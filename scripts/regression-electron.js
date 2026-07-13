@@ -681,16 +681,19 @@ async function setAssistanceEnabledForRegression(win, enabled) {
     return { ok: current.settingsOpen, current };
   });
   await clickVisibleText(win, 'Assistance');
-  await waitFor(win, 'assistance toggle ready', async () => {
+  await waitFor(win, 'assistance toggle synced with persisted config', async () => {
     const result = await evaluate(win, `
-      (() => {
+      (async () => {
         const label = [...document.querySelectorAll('div')]
           .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
         const toggle = label?.parentElement?.parentElement?.querySelector('button[aria-pressed]');
-        return { found: Boolean(toggle), pressed: toggle?.getAttribute('aria-pressed') === 'true' };
+        const response = await window.mn.ai.getConfig();
+        const persisted = response?.value?.enabled === true;
+        const pressed = toggle?.getAttribute('aria-pressed') === 'true';
+        return { found: Boolean(toggle), disabled: toggle?.disabled === true, loaded: response?.ok === true, pressed, persisted };
       })()
     `);
-    return { ok: result.found, result };
+    return { ok: result.found && !result.disabled && result.loaded && result.pressed === result.persisted, result };
   });
   await evaluate(win, `
     (() => {
@@ -702,14 +705,16 @@ async function setAssistanceEnabledForRegression(win, enabled) {
     })()
   `);
   await waitFor(win, `assistance ${enabled ? 'enabled' : 'disabled'}`, async () => {
-    const pressed = await evaluate(win, `
-      (() => {
+    const result = await evaluate(win, `
+      (async () => {
         const label = [...document.querySelectorAll('div')]
           .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
-        return label?.parentElement?.parentElement?.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed') === 'true';
+        const pressed = label?.parentElement?.parentElement?.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed') === 'true';
+        const response = await window.mn.ai.getConfig();
+        return { loaded: response?.ok === true, pressed, persisted: response?.value?.enabled === true };
       })()
     `);
-    return { ok: pressed === enabled, pressed };
+    return { ok: result.loaded && result.pressed === enabled && result.persisted === enabled, result };
   });
   await clickButton(win, { aria: 'Close settings' });
   await waitFor(win, 'settings closed after assistance change', async () => {
@@ -856,6 +861,17 @@ async function runPopulatedTodayScenario(win) {
       result,
     };
   });
+  const dailyAction = await evaluate(win, `
+    [...document.querySelectorAll('[data-mn-today-root="true"] button')]
+      .map(button => (button.textContent || '').trim())
+      .find(text => text === 'Open daily note' || text === 'Create daily note') || ''
+  `);
+  if (!dailyAction) throw new Error('Today did not expose its one daily-note action');
+  await clickButton(win, { text: dailyAction });
+  await waitFor(win, 'Today daily-note action opens the note editor', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle && current.editorBodyVisible, current };
+  });
   await clickVisibleText(win, 'All notes');
   await waitFor(win, 'note editor restored after populated Today check', async () => {
     const current = await state(win);
@@ -961,6 +977,88 @@ async function runEditorUsabilityScenario(win) {
     const panel = await evaluate(win, `Boolean(document.querySelector('[data-mn-properties-panel="true"]'))`);
     return { ok: !panel, panel };
   });
+}
+
+async function runValueHardeningSurfaceScenario(win) {
+  await waitFor(win, 'local status reaches a settled state', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const button = document.querySelector('button[aria-label^="Local status:"]');
+        return { found: Boolean(button), label: button?.getAttribute('aria-label') || '' };
+      })()
+    `);
+    return { ok: result.found && !result.label.includes('Saving'), result };
+  });
+  await evaluate(win, `document.querySelector('button[aria-label^="Local status:"]')?.click()`);
+  await waitFor(win, 'local status reveals recovery details', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const dialog = document.querySelector('[role="dialog"][aria-label="Local vault status"]');
+        const text = dialog?.textContent || '';
+        return {
+          open: Boolean(dialog),
+          folder: text.includes('Vault folder'),
+          backup: text.includes('Last backup'),
+          health: text.includes('Vault Health'),
+          backupAction: text.includes('Back up now'),
+        };
+      })()
+    `);
+    return { ok: result.open && result.folder && result.backup && result.health && result.backupAction, result };
+  });
+  await pressAccelerator(win, 'Escape');
+  await waitFor(win, 'local status closes and returns focus', async () => {
+    const result = await evaluate(win, `({
+      open: Boolean(document.querySelector('[role="dialog"][aria-label="Local vault status"]')),
+      focus: document.activeElement?.getAttribute('aria-label') || '',
+    })`);
+    return { ok: !result.open && result.focus.startsWith('Local status:'), result };
+  });
+
+  await clickVisibleText(win, 'First useful note');
+  await waitFor(win, 'meaningful source note opens for assistance', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle === 'First useful note', current };
+  });
+  await setAssistanceEnabledForRegression(win, true);
+  await waitFor(win, 'contextual assistance exposes four preview-first actions', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const section = document.querySelector('[data-mn-contextual-assistance="true"]');
+        const labels = [...(section?.querySelectorAll('button') || [])]
+          .map(button => button.getAttribute('aria-label') || '');
+        return {
+          found: Boolean(section),
+          actionCount: ['Brief from ', 'Outline from ', 'Decisions from ', 'Next actions from ']
+            .filter(prefix => labels.some(label => label.startsWith(prefix))).length,
+          previewOpen: Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')),
+        };
+      })()
+    `);
+    return { ok: result.found && result.actionCount === 4 && !result.previewOpen, result };
+  });
+  if (process.env.VISPNOTE_VALUE_SCREENSHOT) {
+    await evaluate(win, `document.querySelector('button[aria-label^="Local status:"]')?.click()`);
+    await waitFor(win, 'local status reopens for screenshot', async () => {
+      const open = await evaluate(win, `Boolean(document.querySelector('[role="dialog"][aria-label="Local vault status"]'))`);
+      return { ok: open, open };
+    });
+    const screenshotPath = path.resolve(process.env.VISPNOTE_VALUE_SCREENSHOT);
+    fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
+    win.webContents.debugger.attach('1.3');
+    try {
+      const capture = await win.webContents.debugger.sendCommand('Page.captureScreenshot', {
+        format: 'png',
+        fromSurface: true,
+        captureBeyondViewport: false,
+      });
+      fs.writeFileSync(screenshotPath, Buffer.from(capture.data, 'base64'));
+    } finally {
+      if (win.webContents.debugger.isAttached()) win.webContents.debugger.detach();
+    }
+    await pressAccelerator(win, 'Escape');
+  }
+  await setAssistanceEnabledForRegression(win, false);
 }
 
 async function editorRows(win) {
@@ -1284,6 +1382,11 @@ async function runSearchAndClearScenario(win) {
     const current = await state(win);
     return { ok: current.text.includes('Search') && current.text.includes(title), current };
   });
+  await clickVisibleText(win, title);
+  await waitFor(win, 'search result opens the expected note', async () => {
+    const current = await state(win);
+    return { ok: current.selectedTitle === title, current };
+  });
   await pressAccelerator(win, 'Escape');
   await waitFor(win, 'search clears with Escape', async () => {
     const value = await evaluate(win, `document.querySelector('input[aria-label="Search note contents"]')?.value || ''`);
@@ -1569,7 +1672,7 @@ async function runViewportAccessibilityScenario(win) {
       })`);
       return { ok: !result.overlay && result.showButton && result.activeLabel === 'Show note list', result };
     });
-    await setRegressionWindowSize(win, 1280, 860);
+    await setRegressionWindowSize(win, 1440, 900);
     await waitForLayoutMode(win, 'three-pane');
     await assertViewportUsable(win, 'desktop restored after compact selection');
     const restoredDesktopMode = await evaluate(win, `document.querySelector('[data-mn-layout]')?.getAttribute('data-mn-layout') || ''`);
@@ -1745,6 +1848,86 @@ async function runViewportAccessibilityScenario(win) {
     await wait(80);
     await evaluate(win, `window.dispatchEvent(new Event('resize'))`);
     await wait(120);
+  }
+}
+
+async function runPrivateValueCounterScenario(win) {
+  await waitFor(win, 'privacy-safe core value counters persist', async () => {
+    const result = await evaluate(win, `
+      (async () => {
+        const response = await window.mn.integrations.featureUsage.status();
+        const value = response?.value || response?.data || {};
+        return value.report || {};
+      })()
+    `);
+    const counters = result.counters || {};
+    const serialized = JSON.stringify(result);
+    return {
+      ok: counters.first_note?.created === 1
+        && counters.capture?.completed >= 2
+        && counters.search?.result_opened >= 1
+        && counters.today?.completed >= 1
+        && !serialized.includes('QE User Scenario')
+        && !serialized.includes('quick capture todo'),
+      counters,
+    };
+  });
+}
+
+async function runThemeAccessibilityScenario(win) {
+  const originalBounds = win.getBounds();
+  try {
+    await setRegressionWindowSize(win, 1440, 900);
+    await waitForLayoutMode(win, 'three-pane');
+    await clickButton(win, { titleIncludes: 'Settings' });
+    await waitFor(win, 'theme settings are available', async () => {
+      const result = await evaluate(win, `
+        (() => {
+          const select = [...document.querySelectorAll('select')]
+            .find(element => [...element.options].some(option => option.value === 'light')
+              && [...element.options].some(option => option.value === 'dark'));
+          return { found: Boolean(select), value: select?.value || '' };
+        })()
+      `);
+      return { ok: result.found, result };
+    });
+    const surfaces = {};
+    for (const themeId of ['dark', 'light']) {
+      await evaluate(win, `
+        (() => {
+          const select = [...document.querySelectorAll('select')]
+            .find(element => [...element.options].some(option => option.value === 'light')
+              && [...element.options].some(option => option.value === 'dark'));
+          if (!select) return false;
+          select.value = ${JSON.stringify(themeId)};
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        })()
+      `);
+      await waitFor(win, `${themeId} theme applies`, async () => {
+        const result = await evaluate(win, `
+          (() => {
+            const select = [...document.querySelectorAll('select')]
+              .find(element => [...element.options].some(option => option.value === 'light')
+                && [...element.options].some(option => option.value === 'dark'));
+            const dialog = document.querySelector('[role="dialog"][aria-labelledby="mn-settings-title"]');
+            return { value: select?.value || '', background: dialog?.style.background || '' };
+          })()
+        `);
+        return { ok: result.value === themeId && Boolean(result.background), result };
+      });
+      surfaces[themeId] = await evaluate(win, `document.querySelector('[role="dialog"][aria-labelledby="mn-settings-title"]')?.style.background || ''`);
+      await assertViewportUsable(win, `${themeId} theme at 1440px`);
+    }
+    if (!surfaces.dark || !surfaces.light || surfaces.dark === surfaces.light) {
+      throw new Error(`Light and dark theme surfaces did not remain distinct: ${JSON.stringify(surfaces)}`);
+    }
+    await clickButton(win, { aria: 'Close settings' });
+  } finally {
+    await clearRegressionViewportOverride(win);
+    win.setBounds(originalBounds);
+    await evaluate(win, `window.dispatchEvent(new Event('resize'))`);
+    await wait(80);
   }
 }
 
@@ -1950,6 +2133,9 @@ async function runRegression() {
   await runScenario(win, 'Editor', 'blank notes prioritize writing and disclose secondary actions', async () => {
     await runEditorUsabilityScenario(win);
   });
+  await runScenario(win, 'Value', 'local status and contextual assistance stay transparent and preview-first', async () => {
+    await runValueHardeningSurfaceScenario(win);
+  });
 
   await runScenario(win, 'Notes', 'create, edit, and persist a note', async () => {
     await runNoteCreateEditPersistenceScenario(win);
@@ -2017,6 +2203,9 @@ async function runRegression() {
   await runScenario(win, 'Today', 'populated vault surfaces current work without duplicate daily actions', async () => {
     await runPopulatedTodayScenario(win);
   });
+  await runScenario(win, 'Privacy', 'core value counters remain aggregate-only', async () => {
+    await runPrivateValueCounterScenario(win);
+  });
   await runScenario(win, 'Canvas', 'create, draw, move, undo, and redo a canvas object', async () => {
     await setPackEnabledForRegression(win, 'canvas', true);
     await runCanvasCreateScenario(win);
@@ -2076,6 +2265,9 @@ async function runRegression() {
   });
   await runScenario(win, 'Layout', 'minimum and desktop windows keep core controls usable', async () => {
     await runViewportAccessibilityScenario(win);
+  });
+  await runScenario(win, 'Theme', 'light and dark settings stay usable at 1440 pixels', async () => {
+    await runThemeAccessibilityScenario(win);
   });
   await runScenario(win, 'Palette', 'shares Notes and Actions across mixed and notes-first modes', async () => {
     await runUnifiedPaletteScenario(win);

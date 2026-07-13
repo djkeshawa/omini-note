@@ -11,6 +11,7 @@ import {
 } from '../features/editor/index.js';
 import { MnOutliner } from './outliner.jsx';
 import { EditorHeader } from './EditorHeader.jsx';
+import { ContextualAssistance } from '../features/assistance/index.js';
 import { MnContextualTip } from '../features/onboarding/index.js';
 import { mkBlock, mnBlocksToMd, mnWalk } from './outline.jsx';
 import { mnGetTagBg, mnGetTagColor, mnIconButtonStyle } from '../shared/theme.jsx';
@@ -42,6 +43,7 @@ function MnEditor({
   workflowStates = [], workflowStatus = '', onSetWorkflowStatus,
   saveStatus = 'Saved',
   contextualTip = null, onDismissContextualTip,
+  onCreateAssistanceOutput,
   theme, T,
 }) {
   const [showTags, setShowTags] = useStateE(false);
@@ -469,6 +471,15 @@ function MnEditor({
             setPropertyValueDraft={setPropertyValueDraft}
             addProperty={addMetadataProperty}
             cleanPropertyKey={mnEditorCleanPropertyKey}
+          />
+
+          <ContextualAssistance
+            enabled={aiEnabled}
+            note={note}
+            sourceMarkdown={mnBlocksToMd(note.blocks || [])}
+            vaultId={vaultId}
+            onCreateOutput={onCreateAssistanceOutput}
+            T={T}
           />
 
           {/* Outliner */}

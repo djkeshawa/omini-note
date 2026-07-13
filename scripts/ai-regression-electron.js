@@ -448,6 +448,74 @@ async function runAiRegression() {
     return { ok: current.selectedTitle === 'QE Format Target', current };
   });
 
+  await waitFor(win, 'source-linked assistance ready', async () => {
+    const result = await evaluate(win, `({
+      source: document.querySelector('[data-mn-contextual-assistance="true"]')?.textContent || '',
+      preview: Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')),
+    })`);
+    return { ok: result.source.includes('Brief') && result.source.includes('Next actions') && !result.preview, result };
+  });
+  await clickButton(win, { aria: 'Brief from QE Format Target', enabled: true });
+  await waitFor(win, 'brief preview shown without editing source', async () => {
+    const current = await state(win);
+    const result = await evaluate(win, `({
+      dialog: document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')?.textContent || '',
+      editor: document.querySelector('.mn-outliner')?.textContent || '',
+    })`);
+    return {
+      ok: current.selectedTitle === 'QE Format Target'
+        && result.dialog.includes('Preview linked note')
+        && result.dialog.includes('Source: QE Format Target')
+        && result.dialog.includes('QE_FORMATTED current page')
+        && !result.editor.includes('QE_FORMATTED current page'),
+      current,
+      result,
+    };
+  });
+  await pressAccelerator(win, 'Tab');
+  await waitFor(win, 'assistance preview contains keyboard focus', async () => {
+    const result = await evaluate(win, `({
+      dialog: Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')),
+      focusedText: (document.activeElement?.textContent || '').trim(),
+    })`);
+    return { ok: result.dialog && result.focusedText === 'Cancel', result };
+  });
+  await pressAccelerator(win, 'Escape');
+  await waitFor(win, 'assistance preview returns focus to its action', async () => {
+    const result = await evaluate(win, `({
+      preview: Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')),
+      focusedLabel: document.activeElement?.getAttribute('aria-label') || '',
+    })`);
+    return { ok: !result.preview && result.focusedLabel === 'Brief from QE Format Target', result };
+  });
+  await clickButton(win, { aria: 'Brief from QE Format Target', enabled: true });
+  await waitFor(win, 'brief preview reopens after keyboard dismissal', async () => {
+    const result = await evaluate(win, `Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]'))`);
+    return { ok: result, result };
+  });
+  await clickButton(win, { text: 'Create linked note', enabled: true });
+  await waitFor(win, 'brief saved as an ordinary linked note', async () => {
+    const current = await state(win);
+    const editor = await evaluate(win, `document.querySelector('.mn-outliner')?.textContent || ''`);
+    return {
+      ok: current.selectedTitle === 'QE Format Target - Brief'
+        && editor.includes('QE_FORMATTED current page')
+        && editor.includes('QE Format Target'),
+      current,
+      editor,
+    };
+  });
+  await clickVisibleText(win, 'QE Format Target');
+  await waitFor(win, 'assistance source remains unchanged', async () => {
+    const current = await state(win);
+    const editor = await evaluate(win, `document.querySelector('.mn-outliner')?.textContent || ''`);
+    return {
+      ok: current.selectedTitle === 'QE Format Target' && !editor.includes('QE_FORMATTED current page'),
+      current,
+      editor,
+    };
+  });
+
   await openAskAi(win);
   await submitAsk(win, 'format this page');
   await confirmAiReview(win, 'format action', 'Review before AI edits "QE Format Target".');

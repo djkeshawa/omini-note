@@ -1,6 +1,11 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
+test('AI runtime stays disabled until preferences explicitly enable it', () => {
+  const ai = require('../lib/ai');
+  assert.equal(ai.getConfig().enabled, false);
+});
+
 test('Ollama chat stream ignores malformed chunks and keeps valid tokens', async () => {
   const ollama = require('../lib/ollama');
   const originalFetch = global.fetch;

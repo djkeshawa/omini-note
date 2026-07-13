@@ -22,6 +22,7 @@ export function useBootController({
   loadVaultBundle,
   setEnabledPacks,
   setAssistanceEnabled,
+  setLastBackupAt,
   setCustomThemes,
   setSavedSmartViews,
   setTweaks,
@@ -85,6 +86,7 @@ export function useBootController({
         const prefs = prefsResponse.value;
         setEnabledPacks(normalizePacks(prefs.enabledPacks));
         setAssistanceEnabled(prefs.aiConfig?.enabled === true);
+        setLastBackupAt?.(prefs.lastBackupAt || null);
         setCustomThemes(normalizeThemes(prefs.customThemes));
         if (prefs.phase5Metrics && sanitizeMetrics) writeMetrics(sanitizeMetrics(prefs.phase5Metrics));
         const smartViews = normalizeSmartViews(prefs.smartViews);
@@ -128,7 +130,7 @@ export function useBootController({
       }
     })();
     return () => { cancelled = true; };
-  }, [applyWorkflowStates, attempt, defaultTweaks, hasDisk, loadVaultBundle, markdownToBlocks, normalizeNotes, normalizePacks, normalizeSmartViews, normalizeStartupView, normalizeThemes, normalizeWorkflowStates, notesVaultsService, novelistWorkflowStates, platform, sanitizeMetrics, seedNotes, seedTags, seedVaults, setActiveVaultId, setAssistanceEnabled, setCanvases, setCustomThemes, setEnabledPacks, setNotes, setSavedSmartViews, setSelectedId, setTags, setTweaks, setVaults, setView, writeMetrics]);
+  }, [applyWorkflowStates, attempt, defaultTweaks, hasDisk, loadVaultBundle, markdownToBlocks, normalizeNotes, normalizePacks, normalizeSmartViews, normalizeStartupView, normalizeThemes, normalizeWorkflowStates, notesVaultsService, novelistWorkflowStates, platform, sanitizeMetrics, seedNotes, seedTags, seedVaults, setActiveVaultId, setAssistanceEnabled, setCanvases, setCustomThemes, setEnabledPacks, setLastBackupAt, setNotes, setSavedSmartViews, setSelectedId, setTags, setTweaks, setVaults, setView, writeMetrics]);
 
   return { state, error, retry };
 }

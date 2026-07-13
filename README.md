@@ -16,6 +16,8 @@ The default experience stays deliberately small: Notes, Today, Pinned, Tags, fas
 - **Agenda workflows**: dated todos, today view, workflow states, and reminder-style syntax.
 - **Local search**: SQLite-backed search and backlink indexes.
 - **Optional local AI**: Ask AI and writing tools can run through Ollama without hosted API keys.
+- **Preview-first assistance**: create a brief, outline, decisions note, or next-actions note from the open note. Every result is reviewed first, saved as ordinary Markdown, and linked back to its source.
+- **Visible local state**: the sidebar status reveals Saved, Saving, or Conflict, the active vault folder, the last successful backup, and one-click Vault Health.
 - **Themed desktop UI**: settings, launch screen, editor toolbar, note list, and dialogs follow the same visual system.
 
 ## Product focus
@@ -39,7 +41,7 @@ Specialist capabilities live in optional packs so they do not become setup work:
 
 Activation never changes note content. Existing canvases, novelist vaults, Zotero configuration, and memory configuration are detected automatically. Ask AI is optional and appears only after assistance is enabled.
 
-VispNote can also keep a private, allowlisted feature-usage report on the device. It contains aggregate counters and repeat-use days, never note text, titles, tags, searches, prompts, filenames, paths, vault IDs, or secrets. The report can be previewed, exported, cleared, or disabled. Anonymous aggregate sharing is separately opt-in and appears only in builds configured with `VISPNOTE_TELEMETRY_ENDPOINT`.
+VispNote can also keep a private, allowlisted feature-usage report on the device. It contains aggregate counters and repeat-use days—including first-note completion, successful capture, search-result opening, and Today actions—never note text, titles, tags, searches, prompts, filenames, paths, vault IDs, or secrets. The report can be previewed, exported, cleared, or disabled. Anonymous aggregate sharing is separately opt-in and appears only in builds configured with `VISPNOTE_TELEMETRY_ENDPOINT`.
 
 ## Tech Stack
 
@@ -78,7 +80,10 @@ Run the main checks:
 npm run test:editor
 npm run check:main
 npm run regression:renderer
+npm run benchmark:10k
 ```
+
+The 10,000-note benchmark uses an isolated temporary vault and enforces a 100 ms p95 budget for direct result projection plus a one-second p95 budget for indexed search. See [Final hardening](docs/final-hardening.md) for the compatibility, privacy, accessibility, and packaging gates.
 
 Run the Electron smoke test:
 

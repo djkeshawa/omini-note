@@ -70,20 +70,32 @@ function mnAiProviderMeta(id) {
 }
 
 function SectionAI({ T, assistanceEnabled = false, onAssistanceChange }) {
-  const [config, setConfig] = useStateS(null);
+  const [config, setConfig] = useStateS(() => ({ enabled: assistanceEnabled }));
   const [status, setStatus] = useStateS(null);
   const [busy, setBusy] = useStateS(false);
+  const [configLoading, setConfigLoading] = useStateS(true);
   const [message, setMessage] = useStateS('');
+  const assistanceEnabledRef = useRefS(assistanceEnabled);
+
+  useEffectS(() => {
+    assistanceEnabledRef.current = assistanceEnabled;
+    setConfig(current => ({ ...(current || {}), enabled: assistanceEnabled }));
+  }, [assistanceEnabled]);
 
   const load = async () => {
-    if (!platformApi.ai) return;
+    if (!platformApi.ai) {
+      setConfigLoading(false);
+      return;
+    }
     setBusy(true);
     try {
       const cfg = await platformApi.ai.getConfig();
-      if (cfg.ok) setConfig({ ...cfg.value, enabled: assistanceEnabled });
+      if (cfg.ok) setConfig({ ...cfg.value, enabled: assistanceEnabledRef.current });
+      setConfigLoading(false);
       const st = await platformApi.ai.status();
       if (st.ok) setStatus(st.value);
     } finally {
+      setConfigLoading(false);
       setBusy(false);
     }
   };
@@ -100,7 +112,12 @@ function SectionAI({ T, assistanceEnabled = false, onAssistanceChange }) {
       setConfig(res.value);
       if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) onAssistanceChange?.(res.value?.enabled === true);
     }
-    else setMessage(res.error || 'Could not save AI settings');
+    else {
+      if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) {
+        setConfig(current => ({ ...(current || {}), enabled: assistanceEnabledRef.current }));
+      }
+      setMessage(res.error || 'Could not save AI settings');
+    }
     if (refresh) {
       const st = await platformApi.ai.status();
       if (st.ok) setStatus(st.value);
@@ -218,7 +235,7 @@ function SectionAI({ T, assistanceEnabled = false, onAssistanceChange }) {
 
       <SettingsCard T={T} style={{ marginBottom: 12 }}>
         <Row T={T} label="Enable assistance" sub="Show Ask AI and allow note-aware assistance.">
-          <Toggle T={T} checked={config?.enabled === true} onChange={v => save({ enabled: v }, false)} />
+          <Toggle T={T} checked={config?.enabled === true} disabled={configLoading} onChange={v => save({ enabled: v }, false)} />
         </Row>
         <Row T={T} label="Where it runs" sub="Local keeps requests on this machine; Hosted uses your configured provider." last>
           <Segmented T={T} value={provider === 'ollama' ? 'local' : 'hosted'}
