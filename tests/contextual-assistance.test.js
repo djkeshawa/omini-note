@@ -37,3 +37,12 @@ test('all note-writing assistance is preview-before-apply', () => {
   assert.match(component, /!String\(sourceMarkdown \|\| ''\)\.trim\(\)/);
   assert.doesNotMatch(component, /onBlocksChange|updateNoteBody/);
 });
+
+test('assistance settings initialize from app state and reject stale async state', () => {
+  const section = fs.readFileSync(path.join(__dirname, '../src/settings/sections/AssistanceSection.jsx'), 'utf8');
+  assert.match(section, /useStateS\(\(\) => \(\{ enabled: assistanceEnabled \}\)\)/);
+  assert.match(section, /const assistanceEnabledRef = useRefS\(assistanceEnabled\)/);
+  assert.match(section, /enabled: assistanceEnabledRef\.current/);
+  assert.match(section, /disabled=\{configLoading\}/);
+  assert.match(section, /Could not save AI settings/);
+});

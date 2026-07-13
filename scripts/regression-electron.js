@@ -681,16 +681,19 @@ async function setAssistanceEnabledForRegression(win, enabled) {
     return { ok: current.settingsOpen, current };
   });
   await clickVisibleText(win, 'Assistance');
-  await waitFor(win, 'assistance toggle ready', async () => {
+  await waitFor(win, 'assistance toggle synced with persisted config', async () => {
     const result = await evaluate(win, `
-      (() => {
+      (async () => {
         const label = [...document.querySelectorAll('div')]
           .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
         const toggle = label?.parentElement?.parentElement?.querySelector('button[aria-pressed]');
-        return { found: Boolean(toggle), pressed: toggle?.getAttribute('aria-pressed') === 'true' };
+        const response = await window.mn.ai.getConfig();
+        const persisted = response?.value?.enabled === true;
+        const pressed = toggle?.getAttribute('aria-pressed') === 'true';
+        return { found: Boolean(toggle), disabled: toggle?.disabled === true, loaded: response?.ok === true, pressed, persisted };
       })()
     `);
-    return { ok: result.found, result };
+    return { ok: result.found && !result.disabled && result.loaded && result.pressed === result.persisted, result };
   });
   await evaluate(win, `
     (() => {
@@ -702,14 +705,16 @@ async function setAssistanceEnabledForRegression(win, enabled) {
     })()
   `);
   await waitFor(win, `assistance ${enabled ? 'enabled' : 'disabled'}`, async () => {
-    const pressed = await evaluate(win, `
-      (() => {
+    const result = await evaluate(win, `
+      (async () => {
         const label = [...document.querySelectorAll('div')]
           .find(element => element.children.length === 0 && (element.textContent || '').trim() === 'Enable assistance');
-        return label?.parentElement?.parentElement?.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed') === 'true';
+        const pressed = label?.parentElement?.parentElement?.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed') === 'true';
+        const response = await window.mn.ai.getConfig();
+        return { loaded: response?.ok === true, pressed, persisted: response?.value?.enabled === true };
       })()
     `);
-    return { ok: pressed === enabled, pressed };
+    return { ok: result.loaded && result.pressed === enabled && result.persisted === enabled, result };
   });
   await clickButton(win, { aria: 'Close settings' });
   await waitFor(win, 'settings closed after assistance change', async () => {

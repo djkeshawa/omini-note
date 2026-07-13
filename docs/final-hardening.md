@@ -39,7 +39,7 @@ The benchmark creates and deletes an owned temporary vault, indexes 10,000 repre
 - p95 direct result projection, required to stay at or below 100 ms;
 - p95 SQLite full-text search, required to stay below one second.
 
-The final July 13, 2026 Windows/Electron verification measured a 161.76 ms index build, 0.30 ms direct-result p95, and 10.63 ms search p95. Treat these numbers as one machine's evidence; rerun the command on release hardware instead of assuming they remain constant.
+The final July 13, 2026 Windows/Electron verification measured a 164.04 ms index build, 0.33 ms direct-result p95, and 10.89 ms search p95. Treat these numbers as one machine's evidence; rerun the command on release hardware instead of assuming they remain constant.
 
 ## Upgrade and release compatibility
 
