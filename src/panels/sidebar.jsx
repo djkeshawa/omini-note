@@ -1,6 +1,7 @@
 import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx'; import { storage } from '../shared/storageUtils.js'; import { mnGetTagColor } from '../shared/theme.jsx'; import { shortcutLabel } from '../platform/shortcuts.js';
 import { MnContextualTip } from '../features/onboarding/index.js';
 import { SidebarNavRow } from './SidebarNavRow.jsx';
+import { LocalStatusPopover } from './LocalStatusPopover.jsx';
 const { useMemo: useMemoS } = React;
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
@@ -17,6 +18,7 @@ function MnSidebar({
   onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
   featureState = {}, contextualTip = null, onDismissContextualTip, todayCount,
+  saveStatus = 'Saved', lastBackupAt = null, onOpenVaultHealth, onExportBackup,
   newNoteShortcut = shortcutLabel('newNote', undefined, { compact: true }), T, density, theme
 }) {
   const [vaultOpen, setVaultOpen] = React.useState(false);
@@ -737,37 +739,15 @@ function MnSidebar({
         </div>
       )}
 
-      <div style={{
-        padding: '10px 12px', borderTop: `1px solid ${T.lineSub}`,
-        display: 'flex', alignItems: 'center', gap: 8,
-        fontFamily: 'var(--mn-mono)', fontSize: 10.5,
-        color: T.inkDim, letterSpacing: '0.04em',
-        flexShrink: 0, minWidth: 0,
-      }}>
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-          <path d="M3 4H13V13H3V4Z" stroke="currentColor" strokeWidth="1.3"/>
-          <path d="M3 4L5.5 2H10.5L13 4" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
-        </svg>
-        <span title={activeVault?.path || '~/vault'} style={{
-          minWidth: 0, flex: '1 1 auto',
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>{activeVault?.path || '~/vault'}</span>
-        <span style={{
-          width: 6, height: 6, borderRadius: '50%', background: T.success, flexShrink: 0,
-        }} />
-        <span style={{ flexShrink: 0 }}>local</span>
-        <button onClick={onOpenSettings} title="Settings" style={{
-          marginLeft: 2, width: 26, height: 26, borderRadius: 6,
-          background: 'transparent', border: 'none', color: T.inkMed, cursor: 'pointer',
-          padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-            <circle cx="8" cy="8" r="2.2"/>
-            <path d="M8 1.5V3M8 13V14.5M14.5 8H13M3 8H1.5M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6M12.6 12.6L11.5 11.5M4.5 4.5L3.4 3.4" strokeLinecap="round"/>
-          </svg>
-        </button>
-      </div>
+      <LocalStatusPopover
+        activeVault={activeVault}
+        saveStatus={saveStatus}
+        lastBackupAt={lastBackupAt}
+        onOpenVaultHealth={onOpenVaultHealth}
+        onExportBackup={onExportBackup}
+        onOpenSettings={onOpenSettings}
+        T={T}
+      />
     </div>
   );
 }

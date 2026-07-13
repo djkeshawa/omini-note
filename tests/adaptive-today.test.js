@@ -32,7 +32,8 @@ test('Today wiring uses actionable work for the badge and vault-scoped review co
   assert.match(appView, /reviewItems=\{model\.todayReviewItems \|\| \[\]\}/);
   assert.match(appView, /onDismissReviewItem=\{model\.dismissTodayReviewItem\}/);
   assert.match(appView, /onSnoozeReviewItem=\{model\.snoozeTodayReviewItem\}/);
-  assert.match(appView, /featureState\.showAskAi && assistanceEnabled \? generateTodayAiRecap : null/);
+  assert.match(appView, /featureState\.showAskAi && assistanceEnabled \? \(\) => runTodayAction\(generateTodayAiRecap\) : null/);
+  assert.match(appView, /recordFeatureUsage\('today', 'completed'\)/);
   assert.match(appView, /todayAiRecap=\{assistanceEnabled \? todayAiRecap : null\}/);
   assert.match(controller, /mn:todayReviewState:/);
   assert.match(controller, /TODAY_MODEL\.todayActionableCount/);

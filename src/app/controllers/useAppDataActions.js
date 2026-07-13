@@ -1,4 +1,4 @@
-function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVEL_IMPORT_TOOL, activeCanvas, activeVault, activeVaultId, addTag, buildNovelImportPlan, canvases, conflictNotice, createRuntimeNoteId, desktopBridge, dirtyNotes, markDirty, markTagsDirty, markdownImportDialog, mnBlocksToMd, mnDirtyNoteKey, mnEnsureNovelistTags, mnMdToBlocks, mnNormalizeNoteBody, mnNovelImportChunks, mnNovelImportConsolidationPrompt, mnNovelImportExistingSummary, mnNovelImportExtractionPrompt, mnNovelImportToolArgs, navigateView, normalizeNotes, normalizeNovelImportCandidates, noteForDisk, notes, notesWithBody, novelImportDialog, novelImportSeq, refreshVaultRegistry, saveDirtyNotesNow, selectedId, setActiveCanvas, setCanvases, setConflictNotice, setDeleteTargetId, setMarkdownImportDialog, setNotes, setNovelImportDialog, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, uniqueNoteTitle, updateDirtyNotes, useCallbackA, useCanvasController, useTrashController, view }) {
+function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVEL_IMPORT_TOOL, activeCanvas, activeVault, activeVaultId, addTag, buildNovelImportPlan, canvases, conflictNotice, createRuntimeNoteId, desktopBridge, dirtyNotes, markDirty, markTagsDirty, markdownImportDialog, mnBlocksToMd, mnDirtyNoteKey, mnEnsureNovelistTags, mnMdToBlocks, mnNormalizeNoteBody, mnNovelImportChunks, mnNovelImportConsolidationPrompt, mnNovelImportExistingSummary, mnNovelImportExtractionPrompt, mnNovelImportToolArgs, navigateView, normalizeNotes, normalizeNovelImportCandidates, noteForDisk, notes, notesWithBody, novelImportDialog, novelImportSeq, refreshVaultRegistry, saveDirtyNotesNow, selectedId, setActiveCanvas, setCanvases, setConflictNotice, setDeleteTargetId, setLastBackupAt, setMarkdownImportDialog, setNotes, setNovelImportDialog, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, uniqueNoteTitle, updateDirtyNotes, useCallbackA, useCanvasController, useTrashController, view }) {
   const promptNewTag = (name) => {
       if (typeof name === 'string') addTag(name);
     };
@@ -202,11 +202,17 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
       try {
         const res = await desktopBridge.maintenance.exportBackup({});
         if (!res.ok) throw new Error(res.error);
-        if (!res.value?.canceled) showAppNotice('Backup exported', `${res.value.vaultCount || 0} vault${res.value.vaultCount === 1 ? '' : 's'} saved.`, 'info');
+        if (!res.value?.canceled) {
+          setLastBackupAt?.(res.value.exportedAt || new Date().toISOString());
+          showAppNotice('Backup exported', `${res.value.vaultCount || 0} vault${res.value.vaultCount === 1 ? '' : 's'} saved.`, 'info');
+          return true;
+        }
+        return false;
       } catch (e) {
         showAppNotice('Could not export backup', e.message || String(e));
+        return false;
       }
-    }, [showAppNotice]);
+    }, [setLastBackupAt, showAppNotice]);
   
     const importBackup = useCallbackA(async () => {
       if (!desktopBridge.maintenance?.importBackup) return showAppNotice('Import unavailable', 'This build does not expose backup import.');

@@ -11,6 +11,22 @@ test('feature usage records only allowlisted aggregate counters and repeat days'
   assert.throws(() => usage.recordFeatureUsage(report, 'capture', 'query-text'), /Unsupported/);
 });
 
+test('core value counters are precise, content-free, and first note is idempotent', () => {
+  let report = usage.recordFeatureUsage(null, 'first_note', 'created', { now: '2026-07-01T10:00:00Z' });
+  report = usage.recordFeatureUsage(report, 'first_note', 'created', { now: '2026-07-02T10:00:00Z' });
+  report = usage.recordFeatureUsage(report, 'capture', 'completed', { now: '2026-07-02T10:01:00Z' });
+  report = usage.recordFeatureUsage(report, 'search', 'result_opened', { now: '2026-07-02T10:02:00Z' });
+  report = usage.recordFeatureUsage(report, 'today', 'completed', { now: '2026-07-02T10:03:00Z' });
+  assert.deepEqual(report.counters, {
+    first_note: { created: 1 },
+    capture: { completed: 1 },
+    today: { completed: 1 },
+    search: { result_opened: 1 },
+  });
+  assert.equal(JSON.stringify(report).includes('noteId'), false);
+  assert.equal(JSON.stringify(report).includes('query'), false);
+});
+
 test('feature usage sanitization drops arbitrary content and anonymous summary is aggregate-only', () => {
   const raw = {
     counters: { capture: { used: 3, noteText: 99 }, secret: { used: 50 } },

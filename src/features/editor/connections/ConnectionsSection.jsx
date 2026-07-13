@@ -15,6 +15,7 @@ function mnConnectionActionStyle(T, primary = false) {
     fontFamily: 'var(--mn-ui)',
     fontSize: 11,
     fontWeight: 650,
+    minHeight: 32,
     padding: '4px 8px',
   };
 }
@@ -42,14 +43,15 @@ function ConnectionsSection({
                       padding: '9px 10px', marginBottom: 6, borderRadius: 6,
                       background: T.bgSub, border: `1px solid ${T.lineSub}`,
                     }}>
-                      <button type="button" onClick={() => onOpen(item.noteId || item.id)} style={{
+                      <button type="button" aria-label={`Open suggested connection ${item.title || 'Untitled'}`} onClick={() => onOpen(item.noteId || item.id)} style={{
                         minWidth: 0, border: 0, background: 'transparent', color: T.ink,
                         textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--mn-ui)', fontSize: 12.5,
+                        minHeight: 32,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>{item.title || 'Untitled'}</button>
-                      {item.reason && <span style={{ gridColumn: '1 / -1', fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim }}>{item.reason}</span>}
                       <button type="button" aria-label={`Accept connection to ${item.title || 'note'}`} onClick={() => acceptSuggestedConnection(item)} style={mnConnectionActionStyle(T, true)}>Accept</button>
                       <button type="button" aria-label={`Ignore connection to ${item.title || 'note'}`} onClick={() => ignoreSuggestedConnection(item)} style={mnConnectionActionStyle(T, false)}>Ignore</button>
+                      {item.reason && <span style={{ gridColumn: '1 / -1', fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim }}>{item.reason}</span>}
                     </div>
                   ))}
                 </div>

@@ -40,7 +40,7 @@ test('connection suggestions work without AI and explain deterministic signals',
     notes,
   });
   assert.equal(suggestions[0].noteId, 'b');
-  assert.equal(suggestions[0].reason, 'Shares #project');
+  assert.equal(suggestions[0].reason, 'Shares #project · Both mention launch');
   assert.equal(suggestions.some(item => item.noteId === 'c'), false);
 });
 

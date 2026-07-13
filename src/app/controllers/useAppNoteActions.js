@@ -57,8 +57,9 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
         navigateView(options.view || 'notes');
       }
       markDirty(id);
+      recordFeatureUsage('first_note', 'created');
       return id;
-    }, [markDirty, navigateView, tweaks.defaultTags, tags, mnMdToBlocks, mkBlock]);
+    }, [markDirty, navigateView, tweaks.defaultTags, tags, mnMdToBlocks, mkBlock, recordFeatureUsage]);
   
     const createNoteFromTemplate = useCallbackA((templateId) => {
       const template = MN_APP_HELPERS.templateById ? MN_APP_HELPERS.templateById(templateId) : (MN_NOTE_TEMPLATES.find(item => item.id === templateId) || MN_NOTE_TEMPLATES[0]);
@@ -223,7 +224,7 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
           setSelectedId(plan.noteId);
           navigateView('notes');
           recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'append' });
-          recordFeatureUsage('capture', 'used');
+          recordFeatureUsage('capture', 'completed');
           return plan.noteId;
         }
         const id = createNote({
@@ -232,7 +233,7 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
           tags: tagsForCapture,
         });
         recordPhase5Metric('capture_saves', { destinationId: plan.destinationId, templateId: plan.template?.id, mode: 'create' });
-        recordFeatureUsage('capture', 'used');
+        recordFeatureUsage('capture', 'completed');
         return id;
       }
   
@@ -244,7 +245,7 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
         setSelectedId(activeDestination.noteId);
         navigateView('notes');
         recordPhase5Metric('capture_saves', { destinationId: activeDestination.id, mode: 'append' });
-        recordFeatureUsage('capture', 'used');
+        recordFeatureUsage('capture', 'completed');
         return activeDestination.noteId;
       }
       const id = createNote({
@@ -253,7 +254,7 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
         tags: quickCaptureMergeTags(activeDestination?.tags || [], noteTags),
       });
       recordPhase5Metric('capture_saves', { destinationId: activeDestination?.id || 'new', mode: 'create' });
-      recordFeatureUsage('capture', 'used');
+      recordFeatureUsage('capture', 'completed');
       return id;
     }, [createNote, navigateView, notesWithBody, quickCaptureAppendBody, quickCaptureMergeTags, quickCaptureRawMarkdown, recordFeatureUsage, recordPhase5Metric, selectedNote, uniqueNoteTitle, updateNoteBody]);
   

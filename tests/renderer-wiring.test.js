@@ -853,6 +853,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const app = appCompositionSource();
   const preferenceModels = fs.readFileSync(path.join(__dirname, '../src/features/preferences/models.js'), 'utf8');
   const searchController = fs.readFileSync(path.join(__dirname, '../src/features/search/useSearchController.js'), 'utf8');
+  const searchModel = fs.readFileSync(path.join(__dirname, '../src/features/search/searchModel.js'), 'utf8');
   const calendarModel = fs.readFileSync(path.join(__dirname, '../src/features/planning/calendarModel.js'), 'utf8');
   const bootController = fs.readFileSync(path.join(__dirname, '../src/features/boot/useBootController.js'), 'utf8');
   const todayController = fs.readFileSync(path.join(__dirname, '../src/features/today/useTodayController.js'), 'utf8');
@@ -878,8 +879,9 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const store = storeProcessSource();
   const main = mainProcessSource();
 
-  assert.match(searchController, /tweaks\.sortBy/);
-  assert.match(searchController, /tweaks\.pinnedFirst/);
+  assert.match(searchController, /filterAndSortNotes/);
+  assert.match(searchModel, /tweaks\.sortBy/);
+  assert.match(searchModel, /tweaks\.pinnedFirst/);
   assert.match(app, /parseDefaultTags: mnParseDefaultTags/);
   assert.match(app, /defaultTags: tweaks\.defaultTags/);
   assert.match(mutations, /function cleanNoteTags/);
@@ -907,14 +909,14 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /addQuickTodayTask/);
   assert.match(app, /addTodayReflection/);
   assert.match(app, /addTodayEndDayRecap/);
-  assert.match(app, /onAddQuickTask=\{addQuickTodayTask\}/);
+  assert.match(app, /onAddQuickTask=\{\(text\) => runTodayAction\(addQuickTodayTask, text\)\}/);
   assert.match(app, /agendaItems=\{featureState\.showAgenda \? todayAgendaItems : \[\]\}/);
-  assert.match(app, /onAddReflection=\{addTodayReflection\}/);
-  assert.match(app, /onEndDayRecap=\{addTodayEndDayRecap\}/);
+  assert.match(app, /onAddReflection=\{\(\) => runTodayAction\(addTodayReflection\)\}/);
+  assert.match(app, /onEndDayRecap=\{\(\) => runTodayAction\(addTodayEndDayRecap\)\}/);
   assert.match(app, /todayAiRecap=\{assistanceEnabled \? todayAiRecap : null\}/);
   assert.match(app, /todayAiRecapBusy=\{assistanceEnabled \? todayAiRecapBusy : false\}/);
   assert.match(app, /todayAiRecapError=\{assistanceEnabled \? todayAiRecapError : ''\}/);
-  assert.match(app, /onGenerateAiRecap=\{featureState\.showAskAi && assistanceEnabled \? generateTodayAiRecap : null\}/);
+  assert.match(app, /onGenerateAiRecap=\{featureState\.showAskAi && assistanceEnabled \? \(\) => runTodayAction\(generateTodayAiRecap\) : null\}/);
   assert.match(app, /onOpenAgenda=\{\(\) => \{ navigateView\('calendar'\)/);
   assert.match(app, /view === 'today' \? 'Today'/);
   assert.match(preferenceModels, /function normalizeStartupView\(value\)/);

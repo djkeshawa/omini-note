@@ -73,7 +73,9 @@ test('saveAttachment derives extension from mime type and de-dupes names', async
       attachments.saveAttachment(vault.id, payload),
       attachments.saveAttachment(vault.id, payload),
     ]);
-    assert.match(first.fileName, /^pasted-image-\d{14}\.png$/);
+    const names = [first.fileName, second.fileName];
+    assert.equal(names.filter(name => /^pasted-image-\d{14}\.png$/.test(name)).length, 1);
+    assert.ok(names.every(name => /^pasted-image-\d{14}(?:-[a-z0-9]+)?\.png$/.test(name)));
     assert.notEqual(first.fileName, second.fileName);
   });
 });

@@ -43,6 +43,7 @@
     "regression:ai": "npm run build:renderer && electron --no-sandbox scripts/ai-regression-electron.js",
     "smoke:electron": "npm run build:renderer && electron --no-sandbox scripts/smoke-electron.js",
     "regression:memory": "node scripts/memory-regression.js",
+    "benchmark:10k": "node scripts/run-10000-note-benchmark.js",
     "test:all": "npm run check:main && npm run test:editor && npm run smoke:electron && npm run regression:renderer && npm run regression:ai && npm run regression:memory",
     "prebuild": "npm run build:renderer",
     "build": "electron-builder --publish never",

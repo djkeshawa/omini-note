@@ -449,6 +449,10 @@ test('Local Phase 5 metrics persist safely and reject unsafe keys', async () => 
 
 test('Feature packs and private usage controls persist without arbitrary event data', async () => {
   await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    const loaded = await store.loadVault(vault.id);
+    const notePath = path.join(store.ROOT, vault.slug, `${loaded.notes[0].id}.md`);
+    const noteBeforePreferences = fs.readFileSync(notePath, 'utf8');
     await store.setPrefs({
       enabledPacks: ['canvas', 'writer', 'canvas', 'unknown'],
       localUsageMetrics: true,
@@ -458,6 +462,12 @@ test('Feature packs and private usage controls persist without arbitrary event d
     assert.deepEqual(prefs.enabledPacks, ['canvas', 'writer']);
     assert.equal(prefs.localUsageMetrics, true);
     assert.equal(prefs.anonymousUsageSharing, false);
+    assert.equal(fs.readFileSync(notePath, 'utf8'), noteBeforePreferences);
+
+    const recordedBackupAt = await store.recordBackupExport('2026-07-13T04:05:06.000Z');
+    assert.equal(recordedBackupAt, '2026-07-13T04:05:06.000Z');
+    assert.equal((await store.getPrefs()).lastBackupAt, recordedBackupAt);
+    assert.equal(fs.readFileSync(notePath, 'utf8'), noteBeforePreferences);
 
     const report = await store.recordFeatureUsage('canvas', 'opened');
     assert.equal(report.counters.canvas.opened, 1);
