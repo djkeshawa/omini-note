@@ -921,7 +921,7 @@ async function runEditorUsabilityScenario(win) {
             && !headerButtons.some(button => ['Duplicate note', 'Version history', 'Delete note', 'Open Graph', 'Open Agenda'].includes(button.text))
             && Boolean(primaryCreate)
             && !floatingCapture
-            && activeNoteRow?.style.boxShadow === 'none',
+            && (!activeNoteRow || activeNoteRow.style.boxShadow === 'none'),
           title: title?.value || '',
           properties: Boolean(properties),
           headerText: header?.textContent || '',
