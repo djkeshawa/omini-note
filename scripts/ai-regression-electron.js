@@ -548,11 +548,13 @@ async function runAiRegression() {
   await openFirstSource(win, 'QE Format Target');
   await waitFor(win, 'formatted note visible after source click', async () => {
     const current = await state(win);
+    const editor = await evaluate(win, `document.querySelector('.mn-outliner')?.textContent || ''`);
     return {
       ok: current.selectedTitle === 'QE Format Target'
         && !current.askOpen
-        && current.text.includes('QE_FORMATTED current page'),
+        && editor.includes('QE_FORMATTED current page'),
       current,
+      editor,
     };
   });
 
