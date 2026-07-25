@@ -1734,6 +1734,14 @@ async function runViewportAccessibilityScenario(win) {
   try {
     await setRegressionWindowSize(win, 900, 700);
     await waitForLayoutMode(win, 'compact');
+    const compactListOpen = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+    if (!compactListOpen) {
+      await clickButton(win, { aria: 'Show note list' });
+      await waitFor(win, 'compact note list opens for viewport checks', async () => {
+        const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
+        return { ok: overlay, overlay };
+      });
+    }
     await assertViewportUsable(win, 'minimum supported window');
     const compact = await evaluate(win, `
       (() => {
