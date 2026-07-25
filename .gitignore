@@ -32,6 +32,7 @@ VispNote/
 # Local tool/editor state
 .claude/
 .codex
+.visp/
 .codex-local/runs/
 .gitconfig.codex
 vispnote-web/
