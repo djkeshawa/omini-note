@@ -1024,6 +1024,20 @@ async function runValueHardeningSurfaceScenario(win) {
     return { ok: !result.open && result.focus.startsWith('Local status:'), result };
   });
 
+  const sourceNoteVisible = await evaluate(win, `
+    [...document.querySelectorAll('[role="option"]')]
+      .some(element => (element.textContent || '').includes('First useful note'))
+  `);
+  if (!sourceNoteVisible) {
+    await clickButton(win, { aria: 'Show note list' });
+    await waitFor(win, 'compact note list reveals the assistance source note', async () => {
+      const visible = await evaluate(win, `
+        [...document.querySelectorAll('[role="option"]')]
+          .some(element => (element.textContent || '').includes('First useful note'))
+      `);
+      return { ok: visible, visible };
+    });
+  }
   await clickVisibleText(win, 'First useful note');
   await waitFor(win, 'meaningful source note opens for assistance', async () => {
     const current = await state(win);
