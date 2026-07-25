@@ -51,8 +51,9 @@ test('blank-note chrome hides metadata and moves secondary actions into More', (
   const commandActions = fs.readFileSync(path.join(__dirname, '../src/app/controllers/useAppCommandActions.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
 
-  assert.match(properties, /if \(!expanded\) return null/);
-  assert.match(editor, /\+ Property/);
+  assert.doesNotMatch(properties, /if \(!expanded\) return null/);
+  assert.match(editor, /data-mn-properties-toggle="true"/);
+  assert.match(editor, /\{metadataOpen && \(\s*<PropertiesPanel/);
   assert.match(editor, /aria-haspopup="dialog"/);
   assert.match(editor, /aria-controls="mn-properties-panel"/);
   assert.match(editor, /workflowStatusEnabled && hasStatusProperty/);
@@ -61,7 +62,7 @@ test('blank-note chrome hides metadata and moves secondary actions into More', (
   assert.match(header, />Version history<\/MenuItem>/);
   assert.match(header, />Export as Markdown<\/MenuItem>/);
   assert.match(header, />Delete note<\/MenuItem>/);
-  assert.match(header, /minHeight: 36/);
+  assert.match(header, /minHeight: 32/);
   assert.match(view, /data-mn-layout=\{overlayNoteList \? 'compact' : 'three-pane'\}/);
   assert.match(view, /<ResponsiveListPane/);
   assert.doesNotMatch(view, /useResponsiveLayout/);
@@ -78,7 +79,7 @@ test('blank-note chrome hides metadata and moves secondary actions into More', (
   assert.match(html, /outline: 2px solid var\(--mn-focus, #4f6fd5\) !important/);
 });
 
-test('properties panel renders nothing until metadata exists or adding begins', () => {
+test('properties panel is rendered only by its parent disclosure and keeps an add action', () => {
   const { PropertiesPanel } = loadRendererModule('src/features/editor/metadata/PropertiesPanel.jsx');
   const rendered = PropertiesPanel({
     T: {}, visibleProperties: [], hasStatusRow: false, workflowStatus: '', workflowStates: [],
@@ -87,7 +88,8 @@ test('properties panel renders nothing until metadata exists or adding begins', 
     propertyValueDraft: '', setPropertyValueDraft() {}, addProperty() {}, cleanPropertyKey: value => value,
   });
 
-  assert.equal(rendered, null);
+  assert.ok(rendered);
+  assert.equal(rendered.jsx[1]['data-mn-properties-panel'], 'true');
 });
 
 test('preload exposes only normalized app info through the app namespace', () => {

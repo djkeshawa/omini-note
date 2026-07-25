@@ -1,4 +1,4 @@
-function SidebarNavRow({ icon, label, count, active, onClick, accent, T, pad }) {
+function SidebarNavRow({ icon, label, count, hint = '', active, onClick, accent, T, pad }) {
   const activate = event => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
@@ -10,7 +10,7 @@ function SidebarNavRow({ icon, label, count, active, onClick, accent, T, pad }) 
       role="button"
       tabIndex={0}
       aria-current={active ? 'page' : undefined}
-      aria-label={`${label}${count != null ? `, ${count}` : ''}`}
+      aria-label={`${label}${count != null ? `, ${count}` : ''}${hint ? `, ${hint}` : ''}`}
       onClick={onClick}
       onKeyDown={activate}
       style={{
@@ -30,6 +30,11 @@ function SidebarNavRow({ icon, label, count, active, onClick, accent, T, pad }) 
         justifyContent: 'center', color: accent || T.inkDim,
       }}>{icon}</span>
       <span style={{ flex: 1, color: 'inherit' }}>{label}</span>
+      {hint && (
+        <span aria-hidden="true" style={{
+          fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
+        }}>{hint}</span>
+      )}
       {count != null && (
         <span style={{
           fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,

@@ -42,7 +42,7 @@ function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = 
 
   return (
     <div ref={rootRef} style={{
-      padding: '9px 10px', borderTop: `1px solid ${T.lineSub}`,
+      padding: '7px 10px', borderTop: `1px solid ${T.lineSub}`,
       display: 'flex', alignItems: 'center', gap: 6,
       flexShrink: 0, minWidth: 0, position: 'relative',
     }}>
@@ -52,18 +52,20 @@ function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = 
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`Local status: ${saveStatus}`}
+        title="Local vault status"
         onClick={() => setOpen(value => !value)}
         style={{
           minWidth: 0, flex: 1, minHeight: 32, padding: '4px 6px',
           display: 'flex', alignItems: 'center', gap: 7,
           border: `1px solid ${open ? T.lineSub : 'transparent'}`, borderRadius: 7,
           background: open ? T.bg : 'transparent', color: T.inkDim, cursor: 'pointer',
-          fontFamily: 'var(--mn-mono)', fontSize: 10.5, textAlign: 'left',
+          fontFamily: 'var(--mn-ui)', fontSize: 11, textAlign: 'left',
         }}>
         <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
-        <span style={{ flexShrink: 0 }}>{saveStatus}</span>
-        <span style={{ color: T.line, flexShrink: 0 }}>·</span>
-        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>local</span>
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Local</span>
+        {saveStatus !== 'Saved' && (
+          <span style={{ marginLeft: 'auto', flexShrink: 0, color: saveStatus === 'Conflict' ? (T.danger || T.warn) : T.inkDim }}>{saveStatus}</span>
+        )}
       </button>
       <button type="button" onClick={onOpenSettings} aria-label="Open Settings" title="Settings" style={{
         width: 32, height: 32, borderRadius: 7,

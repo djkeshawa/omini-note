@@ -137,7 +137,7 @@ function MnOutlinerView({ model }) {
           />
         )}
         {/* Add new top-level block (or child of zoomed block) */}
-        <div onClick={() => {
+        <button type="button" data-mn-add-block="true" aria-label="Add block" onClick={() => {
           const nb = mkBlock({ kind: 'paragraph' });
           if (zoomBlock) {
             mutate(draft => {
@@ -152,13 +152,17 @@ function MnOutlinerView({ model }) {
           }
           setFocusId(nb.id);
         }} style={{
-          marginTop: 18, padding: '8px 0',
-          fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-          cursor: 'text', letterSpacing: '0.04em',
-          borderTop: `1px dashed ${T.lineSub}`,
-        }}>
-          Click to add a new block · type / for commands
-        </div>
+          width: '100%', marginTop: 12, padding: '7px 0',
+          display: 'flex', alignItems: 'center', gap: 6,
+          fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkDim,
+          cursor: 'text', border: 0, background: 'transparent', textAlign: 'left',
+          opacity: 0.68,
+        }}
+        onMouseEnter={event => { event.currentTarget.style.opacity = 1; }}
+        onMouseLeave={event => { event.currentTarget.style.opacity = 0.68; }}>
+          <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1 }}>+</span>
+          <span>Add block</span>
+        </button>
         {/* Floating selection toolbar */}
         {selection && (
           <MnSelectionToolbar

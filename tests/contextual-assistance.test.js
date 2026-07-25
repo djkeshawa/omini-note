@@ -32,10 +32,32 @@ test('all note-writing assistance is preview-before-apply', () => {
   const component = fs.readFileSync(path.join(__dirname, '../src/features/assistance/ContextualAssistance.jsx'), 'utf8');
   assert.match(component, /aria-labelledby="mn-assistance-preview-title"/);
   assert.match(component, /Create linked note/);
-  assert.match(component, /actionFocusRef\.current\?\.focus/);
+  assert.match(component, /triggerRef\.current\?\.focus/);
   assert.match(component, /event\.key !== 'Tab'/);
   assert.match(component, /!String\(sourceMarkdown \|\| ''\)\.trim\(\)/);
   assert.doesNotMatch(component, /onBlocksChange|updateNoteBody/);
+});
+
+test('contextual assistance uses progressive disclosure in the editor header', () => {
+  const component = fs.readFileSync(path.join(__dirname, '../src/features/assistance/ContextualAssistance.jsx'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
+  const header = fs.readFileSync(path.join(__dirname, '../src/editor/EditorHeader.jsx'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
+
+  assert.equal((editor.match(/<ContextualAssistance/g) || []).length, 1);
+  assert.match(editor, /assistanceControl=\{\(\s*<ContextualAssistance/);
+  assert.match(header, /\{assistanceControl\}/);
+  assert.match(component, /className="mn-contextual-assistance-trigger"/);
+  assert.match(component, /aria-controls=\{ASSISTANCE_POPOVER_ID\}/);
+  assert.match(component, /aria-expanded=\{open\}/);
+  assert.match(component, /aria-haspopup="dialog"/);
+  assert.match(component, /data-mn-contextual-assistance-popover="true"/);
+  assert.match(component, /Create a linked note after reviewing the result/);
+  assert.match(component, /firstActionRef\.current\?\.focus/);
+  assert.match(component, /\['ArrowDown', 'ArrowUp', 'Home', 'End'\]/);
+  assert.doesNotMatch(component, /margin: '12px 0 18px'/);
+  assert.match(html, /@media \(max-width: 1050px\)/);
+  assert.match(html, /\.mn-contextual-assistance-trigger-label \{ display: none; \}/);
 });
 
 test('assistance settings initialize from app state and reject stale async state', () => {

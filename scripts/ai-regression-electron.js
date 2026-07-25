@@ -448,12 +448,26 @@ async function runAiRegression() {
     return { ok: current.selectedTitle === 'QE Format Target', current };
   });
 
-  await waitFor(win, 'source-linked assistance ready', async () => {
+  await waitFor(win, 'source-linked assistance trigger ready', async () => {
     const result = await evaluate(win, `({
-      source: document.querySelector('[data-mn-contextual-assistance="true"]')?.textContent || '',
+      trigger: Boolean(document.querySelector('button[aria-label="Work with this note"]')),
+      inHeader: Boolean(document.querySelector('button[aria-label="Work with this note"]')?.closest('[data-mn-editor-header="true"]')),
+      popover: Boolean(document.querySelector('[data-mn-contextual-assistance-popover="true"]')),
       preview: Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')),
     })`);
-    return { ok: result.source.includes('Brief') && result.source.includes('Next actions') && !result.preview, result };
+    return { ok: result.trigger && result.inHeader && !result.popover && !result.preview, result };
+  });
+  await clickButton(win, { aria: 'Work with this note', enabled: true });
+  await waitFor(win, 'source-linked assistance actions revealed', async () => {
+    const result = await evaluate(win, `({
+      source: document.querySelector('[data-mn-contextual-assistance-popover="true"]')?.textContent || '',
+      focused: document.activeElement?.getAttribute('aria-label') || '',
+    })`);
+    return {
+      ok: result.source.includes('Brief') && result.source.includes('Next actions')
+        && result.focused === 'Brief from QE Format Target',
+      result,
+    };
   });
   await clickButton(win, { aria: 'Brief from QE Format Target', enabled: true });
   await waitFor(win, 'brief preview shown without editing source', async () => {
@@ -481,12 +495,17 @@ async function runAiRegression() {
     return { ok: result.dialog && result.focusedText === 'Cancel', result };
   });
   await pressAccelerator(win, 'Escape');
-  await waitFor(win, 'assistance preview returns focus to its action', async () => {
+  await waitFor(win, 'assistance preview returns focus to its compact trigger', async () => {
     const result = await evaluate(win, `({
       preview: Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')),
       focusedLabel: document.activeElement?.getAttribute('aria-label') || '',
     })`);
-    return { ok: !result.preview && result.focusedLabel === 'Brief from QE Format Target', result };
+    return { ok: !result.preview && result.focusedLabel === 'Work with this note', result };
+  });
+  await clickButton(win, { aria: 'Work with this note', enabled: true });
+  await waitFor(win, 'assistance actions reopen after keyboard dismissal', async () => {
+    const focused = await evaluate(win, `document.activeElement?.getAttribute('aria-label') || ''`);
+    return { ok: focused === 'Brief from QE Format Target', focused };
   });
   await clickButton(win, { aria: 'Brief from QE Format Target', enabled: true });
   await waitFor(win, 'brief preview reopens after keyboard dismissal', async () => {

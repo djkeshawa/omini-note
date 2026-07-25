@@ -50,6 +50,8 @@ function MnEditor({
   const [tagDraft, setTagDraft] = useStateE('');
   const tagButtonRef = useRefE(null);
   const [zoomBlockId, setZoomBlockId] = useStateE(null);
+  const [metadataOpen, setMetadataOpen] = useStateE(false);
+  const [connectionsOpen, setConnectionsOpen] = useStateE(false);
   const [toast, setToast] = useStateE(null);
   const toastTimerRef = useRefE(null);
   const editorSearchScopeRef = useRefE(null);
@@ -74,6 +76,8 @@ function MnEditor({
   // Reset zoom when note changes
   useEffectE(() => { setZoomBlockId(null); }, [note.id]);
   useEffectE(() => {
+    setMetadataOpen(false);
+    setConnectionsOpen(false);
     setAddingProperty(false);
     setPropertyKeyDraft('');
     setPropertyValueDraft('');
@@ -154,6 +158,12 @@ function MnEditor({
     + mentions.length
     + passiveRelatedItems.length
     + connected.items.length;
+  const metadataPropertyCount = visibleMetadataProperties.length + (hasStatusRow ? 1 : 0);
+
+  const revealConnections = () => {
+    setConnectionsOpen(true);
+    requestAnimationFrame(() => connectionsRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }));
+  };
 
   const setBlocks = (updater) => {
     onBlocksChange(prevBlocks => {
@@ -225,6 +235,18 @@ function MnEditor({
     setAddingProperty(false);
   };
 
+  const toggleMetadata = () => {
+    if (metadataOpen) {
+      setMetadataOpen(false);
+      setAddingProperty(false);
+      setPropertyKeyDraft('');
+      setPropertyValueDraft('');
+      return;
+    }
+    setMetadataOpen(true);
+    if (!metadataPropertyCount) setAddingProperty(true);
+  };
+
   const createAndApplyTag = () => {
     const raw = tagDraft.trim();
     if (!raw) return;
@@ -256,7 +278,7 @@ function MnEditor({
         onToggleSidebar={onToggleSidebar}
         onToggleNoteList={onToggleNoteList}
         onPinToggle={onPinToggle}
-        onScrollToConnections={() => connectionsRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })}
+        onScrollToConnections={revealConnections}
         onDuplicate={onDuplicate}
         onOpenVersions={onOpenVersions}
         onExport={onExport}
@@ -265,6 +287,16 @@ function MnEditor({
         onOpenGraph={onOpenGraph}
         onOpenCalendar={onOpenCalendar}
         onDelete={onDelete}
+        assistanceControl={(
+          <ContextualAssistance
+            enabled={aiEnabled}
+            note={note}
+            sourceMarkdown={mnBlocksToMd(note.blocks || [])}
+            vaultId={vaultId}
+            onCreateOutput={onCreateAssistanceOutput}
+            T={T}
+          />
+        )}
       />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 clamp(18px, 4.5vw, 56px) 44px' }}>
@@ -438,49 +470,45 @@ function MnEditor({
             </div>
             <button
               type="button"
+              data-mn-properties-toggle="true"
               aria-controls="mn-properties-panel"
-              aria-expanded={addingProperty}
-              onClick={() => setAddingProperty(true)}
+              aria-expanded={metadataOpen}
+              aria-label={`${metadataOpen ? 'Hide' : 'Show'} note properties${metadataPropertyCount ? `, ${metadataPropertyCount}` : ''}`}
+              onClick={toggleMetadata}
               style={{
                 minHeight: 28, padding: '2px 8px', borderRadius: 5,
-                border: `1px dashed ${addingProperty ? T.accent : T.line}`,
-                background: addingProperty ? T.accentSoft : 'transparent',
-                color: addingProperty ? T.accent : T.inkDim,
-                cursor: addingProperty ? 'default' : 'pointer',
-                fontFamily: 'var(--mn-ui)', fontSize: 10.5, fontWeight: 650,
+                border: `1px solid ${metadataOpen ? T.selLine : 'transparent'}`,
+                background: metadataOpen ? T.accentSoft : 'transparent',
+                color: metadataOpen ? T.accent : T.inkDim,
+                cursor: 'pointer',
+                fontFamily: 'var(--mn-ui)', fontSize: 10.5, fontWeight: 600,
               }}>
-              + Property
+              {metadataPropertyCount ? `Properties ${metadataPropertyCount}` : 'Add property'}
             </button>
           </div>
 
-          <PropertiesPanel
-            T={T}
-            visibleProperties={visibleMetadataProperties}
-            hasStatusRow={hasStatusRow}
-            workflowStatus={workflowStatus}
-            workflowStates={workflowStates}
-            onSetWorkflowStatus={onSetWorkflowStatus}
-            removeProperty={removeMetadataProperty}
-            updateProperty={updateMetadataProperty}
-            spellCheck={spellCheck}
-            addingProperty={addingProperty}
-            setAddingProperty={setAddingProperty}
-            propertyKeyDraft={propertyKeyDraft}
-            setPropertyKeyDraft={setPropertyKeyDraft}
-            propertyValueDraft={propertyValueDraft}
-            setPropertyValueDraft={setPropertyValueDraft}
-            addProperty={addMetadataProperty}
-            cleanPropertyKey={mnEditorCleanPropertyKey}
-          />
-
-          <ContextualAssistance
-            enabled={aiEnabled}
-            note={note}
-            sourceMarkdown={mnBlocksToMd(note.blocks || [])}
-            vaultId={vaultId}
-            onCreateOutput={onCreateAssistanceOutput}
-            T={T}
-          />
+          {metadataOpen && (
+            <PropertiesPanel
+              T={T}
+              visibleProperties={visibleMetadataProperties}
+              hasStatusRow={hasStatusRow}
+              workflowStatus={workflowStatus}
+              workflowStates={workflowStates}
+              onSetWorkflowStatus={onSetWorkflowStatus}
+              removeProperty={removeMetadataProperty}
+              updateProperty={updateMetadataProperty}
+              spellCheck={spellCheck}
+              addingProperty={addingProperty}
+              setAddingProperty={setAddingProperty}
+              propertyKeyDraft={propertyKeyDraft}
+              setPropertyKeyDraft={setPropertyKeyDraft}
+              propertyValueDraft={propertyValueDraft}
+              setPropertyValueDraft={setPropertyValueDraft}
+              addProperty={addMetadataProperty}
+              cleanPropertyKey={mnEditorCleanPropertyKey}
+              onDismiss={() => setMetadataOpen(false)}
+            />
+          )}
 
           {/* Outliner */}
           <MnOutliner
@@ -537,6 +565,8 @@ function MnEditor({
               note={note}
               acceptSuggestedConnection={acceptSuggestedConnection}
               ignoreSuggestedConnection={ignoreSuggestedConnection}
+              expanded={connectionsOpen}
+              onExpandedChange={setConnectionsOpen}
               T={T}
             />
           </div>

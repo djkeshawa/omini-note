@@ -12,17 +12,23 @@ function HeaderButton({ active = false, children, label, onClick, T, iconOnly = 
       title={label}
       onClick={onClick}
       style={{
-        minWidth: iconOnly ? 36 : 'auto',
-        minHeight: 36,
-        padding: iconOnly ? 0 : '0 11px',
+        minWidth: iconOnly ? 32 : 'auto',
+        minHeight: 32,
+        padding: iconOnly ? 0 : '0 9px',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-        border: `1px solid ${active ? T.selLine || T.accent : T.lineSub}`,
-        borderRadius: 8,
-        background: active ? T.accentSoft : (T.bgElevated || T.bg),
+        border: `1px solid ${active ? T.selLine || T.accent : 'transparent'}`,
+        borderRadius: 7,
+        background: active ? T.accentSoft : 'transparent',
         color: active ? T.accent : T.inkMed,
         cursor: 'pointer',
-        fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 650,
+        fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 600,
         whiteSpace: 'nowrap',
+      }}
+      onMouseEnter={event => {
+        if (!active) event.currentTarget.style.background = T.bgHover;
+      }}
+      onMouseLeave={event => {
+        if (!active) event.currentTarget.style.background = 'transparent';
       }}>
       {children}
     </button>
@@ -58,6 +64,7 @@ function EditorHeader({
   sidebarHidden, noteListHidden, onToggleSidebar, onToggleNoteList,
   onPinToggle, onScrollToConnections, onDuplicate, onOpenVersions,
   onExport, referencePaneOpen, onToggleReferencePane, onOpenGraph, onOpenCalendar, onDelete,
+  assistanceControl = null,
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef(null);
@@ -107,9 +114,9 @@ function EditorHeader({
 
   return (
     <div data-mn-editor-header="true" style={{
-      padding: '9px clamp(58px, 6vw, 68px) 9px clamp(14px, 3vw, 28px)',
-      display: 'flex', alignItems: 'center', gap: 8,
-      minHeight: 56,
+      padding: '8px clamp(58px, 6vw, 68px) 8px clamp(14px, 3vw, 28px)',
+      display: 'flex', alignItems: 'center', gap: 4,
+      minHeight: 50,
       borderBottom: `1px solid ${T.lineSub}`,
       background: `color-mix(in oklab, ${T.bgElevated || T.bg} 90%, transparent)`,
       backdropFilter: 'blur(12px)',
@@ -164,29 +171,37 @@ function EditorHeader({
       )}
       <div style={{ flex: 1, minWidth: 4 }} />
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 7,
+        display: 'flex', alignItems: 'center', gap: 6, marginRight: 2,
         fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
         whiteSpace: 'nowrap',
       }}>
-        <span aria-live="polite" aria-atomic="true" style={{ color: saveStatus === 'Conflict' ? (T.danger || T.warn) : T.inkDim }}>{saveStatus}</span>
-        <span aria-hidden="true" style={{ color: T.line }}>·</span>
+        {saveStatus !== 'Saved' && (
+          <>
+            <span data-mn-editor-save-status="true" aria-live="polite" aria-atomic="true" style={{ color: saveStatus === 'Conflict' ? (T.danger || T.warn) : T.inkDim }}>{saveStatus}</span>
+            <span aria-hidden="true" style={{ color: T.line }}>·</span>
+          </>
+        )}
         <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
       </div>
-      <HeaderButton label={note.pinned ? 'Unpin note' : 'Pin note'} onClick={onPinToggle} active={note.pinned} T={T}>
+      <HeaderButton label={note.pinned ? 'Unpin note' : 'Pin note'} onClick={onPinToggle} active={note.pinned} T={T} iconOnly>
         <svg width="13" height="13" viewBox="0 0 16 16" fill={note.pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
           <path d="M10 1.5L14.5 6L11 7L8 10L6 8L9 5L10 1.5Z"/><path d="M6 8L2.5 11.5" strokeLinecap="round"/>
         </svg>
-        <span>{note.pinned ? 'Pinned' : 'Pin'}</span>
       </HeaderButton>
       {connectionCount > 0 && (
         <HeaderButton label={`Show ${connectionCount} connections`} onClick={onScrollToConnections} T={T}>
-          <span>Connections</span>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true">
+            <path d="M6.2 9.8L9.8 6.2M5.1 11.9L3.8 13.2a2.2 2.2 0 01-3.1-3.1L3.4 7.4a2.2 2.2 0 013.1 0M10.9 4.1l1.3-1.3a2.2 2.2 0 013.1 3.1l-2.7 2.7a2.2 2.2 0 01-3.1 0" strokeLinecap="round" />
+          </svg>
           <span aria-hidden="true" style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>{connectionCount}</span>
         </HeaderButton>
       )}
+      {assistanceControl}
       <div ref={moreRef} style={{ position: 'relative' }}>
-        <HeaderButton label="More note actions" onClick={() => setMoreOpen(open => !open)} active={moreOpen} popup T={T}>
-          <span>More</span><span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>···</span>
+        <HeaderButton label="More note actions" onClick={() => setMoreOpen(open => !open)} active={moreOpen} popup T={T} iconOnly>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <circle cx="3" cy="8" r="1.1"/><circle cx="8" cy="8" r="1.1"/><circle cx="13" cy="8" r="1.1"/>
+          </svg>
         </HeaderButton>
         {moreOpen && (
           <div

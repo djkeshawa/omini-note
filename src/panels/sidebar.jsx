@@ -15,11 +15,12 @@ function MnSidebar({
   calendarActive = false,
   aiActive = false,
   onOpenAskAI,
-  onNewTag, onDeleteTag, onNew, onOpenSettings, onCollapse,
+  onNewTag, onDeleteTag, onNew, onOpenQuickCapture, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
   featureState = {}, contextualTip = null, onDismissContextualTip, todayCount,
   saveStatus = 'Saved', lastBackupAt = null, onOpenVaultHealth, onExportBackup,
-  newNoteShortcut = shortcutLabel('newNote', undefined, { compact: true }), T, density, theme
+  newNoteShortcut = shortcutLabel('newNote', undefined, { compact: true }),
+  quickCaptureShortcut = shortcutLabel('quickCapture', undefined, { compact: true }), T, density, theme
 }) {
   const [vaultOpen, setVaultOpen] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
@@ -183,11 +184,12 @@ function MnSidebar({
   const iconCanvas = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3" width="11" height="10" rx="1.3" stroke="currentColor" strokeWidth="1.3"/><path d="M5 6H8.5M5 8.5H11M5 11H7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M10.6 5.4L12 4M11.1 7.1L13 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconTrash = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4.5H13M6 4.5V3C6 2.5 6.5 2 7 2H9C9.5 2 10 2.5 10 3V4.5M5 4.5V13C5 13.5 5.5 14 6 14H10C10.5 14 11 13.5 11 13V4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
   const iconAI = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2L9.5 6.5L14 8L9.5 9.5L8 14L6.5 9.5L2 8L6.5 6.5L8 2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>);
+  const iconCapture = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 3.5H13V12.5H3V3.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M5.5 6H10.5M5.5 8.5H9M11.5 10.5V14M9.75 12.25H13.25" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
 
   return (
     <div style={{
       width: density === 'compact' ? 220 : 260, height: '100%',
-      background: `linear-gradient(180deg, ${T.bgElevated || T.bg} 0%, ${T.bgSub} 44%, color-mix(in oklab, ${T.bgSub} 92%, ${T.accent} 8%) 100%)`,
+      background: `color-mix(in oklab, ${T.bgSub} 94%, ${T.bgElevated || T.bg})`,
       borderRight: `1px solid ${T.line}`,
       display: 'flex', flexDirection: 'column', flexShrink: 0,
       paddingTop: 10,
@@ -219,13 +221,14 @@ function MnSidebar({
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{activeVault?.name || 'VispNote'}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, minWidth: 0 }}>
-                <span style={{
-                  fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: activeVault?.novelistMode ? T.accent : T.inkDim,
-                  background: activeVault?.novelistMode ? T.accentSoft : T.bg,
-                  border: `1px solid ${activeVault?.novelistMode ? T.selLine : T.lineSub}`,
-                  borderRadius: 999, padding: '1px 5px', lineHeight: 1.2,
-                  whiteSpace: 'nowrap',
-                }}>{activeVault ? vaultKindLabel(activeVault) : 'Notes'}</span>
+                {activeVault?.novelistMode && (
+                  <span style={{
+                    fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.accent,
+                    background: T.accentSoft, border: `1px solid ${T.selLine}`,
+                    borderRadius: 999, padding: '1px 5px', lineHeight: 1.2,
+                    whiteSpace: 'nowrap',
+                  }}>Novelist</span>
+                )}
                 <span style={{
                   fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -450,12 +453,11 @@ function MnSidebar({
         )}
 
         <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-          <button type="button" onClick={onNew} title={`New note (${newNoteShortcut})`} style={{
+          <button type="button" data-mn-primary-create="true" onClick={onNew} title={`New note (${newNoteShortcut})`} style={{
             flex: 1, padding: '8px 10px', borderRadius: 7, cursor: 'pointer',
-            background: T.ink, border: `1px solid ${T.ink}`,
-            color: T.bg, fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 650,
+            background: T.accentSoft, border: `1px solid ${T.selLine}`,
+            color: T.accent, fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 650,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-            boxShadow: `0 8px 20px color-mix(in oklab, ${T.ink} 16%, transparent)`,
           }}>
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
               <path d="M6 2V10M2 6H10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -507,6 +509,9 @@ function MnSidebar({
       </div>
       {openSections.more && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
+          {onOpenQuickCapture && (
+            <Row icon={iconCapture} label="Quick capture" hint={quickCaptureShortcut} onClick={onOpenQuickCapture} />
+          )}
           {featureState.showLabs && <>
             <Row icon={iconSmartViews} label="Smart Views" count={smartViewCount}
                  active={smartViewsActive} onClick={onOpenSmartViews} accent={T.focus || T.accent} />

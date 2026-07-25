@@ -202,6 +202,8 @@ function MnNoteList({
     return (
       <div
         key={n.id}
+        data-mn-note-row="true"
+        data-mn-note-row-active={active ? 'true' : 'false'}
         role="option"
         aria-selected={active}
         tabIndex={0}
@@ -225,23 +227,20 @@ function MnNoteList({
           setMenu({ x: e.clientX, y: e.clientY, note: n });
         }}
         style={{
-        padding: density === 'compact' || compact ? '9px 13px' : '13px 15px',
-        paddingLeft: 20 + depth * 16,
-        margin: '0 8px 8px',
-        border: `1px solid ${active ? T.selLine : 'transparent'}`,
-        borderBottom: `1px solid ${active ? T.selLine : T.lineSub}`,
-        borderRadius: 8,
-        cursor: 'grab',
-        background: active ? T.selBg : (T.bgElevated || T.bg),
-        borderLeft: active ? `3px solid ${T.accent}` : '3px solid transparent',
-        position: 'relative',
-        boxShadow: active
-          ? `0 10px 24px color-mix(in oklab, ${T.accent} 12%, transparent)`
-          : `0 1px 0 color-mix(in oklab, ${T.ink} 5%, transparent)`,
-        transition: 'background 80ms, border-color 80ms, box-shadow 80ms',
-      }}
-      onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
-      onMouseLeave={e => !active && (e.currentTarget.style.background = T.bgElevated || T.bg)}>
+          padding: density === 'compact' || compact ? '8px 11px' : '11px 12px',
+          paddingLeft: 16 + depth * 16,
+          margin: '0 8px 2px',
+          border: 'none',
+          borderBottom: `1px solid ${active ? 'transparent' : T.lineSub}`,
+          borderRadius: 7,
+          cursor: 'pointer',
+          background: active ? T.selBg : 'transparent',
+          position: 'relative',
+          boxShadow: 'none',
+          transition: 'background 100ms ease',
+        }}
+        onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
+        onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           {n.pinned && (
             <svg width="9" height="9" viewBox="0 0 10 10" fill={T.accent}>
@@ -480,8 +479,8 @@ function MnNoteList({
     }}>
       {/* Header */}
       <div style={{
-        padding: '24px 18px 14px', borderBottom: `1px solid ${T.lineSub}`,
-        background: `linear-gradient(180deg, ${T.bgElevated || T.bg}, ${T.bgSub})`,
+        padding: '20px 16px 12px', borderBottom: `1px solid ${T.lineSub}`,
+        background: T.bgSub,
       }}>
         <div style={{
           fontFamily: 'var(--mn-ui)', fontSize: 17, fontWeight: 600,
@@ -533,7 +532,7 @@ function MnNoteList({
       </div>
 
       {/* List */}
-      <div role="listbox" aria-label={`${title} notes`} style={{ flex: 1, overflow: 'auto', padding: '10px 0 12px' }}>
+      <div role="listbox" aria-label={`${title} notes`} style={{ flex: 1, overflow: 'auto', padding: '5px 0 12px' }}>
         {notes.length === 0 && (
           <div style={{
             padding: '40px 20px', textAlign: 'center',

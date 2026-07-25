@@ -96,6 +96,7 @@ function AppView({ model }) {
                 onNewTag={promptNewTag}
                 onDeleteTag={removeTag}
                 onNew={() => { createNote(); if (overlayNoteList) setNoteListHidden(true); }}
+                onOpenQuickCapture={() => setCaptureOpen(true)}
                 onOpenSettings={() => setSettingsOpen(true)}
                 onCollapse={() => setSidebarHidden(true)}
                 vaults={vaultsForSidebar}
@@ -114,6 +115,7 @@ function AppView({ model }) {
                 onOpenVaultHealth={() => setVaultHealthOpen(true)}
                 onExportBackup={exportBackup}
                 newNoteShortcut={shortcutLabel('newNote', shortcutPlatform, { compact: true })}
+                quickCaptureShortcut={shortcutLabel('quickCapture', shortcutPlatform, { compact: true })}
                 T={T} density={tweaks.density} theme={theme}
               />
             )}
@@ -629,22 +631,6 @@ function AppView({ model }) {
             topOffset={reminderCenterTop}
             T={T}
           />
-  
-          {/* FAB */}
-          {view !== 'ai' && (
-            <button type="button" onClick={() => setCaptureOpen(true)} title={`Quick capture (${shortcutLabel('quickCapture', shortcutPlatform, { compact: true })})`}
-              style={{
-                position: 'absolute', bottom: 22, right: 22, zIndex: 20,
-                width: 44, height: 44, borderRadius: '50%', cursor: 'pointer',
-                background: T.ink, color: T.bg, border: 'none',
-                boxShadow: `0 8px 24px color-mix(in oklab, ${T.ink} 30%, transparent)`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
-                <path d="M8 3V13M3 8H13" strokeLinecap="round"/>
-              </svg>
-            </button>
-          )}
   
           {settingsOpen && (
             <MnSettingsModal tweaks={tweaks} setTweak={setTweak} T={T}

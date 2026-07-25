@@ -662,7 +662,9 @@ async function assertViewportUsable(win, label) {
         horizontalOverflow,
         overflowers,
         hasNewNote: buttons.some(btn => btn.text === 'New note'),
-        hasQuickCapture: buttons.some(btn => String(btn.title || '').includes('Quick capture')),
+        hasQuickCapture: buttons.some(btn => String(btn.title || '').includes('Quick capture'))
+          || [...document.querySelectorAll('[role="button"][aria-label^="Quick capture"]')].some(visible)
+          || buttons.some(btn => btn.text === 'More'),
         hasSettings: buttons.some(btn => String(btn.title || '').includes('Settings')),
         hasSearch: [...document.querySelectorAll('input')].filter(visible).some(el => el.getAttribute('aria-label') === 'Search note contents'),
       };
@@ -901,6 +903,10 @@ async function runEditorUsabilityScenario(win) {
         const header = document.querySelector('[data-mn-editor-header="true"]');
         const properties = document.querySelector('[data-mn-properties-panel="true"]');
         const firstBlock = document.querySelector('.mn-block-row');
+        const activeNoteRow = document.querySelector('[data-mn-note-row-active="true"]');
+        const primaryCreate = document.querySelector('[data-mn-primary-create="true"]');
+        const floatingCapture = [...document.querySelectorAll('button')]
+          .some(button => (button.getAttribute('title') || '').startsWith('Quick capture ('));
         const headerButtons = [...(header?.querySelectorAll('button') || [])].map(button => ({
           text: (button.textContent || '').trim(),
           aria: button.getAttribute('aria-label') || '',
@@ -908,11 +914,14 @@ async function runEditorUsabilityScenario(win) {
         return {
           ok: Boolean(title && header && firstBlock)
             && !properties
-            && header.textContent.includes('Saved')
+            && !document.querySelector('[data-mn-editor-save-status="true"]')
             && header.textContent.includes('0 words')
-            && headerButtons.some(button => button.text === 'Pin')
-            && headerButtons.some(button => button.text.startsWith('More'))
-            && !headerButtons.some(button => ['Duplicate note', 'Version history', 'Delete note', 'Open Graph', 'Open Agenda'].includes(button.text)),
+            && headerButtons.some(button => button.aria === 'Pin note' && !button.text)
+            && headerButtons.some(button => button.aria === 'More note actions' && !button.text)
+            && !headerButtons.some(button => ['Duplicate note', 'Version history', 'Delete note', 'Open Graph', 'Open Agenda'].includes(button.text))
+            && Boolean(primaryCreate)
+            && !floatingCapture
+            && activeNoteRow?.style.boxShadow === 'none',
           title: title?.value || '',
           properties: Boolean(properties),
           headerText: header?.textContent || '',
@@ -962,7 +971,7 @@ async function runEditorUsabilityScenario(win) {
     return { ok: activeText === '+ Tag', activeText };
   });
 
-  await clickButton(win, { text: '+ Property' });
+  await clickButton(win, { aria: 'Show note properties' });
   await waitFor(win, 'property editor opens on demand', async () => {
     const result = await evaluate(win, `
       (() => ({
@@ -1021,21 +1030,60 @@ async function runValueHardeningSurfaceScenario(win) {
     return { ok: current.selectedTitle === 'First useful note', current };
   });
   await setAssistanceEnabledForRegression(win, true);
-  await waitFor(win, 'contextual assistance exposes four preview-first actions', async () => {
+  await waitFor(win, 'contextual assistance stays compact in the editor header', async () => {
     const result = await evaluate(win, `
       (() => {
-        const section = document.querySelector('[data-mn-contextual-assistance="true"]');
-        const labels = [...(section?.querySelectorAll('button') || [])]
-          .map(button => button.getAttribute('aria-label') || '');
+        const trigger = document.querySelector('button[aria-label="Work with this note"]');
         return {
-          found: Boolean(section),
-          actionCount: ['Brief from ', 'Outline from ', 'Decisions from ', 'Next actions from ']
-            .filter(prefix => labels.some(label => label.startsWith(prefix))).length,
+          found: Boolean(trigger),
+          inHeader: Boolean(trigger?.closest('[data-mn-editor-header="true"]')),
+          expanded: trigger?.getAttribute('aria-expanded') || '',
+          popoverOpen: Boolean(document.querySelector('[data-mn-contextual-assistance-popover="true"]')),
           previewOpen: Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')),
         };
       })()
     `);
-    return { ok: result.found && result.actionCount === 4 && !result.previewOpen, result };
+    return {
+      ok: result.found && result.inHeader && result.expanded === 'false'
+        && !result.popoverOpen && !result.previewOpen,
+      result,
+    };
+  });
+  await clickButton(win, { aria: 'Work with this note', enabled: true });
+  await waitFor(win, 'contextual assistance reveals four preview-first actions on demand', async () => {
+    const result = await evaluate(win, `
+      (() => {
+        const popover = document.querySelector('[data-mn-contextual-assistance-popover="true"]');
+        const labels = [...(popover?.querySelectorAll('button') || [])]
+          .map(button => button.getAttribute('aria-label') || '');
+        return {
+          found: Boolean(popover),
+          actionCount: ['Brief from ', 'Outline from ', 'Decisions from ', 'Next actions from ']
+            .filter(prefix => labels.some(label => label.startsWith(prefix))).length,
+          text: popover?.textContent || '',
+          focused: document.activeElement?.getAttribute('aria-label') || '',
+        };
+      })()
+    `);
+    return {
+      ok: result.found && result.actionCount === 4
+        && result.text.includes('Create a linked note after reviewing the result')
+        && result.focused.startsWith('Brief from '),
+      result,
+    };
+  });
+  await pressAccelerator(win, 'Down');
+  await waitFor(win, 'contextual assistance supports arrow-key navigation', async () => {
+    const focused = await evaluate(win, `document.activeElement?.getAttribute('aria-label') || ''`);
+    return { ok: focused.startsWith('Outline from '), focused };
+  });
+  await pressAccelerator(win, 'Escape');
+  await waitFor(win, 'contextual assistance closes and returns focus', async () => {
+    const result = await evaluate(win, `({
+      open: Boolean(document.querySelector('[data-mn-contextual-assistance-popover="true"]')),
+      focused: document.activeElement?.getAttribute('aria-label') || '',
+    })`);
+    return { ok: !result.open && result.focused === 'Work with this note', result };
   });
   if (process.env.VISPNOTE_VALUE_SCREENSHOT) {
     await evaluate(win, `document.querySelector('button[aria-label^="Local status:"]')?.click()`);
@@ -1324,7 +1372,7 @@ async function runNoteCreateEditPersistenceScenario(win) {
 
 async function runQuickCaptureSaveScenario(win) {
   const body = '- [ ] QE quick capture todo';
-  await clickButton(win, { titleIncludes: 'Quick capture' });
+  await openQuickCaptureFromSidebar(win);
   await waitFor(win, 'body-first quick capture open for save scenario', async () => {
     const result = await evaluate(win, `
       (() => ({
@@ -1347,7 +1395,7 @@ async function runQuickCaptureSaveScenario(win) {
     throw new Error(`Today capture leaked a synthetic title: ${persisted.note.body}`);
   }
 
-  await clickButton(win, { titleIncludes: 'Quick capture' });
+  await openQuickCaptureFromSidebar(win);
   await waitFor(win, 'second body-first capture ready', async () => {
     const focused = await evaluate(win, `document.activeElement?.getAttribute('aria-label') === 'Quick capture text'`);
     return { ok: focused, focused };
@@ -1368,6 +1416,31 @@ async function runQuickCaptureSaveScenario(win) {
   await setControlByPlaceholder(win, 'Write what you want to remember', '# Derived capture title\nSupporting detail.');
   await clickButton(win, { text: 'Save' });
   await waitForPersistedNote(win, 'Derived capture title', note => String(note.body || '').includes('Supporting detail.'));
+}
+
+async function openQuickCaptureFromSidebar(win) {
+  const clickQuickCapture = async () => await evaluate(win, `
+    (() => {
+      const visible = element => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      };
+      const row = [...document.querySelectorAll('[role="button"][aria-label^="Quick capture"]')].find(visible);
+      row?.click();
+      return Boolean(row);
+    })()
+  `);
+  if (await clickQuickCapture()) return;
+  await clickButton(win, { text: 'More' });
+  await waitFor(win, 'sidebar reveals Quick Capture on demand', async () => {
+    const available = await evaluate(win, `
+      [...document.querySelectorAll('[role="button"][aria-label^="Quick capture"]')]
+        .some(element => element.getClientRects().length > 0)
+    `);
+    return { ok: available, available };
+  });
+  if (!await clickQuickCapture()) throw new Error('Quick Capture was not available from the sidebar More section');
 }
 
 async function runSearchAndClearScenario(win) {
@@ -1615,8 +1688,10 @@ async function setRegressionWindowSize(win, width, height) {
   await clearRegressionViewportOverride(win);
   win.setSize(width, height);
   await wait(80);
-  const innerWidth = await evaluate(win, `window.innerWidth`);
-  if (width >= 1200 && innerWidth < 1200) {
+  const viewport = await evaluate(win, `({ width: window.innerWidth, height: window.innerHeight })`);
+  const resizeWasIgnored = Math.abs(viewport.width - width) > 24
+    || Math.abs(viewport.height - height) > 64;
+  if (resizeWasIgnored) {
     win.webContents.debugger.attach('1.3');
     try {
       await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
@@ -1997,7 +2072,21 @@ async function runGeneralAttachmentScenario(win) {
       && rows[0]?.value.includes('[QE Project Brief.pdf](attachments/QE-Project-Brief-')
       && rows[0]?.value.endsWith('.pdf)')
   ));
-  await evaluate(win, `document.querySelector('.mn-note-title-input')?.focus()`);
+  await waitForPersistedNote(win, 'QE General Attachment', note => (
+    String(note.body || '').includes('[QE Project Brief.pdf](attachments/QE-Project-Brief-')
+  ));
+  win.webContents.reload();
+  await waitFor(win, 'general attachment note reloads in display mode', async () => {
+    const current = await state(win);
+    const rows = await editorRows(win);
+    return {
+      ok: current.selectedTitle === 'QE General Attachment'
+        && rows[0]?.text.includes('QE Project Brief.pdf')
+        && !rows[0]?.editing,
+      current,
+      rows,
+    };
+  });
   await waitFor(win, 'general attachment renders as a described chip', async () => {
     const chip = await evaluate(win, `
       (() => {

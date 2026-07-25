@@ -2,15 +2,13 @@ function panelStyle(T) {
   return {
     display: 'flex',
     flexDirection: 'column',
-    gap: 5,
+    gap: 2,
     width: 'min(100%, 520px)',
     boxSizing: 'border-box',
-    margin: '0 0 22px',
-    padding: 8,
-    border: `1px solid ${T.lineSub}`,
-    borderRadius: 11,
-    background: `linear-gradient(145deg, ${T.bgElevated || T.bg}, color-mix(in oklab, ${T.bgSub} 72%, ${T.bg}))`,
-    boxShadow: `0 8px 24px color-mix(in oklab, ${T.ink} 5%, transparent)`,
+    margin: '0 0 20px',
+    padding: '5px 0 8px',
+    borderTop: `1px solid ${T.lineSub}`,
+    background: 'transparent',
   };
 }
 
@@ -21,10 +19,10 @@ function rowStyle(T) {
     alignItems: 'center',
     gap: 8,
     minHeight: 34,
-    padding: '3px 4px 3px 10px',
-    border: `1px solid color-mix(in oklab, ${T.lineSub} 72%, transparent)`,
-    borderRadius: 7,
-    background: `color-mix(in oklab, ${T.bg} 88%, transparent)`,
+    padding: '3px 2px 3px 8px',
+    border: 'none',
+    borderBottom: `1px solid color-mix(in oklab, ${T.lineSub} 78%, transparent)`,
+    background: 'transparent',
   };
 }
 
@@ -73,14 +71,14 @@ function PropertiesPanel({
   T, visibleProperties, hasStatusRow, workflowStatus, workflowStates,
   onSetWorkflowStatus, removeProperty, updateProperty, spellCheck, addingProperty,
   setAddingProperty, propertyKeyDraft, setPropertyKeyDraft, propertyValueDraft,
-  setPropertyValueDraft, addProperty, cleanPropertyKey,
+  setPropertyValueDraft, addProperty, cleanPropertyKey, onDismiss,
 }) {
-  const expanded = hasStatusRow || visibleProperties.length > 0 || addingProperty;
   const displayedPropertyCount = visibleProperties.length + (hasStatusRow ? 1 : 0);
   const cancelAdding = () => {
     setAddingProperty(false);
     setPropertyKeyDraft('');
     setPropertyValueDraft('');
+    if (!displayedPropertyCount) onDismiss?.();
   };
   const handleDraftKeyDown = (event) => {
     if (event.key === 'Enter') {
@@ -93,21 +91,20 @@ function PropertiesPanel({
     }
   };
 
-  if (!expanded) return null;
-
   return (
-    <div id="mn-properties-panel" data-mn-properties-panel="true" style={panelStyle(T)}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '2px 3px 7px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span aria-hidden="true" style={{
-            width: 18, height: 18, borderRadius: 5,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            background: T.accentSoft, color: T.accent,
-            fontFamily: 'var(--mn-mono)', fontSize: 10, fontWeight: 700,
-          }}>#</span>
-          <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 700, color: T.inkMed, letterSpacing: '0.02em' }}>Properties</span>
-        </div>
-        <span title={`${displayedPropertyCount} visible properties`} style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim }}>{displayedPropertyCount}</span>
+    <div id="mn-properties-panel" data-mn-properties-panel="true" data-mn-surface="inline" style={panelStyle(T)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 2px 6px 8px' }}>
+        <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 650, color: T.inkMed }}>Properties</span>
+        <span title={`${displayedPropertyCount} properties`} style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim }}>{displayedPropertyCount}</span>
+        <button
+          type="button"
+          aria-label="Add property"
+          title="Add property"
+          disabled={addingProperty}
+          onClick={() => setAddingProperty(true)}
+          style={{ ...iconButtonStyle(T), marginLeft: 'auto', opacity: addingProperty ? 0.45 : 1 }}>
+          +
+        </button>
       </div>
 
       {hasStatusRow && (
@@ -133,7 +130,7 @@ function PropertiesPanel({
       ))}
 
       {addingProperty && (
-        <div style={{ ...rowStyle(T), borderColor: T.accent, background: T.bg }}>
+        <div style={{ ...rowStyle(T), borderBottomColor: T.accent, background: T.bgSub }}>
           <input aria-label="Property name" value={propertyKeyDraft} onChange={event => setPropertyKeyDraft(event.target.value)} onKeyDown={handleDraftKeyDown} autoFocus placeholder="property" spellCheck={false} style={{ ...valueStyle(T), color: T.inkDim }} />
           <input aria-label="Property value" value={propertyValueDraft} onChange={event => setPropertyValueDraft(event.target.value)} onKeyDown={handleDraftKeyDown} placeholder="value" spellCheck={spellCheck} style={valueStyle(T)} />
           <button type="button" aria-label="Add property" onClick={addProperty} disabled={!cleanPropertyKey(propertyKeyDraft)} title="Add property" style={iconButtonStyle(T)}>+</button>

@@ -278,7 +278,7 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   assert.match(appShell, /const visibleItems = items/);
   assert.doesNotMatch(appShell, /items\.slice\(0, 12\)/);
   assert.match(editorHeader, /data-mn-editor-header="true"/);
-  assert.match(editorHeader, /minHeight: 56/);
+  assert.match(editorHeader, /minHeight: 50/);
   assert.match(editorHeader, /borderBottom: `1px solid \$\{T\.lineSub\}`/);
 
   assert.match(editor, /spellCheck=\{spellCheck\}/);
