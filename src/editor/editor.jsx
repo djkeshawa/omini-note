@@ -1,6 +1,6 @@
 // Editor pane: VispNote block outliner with focused title, tags, metadata, and connections.
 
-import { DS_PANE } from '../shared/designSystem.js';
+import { DS_PANE, DS_RADIUS } from '../shared/designSystem.js';
 import { useResponsiveLayout } from '../shared/layout/useResponsiveLayout.js';
 import {
   cleanPropertyKey,
@@ -594,16 +594,21 @@ function MnEditor({
       </div>
       {toast && (
         <div style={{
-          position: 'absolute', bottom: 24, left: '50%',
+          position: 'absolute', bottom: 22, left: '50%',
           transform: 'translateX(-50%)',
-          padding: '8px 14px',
+          display: 'flex', alignItems: 'center', gap: 10,
+          height: 38, padding: '0 14px',
           background: T.ink, color: T.bg,
-          borderRadius: 6,
+          borderRadius: DS_RADIUS.pill,
           fontFamily: 'var(--mn-ui)', fontSize: 12.5,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          boxShadow: `0 14px 30px color-mix(in oklab, ${T.ink} 30%, transparent)`,
           zIndex: 60,
           pointerEvents: 'none',
-        }}>{toast}</div>
+        }}>
+          {/* A toast only ever reports something that already happened. */}
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.success, flexShrink: 0 }} />
+          {toast}
+        </div>
       )}
       <style>{`
         ::highlight(mn-search-all) { background: color-mix(in oklab, ${T.accent} 30%, transparent); }
