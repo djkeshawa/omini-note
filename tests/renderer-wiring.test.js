@@ -1680,7 +1680,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(panels, /onDragStart=\{\(e\) =>/);
   assert.match(panels, /e\.dataTransfer\.setData\('text\/mn-workflow', payload\)/);
   assert.match(panels, /onDrag=\{\(e\) =>/);
-  assert.match(panels, /Release to move to \{state\.id\}/);
+  // The drop marker no longer repeats the state name — the column header
+  // directly above it already says which column you are over.
+  assert.match(panels, /Release to move here/);
   assert.match(panels, /types\.includes\('text\/mn-note'\)/);
   assert.match(panels, /types\.includes\('text\/plain'\)/);
   assert.match(panels, /readDropNoteId/);
