@@ -558,15 +558,32 @@ function MnWorkflowPanel({
           flexWrap: 'wrap',
           marginBottom: 14,
         }}>
-          <div style={{ minWidth: 180 }}>
-            <div style={{
-              fontFamily: 'var(--mn-ui)', fontSize: 25, fontWeight: 650,
-              color: T.ink, marginBottom: 4, letterSpacing: 0,
-            }}>Workflow</div>
-            <div style={{
-              fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-              letterSpacing: '0.06em',
-            }}>{total} workflow note{total === 1 ? '' : 's'} across this vault</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 180 }}>
+            <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>Workflow</span>
+            <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>
+              {total} note{total === 1 ? '' : 's'} · {populatedStateCount} of {stateCount} states
+            </span>
+            {/* Where the work actually sits, at a glance — one segment per
+                state, sized by share. Only drawn when there is work to share. */}
+            {total > 0 && (
+              <span
+                aria-hidden="true"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 3,
+                  height: 8, width: 200, borderRadius: 4, overflow: 'hidden',
+                }}>
+                {(workflowStates || []).filter(state => countFor(state.id) > 0).map(state => (
+                  <span
+                    key={state.id}
+                    title={`${state.id}: ${countFor(state.id)}`}
+                    style={{
+                      flex: countFor(state.id), height: '100%', borderRadius: 4,
+                      background: state.color || T.accent,
+                    }}
+                  />
+                ))}
+              </span>
+            )}
           </div>
           <div style={{
             display: 'flex',
@@ -592,7 +609,7 @@ function MnWorkflowPanel({
               fontWeight: showArchived ? 600 : 500,
               cursor: 'pointer',
               boxShadow: showArchived ? `0 1px 3px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
-            }}>Archived {archivedNotes.length}</button>
+            }}>Archived · {archivedNotes.length}</button>
           </div>
         </div>
         {showArchived ? <ArchivedWorkflowNotes archivedNotes={archivedNotes} onOpen={onOpen} archiveNote={archiveNote} T={T} /> : (
