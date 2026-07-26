@@ -12,11 +12,9 @@ function WorkflowStateManager({ workflowStates, removeWorkflowState, stateDraft,
       flexWrap: 'wrap',
     }}>
       <span style={{
-        fontFamily: 'var(--mn-mono)',
-        fontSize: 10,
+        fontFamily: 'var(--mn-ui)', fontWeight: 600,
+        fontSize: 11,
         color: T.inkDim,
-        letterSpacing: '0.1em',
-        textTransform: 'uppercase',
         marginRight: 2,
       }}>Columns</span>
       {(workflowStates || []).map(state => (
@@ -120,10 +118,8 @@ function ArchivedWorkflowNotes({ archivedNotes, onOpen, archiveNote, T }) {
         marginBottom: 8,
       }}>
         <div style={{
-          fontFamily: 'var(--mn-mono)',
-          fontSize: 10,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
+          fontFamily: 'var(--mn-ui)', fontWeight: 600,
+          fontSize: 11,
           color: T.inkDim,
         }}>Archived from workflow</div>
         <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>

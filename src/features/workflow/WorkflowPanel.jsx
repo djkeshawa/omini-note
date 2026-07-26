@@ -192,11 +192,9 @@ function MnWorkflowPanel({
       gap: 10,
     }}>
       <span style={{
-        fontFamily: 'var(--mn-mono)',
-        fontSize: 10,
+        fontFamily: 'var(--mn-ui)', fontWeight: 600,
+        fontSize: 11,
         color: T.inkDim,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
         whiteSpace: 'nowrap',
       }}>{label}</span>
       <span style={{
@@ -664,11 +662,9 @@ function MnWorkflowPanel({
                   position: 'sticky',
                   top: 0,
                   zIndex: 1,
-                  fontFamily: 'var(--mn-mono)',
-                  fontSize: 10,
+                  fontFamily: 'var(--mn-ui)', fontWeight: 600,
+                  fontSize: 11,
                   color: T.inkDim,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
                   minWidth: 880,
                   boxSizing: 'border-box',
                 }}>

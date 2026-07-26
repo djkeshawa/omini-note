@@ -376,8 +376,8 @@ function StatusPill({ status, T }) {
 function Pill({ T, color, children }) {
   return (
     <span style={{
-      fontSize: 10, fontFamily: 'var(--mn-mono)', textTransform: 'uppercase',
-      letterSpacing: '0.08em', padding: '2px 7px', borderRadius: 99,
+      fontSize: 11, fontFamily: 'var(--mn-ui)', fontWeight: 600,
+      padding: '2px 7px', borderRadius: 99,
       border: `1px solid ${T.lineSub}`, color,
       background: T.bgSub,
     }}>{children}</span>

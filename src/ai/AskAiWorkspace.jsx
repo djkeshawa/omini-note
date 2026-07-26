@@ -282,12 +282,10 @@ function AskAiWorkspace({ model }) {
                 }}>
                   {m.role !== 'user' && (
                     <div style={{
-                      fontFamily: 'var(--mn-mono)',
-                      fontSize: 10,
+                      fontFamily: 'var(--mn-ui)', fontWeight: 600,
+                      fontSize: 11,
                       color: m.error ? (T.warn || '#c33') : T.inkDim,
                       marginBottom: 5,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em',
                     }}>
                       {m.error ? 'Error' : m.stopped ? 'Stopped' : m.action ? 'Action' : m.streaming ? 'Answering' : 'Answer'}
                     </div>
@@ -337,7 +335,7 @@ function AskAiWorkspace({ model }) {
                     }}>
                       <div style={{ fontSize: 13, fontWeight: 720, color: T.ink }}>{m.review.title || 'Review action'}</div>
                       {m.review.risk && (
-                        <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, textTransform: 'uppercase' }}>
+                        <div style={{ marginTop: 3, fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim }}>
                           {m.review.risk} action
                         </div>
                       )}

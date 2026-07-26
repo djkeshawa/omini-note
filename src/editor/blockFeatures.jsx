@@ -228,8 +228,8 @@ function MnPageEmbed({ title, allNotes, T, onOpenNote }) {
         cursor: 'pointer',
       }}>
       <div style={{
-        fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
-        letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4,
+        fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim,
+        marginBottom: 4,
       }}>↗ Embedded page</div>
       <div style={{ fontFamily: 'var(--mn-body)', fontSize: 14, fontWeight: 600, color: T.ink, marginBottom: 4 }}>
         {note.title}
@@ -295,8 +295,8 @@ function MnBlockEmbed({ refId, allNotes, T, onOpenBlock }) {
         cursor: 'pointer',
       }}>
       <div style={{
-        fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
-        letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4,
+        fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim,
+        marginBottom: 4,
       }}>↗ Embedded block · in {parentNote.title}</div>
       {renderBlock(targetBlock)}
     </div>
@@ -366,8 +366,7 @@ function MnBlockContextMenu({
     }}>
       <div style={{
         padding: '4px 10px 6px',
-        fontFamily: 'var(--mn-mono)', fontSize: 9, color: T.inkDim,
-        letterSpacing: '0.1em', textTransform: 'uppercase',
+        fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim,
       }}>Block · {block.id.slice(-6)}</div>
       <Item icon="⤓" label="Zoom into block" kbd={shortcutLabel('zoomBlock', shortcutPlatform, { compact: true })} onClick={onZoom} />
       <Item divider />
@@ -387,8 +386,7 @@ function MnBlockContextMenu({
       <Item divider />
       <div style={{
         padding: '4px 10px 4px',
-        fontFamily: 'var(--mn-mono)', fontSize: 9, color: T.inkDim,
-        letterSpacing: '0.1em', textTransform: 'uppercase',
+        fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim,
       }}>Convert to</div>
       {[
         { kind: 'paragraph', label: 'Paragraph', icon: '¶' },
@@ -409,8 +407,7 @@ function MnBlockContextMenu({
           <Item divider />
           <div style={{
             padding: '4px 10px 4px',
-            fontFamily: 'var(--mn-mono)', fontSize: 9, color: T.inkDim,
-            letterSpacing: '0.1em', textTransform: 'uppercase',
+            fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim,
           }}>Block marker</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '0 10px 6px' }}>
             {MN_WORKFLOW_STATES.map(s => (

@@ -1,4 +1,5 @@
 import { platformApi } from '../../platform/index.js';
+import { DS_RADIUS, DS_TYPE, dsGroupLabelStyle } from '../../shared/designSystem.js';
 
 function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
   const [health, setHealth] = useStateA(null);
@@ -27,14 +28,14 @@ function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
     return () => document.removeEventListener('keydown', closeOnEscape, true);
   }, [onClose]);
   const stat = (label, value) => (
-    <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, padding: 10, background: T.bgSub }}>
-      <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ marginTop: 4, fontSize: 18, fontWeight: 720, color: T.ink }}>{value}</div>
+    <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: DS_RADIUS.row, padding: 10, background: T.bgSub }}>
+      <div style={dsGroupLabelStyle(T)}>{label}</div>
+      <div style={{ marginTop: 4, ...DS_TYPE.sectionHead, fontSize: 20, color: T.ink }}>{value}</div>
     </div>
   );
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 250, background: 'color-mix(in oklab, oklch(0.2 0.02 240) 32%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="mn-vault-health-title" onClick={e => e.stopPropagation()} style={{ width: 'min(760px, 100%)', maxHeight: '86vh', overflow: 'auto', background: T.bg, color: T.ink, border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 28%, transparent)` }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="mn-vault-health-title" onClick={e => e.stopPropagation()} style={{ width: 'min(760px, 100%)', maxHeight: '86vh', overflow: 'auto', background: T.bg, color: T.ink, border: `1px solid ${T.line}`, borderRadius: DS_RADIUS.panel, boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 28%, transparent)` }}>
         <div style={{ padding: 16, borderBottom: `1px solid ${T.lineSub}`, display: 'flex', alignItems: 'center', gap: 12 }}>
           <div id="mn-vault-health-title" style={{ flex: 1, fontSize: 15, fontWeight: 650 }}>Vault health</div>
           <button onClick={onRebuildIndex} style={mnSmallActionButton(T)}>Rebuild index</button>
@@ -53,7 +54,7 @@ function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
               </div>
               {health.indexStatus && typeof health.indexStatus === 'object' && (
                 <div style={{ marginTop: 12, border: `1px solid ${T.lineSub}`, borderRadius: 8, overflow: 'hidden', background: T.bgSub }}>
-                  <div style={{ padding: '9px 11px', borderBottom: `1px solid ${T.lineSub}`, fontSize: 12, fontWeight: 700 }}>Index Health</div>
+                  <div style={{ padding: '9px 11px', borderBottom: `1px solid ${T.lineSub}`, fontSize: 12.5, fontWeight: 650 }}>Index health</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, padding: 10 }}>
                     {stat('FTS notes', health.indexStatus.ftsIndexedNoteCount ?? '—')}
                     {stat('Embed notes', health.indexStatus.embeddingNoteCount ?? '—')}
@@ -68,8 +69,8 @@ function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
                 </div>
               )}
               <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <MnHealthList title="Broken Links" items={health.brokenLinks || []} empty="No broken wiki links" render={item => `${item.noteTitle} -> ${item.target}`} T={T} />
-                <MnHealthList title="Orphan Notes" items={health.orphanNotes || []} empty="No orphan notes" render={item => item.title} T={T} />
+                <MnHealthList title="Broken links" items={health.brokenLinks || []} empty="No broken wiki links" render={item => `${item.noteTitle} -> ${item.target}`} T={T} />
+                <MnHealthList title="Orphan notes" items={health.orphanNotes || []} empty="No orphan notes" render={item => item.title} T={T} />
               </div>
             </>
           )}
