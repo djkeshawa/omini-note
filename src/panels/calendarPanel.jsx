@@ -74,6 +74,15 @@ function mnCalendarIcon(kind, T) {
   );
 }
 
+function mnAgendaStepBtn(T) {
+  return {
+    width: 28, height: 28, borderRadius: 8,
+    border: '1px solid transparent', background: 'transparent',
+    color: T.inkMed, cursor: 'pointer', padding: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  };
+}
+
 function MnCalendarPanel({
   notes = [],
   tags = [],
@@ -447,22 +456,39 @@ function MnCalendarPanel({
         flexDirection: 'column',
         minHeight: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <span style={{ color: T.accent, display: 'inline-flex' }}>{mnCalendarIcon('calendar', T)}</span>
-              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 24, fontWeight: 720, color: T.ink, letterSpacing: 0 }}>Agenda</div>
-            </div>
-            <div style={{ marginTop: 4, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, letterSpacing: '0.06em' }}>
-              {grouped.upcoming.length} scheduled · {grouped.undated.length} inbox todo{grouped.undated.length === 1 ? '' : 's'}
-            </div>
+        {/* One header row: the month you are on, how to move, and what is
+            actually pressing. The month name carries the date, so the panel
+            title stays a plain label. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>Agenda</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <button onClick={() => moveMonth(-1)} aria-label="Previous month" title="Previous month" style={mnAgendaStepBtn(T)}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <path d="M10 3L5 8L10 13" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <span style={{ minWidth: 116, textAlign: 'center', fontSize: 13.5, fontWeight: 600, color: T.ink }}>{monthTitle}</span>
+            <button onClick={() => moveMonth(1)} aria-label="Next month" title="Next month" style={mnAgendaStepBtn(T)}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <path d="M6 3L11 8L6 13" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-            <button onClick={() => moveMonth(-1)} title="Previous month" style={pillBtn(false)}>Prev</button>
-            <button onClick={selectToday} style={pillBtn(selectedKey === todayKey)}>Today</button>
-            <button onClick={() => moveMonth(1)} title="Next month" style={pillBtn(false)}>Next</button>
-            <button onClick={() => setMode('month')} style={pillBtn(mode === 'month')}>Month</button>
-            <button onClick={() => setMode('agenda')} style={pillBtn(mode === 'agenda')}>Agenda</button>
+          <button onClick={selectToday} style={pillBtn(selectedKey === todayKey)}>Today</button>
+          <button onClick={() => setMode('month')} style={pillBtn(mode === 'month')}>Month</button>
+          <button onClick={() => setMode('agenda')} style={pillBtn(mode === 'agenda')}>Agenda</button>
+          <span style={{ flex: 1 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: T.inkDim }}>
+            {grouped.overdue.length > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: T.danger }} />
+                {grouped.overdue.length} overdue
+              </span>
+            )}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: T.accent }} />
+              {grouped.upcoming.length} scheduled
+            </span>
           </div>
         </div>
 
