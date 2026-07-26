@@ -1,3 +1,4 @@
+import { ConnectionsRail } from './ConnectionsRail.jsx';
 function mnRenderMentionSnippet(snippet, T) {
   const parts = String(snippet || '').split(/<mark>|<\/mark>/);
   return parts.map((part, index) => index % 2
@@ -116,8 +117,22 @@ function ConnectionsSection({
           id="mn-connections-panel"
           data-mn-connections-panel="true"
           style={rail
-            ? { minHeight: 0, overflow: 'auto', paddingRight: 2 }
+            ? { minHeight: 0, overflow: 'auto', paddingRight: 2, display: 'flex', flexDirection: 'column', gap: 18 }
             : { padding: '2px 0 10px 20px' }}>
+          {rail ? (
+            <ConnectionsRail
+              suggestedConnections={suggestedConnections}
+              backlinks={backlinks}
+              mentions={mentions}
+              onOpen={onOpen}
+              onLinkMention={onLinkMention}
+              linkMention={linkMention}
+              note={note}
+              acceptSuggestedConnection={acceptSuggestedConnection}
+              ignoreSuggestedConnection={ignoreSuggestedConnection}
+              T={T}
+            />
+          ) : (<>
           {suggestedConnections.length > 0 && (
             <div style={{ marginBottom: 18 }}>
               <div style={mnConnectionGroupLabelStyle(T)}>Suggested links</div>
@@ -225,6 +240,7 @@ function ConnectionsSection({
               ))}
             </div>
           )}
+          </>)}
         </div>
       )}
     </section>
