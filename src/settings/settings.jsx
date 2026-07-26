@@ -1,4 +1,5 @@
 import { optionalPlatformCall, platformApi } from '../platform/index.js';
+import { DS_HEIGHT, DS_RADIUS, dsGroupLabelStyle } from '../shared/designSystem.js';
 import { iconAppearance, iconEditor, iconAI, iconPlugin, iconData, iconInfo } from './settingsControls.jsx';
 import { SectionAppearance, SectionEditor, SectionNotes, SectionAdvanced } from './sections/GeneralSections.jsx';
 import { SectionAI } from './sections/AssistanceSection.jsx';
@@ -43,7 +44,6 @@ function MnSettingsModal({
     { k: 'advanced', label: 'Advanced', group: 'VispNote', sub: 'Packs and specialist tools', icon: iconPlugin },
     { k: 'about', label: 'About', group: 'VispNote', sub: 'Version, shortcuts, and stats', icon: iconInfo },
   ];
-  const activeSection = sections.find(s => s.k === section) || sections[0];
   const groups = [...new Set(sections.map(s => s.group))];
 
   return (
@@ -70,38 +70,16 @@ function MnSettingsModal({
         display: 'flex', flexDirection: 'column',
       }}>
         <div style={{
-          padding: '14px 16px', borderBottom: `1px solid ${T.lineSub}`,
+          height: 56, padding: '0 16px', borderBottom: `1px solid ${T.lineSub}`,
           display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
-          background: `linear-gradient(180deg, ${T.bgSub}, ${T.bg})`,
+          boxSizing: 'border-box',
         }}>
-          <div style={{
-            width: 30,
-            height: 30,
-            borderRadius: 7,
-            border: `1px solid ${T.lineSub}`,
-            background: T.bg,
-            color: T.inkMed,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
-              <circle cx="8" cy="8" r="2.2"/>
-              <path d="M8 1.5V3M8 13V14.5M14.5 8H13M3 8H1.5M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6M12.6 12.6L11.5 11.5M4.5 4.5L3.4 3.4" strokeLinecap="round"/>
-            </svg>
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div id="mn-settings-title" style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 700, color: T.ink }}>Settings</div>
-            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim, marginTop: 2 }}>
-              {activeSection.label} · {activeSection.sub}
-            </div>
-          </div>
-          <div style={{ flex: 1 }} />
+          <div id="mn-settings-title" style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 600, color: T.ink }}>Settings</div>
+          <span style={{ flex: 1 }} />
           <button onClick={onClose} style={{
             width: 28,
             height: 28,
-            borderRadius: 6,
+            borderRadius: DS_RADIUS.control,
             border: `1px solid ${T.lineSub}`,
             background: T.bg,
             cursor: 'pointer',
@@ -119,7 +97,7 @@ function MnSettingsModal({
 
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
           <div style={{
-            width: 230,
+            width: 214,
             background: T.bgSub,
             borderRight: `1px solid ${T.lineSub}`,
             padding: '12px 10px',
@@ -128,14 +106,7 @@ function MnSettingsModal({
           }}>
             {groups.map(group => (
               <div key={group} style={{ marginBottom: 12 }}>
-                <div style={{
-                  fontFamily: 'var(--mn-mono)',
-                  fontSize: 9.5,
-                  color: T.inkDim,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  padding: '0 9px 6px',
-                }}>{group}</div>
+                <div style={{ ...dsGroupLabelStyle(T), height: 22, padding: '0 8px', display: 'flex', alignItems: 'center' }}>{group}</div>
                 {sections.filter(s => s.group === group).map(s => {
                   const active = section === s.k;
                   return (
@@ -143,44 +114,34 @@ function MnSettingsModal({
                       width: '100%',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 9,
-                      padding: '8px 9px',
-                      borderRadius: 7,
+                      gap: 10,
+                      height: DS_HEIGHT.navRow,
+                      padding: '0 10px',
+                      boxSizing: 'border-box',
+                      borderRadius: DS_RADIUS.control,
                       cursor: 'pointer',
                       fontFamily: 'var(--mn-ui)',
+                      fontSize: 13.5,
+                      fontWeight: active ? 600 : 400,
                       textAlign: 'left',
-                      background: active ? T.bg : 'transparent',
+                      background: active ? (T.bgElevated || T.bg) : 'transparent',
                       color: active ? T.ink : T.inkMed,
-                      border: active ? `1px solid ${T.lineSub}` : '1px solid transparent',
-                      boxShadow: active ? `0 7px 18px color-mix(in oklab, ${T.ink} 5%, transparent)` : 'none',
+                      border: `1px solid ${active ? T.lineSub : 'transparent'}`,
                       marginBottom: 2,
                     }}>
                       <span style={{
-                        width: 26,
-                        height: 26,
-                        borderRadius: 6,
+                        width: 16,
+                        height: 16,
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         color: active ? T.accent : T.inkDim,
-                        background: active ? T.accentSoft : T.bg,
-                        border: `1px solid ${active ? T.selLine : T.lineSub}`,
                         flexShrink: 0,
                       }}>{s.icon}</span>
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 12.5, fontWeight: active ? 650 : 500 }}>{s.label}</span>
-                        <span style={{
-                          display: 'block',
-                          marginTop: 2,
-                          fontFamily: 'var(--mn-body)',
-                          fontSize: 11.5,
-                          lineHeight: 1.25,
-                          color: T.inkDim,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}>{s.sub}</span>
-                      </span>
+                      <span style={{
+                        flex: 1, minWidth: 0,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>{s.label}</span>
                     </button>
                   );
                 })}
@@ -190,9 +151,10 @@ function MnSettingsModal({
 
           <div style={{
             flex: 1,
+            minWidth: 0,
             overflow: 'auto',
-            padding: '24px 32px',
-            background: `linear-gradient(180deg, ${T.bg}, color-mix(in oklab, ${T.bgSub} 38%, ${T.bg}))`,
+            padding: '26px 32px',
+            background: T.bg,
           }}>
             {section === 'general' && <SectionAppearance tweaks={tweaks} setTweak={setTweak} T={T} themeOptions={themeOptions} />}
             {section === 'writing' && (

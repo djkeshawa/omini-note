@@ -1,10 +1,11 @@
 // Shared settings controls and section icons.
+import { DS_RADIUS, DS_TYPE } from '../shared/designSystem.js';
 
 function H({ T, label, sub }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 750, color: T.ink, letterSpacing: 0 }}>{label}</div>
-      {sub && <div style={{ fontFamily: 'var(--mn-body)', fontSize: 13.5, color: T.inkMed, marginTop: 4, lineHeight: 1.45 }}>{sub}</div>}
+      <div style={{ ...DS_TYPE.sectionHead, fontSize: 24, color: T.ink }}>{label}</div>
+      {sub && <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkMed, marginTop: 5, lineHeight: 1.45 }}>{sub}</div>}
     </div>
   );
 }
@@ -13,7 +14,7 @@ function SettingsCard({ T, children, style = {} }) {
   return (
     <div style={{
       border: `1px solid ${T.lineSub}`,
-      borderRadius: 8,
+      borderRadius: DS_RADIUS.row,
       background: T.bgElevated || T.bg,
       overflow: 'hidden',
       boxShadow: typeof mnShadow === 'function'
@@ -53,7 +54,7 @@ function Segmented({ T, value, onChange, options }) {
       gridTemplateColumns: `repeat(${Math.max(1, options.length)}, minmax(0, 1fr))`,
       gap: 3,
       background: T.bgSub,
-      border: `1px solid ${T.lineSub}`, borderRadius: 7, padding: 3,
+      border: `1px solid ${T.lineSub}`, borderRadius: DS_RADIUS.control, padding: 3,
       maxWidth: '100%',
       minWidth: options.length > 1 ? 220 : undefined,
       boxSizing: 'border-box',
@@ -62,13 +63,12 @@ function Segmented({ T, value, onChange, options }) {
         <button key={o.value} onClick={() => onChange(o.value)} style={{
           minWidth: 0,
           minHeight: 28,
-          padding: '5px 10px', borderRadius: 5, border: 'none',
+          padding: '5px 10px', borderRadius: DS_RADIUS.icon, border: 'none',
           background: value === o.value ? T.bg : 'transparent',
           color: value === o.value ? T.ink : T.inkMed,
           fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
           fontWeight: value === o.value ? 500 : 400,
           boxShadow: value === o.value ? `0 1px 2px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
-          textTransform: 'capitalize',
           whiteSpace: 'nowrap',
           display: 'flex',
           alignItems: 'center',

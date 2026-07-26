@@ -1,4 +1,5 @@
 import { mnGetTagColor } from '../../../shared/theme.jsx';
+import { dsGroupLabelStyle, mnSentenceCase } from '../../../shared/designSystem.js';
 
 const { useEffect, useMemo, useState } = React;
 
@@ -16,7 +17,7 @@ function TodaySection({ title, count, action = null, name, children, T }) {
   return (
     <section data-mn-today-section={name} style={sectionStyle(T)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 720, color: T.ink }}>{title}</h2>
+        <h2 style={{ margin: 0, fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>{title}</h2>
         {Number.isFinite(count) && (
           <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{count}</span>
         )}
@@ -36,7 +37,7 @@ function TodayNoteGroups({
   return (
     <section data-mn-today-section={sectionName} style={{ marginBottom: 18 }}>
       {title && (
-        <h2 style={{ margin: '0 0 10px', fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 720, color: T.ink }}>
+        <h2 style={{ margin: '0 0 10px', fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>
           {title}
         </h2>
       )}
@@ -105,7 +106,7 @@ function TodayNoteGroups({
                               <span key={tag} style={{
                                 display: 'inline-flex', alignItems: 'center', gap: 4, border: `1px solid ${T.lineSub}`,
                                 borderRadius: 999, background: T.bg, color: T.inkMed, padding: '2px 6px',
-                                fontFamily: 'var(--mn-mono)', fontSize: 10,
+                                fontFamily: 'var(--mn-ui)', fontSize: 11,
                               }}>
                                 <span aria-hidden="true" style={{
                                   width: 6, height: 6, borderRadius: '50%',
@@ -165,11 +166,11 @@ function AiRecap({ recap, busy, error, onGenerate, onOpen, buttonStyle, T }) {
               border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bg, padding: '9px 10px',
             }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 4 }}>
-                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 720, color: T.ink }}>{section.title}</div>
+                <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 650, color: T.ink }}>{section.title}</div>
                 <div style={{
-                  fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-                  color: section.kind === 'suggestion' ? T.accent : T.inkDim, textTransform: 'uppercase',
-                }}>{section.kind}</div>
+                  ...dsGroupLabelStyle(T),
+                  color: section.kind === 'suggestion' ? T.accent : T.inkDim,
+                }}>{mnSentenceCase(section.kind)}</div>
               </div>
               <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.8, lineHeight: 1.45, color: T.inkMed, whiteSpace: 'pre-wrap' }}>
                 {section.content}
@@ -483,10 +484,7 @@ function MnTodayPanel({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {reminderGroups.map(group => (
                 <div key={group.key}>
-                  <div style={{
-                    fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-                    margin: '2px 0 5px', textTransform: 'uppercase', letterSpacing: '0.06em',
-                  }}>{group.label}</div>
+                  <div style={{ ...dsGroupLabelStyle(T), margin: '2px 0 5px' }}>{group.label}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     {group.items.map(item => {
                       const statusColor = item.rollupStatus === 'overdue' ? T.danger : T.warn;

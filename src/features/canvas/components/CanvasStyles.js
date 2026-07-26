@@ -1,4 +1,5 @@
 
+import { dsGroupLabelStyle } from '../../../shared/designSystem.js';
 
 function mnCanvasPrimaryButton(T) {
   return {
@@ -130,13 +131,7 @@ function mnCanvasMoreMenuSection(T) {
 }
 
 function mnCanvasMoreMenuLabel(T) {
-  return {
-    fontFamily: 'var(--mn-mono)',
-    fontSize: 10,
-    color: T.inkDim,
-    textTransform: 'uppercase',
-    letterSpacing: 0,
-  };
+  return dsGroupLabelStyle(T);
 }
 
 function mnCanvasMoreMenuGrid() {
