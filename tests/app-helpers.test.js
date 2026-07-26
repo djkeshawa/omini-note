@@ -357,6 +357,11 @@ test('Smart View helpers normalize definitions and query notes without mutation'
     },
     sort: { field: 'created', direction: 'asc' },
     limit: 2,
+    // v2 defaults: a definition that says nothing about presentation is a
+    // plain ungrouped list.
+    layout: 'list',
+    group: null,
+    columns: null,
   });
 
   const combined = appHelpers.smartViewQueryNotes(notes, normalized, { allNotes: notes });
@@ -1249,4 +1254,64 @@ test('Novelist order and note-level status properties drive visible workflow', (
   assert.match(slashCommands, /Marker: \$\{state\.id\}/);
   assert.match(outliner, /setLabelMenu/);
   assert.match(blockFeatures, /label="Add label"/);
+});
+
+test('smart view v2 keeps v1 definitions readable and preserves layout, group and columns', () => {
+  // Acceptance 01 — a view saved before v2 still validates and opens as a list.
+  const v1 = {
+    format: 'vispnote.smartView.v1',
+    id: 'legacy-view',
+    title: 'Legacy view',
+    type: 'notes',
+    filters: { tag: 'research' },
+    sort: { field: 'modified', direction: 'desc' },
+    limit: 25,
+  };
+  const savedV1 = appHelpers.smartViewValidateSavedDefinition(v1);
+  assert.equal(savedV1.layout, 'list');
+  assert.equal(savedV1.group, null);
+  assert.equal(savedV1.columns, null);
+  // New writes carry the v2 format, but v1 is still accepted on read.
+  assert.equal(savedV1.format, 'vispnote.smartView.v2');
+  assert.ok(appHelpers.SMART_VIEW_FORMATS.includes('vispnote.smartView.v1'));
+
+  // Acceptance 02 — the three new keys survive normalize, which used to return
+  // a fixed literal and drop anything it did not name.
+  const v2 = {
+    ...v1,
+    format: 'vispnote.smartView.v2',
+    layout: 'board',
+    group: { by: 'status' },
+    columns: ['status', 'pov'],
+  };
+  const savedV2 = appHelpers.smartViewValidateSavedDefinition(v2);
+  assert.equal(savedV2.layout, 'board');
+  assert.deepEqual(savedV2.group, { by: 'status', direction: 'asc' });
+  assert.deepEqual(savedV2.columns, ['status', 'pov']);
+
+  // And they survive a YAML round-trip, which routes through the same validator.
+  const yaml = appHelpers.smartViewSerializeDefinition(v2, 'yaml');
+  const parsed = appHelpers.smartViewValidateSavedDefinition(appHelpers.smartViewParseDefinitionText(yaml));
+  assert.equal(parsed.layout, 'board');
+  assert.deepEqual(parsed.group, { by: 'status', direction: 'asc' });
+  assert.deepEqual(parsed.columns, ['status', 'pov']);
+
+  // An unknown layout is rejected rather than silently coerced.
+  assert.throws(() => appHelpers.smartViewValidateSavedDefinition({ ...v2, layout: 'sideways' }), /Invalid Smart View layout/);
+});
+
+test('smart view grouping is a pure post-pass with a terminal unfiled bucket', () => {
+  const results = [
+    { noteId: 'a', note: { id: 'a', tags: [], body: 'status:: DOING\n' } },
+    { noteId: 'b', note: { id: 'b', tags: [], body: 'status:: TODO\n' } },
+    { noteId: 'c', note: { id: 'c', tags: [], body: 'no property here\n' } },
+  ];
+  const groups = appHelpers.smartViewGroup(results, { by: 'status' });
+  assert.deepEqual(groups.map(g => g.label), ['DOING', 'TODO', 'No status']);
+  // Unfiled work is always findable — the bucket exists and sits last.
+  assert.equal(groups[groups.length - 1].items.length, 1);
+  // Grouping never drops or duplicates a result.
+  assert.equal(groups.reduce((n, g) => n + g.items.length, 0), results.length);
+  // No group means one bucket holding everything, not an error.
+  assert.equal(appHelpers.smartViewGroup(results, null).length, 1);
 });
