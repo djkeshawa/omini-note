@@ -71,7 +71,10 @@ function MnAppBar({
       style={{
         height: DS_HEIGHT.appBar, flexShrink: 0,
         display: 'grid', gridTemplateColumns: `${DS_PANE.sidebar}px minmax(0,1fr) auto`,
-        alignItems: 'center', gap: 12, padding: '0 12px 0 0',
+        alignItems: 'center', gap: 12,
+        // The reminder bell is a fixed overlay that lands at right: 12, so the
+        // right group stops short of it rather than sitting underneath.
+        padding: '0 44px 0 0',
         background: T.bgSub, borderBottom: `1px solid ${T.line}`,
         position: 'relative', zIndex: 30, boxSizing: 'border-box',
       }}>

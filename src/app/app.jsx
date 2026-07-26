@@ -618,7 +618,8 @@ function MnApp() {
     || (featureState.showLabs && view === 'graph')
     || (featureState.showWorkflow && view === 'workflow');
   const aiChatListVisible = featureState.showAskAi && view === 'ai';
-  const reminderCenterTop = view === 'ai' ? 17 : 14;
+  // Centre the bell in the 44px app bar: (44 - 28) / 2.
+  const reminderCenterTop = 8;
   const noteListTitle = query.trim()
     ? 'Search'
     : selectedTag
