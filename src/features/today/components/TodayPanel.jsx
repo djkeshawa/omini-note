@@ -395,16 +395,16 @@ function MnTodayPanel({
           </form>
         </section>
 
-        <AiRecap
-          recap={todayAiRecap}
-          busy={todayAiRecapBusy}
-          error={todayAiRecapError}
-          onGenerate={onGenerateAiRecap}
-          onOpen={onOpen}
-          buttonStyle={buttonStyle}
-          T={T}
-        />
+        {/* Do on the left, what was written on the right, at the prototype's
+            1.25 : 1 split. Two real columns rather than one grid: paired rows
+            would tie each side's height to the other's. */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'minmax(0,1.25fr) minmax(0,1fr)',
+          gap: 28, alignItems: 'start',
+        }}>
 
+          {/* Do — agenda, loops and reminders, in order */}
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {!!visibleAgendaItems.length && (
           <TodaySection
             name="agenda"
@@ -440,52 +440,6 @@ function MnTodayPanel({
             </div>
           </TodaySection>
         )}
-
-        {!!reviewItems.length && (
-          <TodaySection name="worth-revisiting" title="Worth revisiting" count={reviewItems.length} T={T}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {reviewItems.slice(0, 3).map(item => (
-                <div key={item.id} data-mn-today-review-item={item.id} style={{
-                  border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bg,
-                  padding: '9px 10px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                }}>
-                  <button type="button" onClick={() => onOpen?.(item.noteId)} aria-label={`Open ${item.title}`} style={{
-                    flex: '1 1 240px', minWidth: 0, border: 0, background: 'transparent', padding: 0,
-                    cursor: 'pointer', textAlign: 'left', minHeight: 36,
-                  }}>
-                    <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 650, color: T.ink }}>{item.title}</div>
-                    <div style={{ marginTop: 3, fontFamily: 'var(--mn-ui)', fontSize: 11.8, color: T.inkDim }}>{item.reason}</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onSnoozeReviewItem?.(item.id)}
-                    aria-label={`Snooze ${item.title} for 7 days`}
-                    style={buttonStyle(false)}>Snooze 7 days</button>
-                  <button
-                    type="button"
-                    onClick={() => onDismissReviewItem?.(item.id)}
-                    aria-label={`Dismiss ${item.title}`}
-                    style={buttonStyle(false)}>Dismiss</button>
-                </div>
-              ))}
-            </div>
-          </TodaySection>
-        )}
-
-        <TodayNoteGroups
-          groups={todayGroups}
-          collapsedGroups={collapsedGroups}
-          setGroupCollapsed={setGroupCollapsed}
-          headingDate={headingDate}
-          notePreview={helpers.rollupNotePreview}
-          showPreviews={rollupShowPreviews}
-          collapseOlder={false}
-          onOpen={onOpen}
-          tagHue={tagHue}
-          theme={theme}
-          T={T}
-        />
-
         {!!todayTasks.length && (
           <TodaySection name="open-loops" title="Open loops" count={todayTasks.length} T={T}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -512,7 +466,6 @@ function MnTodayPanel({
             </div>
           </TodaySection>
         )}
-
         {!!todayReminders.length && (
           <TodaySection name="reminders" title="Reminders" count={todayReminders.length} T={T}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -552,7 +505,61 @@ function MnTodayPanel({
             </div>
           </TodaySection>
         )}
-
+          </div>
+          {/* Written — recap, revisits and the notes themselves */}
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <AiRecap
+          recap={todayAiRecap}
+          busy={todayAiRecapBusy}
+          error={todayAiRecapError}
+          onGenerate={onGenerateAiRecap}
+          onOpen={onOpen}
+          buttonStyle={buttonStyle}
+          T={T}
+        />
+        {!!reviewItems.length && (
+          <TodaySection name="worth-revisiting" title="Worth revisiting" count={reviewItems.length} T={T}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {reviewItems.slice(0, 3).map(item => (
+                <div key={item.id} data-mn-today-review-item={item.id} style={{
+                  border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bg,
+                  padding: '9px 10px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                }}>
+                  <button type="button" onClick={() => onOpen?.(item.noteId)} aria-label={`Open ${item.title}`} style={{
+                    flex: '1 1 240px', minWidth: 0, border: 0, background: 'transparent', padding: 0,
+                    cursor: 'pointer', textAlign: 'left', minHeight: 36,
+                  }}>
+                    <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 650, color: T.ink }}>{item.title}</div>
+                    <div style={{ marginTop: 3, fontFamily: 'var(--mn-ui)', fontSize: 11.8, color: T.inkDim }}>{item.reason}</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSnoozeReviewItem?.(item.id)}
+                    aria-label={`Snooze ${item.title} for 7 days`}
+                    style={buttonStyle(false)}>Snooze 7 days</button>
+                  <button
+                    type="button"
+                    onClick={() => onDismissReviewItem?.(item.id)}
+                    aria-label={`Dismiss ${item.title}`}
+                    style={buttonStyle(false)}>Dismiss</button>
+                </div>
+              ))}
+            </div>
+          </TodaySection>
+        )}
+        <TodayNoteGroups
+          groups={todayGroups}
+          collapsedGroups={collapsedGroups}
+          setGroupCollapsed={setGroupCollapsed}
+          headingDate={headingDate}
+          notePreview={helpers.rollupNotePreview}
+          showPreviews={rollupShowPreviews}
+          collapseOlder={false}
+          onOpen={onOpen}
+          tagHue={tagHue}
+          theme={theme}
+          T={T}
+        />
         {historyAvailable && (
           <details data-mn-today-section="history" style={{ ...sectionStyle(T), padding: 0 }}>
             <summary style={{
@@ -604,6 +611,8 @@ function MnTodayPanel({
             </div>
           </details>
         )}
+          </div>
+        </div>
       </div>
     </main>
   );
