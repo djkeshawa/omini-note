@@ -216,9 +216,12 @@ function MnCommandPalette({
         </div>
         <div id="mn-palette-results" role="listbox" style={{ maxHeight: 420, overflow: 'auto', padding: '8px 8px 6px' }}>
           {groups.map((group, groupIndex) => (
-            <React.Fragment key={`${group.section}-${groupIndex}`}>
+            // A listbox may only contain options and groups, so the section
+            // label rides inside a role="group" that names it for assistive
+            // tech, and the visible text itself is hidden from the tree.
+            <div role="group" aria-label={group.section || undefined} key={`${group.section}-${groupIndex}`}>
               {group.section && (
-                <div style={{
+                <div aria-hidden="true" style={{
                   padding: groupIndex === 0 ? '8px 10px 6px' : '12px 10px 6px',
                   ...dsGroupLabelStyle(T),
                 }}>{group.section}</div>
@@ -287,7 +290,7 @@ function MnCommandPalette({
               </button>
             );
               })}
-            </React.Fragment>
+            </div>
           ))}
           {!items.length && (
             <div style={{ padding: 18, color: T.inkDim, fontSize: 13, textAlign: 'center' }}>No notes or actions found</div>
