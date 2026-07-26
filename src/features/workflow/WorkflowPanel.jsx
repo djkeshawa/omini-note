@@ -1,5 +1,6 @@
 import { mnNormalizeWorkflowId, mnNormalizeWorkflowStates, mnWorkflowIsClosed } from '../../editor/blockFeatures.jsx';
 import { SectionHead } from '../../panels/panelShared.jsx';
+import { DS_RADIUS, mnSentenceCase } from '../../shared/designSystem.js';
 import { mnGetTagBg, mnGetTagColor } from '../../shared/theme.jsx';
 
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
@@ -207,18 +208,22 @@ function MnWorkflowPanel({
     </div>
   );
 
+  // A state is a dot and a word, not an uppercase mono badge — the colour
+  // carries the identity, so the label can just be read.
   const StatePill = ({ state }) => (
     <span style={{
-      fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-      fontWeight: 700, letterSpacing: '0.06em',
-      color: state.color, background: state.bg,
-      padding: '2px 6px', borderRadius: 3,
-      maxWidth: '100%',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      whiteSpace: 'nowrap',
-      flexShrink: 0,
-    }}>{state.id}</span>
+      display: 'inline-flex', alignItems: 'center', gap: 7,
+      minWidth: 0, flexShrink: 1,
+    }}>
+      <span style={{
+        width: 8, height: 8, borderRadius: '50%',
+        background: state.color, flexShrink: 0,
+      }} />
+      <span style={{
+        fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 600, color: T.ink,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>{mnSentenceCase(state.id)}</span>
+    </span>
   );
 
   const ArchiveButton = ({ item, compact = false }) => (
@@ -484,7 +489,7 @@ function MnWorkflowPanel({
       style={{
         background: dragOverState === state.id ? T.bgHover : T.bgSub,
         border: `1px solid ${dragOverState === state.id ? T.accent : T.lineSub}`,
-        borderRadius: 8,
+        borderRadius: DS_RADIUS.row,
         padding: 9,
         minHeight: mode === 'kanban' ? 'min(470px, calc(100vh - 230px))' : 0,
         transition: 'background 100ms',
@@ -513,16 +518,18 @@ function MnWorkflowPanel({
       {dragOverState === state.id && (
         <div style={{
           margin: '-2px 0 8px',
+          height: 44,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
           border: `1px dashed ${state.color}`,
-          borderRadius: 6,
+          borderRadius: 9,
           background: `color-mix(in oklab, ${state.bg} 55%, ${T.bg})`,
           color: state.color,
           fontFamily: 'var(--mn-ui)',
           fontSize: 12,
           fontWeight: 650,
-          textAlign: 'center',
-          padding: '7px 8px',
-        }}>Release to move to {state.id}</div>
+        }}>{/* The column header right above already names the state. */}
+          Release to move here
+        </div>
       )}
       {children}
       {empty && (
