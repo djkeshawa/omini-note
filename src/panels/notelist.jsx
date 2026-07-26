@@ -1,7 +1,8 @@
 // Middle pane: list of notes (filtered). Click to select.
 import { MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES } from '../editor/blockFeatures.jsx';
 import { mnGetTagColor } from '../shared/theme.jsx';
-import { DS_RADIUS, dsMachineStyle, dsPaneWidth } from '../shared/designSystem.js';
+import { DS_RADIUS, dsButtonStyle, dsMachineStyle, dsPaneWidth } from '../shared/designSystem.js';
+import { DsEmptyState } from '../shared/components/DesignPrimitives.jsx';
 
 const { useMemo: useMemoL, useState: useStateL, useEffect: useEffectL } = React;
 
@@ -101,6 +102,7 @@ function MnNoteList({
   onRenameNote,
   onDuplicateNote,
   onDeleteNote,
+  onCreateNote = null,
   onAddToCanvas = null,
   onOpenReference = null,
   tags, theme, density, T,
@@ -401,10 +403,9 @@ function MnNoteList({
             }}>{note.title || 'Untitled'}</span>
             {type && (
               <span style={{
-                fontFamily: 'var(--mn-mono)',
-                fontSize: 9,
+                fontFamily: 'var(--mn-ui)', fontWeight: 600,
+                fontSize: 11,
                 color: T.inkDim,
-                textTransform: 'uppercase',
               }}>{type}</span>
             )}
             <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim }}>{count}</span>
@@ -538,17 +539,38 @@ function MnNoteList({
 
       {/* List */}
       <div role="listbox" aria-label={`${title} notes`} style={{ flex: 1, overflow: 'auto', padding: '5px 0 12px' }}>
-        {notes.length === 0 && (
-          <div style={{
-            padding: '40px 20px', textAlign: 'center',
-            fontFamily: 'var(--mn-body)', fontSize: 13,
-            color: T.inkDim,
-          }}>
-            {query
-              ? <>No notes match <strong style={{ color: T.ink, fontWeight: 500 }}>“{query}”</strong></>
-              : <span style={{ fontStyle: 'italic' }}>No notes yet.</span>}
-          </div>
-        )}
+        {notes.length === 0 && (query ? (
+          <DsEmptyState
+            T={T}
+            icon={(
+              <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true">
+                <circle cx="7" cy="7" r="4.2" /><path d="M10.2 10.2L13.5 13.5" strokeLinecap="round" />
+              </svg>
+            )}
+            headline={`No notes match “${query}”`}
+            body="Search covers titles, body text and tags in this vault only."
+            action={(
+              <button onClick={() => onQueryChange('')} style={dsButtonStyle(T)}>Clear search</button>
+            )}
+          />
+        ) : (
+          <DsEmptyState
+            T={T}
+            icon={(
+              <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true">
+                <rect x="3" y="2.5" width="10" height="11" rx="1.5" /><path d="M5.5 6h5M5.5 8.5h5M5.5 11h3" strokeLinecap="round" />
+              </svg>
+            )}
+            headline="No notes yet"
+            body="Notes are markdown files on disk. Anything you write here stays readable without the app."
+            action={onCreateNote ? (
+              <button onClick={() => onCreateNote()} style={{
+                ...dsButtonStyle(T, 'default', { height: 30 }),
+                background: T.accentSoft, borderColor: T.selLine, color: T.accent,
+              }}>New note</button>
+            ) : null}
+          />
+        ))}
         {novelistList ? (
           <>
             {novelistList.acts.map(act => {
@@ -596,10 +618,9 @@ function MnNoteList({
             {novelistList.other.length > 0 && (
               <div style={{
                 padding: '12px 18px 6px',
-                fontFamily: 'var(--mn-mono)',
-                fontSize: 10,
+                fontFamily: 'var(--mn-ui)', fontWeight: 600,
+                fontSize: 11,
                 color: T.inkDim,
-                textTransform: 'uppercase',
                 borderBottom: `1px solid ${T.lineSub}`,
               }}>Other notes</div>
             )}

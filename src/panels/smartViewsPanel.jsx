@@ -86,9 +86,8 @@ function MnSmartViewStatusChip({ result, T }) {
       border: `1px solid color-mix(in oklab, ${tone} 42%, ${T.line})`,
       background: `color-mix(in oklab, ${tone} 10%, ${T.bg})`,
       color: T.ink,
-      fontSize: 10.5,
+      fontSize: 11,
       fontWeight: 700,
-      textTransform: 'uppercase',
       letterSpacing: 0,
     }}>{kind}</span>
   );

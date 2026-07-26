@@ -1,4 +1,5 @@
 // In-layout knowledge graph for VispNote.
+import { DsEmptyState } from '../shared/components/DesignPrimitives.jsx';
 // Pure JS force simulation, scoped by the existing note-list search/filter.
 
 const { useEffect, useRef, useState, useMemo } = React;
@@ -300,11 +301,18 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
         overflow: 'hidden',
       }}>
         {(!nodes || nodes.length === 0) ? (
-          <div style={{
-            height: '100%', display: 'flex',
-            alignItems: 'center', justifyContent: 'center',
-            color: T.inkDim, fontFamily: 'var(--mn-ui)', fontSize: 13,
-          }}>No notes match the current search.</div>
+          <DsEmptyState
+            T={T}
+            style={{ height: '100%' }}
+            icon={(
+              <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+                <circle cx="4" cy="4" r="1.8" /><circle cx="12" cy="4" r="1.8" /><circle cx="8" cy="12" r="1.8" />
+                <path d="M5.5 5L10.5 5M5.3 5.8L6.8 10.4M10.7 5.8L9.2 10.4" />
+              </svg>
+            )}
+            headline="No notes match the current search"
+            body="The graph shows whatever the note list is showing, so clear the search there."
+          />
         ) : (
           <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
             <defs>

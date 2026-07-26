@@ -119,8 +119,8 @@ function MnPopover({ children, T, wide, anchorRef }) {
 function MnPopoverHeader({ children, T }) {
   return (
     <div style={{
-      padding: '6px 10px 4px', fontFamily: 'var(--mn-mono)', fontSize: 9,
-      letterSpacing: '0.12em', textTransform: 'uppercase', color: T.inkDim,
+      padding: '6px 10px 4px', fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11,
+        color: T.inkDim,
       display: 'flex', alignItems: 'center', gap: 4,
     }}>{children}</div>
   );
@@ -206,10 +206,8 @@ function MnAiActionMenu({ scope, x, y, onPick, onClose, T, busy }) {
       }}>
       <div style={{
         padding: '7px 9px 5px',
-        fontFamily: 'var(--mn-mono)',
-        fontSize: 9,
-        letterSpacing: '0.12em',
-        textTransform: 'uppercase',
+        fontFamily: 'var(--mn-ui)', fontWeight: 600,
+        fontSize: 11,
         color: T.inkDim,
         display: 'flex',
         alignItems: 'center',

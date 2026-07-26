@@ -1,4 +1,5 @@
 const { useState: useStateC, useEffect: useEffectC, useRef: useRefC, useMemo: useMemoC } = React;
+import { DS_TYPE } from '../../../shared/designSystem.js';
 const {
   MN_CANVAS_TOOLS, MN_CANVAS_COLORS, MN_CANVAS_DEFAULT_STYLE, mnCloneCanvasState, mnCanvasId,
   mnNewCanvas, mnCanvasElement, mnCanvasNoteElement, mnCanvasNotePreview, mnCanvasDate,
@@ -99,8 +100,14 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, onDelete, T }) {
               border: `1px solid ${T.line}`,
               background: mnCanvasStageBackground(T, 18),
             }} />
-            <div style={{ fontSize: 15, fontWeight: 650, color: T.inkMed, marginBottom: 10 }}>No canvases yet</div>
-            <button onClick={() => onCreate && onCreate('Untitled canvas')} style={mnCanvasPrimaryButton(T)}>Create canvas</button>
+            <div style={{ ...DS_TYPE.sectionHead, fontSize: 17, color: T.ink }}>No canvases yet</div>
+            <div style={{
+              maxWidth: 250, margin: '8px auto 0',
+              fontFamily: 'var(--mn-ui)', fontSize: 12.5, lineHeight: 1.5, color: T.inkDim,
+            }}>Arrange notes, stickies and connections spatially.</div>
+            <button
+              onClick={() => onCreate && onCreate('Untitled canvas')}
+              style={{ ...mnCanvasPrimaryButton(T), marginTop: 14 }}>Create canvas</button>
           </div>
         ) : (
           <div style={{

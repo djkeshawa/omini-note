@@ -37,23 +37,34 @@ function DsStatusPill({ tone = 'neutral', children, T, sunken = false, title, st
 // Icon · Newsreader headline · one sentence explaining the model · exactly one
 // action. Say what the thing is and where it lives, then offer the action.
 
-function DsEmptyState({ icon, headline, body, action, T, compact = false, style }) {
+function DsEmptyState({ icon, headline, body, action, T, tone = 'neutral', compact = false, style }) {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       gap: 8, textAlign: 'center', padding: compact ? 18 : '40px 24px', ...style,
     }}>
-      {icon && <span style={dsToneIconStyle(T, 'neutral', 32)}>{icon}</span>}
-      <span style={{ ...DS_TYPE.sectionHead, fontSize: compact ? 16 : 19, color: T.ink }}>
+      {icon && (
+        <span style={{
+          ...dsToneIconStyle(T, tone, 38),
+          borderRadius: DS_RADIUS.panel,
+          background: T.bgElevated || T.bg,
+        }}>{icon}</span>
+      )}
+      <span style={{ ...DS_TYPE.sectionHead, fontSize: compact ? 16 : 17, color: T.ink }}>
         {headline}
       </span>
       {body && (
         <span style={{
-          maxWidth: 280, fontFamily: 'var(--mn-ui)', fontSize: 12,
+          maxWidth: 250, fontFamily: 'var(--mn-ui)', fontSize: 12.5,
           lineHeight: 1.5, color: T.inkDim,
         }}>{body}</span>
       )}
-      {action && <div style={{ marginTop: 4 }}>{action}</div>}
+      {action && (
+        <div style={{
+          marginTop: 6, display: 'flex', gap: 6,
+          flexWrap: 'wrap', justifyContent: 'center',
+        }}>{action}</div>
+      )}
     </div>
   );
 }

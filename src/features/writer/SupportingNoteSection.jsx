@@ -4,10 +4,9 @@ function SupportingNoteSection({ type, items, empty, T, onOpen, openNoteMenu, cr
   const TypeLine = ({ label, linkedTo, extraParent, count }) => (
     <div style={{
       marginTop: 3,
-      fontFamily: 'var(--mn-mono)',
-      fontSize: 9.5,
+      fontFamily: 'var(--mn-ui)', fontWeight: 600,
+      fontSize: 11,
       color: T.inkDim,
-      textTransform: 'uppercase',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap',
