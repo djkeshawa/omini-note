@@ -1,10 +1,11 @@
 // In-layout knowledge graph for VispNote.
 import { DsEmptyState } from '../shared/components/DesignPrimitives.jsx';
+import { DS_HEIGHT, DS_RADIUS, dsGroupLabelStyle, dsMachineStyle } from '../shared/designSystem.js';
 // Pure JS force simulation, scoped by the existing note-list search/filter.
 
 const { useEffect, useRef, useState, useMemo } = React;
 
-function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = null, onGraphFilterChange }) {
+function MnGraph({ notes, links, style, focusId, onOpen, T, tags, theme, graphFilter = null, onGraphFilterChange }) {
   const frameRef = useRef(null);
   const svgRef = useRef(null);
   const rafRef = useRef(null);
@@ -12,6 +13,12 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
   const [dims, setDims] = useState({ w: 900, h: 620 });
   const [nodes, setNodes] = useState(null);
   const [edges, setEdges] = useState([]);
+  // Only legend the tags that are actually on screen.
+  const legendTags = React.useMemo(() => {
+    const present = new Set();
+    (notes || []).forEach(note => (note.tags || []).forEach(tag => present.add(tag)));
+    return (tags || []).filter(tag => present.has(tag.name)).slice(0, 8);
+  }, [notes, tags]);
   const [hoverId, setHoverId] = useState(null);
   const [layoutSeed, setLayoutSeed] = useState(0);
   const [panelOpen, setPanelOpen] = useState({ nodes: false, forces: false, export: false });
@@ -247,23 +254,25 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
       position: 'relative',
     }}>
       <div style={{
-        height: 54, flexShrink: 0,
+        height: DS_HEIGHT.panelHeader, flexShrink: 0, boxSizing: 'border-box',
         display: 'flex', alignItems: 'center', gap: 12,
-        padding: '0 88px 0 24px',
+        padding: '0 88px 0 20px',
         borderBottom: `1px solid ${T.lineSub}`,
         background: T.bg,
       }}>
-        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
-          <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>Graph</div>
-          <div style={{
-            fontFamily: 'var(--mn-ui)', fontSize: 12.5,
-            color: T.inkMed, marginTop: 2,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}>{graphFilter ? 'Novelist graph filter' : 'Uses the current note-list search'}</div>
-        </div>
-        <div style={{ flex: '0 0 4px' }} />
+        <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink, flexShrink: 0 }}>Graph</span>
+        {/* Scope reads as a pill because it is a state you can leave, not a label. */}
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0,
+          height: 26, padding: '0 10px', borderRadius: DS_RADIUS.pill,
+          background: graphFilter ? T.accentSoft : T.bgSub,
+          border: `1px solid ${graphFilter ? T.selLine : T.lineSub}`,
+          color: graphFilter ? T.accent : T.inkMed, fontSize: 11.5,
+        }}>{graphFilter ? 'Novelist scope' : 'Follows the note list'}</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ ...dsMachineStyle(T), fontSize: 11, flexShrink: 0 }}>
+          {(nodes || []).length} notes · {(edges || []).length} links
+        </span>
         {graphFilter && (
           <select
             value={graphFilter}
@@ -314,6 +323,35 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
             body="The graph shows whatever the note list is showing, so clear the search there."
           />
         ) : (
+          <>
+          {/* Legend sits over the canvas so the tag colours can be read
+              without leaving the graph. */}
+          {legendTags.length > 0 && (
+            <div style={{
+              position: 'absolute', left: 20, bottom: 18, zIndex: 2,
+              padding: '12px 14px', borderRadius: DS_RADIUS.row,
+              background: `color-mix(in oklab, ${T.bgElevated || T.bg} 92%, transparent)`,
+              border: `1px solid ${T.lineSub}`,
+              boxShadow: `0 8px 22px color-mix(in oklab, ${T.ink} 9%, transparent)`,
+              display: 'flex', flexDirection: 'column', gap: 8,
+            }}>
+              <div style={dsGroupLabelStyle(T)}>Tags</div>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', maxWidth: 320 }}>
+                {legendTags.map(tag => (
+                  <span key={tag.name} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    fontSize: 12, color: T.inkMed,
+                  }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: mnGetTagColor(tag.hue ?? 240, theme),
+                    }} />
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
             <defs>
               <pattern id="mnGraphGrid" width="30" height="30" patternUnits="userSpaceOnUse">
@@ -397,6 +435,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
               );
             })}
           </svg>
+          </>
         )}
 
         <div style={{

@@ -817,7 +817,9 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(graph, /Characters \+ scenes/);
   assert.match(graph, /Plot threads \+ scenes/);
   assert.match(graph, /Research \+ scenes/);
-  assert.match(graph, /padding: '0 88px 0 24px'/);
+  // Panel header is 52px with the prototype's 20px gutter; the 88px right
+  // inset still keeps the header clear of the window controls.
+  assert.match(graph, /padding: '0 88px 0 20px'/);
   assert.match(graph, /right: 64/);
   assert.match(notelist, /function MnNoteList[\s\S]*novelistStructure = null/);
   assert.match(notelist, /allNotes = null/);
