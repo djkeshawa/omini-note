@@ -1,3 +1,4 @@
+import { dsGroupLabelStyle, dsMachineStyle } from '../shared/designSystem.js';
 const { useEffect, useRef, useState } = React;
 
 function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = null, onOpenVaultHealth, onExportBackup, onOpenSettings, T }) {
@@ -87,13 +88,13 @@ function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor }} />
             <strong style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.5 }}>{saveStatus}</strong>
-            <span style={{ marginLeft: 'auto', fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim }}>LOCAL-FIRST</span>
+            <span style={{ marginLeft: 'auto', ...dsGroupLabelStyle(T) }}>Local-first</span>
           </div>
           <StatusDetail label="Vault folder" value={activeVault?.path || 'Unavailable'} T={T} />
           <StatusDetail label="Last backup" value={backupLabel} T={T} />
           <div style={{ display: 'flex', gap: 7, marginTop: 11 }}>
             <button ref={healthRef} type="button" onClick={() => { setOpen(false); onOpenVaultHealth?.(); }} style={actionButton(T)}>
-              Vault Health
+              Vault health
             </button>
             <button type="button" disabled={backupBusy || !onExportBackup} onClick={runBackup} style={actionButton(T, true)}>
               {backupBusy ? 'Backing up…' : 'Back up now'}
@@ -108,8 +109,8 @@ function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = 
 function StatusDetail({ label, value, T }) {
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div title={value} style={{ marginTop: 3, fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkMed, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
+      <div style={dsGroupLabelStyle(T)}>{label}</div>
+      <div title={value} style={{ marginTop: 3, ...dsMachineStyle(T, T.inkMed), fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
     </div>
   );
 }

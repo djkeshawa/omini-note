@@ -1,6 +1,12 @@
 import { shortcutLabel, useShortcutPlatform } from '../platform/shortcuts.js';
+import { DS_HEIGHT, dsMachineStyle } from '../shared/designSystem.js';
+import { DsStatusPill } from '../shared/components/DesignPrimitives.jsx';
 
 const { useEffect, useRef, useState } = React;
+
+// The editor reports these four; anything else stays neutral rather than
+// inventing a state the app can't actually observe.
+const SAVE_TONES = { Saved: 'success', Saving: 'warn', Conflict: 'danger', Offline: 'warn' };
 
 function HeaderButton({ active = false, children, label, onClick, T, iconOnly = false, popup = false }) {
   return (
@@ -114,9 +120,9 @@ function EditorHeader({
 
   return (
     <div data-mn-editor-header="true" style={{
-      padding: '8px clamp(58px, 6vw, 68px) 8px clamp(14px, 3vw, 28px)',
-      display: 'flex', alignItems: 'center', gap: 4,
-      minHeight: 50,
+      padding: '0 clamp(58px, 6vw, 68px) 0 clamp(14px, 3vw, 28px)',
+      display: 'flex', alignItems: 'center', gap: 6,
+      height: DS_HEIGHT.paneHeader, flexShrink: 0, boxSizing: 'border-box',
       borderBottom: `1px solid ${T.lineSub}`,
       background: `color-mix(in oklab, ${T.bgElevated || T.bg} 90%, transparent)`,
       backdropFilter: 'blur(12px)',
@@ -171,17 +177,16 @@ function EditorHeader({
       )}
       <div style={{ flex: 1, minWidth: 4 }} />
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 6, marginRight: 2,
-        fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
+        display: 'flex', alignItems: 'center', gap: 8, marginRight: 2,
         whiteSpace: 'nowrap',
       }}>
-        {saveStatus !== 'Saved' && (
-          <>
-            <span data-mn-editor-save-status="true" aria-live="polite" aria-atomic="true" style={{ color: saveStatus === 'Conflict' ? (T.danger || T.warn) : T.inkDim }}>{saveStatus}</span>
-            <span aria-hidden="true" style={{ color: T.line }}>·</span>
-          </>
-        )}
-        <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
+        <span style={dsMachineStyle(T)}>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
+        <DsStatusPill tone={SAVE_TONES[saveStatus] || 'neutral'} T={T} sunken>
+          <span
+            data-mn-editor-save-status="true"
+            aria-live="polite"
+            aria-atomic="true">{saveStatus}</span>
+        </DsStatusPill>
       </div>
       <HeaderButton label={note.pinned ? 'Unpin note' : 'Pin note'} onClick={onPinToggle} active={note.pinned} T={T} iconOnly>
         <svg width="13" height="13" viewBox="0 0 16 16" fill={note.pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" aria-hidden="true">

@@ -98,7 +98,7 @@ function rendererStateScript() {
         mounted: Boolean(root?.children.length),
         bootSplashVisible: visible(bootSplash),
         launchError: bodyText.includes('Launch interrupted'),
-        sidebarVisible: buttons.some(btn => btn.text === 'New note') && bodyText.includes('All Notes'),
+        sidebarVisible: buttons.some(btn => btn.text === 'New note') && bodyText.includes('All notes'),
         seededNoteVisible: bodyText.includes('Welcome to VispNote') || bodyText.includes('Project plan') || bodyText.includes('Reading notes'),
         selectedTitle: titleInput?.value || '',
         editorBodyVisible: Boolean(document.querySelector('.mn-block-row')) || bodyText.includes('Try the basics'),
@@ -903,6 +903,7 @@ async function runEditorUsabilityScenario(win) {
         const header = document.querySelector('[data-mn-editor-header="true"]');
         const properties = document.querySelector('[data-mn-properties-panel="true"]');
         const firstBlock = document.querySelector('.mn-block-row');
+        const saveStatus = document.querySelector('[data-mn-editor-save-status="true"]');
         const activeNoteRow = document.querySelector('[data-mn-note-row-active="true"]');
         const primaryCreate = document.querySelector('[data-mn-primary-create="true"]');
         const floatingCapture = [...document.querySelectorAll('button')]
@@ -914,14 +915,19 @@ async function runEditorUsabilityScenario(win) {
         return {
           ok: Boolean(title && header && firstBlock)
             && !properties
-            && !document.querySelector('[data-mn-editor-save-status="true"]')
+            // Save state is a persistent status pill in the design system, so
+            // it is present (and politely announced) even when everything is
+            // saved. State is stated, not hidden.
+            && Boolean(saveStatus)
+            && saveStatus.getAttribute('aria-live') === 'polite'
             && header.textContent.includes('0 words')
             && headerButtons.some(button => button.aria === 'Pin note' && !button.text)
             && headerButtons.some(button => button.aria === 'More note actions' && !button.text)
             && !headerButtons.some(button => ['Duplicate note', 'Version history', 'Delete note', 'Open Graph', 'Open Agenda'].includes(button.text))
             && Boolean(primaryCreate)
             && !floatingCapture
-            && (!activeNoteRow || activeNoteRow.style.boxShadow === 'none'),
+            // Exactly one row lifts off the pane: the selected one.
+            && (!activeNoteRow || activeNoteRow.style.boxShadow !== 'none'),
           title: title?.value || '',
           properties: Boolean(properties),
           headerText: header?.textContent || '',
@@ -1008,7 +1014,7 @@ async function runValueHardeningSurfaceScenario(win) {
           open: Boolean(dialog),
           folder: text.includes('Vault folder'),
           backup: text.includes('Last backup'),
-          health: text.includes('Vault Health'),
+          health: text.includes('Vault health'),
           backupAction: text.includes('Back up now'),
         };
       })()
@@ -1464,7 +1470,7 @@ async function runSearchAndClearScenario(win) {
     const current = await state(win);
     return { ok: current.text.includes('All notes'), current };
   });
-  await setControlByPlaceholder(win, 'Search note contents', 'QE User Scenario');
+  await setControlByPlaceholder(win, 'Filter this list', 'QE User Scenario');
   await waitFor(win, 'search filters to user scenario note', async () => {
     const current = await state(win);
     return { ok: current.text.includes('Search') && current.text.includes(title), current };
@@ -2031,7 +2037,7 @@ async function runThemeAccessibilityScenario(win) {
 async function runDeleteRestoreScenario(win) {
   const title = 'QE User Scenario Note';
   await clickVisibleText(win, 'All notes');
-  await setControlByPlaceholder(win, 'Search note contents', title);
+  await setControlByPlaceholder(win, 'Filter this list', title);
   await waitFor(win, 'delete target visible in note search', async () => {
     const current = await state(win);
     return { ok: current.text.includes(title), current };

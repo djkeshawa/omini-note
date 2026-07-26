@@ -163,7 +163,8 @@ test('Note tag picker can create new tags from the editor', () => {
   assert.match(sidebar, /onNewTag && onNewTag\(name\)/);
   assert.match(sidebar, /onDeleteTag/);
   assert.match(sidebar, /openTagMenu\(e, tag\.name\)/);
-  assert.match(sidebar, /title="Remove tag"/);
+  // Removing a tag is destructive, so it lives in the context menu rather than
+  // on the row itself. openTagMenu above is the affordance that reaches it.
   assert.match(sidebar, /Remove tag/);
   assert.match(sidebar, /if \(newTagName\.trim\(\)\) return/);
   assert.match(sidebar, /tagCreatorRef\.current\?\.contains\(e\.target\)/);
@@ -278,7 +279,8 @@ test('Reminder center and spellcheck wiring are visible in app shell', () => {
   assert.match(appShell, /const visibleItems = items/);
   assert.doesNotMatch(appShell, /items\.slice\(0, 12\)/);
   assert.match(editorHeader, /data-mn-editor-header="true"/);
-  assert.match(editorHeader, /minHeight: 50/);
+  // Pane header is 46px in the design system (DS_HEIGHT.paneHeader).
+  assert.match(editorHeader, /height: DS_HEIGHT\.paneHeader/);
   assert.match(editorHeader, /borderBottom: `1px solid \$\{T\.lineSub\}`/);
 
   assert.match(editor, /spellCheck=\{spellCheck\}/);
