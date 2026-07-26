@@ -1,6 +1,7 @@
 // Editor pane: VispNote block outliner with focused title, tags, metadata, and connections.
 
 import { DS_PANE } from '../shared/designSystem.js';
+import { useResponsiveLayout } from '../shared/layout/useResponsiveLayout.js';
 import {
   cleanPropertyKey,
   ConnectionsSection,
@@ -47,6 +48,7 @@ function MnEditor({
   onCreateAssistanceOutput,
   theme, T,
 }) {
+  const { connectionsRail } = useResponsiveLayout();
   const [showTags, setShowTags] = useStateE(false);
   const [tagDraft, setTagDraft] = useStateE('');
   const tagButtonRef = useRefE(null);
@@ -160,6 +162,12 @@ function MnEditor({
     + passiveRelatedItems.length
     + connected.items.length;
   const metadataPropertyCount = visibleMetadataProperties.length + (hasStatusRow ? 1 : 0);
+
+  const connectionsProps = {
+    suggestedConnections, backlinks, mentions, passiveRelatedItems, connected, related,
+    onOpen, onLinkMention, linkMention, note,
+    acceptSuggestedConnection, ignoreSuggestedConnection, T,
+  };
 
   const revealConnections = () => {
     setConnectionsOpen(true);
@@ -300,7 +308,13 @@ function MnEditor({
         )}
       />
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 clamp(18px, 4.5vw, 56px) 44px' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+      {/* Frame 1b draws 34px above the title and a 40px gutter. The gutter
+          only shrinks below the design width, never grows past it. */}
+      <div style={{
+        flex: 1, minWidth: 0, overflow: 'auto',
+        padding: `34px clamp(20px, 3vw, ${DS_PANE.editorGutter}px) 44px`,
+      }}>
         <div ref={editorSearchScopeRef} style={{
           // The default caps at the design system's prose measure; wider
           // settings stay available as deliberate overrides.
@@ -308,7 +322,7 @@ function MnEditor({
                   : editorWidth === 'wide' ? 1280
                   : editorWidth === 'full' ? 'none'
                   : DS_PANE.editorColumn,
-          margin: '0 auto', paddingTop: 22,
+          margin: '0 auto',
           fontSize: fontSize === 'small' ? '13px' : fontSize === 'large' ? '16px' : '14.5px',
         }}>
           <MnContextualTip tip={contextualTip} onDismiss={onDismissContextualTip} T={T} />
@@ -554,27 +568,29 @@ function MnEditor({
             T={T}
           />
 
-          <div ref={connectionsRef}>
-            <ConnectionsSection
-              suggestedConnections={suggestedConnections}
-              backlinks={backlinks}
-              mentions={mentions}
-              passiveRelatedItems={passiveRelatedItems}
-              connected={connected}
-              related={related}
-              onOpen={onOpen}
-              onLinkMention={onLinkMention}
-              linkMention={linkMention}
-              note={note}
-              acceptSuggestedConnection={acceptSuggestedConnection}
-              ignoreSuggestedConnection={ignoreSuggestedConnection}
-              expanded={connectionsOpen}
-              onExpandedChange={setConnectionsOpen}
-              T={T}
-            />
-          </div>
+          {/* Below the rail breakpoint connections fall back to the accordion
+              under the note, so they are never simply unreachable. */}
+          {!connectionsRail && (
+            <div ref={connectionsRef}>
+              <ConnectionsSection {...connectionsProps} expanded={connectionsOpen} onExpandedChange={setConnectionsOpen} />
+            </div>
+          )}
 
         </div>
+      </div>
+        {connectionsRail && connectionCount > 0 && (
+          <aside
+            ref={connectionsRef}
+            aria-label="Connections"
+            style={{
+              width: DS_PANE.connections, flexShrink: 0,
+              borderLeft: `1px solid ${T.lineSub}`, background: T.bgSub,
+              padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 18,
+              overflow: 'hidden', boxSizing: 'border-box',
+            }}>
+            <ConnectionsSection {...connectionsProps} rail onOpenGraph={onOpenGraph} />
+          </aside>
+        )}
       </div>
       {toast && (
         <div style={{

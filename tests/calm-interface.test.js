@@ -38,7 +38,11 @@ test('advanced note tools stay available through progressive disclosure', () => 
   assert.match(properties, /aria-label="Add property"/);
   assert.match(connections, /data-mn-connections-toggle="true"/);
   assert.match(connections, /aria-expanded=\{expanded\}/);
-  assert.match(connections, /\{expanded && \(\s*<div id="mn-connections-panel"/);
+  // In the rail the panel is always open, so the gate is `open` (rail ||
+  // expanded) rather than `expanded` alone. The accordion still gates on the
+  // toggle below the rail breakpoint.
+  assert.match(connections, /const open = rail \|\| expanded;/);
+  assert.match(connections, /\{open && \(\s*<div\s+id="mn-connections-panel"/);
 });
 
 test('editor chrome stays quiet while preserving accessible actions and live status', () => {

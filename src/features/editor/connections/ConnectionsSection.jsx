@@ -46,7 +46,7 @@ function mnConnectionRowStyle(T) {
 function ConnectionsSection({
   suggestedConnections, backlinks, mentions, passiveRelatedItems, connected, related,
   onOpen, onLinkMention, linkMention, note, acceptSuggestedConnection, ignoreSuggestedConnection,
-  expanded = false, onExpandedChange, T,
+  expanded = false, onExpandedChange, rail = false, onOpenGraph, T,
 }) {
   const connectionCount = suggestedConnections.length
     + backlinks.length
@@ -56,8 +56,34 @@ function ConnectionsSection({
 
   if (!connectionCount) return null;
 
+  // In the rail the panel is permanent, so the disclosure would be a control
+  // that can only ever do one thing. The header becomes a title instead.
+  const open = rail || expanded;
+
   return (
-    <section data-mn-connections-section="true" style={{ marginTop: 34, borderTop: `1px solid ${T.lineSub}` }}>
+    <section
+      data-mn-connections-section="true"
+      data-mn-connections-rail={rail ? 'true' : undefined}
+      style={rail
+        ? { display: 'flex', flexDirection: 'column', gap: 4, minHeight: 0 }
+        : { marginTop: 34, borderTop: `1px solid ${T.lineSub}` }}>
+      {rail ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>Connections</span>
+          <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{connectionCount}</span>
+          <span style={{ flex: 1 }} />
+          {onOpenGraph && (
+            <button
+              type="button"
+              onClick={onOpenGraph}
+              style={{
+                height: 22, padding: '0 8px', borderRadius: 6,
+                border: `1px solid ${T.lineSub}`, background: T.bg, color: T.inkMed,
+                fontFamily: 'var(--mn-ui)', fontSize: 11, cursor: 'pointer',
+              }}>Graph</button>
+          )}
+        </div>
+      ) : (
       <button
         type="button"
         data-mn-connections-toggle="true"
@@ -83,9 +109,15 @@ function ConnectionsSection({
         <span style={{ fontSize: 12.5, fontWeight: 650 }}>Connections</span>
         <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>{connectionCount}</span>
       </button>
+      )}
 
-      {expanded && (
-        <div id="mn-connections-panel" data-mn-connections-panel="true" style={{ padding: '2px 0 10px 20px' }}>
+      {open && (
+        <div
+          id="mn-connections-panel"
+          data-mn-connections-panel="true"
+          style={rail
+            ? { minHeight: 0, overflow: 'auto', paddingRight: 2 }
+            : { padding: '2px 0 10px 20px' }}>
           {suggestedConnections.length > 0 && (
             <div style={{ marginBottom: 18 }}>
               <div style={mnConnectionGroupLabelStyle(T)}>Suggested links</div>

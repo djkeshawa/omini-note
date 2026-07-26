@@ -569,7 +569,10 @@ function MnNoteList({
       </div>
 
       {/* List */}
-      <div role="listbox" aria-label={`${title} notes`} style={{ flex: 1, overflow: 'auto', padding: '5px 0 12px' }}>
+      <div role="listbox" aria-label={`${title} notes`} style={{
+        flex: 1, overflow: 'auto', padding: '0 8px 12px',
+        display: 'flex', flexDirection: 'column', gap: 2,
+      }}>
         {notes.length === 0 && (query ? (
           <DsEmptyState
             T={T}
