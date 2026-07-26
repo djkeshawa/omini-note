@@ -1,3 +1,4 @@
+import { DS_PANE, DS_RADIUS, dsMachineStyle } from '../shared/designSystem.js';
 // Ask AI chat history and shared UI helpers.
 
 const { useState: useStateAI, useEffect: useEffectAI } = React;
@@ -53,7 +54,7 @@ function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDele
 
   return (
     <aside style={{
-      width: 264,
+      width: DS_PANE.aiChatList,
       height: '100%',
       borderRight: `1px solid ${T.line}`,
       background: T.bgSub,
@@ -63,33 +64,42 @@ function MnAiChatHistory({ sessions = [], activeId = '', onSelect, onNew, onDele
       minWidth: 0,
       position: 'relative',
     }}>
+      {/* Title and filter are one block: what you are looking at, and which
+          slice of it. */}
       <div style={{
-        padding: '12px 12px 10px',
-        borderBottom: `1px solid ${T.lineSub}`,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
+        padding: '14px 12px 12px',
+        display: 'flex', flexDirection: 'column', gap: 10,
       }}>
-        <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 650, color: T.ink }}>AI chats</div>
-        <button onClick={onNew} title="New AI chat" style={iconBtn(T)}>
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
-            <path d="M8 3V13M3 8H13" strokeLinecap="round"/>
-          </svg>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: T.ink }}>AI chats</span>
+          <button
+            onClick={onNew}
+            title="New AI chat"
+            style={{
+              height: 26, padding: '0 9px', borderRadius: DS_RADIUS.control,
+              border: `1px solid ${T.selLine}`, background: T.accentSoft, color: T.accent,
+              fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+            }}>
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+              <path d="M6 2.5v7M2.5 6h7" strokeLinecap="round"/>
+            </svg>
+            New
+          </button>
+        </div>
+        <div style={{
+          display: 'flex', padding: 2, borderRadius: DS_RADIUS.control,
+          background: T.bgElevated || T.bg, border: `1px solid ${T.lineSub}`,
+        }}>
+          <MnAiTabPill active={!showArchived} onClick={() => setShowArchived(false)} T={T} title="Show active chats">
+            Active <span style={dsMachineStyle(T)}>{activeCount}</span>
+          </MnAiTabPill>
+          <MnAiTabPill active={showArchived} onClick={() => setShowArchived(true)} T={T} title="Show archived chats">
+            Archived <span style={dsMachineStyle(T)}>{archivedCount}</span>
+          </MnAiTabPill>
+        </div>
       </div>
-      <div style={{
-        display: 'flex',
-        gap: 4,
-        padding: '8px 10px 0',
-      }}>
-        <MnAiTabPill active={!showArchived} onClick={() => setShowArchived(false)} T={T} title="Show active chats">
-          Active <span style={{ opacity: 0.55, marginLeft: 3 }}>{activeCount}</span>
-        </MnAiTabPill>
-        <MnAiTabPill active={showArchived} onClick={() => setShowArchived(true)} T={T} title="Show archived chats">
-          Archived <span style={{ opacity: 0.55, marginLeft: 3 }}>{archivedCount}</span>
-        </MnAiTabPill>
-      </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '8px 8px 10px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {visibleSessions.map(session => {
           const active = session.id === activeId;
           const renaming = session.id === renameId;
@@ -285,15 +295,20 @@ function MnAiTabPill({ active, onClick, children, T, title }) {
       onClick={onClick}
       title={title}
       style={{
+        // A segment inside the filter, not a pill of its own: the container
+        // already draws the border.
         flex: 1,
-        padding: '5px 9px',
-        border: `1px solid ${active ? T.selLine : T.lineSub}`,
-        background: active ? T.accentSoft : T.bg,
-        color: active ? T.accent : T.inkMed,
-        borderRadius: 6,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+        minHeight: 24,
+        padding: '0 9px',
+        border: 'none',
+        background: active ? (T.bgSub) : 'transparent',
+        color: active ? T.ink : T.inkMed,
+        borderRadius: DS_RADIUS.icon,
+        boxShadow: active ? `0 1px 2px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
         fontFamily: 'var(--mn-ui)',
         fontSize: 11.5,
-        fontWeight: 600,
+        fontWeight: active ? 600 : 500,
         cursor: 'pointer',
       }}>
       {children}
