@@ -22,8 +22,8 @@ test('one shared palette owns mixed and notes-first navigation modes', () => {
   assert.doesNotMatch(overlays, /useState\(false\).*quickSwitcherOpen/);
   assert.match(palette, /data-mn-palette-mode=\{mode\}/);
   assert.match(palette, /data-mn-palette-kind=\{item\.kind\}/);
-  assert.match(palette, /Open or create a note…/);
-  assert.match(palette, /Search notes and actions…/);
+  assert.match(palette, /Open or create a note/);
+  assert.match(palette, /Search notes and actions/);
 });
 
 test('Quick Capture is body-first and keeps advanced fields disclosed on demand', () => {

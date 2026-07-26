@@ -253,11 +253,7 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, graphFilter = 
         background: T.bg,
       }}>
         <div style={{ minWidth: 0, flex: '1 1 auto' }}>
-          <div style={{
-            fontFamily: 'var(--mn-mono)', fontSize: 10.5,
-            letterSpacing: '0.12em', textTransform: 'uppercase',
-            color: T.inkDim,
-          }}>Graph</div>
+          <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>Graph</div>
           <div style={{
             fontFamily: 'var(--mn-ui)', fontSize: 12.5,
             color: T.inkMed, marginTop: 2,
