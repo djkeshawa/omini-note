@@ -145,8 +145,8 @@ function Stat({ T, label, value }) {
         color: T.ink, letterSpacing: 0, lineHeight: 1,
       }}>{value}</div>
       <div style={{
-        fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
-        letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 4,
+        fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim,
+          marginTop: 4,
       }}>{label}</div>
     </div>
   );

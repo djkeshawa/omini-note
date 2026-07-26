@@ -141,8 +141,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
               border: `1px solid ${T.lineSub}`, minHeight: 400,
             }}>
               <div style={{
-                fontFamily: 'var(--mn-mono)', fontSize: 10,
-                letterSpacing: '0.12em', textTransform: 'uppercase',
+                fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11,
                 color: T.inkDim, margin: '2px 4px 10px',
                 display: 'flex', justifyContent: 'space-between',
               }}>

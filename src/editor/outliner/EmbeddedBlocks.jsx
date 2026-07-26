@@ -125,16 +125,14 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeK
           gap: 8,
           padding: '9px 10px',
           borderBottom: block.hidden ? 'none' : `1px solid ${T.lineSub}`,
-          fontFamily: 'var(--mn-mono)',
-          fontSize: 10,
+          fontFamily: 'var(--mn-ui)', fontWeight: 600,
+          fontSize: 11,
           color: T.inkDim,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
         }}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
             <path d="M1.5 8C3 3.5 5 3.5 6.5 8S10 12.5 11.5 8 14 3.5 15 8" strokeLinecap="round"/>
           </svg>
-          <span style={{ color: T.ink }}>PLOT POINTS</span>
+          <span style={{ color: T.ink }}>Plot points</span>
           <span style={{ opacity: 0.75 }}>Depth {depth}</span>
           <div style={{ flex: 1 }} />
           {aiActive && (

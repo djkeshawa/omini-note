@@ -63,8 +63,8 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
       }}>
         <div style={{
           padding: '10px 14px', borderBottom: `1px solid ${T.lineSub}`,
-          fontFamily: 'var(--mn-mono)', fontSize: 10.5,
-          color: T.inkDim, letterSpacing: '0.08em', textTransform: 'uppercase',
+          fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11,
+          color: T.inkDim,
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">

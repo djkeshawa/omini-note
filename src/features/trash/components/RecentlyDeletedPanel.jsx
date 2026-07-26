@@ -1,4 +1,6 @@
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
+import { DS_RADIUS } from '../../../shared/designSystem.js';
+import { DsEmptyState } from '../../../shared/components/DesignPrimitives.jsx';
 
 function MnRecentlyDeletedPanel({
   items = [], loading = false, error = '', onRefresh, onRestore, onPurge, T,
@@ -43,7 +45,7 @@ function MnRecentlyDeletedPanel({
       padding: '10px 12px',
       minWidth: 0,
     }}>
-      <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim, }}>{label}</div>
       <div style={{ marginTop: 4, fontSize: 20, fontWeight: 720, color: T.ink }}>{value}</div>
     </div>
   );
@@ -113,13 +115,20 @@ function MnRecentlyDeletedPanel({
         {!loading && total === 0 && !error && (
           <div style={{
             border: `1px dashed ${T.line}`,
-            borderRadius: 10,
+            borderRadius: DS_RADIUS.row,
             background: T.bgSub,
-            padding: '34px 18px',
-            textAlign: 'center',
           }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>No deleted items</div>
-            <div style={{ marginTop: 6, fontSize: 13, color: T.inkDim }}>Notes and canvases you delete will appear here until cleanup.</div>
+            <DsEmptyState
+              T={T}
+              tone="success"
+              icon={(
+                <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true">
+                  <path d="M3 4.5H13M6 4.5V3C6 2.5 6.5 2 7 2H9C9.5 2 10 2.5 10 3V4.5M5 4.5V13C5 13.5 5.5 14 6 14H10C10.5 14 11 13.5 11 13V4.5" strokeLinecap="round"/>
+                </svg>
+              )}
+              headline="No deleted items"
+              body="Notes and canvases you delete will appear here until cleanup."
+            />
           </div>
         )}
 

@@ -32,10 +32,8 @@ function MnCanvasPicker({ canvases = [], onPick, onCreate, onClose, T }) {
       }}>
       <div style={{
         padding: '6px 8px',
-        fontFamily: 'var(--mn-mono)',
-        fontSize: 10,
-        textTransform: 'uppercase',
-        letterSpacing: '0.08em',
+        fontFamily: 'var(--mn-ui)', fontWeight: 600,
+        fontSize: 11,
         color: T.inkDim,
       }}>Attach canvas</div>
       <button

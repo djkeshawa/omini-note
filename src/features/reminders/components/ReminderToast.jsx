@@ -51,9 +51,9 @@ function MnReminderToast({ toast, onDismiss, onSnooze, onOpen, T, variant }) {
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-        color: T.warn, letterSpacing: '0.1em', textTransform: 'uppercase',
-        marginBottom: compact ? 6 : 8, fontWeight: 600,
+        fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11,
+        color: T.warn,
+        marginBottom: compact ? 6 : 8,
       }}>
         <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
           <circle cx="8" cy="9" r="5.5"/><path d="M8 6V9L10 10" strokeLinecap="round"/>

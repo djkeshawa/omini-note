@@ -11,7 +11,9 @@ function MnBootLogo() {
     <div className="mn-boot-brand" aria-label="VispNote">
       <img className="mn-boot-logo" src="assets/vispnote-loading-transparent.png" alt="VispNote" />
       <div className="mn-boot-title mn-boot-wordmark">VispNote</div>
-      <div className="mn-boot-tagline"><span>Write</span><i /><span>Connect</span><i /><span>Act</span></div>
+      <div className="mn-boot-tagline" style={{
+        fontFamily: 'var(--mn-body)', fontSize: 15, letterSpacing: 0, textTransform: 'none',
+      }}>Write, connect, act</div>
     </div>
   );
 }
@@ -105,6 +107,15 @@ function MnLaunchScreen({ state, error, onRetry, onOpenDataFolder, T }) {
             </details>
           </div>
         )}
+      </div>
+      {/* Say the consequence: this is the whole promise of a local-first app. */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 26,
+        display: 'flex', justifyContent: 'center', pointerEvents: 'none',
+      }}>
+        <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: '#667187' }}>
+          Nothing leaves this machine
+        </span>
       </div>
     </div>
   );

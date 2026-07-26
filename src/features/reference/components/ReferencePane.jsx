@@ -27,7 +27,7 @@ function ReferencePane({ note, notes = [], onSelect, onOpenAsMain, onOpenLink, o
       <div style={{ padding: '14px 14px 12px', borderBottom: `1px solid ${T.lineSub}`, background: T.bgElevated || T.bg }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Reference</div>
+            <div style={{ fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim, }}>Reference</div>
             <div style={{ marginTop: 2, fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 720, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {note?.title || 'Choose a note'}
             </div>

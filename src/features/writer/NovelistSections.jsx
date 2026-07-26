@@ -12,7 +12,7 @@ function NovelistStatusSection({ T, totalDraftWords, averageWordsPerScene, unlin
             ['Scene completion', `${completionCoverage}%`],
           ].map(([label, value]) => (
             <div key={label} style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bgSub, padding: 10 }}>
-              <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase' }}>{label}</div>
+              <div style={{ fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim, }}>{label}</div>
               <div style={{ marginTop: 5, fontFamily: 'var(--mn-ui)', fontSize: 22, fontWeight: 740, color: T.ink }}>{value}</div>
             </div>
           ))}
@@ -96,7 +96,7 @@ function NovelistAiConfigurationSection({ T, aiConfig, addAiPrompt, aiWordLimitD
       </div>
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bgSub, padding: 10 }}>
-          <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase', marginBottom: 8 }}>General</div>
+          <div style={{ fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim, marginBottom: 8 }}>General</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
             <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
               <span>Preset</span>
@@ -130,7 +130,7 @@ function NovelistAiConfigurationSection({ T, aiConfig, addAiPrompt, aiWordLimitD
           </div>
         </div>
         <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bgSub, padding: 10 }}>
-          <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase', marginBottom: 8 }}>Instructions</div>
+          <div style={{ fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim, marginBottom: 8 }}>Instructions</div>
           <div style={{ display: 'grid', gap: 8 }}>
             <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
               <span>Words</span>
@@ -155,7 +155,7 @@ function NovelistAiConfigurationSection({ T, aiConfig, addAiPrompt, aiWordLimitD
           </div>
         </div>
         <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: 7, background: T.bgSub, padding: 10 }}>
-          <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim, textTransform: 'uppercase', marginBottom: 8 }}>Advanced</div>
+          <div style={{ fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11, color: T.inkDim, marginBottom: 8 }}>Advanced</div>
           <div style={{ display: 'grid', gap: 8 }}>
             <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
               <span>System message</span>

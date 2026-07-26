@@ -148,6 +148,7 @@ function AppView({ model }) {
                   subtitle={noteListSubtitle}
                   query={query}
                   onQueryChange={setQuery}
+                  onCreateNote={createNote}
                   novelistStructure={activeVault?.novelistMode && view === 'notes' && !query.trim() && !selectedTag && !selectedWorkflow ? novelistStructure : null}
                   allNotes={notesWithBody}
                   onRenameNote={renameNoteTitle}

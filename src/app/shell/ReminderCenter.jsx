@@ -1,4 +1,5 @@
 import MN_APP_SHELL_HELPERS from '../appHelpers.js';
+import { DsEmptyState } from '../../shared/components/DesignPrimitives.jsx';
 
 function mnReminderDisplayDate(item) {
   return MN_APP_SHELL_HELPERS.reminderDisplayDate ? MN_APP_SHELL_HELPERS.reminderDisplayDate(item) : '';
@@ -119,13 +120,17 @@ function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote
             </div>
             <div style={{ overflow: 'auto', padding: 6 }}>
               {visibleItems.length === 0 ? (
-                <div style={{
-                  padding: '26px 16px',
-                  textAlign: 'center',
-                  color: T.inkDim,
-                  fontFamily: 'var(--mn-ui)',
-                  fontSize: 12.5,
-                }}>No reminders in this vault</div>
+                <DsEmptyState
+                  T={T}
+                  compact
+                  icon={(
+                    <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+                      <path d="M4 11V7C4 5 5.5 3.5 8 3.5C10.5 3.5 12 5 12 7V11L13 12.5H3L4 11Z" strokeLinejoin="round" /><path d="M7 14H9" strokeLinecap="round" />
+                    </svg>
+                  )}
+                  headline="No reminders in this vault"
+                  body="Add @remind followed by a date to any block and it will show up here."
+                />
               ) : visibleItems.map(item => (
                 <button
                   key={item.key}
@@ -157,12 +162,9 @@ function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote
                     marginBottom: 3,
                   }}>
                     <span style={{
-                      fontFamily: 'var(--mn-mono)',
-                      fontSize: 9.5,
+                      fontFamily: 'var(--mn-ui)', fontWeight: 600,
+                      fontSize: 11,
                       color: item.status === 'due' ? T.warn : T.inkDim,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      fontWeight: 600,
                     }}>{mnReminderStatusLabel(item.status)}</span>
                     <span style={{
                       fontFamily: 'var(--mn-mono)',

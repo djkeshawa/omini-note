@@ -356,10 +356,9 @@ function SectionData({
               <label style={{
                 display: 'block',
                 marginTop: 12,
-                fontFamily: 'var(--mn-mono)',
-                fontSize: 10.5,
+                fontFamily: 'var(--mn-ui)', fontWeight: 600,
+                fontSize: 11,
                 color: T.inkDim,
-                textTransform: 'uppercase',
               }}>Type vault name to confirm</label>
               <input
                 autoFocus
