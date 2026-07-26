@@ -13,8 +13,11 @@ test('note browsing uses a flat list with one visually primary creation action',
   const view = source('src/app/AppView.jsx');
 
   assert.match(noteList, /data-mn-note-row="true"/);
-  assert.match(noteList, /background: active \? T\.selBg : 'transparent'/);
-  assert.match(noteList, /boxShadow: 'none'/);
+  // Unselected rows stay flat and transparent; only the selected row lifts,
+  // as an elevated card with a selLine border and a 2.5px accent bar.
+  assert.match(noteList, /background: active \? \(T\.bgElevated \|\| T\.bg\) : 'transparent'/);
+  assert.match(noteList, /boxShadow: active \? `0 2px 8px/);
+  assert.match(noteList, /: 'none'/);
   assert.match(sidebar, /data-mn-primary-create="true"/);
   assert.match(sidebar, /label="Quick capture" hint=\{quickCaptureShortcut\}/);
   assert.match(view, /onOpenQuickCapture=\{\(\) => setCaptureOpen\(true\)\}/);
@@ -44,7 +47,11 @@ test('editor chrome stays quiet while preserving accessible actions and live sta
   const outliner = source('src/editor/outliner/MnOutlinerView.jsx');
   const html = source('vispnote.html');
 
-  assert.match(header, /saveStatus !== 'Saved'/);
+  // Save state is now a persistent status pill (dot + sentence-case word)
+  // rather than text that only appears when something is wrong. It stays a
+  // polite live region so it is announced without stealing focus.
+  assert.match(header, /<DsStatusPill tone=\{SAVE_TONES\[saveStatus\] \|\| 'neutral'\}/);
+  assert.match(header, /aria-live="polite"/);
   assert.match(header, /label=\{note\.pinned \? 'Unpin note' : 'Pin note'\}[\s\S]*iconOnly/);
   assert.match(header, /label="More note actions"[\s\S]*iconOnly/);
   assert.match(assistance, /aria-label=\{triggerLabel\}/);

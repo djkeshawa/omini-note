@@ -43,6 +43,6 @@ test('Quick Capture is body-first and keeps advanced fields disclosed on demand'
 test('note-list search explicitly promises full-content search', () => {
   const noteList = source('src/panels/notelist.jsx');
   assert.match(noteList, /aria-label="Search note contents"/);
-  assert.match(noteList, /placeholder="Search note contents…"/);
+  assert.match(noteList, /placeholder="Filter this list"/);
   assert.doesNotMatch(noteList, /placeholder="Search notes…"/);
 });

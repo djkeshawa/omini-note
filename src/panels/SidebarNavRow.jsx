@@ -1,9 +1,18 @@
-function SidebarNavRow({ icon, label, count, hint = '', active, onClick, accent, T, pad }) {
+// Sidebar navigation row — the "selected row" pattern from the design system.
+// selBg fill, selLine border, 2.5px accent bar inset left. One per pane.
+
+function SidebarNavRow({
+  icon, label, count, hint = '', badge = false, active, onClick, accent, T,
+  height = DS_HEIGHT.navRow, fontSize,
+}) {
   const activate = event => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     onClick?.();
   };
+
+  const rowStyle = dsSelectedRow(T, active, { height });
+  const barInset = Math.max(4, Math.round((height - 20) / 2));
 
   return (
     <div
@@ -13,37 +22,40 @@ function SidebarNavRow({ icon, label, count, hint = '', active, onClick, accent,
       aria-label={`${label}${count != null ? `, ${count}` : ''}${hint ? `, ${hint}` : ''}`}
       onClick={onClick}
       onKeyDown={activate}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: `${pad.py}px 10px`, margin: '0 6px', borderRadius: 6,
-        minHeight: 28, boxSizing: 'border-box', cursor: 'pointer', userSelect: 'none',
-        background: active ? T.selBg : 'transparent',
-        border: `1px solid ${active ? T.selLine : 'transparent'}`,
-        color: active ? T.ink : T.inkMed,
-        fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: active ? 500 : 400,
-        transition: 'background 80ms',
-      }}
+      style={fontSize ? { ...rowStyle, fontSize } : rowStyle}
       onMouseEnter={event => !active && (event.currentTarget.style.background = T.bgHover)}
       onMouseLeave={event => !active && (event.currentTarget.style.background = 'transparent')}>
+      {active && <span style={dsSelectedBarStyle(T, barInset)} />}
       <span style={{
-        width: 14, height: 14, display: 'inline-flex', alignItems: 'center',
-        justifyContent: 'center', color: accent || T.inkDim,
+        width: 16, height: 16, flexShrink: 0, display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center',
+        color: accent || (active ? T.accent : T.inkDim),
       }}>{icon}</span>
-      <span style={{ flex: 1, color: 'inherit' }}>{label}</span>
+      <span style={{
+        flex: 1, minWidth: 0, color: 'inherit',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>{label}</span>
       {hint && (
-        <span aria-hidden="true" style={{
-          fontFamily: 'var(--mn-mono)', fontSize: 9.5, color: T.inkDim,
-        }}>{hint}</span>
+        <span aria-hidden="true" style={dsMachineStyle(T, T.inkDim)}>{hint}</span>
       )}
-      {count != null && (
-        <span style={{
-          fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-          padding: '1px 5px', borderRadius: 3,
-          background: active ? 'transparent' : T.bgSub,
-        }}>{count}</span>
+      {count != null && (badge
+        ? (
+          <span style={{
+            minWidth: 18, height: 18, padding: '0 6px', borderRadius: 9,
+            background: T.accent, color: T.bg,
+            fontFamily: 'var(--mn-mono)', fontSize: 10, fontWeight: 400,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>{count}</span>
+        )
+        : (
+          <span style={{
+            ...dsMachineStyle(T, active ? T.inkMed : T.inkDim), fontWeight: 400,
+          }}>{count}</span>
+        )
       )}
     </div>
   );
 }
 
 export { SidebarNavRow };
+import { DS_HEIGHT, dsMachineStyle, dsSelectedBarStyle, dsSelectedRow } from '../shared/designSystem.js';

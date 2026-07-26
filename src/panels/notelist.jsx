@@ -1,6 +1,7 @@
 // Middle pane: list of notes (filtered). Click to select.
 import { MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES } from '../editor/blockFeatures.jsx';
-import { mnGetTagBg, mnGetTagColor } from '../shared/theme.jsx';
+import { mnGetTagColor } from '../shared/theme.jsx';
+import { DS_RADIUS, dsMachineStyle, dsPaneWidth } from '../shared/designSystem.js';
 
 const { useMemo: useMemoL, useState: useStateL, useEffect: useEffectL } = React;
 
@@ -227,20 +228,25 @@ function MnNoteList({
           setMenu({ x: e.clientX, y: e.clientY, note: n });
         }}
         style={{
-          padding: density === 'compact' || compact ? '8px 11px' : '11px 12px',
-          paddingLeft: 16 + depth * 16,
-          margin: '0 8px 2px',
-          border: 'none',
-          borderBottom: `1px solid ${active ? 'transparent' : T.lineSub}`,
-          borderRadius: 7,
+          padding: density === 'compact' || compact ? '8px 11px' : '10px 12px',
+          paddingLeft: 12 + depth * 16,
+          margin: '0 0 2px',
+          border: `1px solid ${active ? T.selLine : 'transparent'}`,
+          borderRadius: DS_RADIUS.row,
           cursor: 'pointer',
-          background: active ? T.selBg : 'transparent',
+          background: active ? (T.bgElevated || T.bg) : 'transparent',
           position: 'relative',
-          boxShadow: 'none',
+          boxShadow: active ? `0 2px 8px color-mix(in oklab, ${T.ink} 6%, transparent)` : 'none',
           transition: 'background 100ms ease',
         }}
         onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
         onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
+        {active && (
+          <span style={{
+            position: 'absolute', left: 0, top: 12, bottom: 12,
+            width: 2.5, borderRadius: '0 2px 2px 0', background: T.accent,
+          }} />
+        )}
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           {n.pinned && (
             <svg width="9" height="9" viewBox="0 0 10 10" fill={T.accent}>
@@ -291,32 +297,31 @@ function MnNoteList({
         </div>
         {density !== 'compact' && !compact && (
           <div style={{
-            fontFamily: 'var(--mn-body)', fontSize: 12.5,
+            fontFamily: 'var(--mn-body)', fontSize: 13,
             color: T.inkMed, lineHeight: 1.5,
-            marginTop: 4, display: '-webkit-box',
+            marginTop: 3, display: '-webkit-box',
             WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
           }}>{mnHighlight(String(n.__searchSnippet || '').replace(/<\/?mark>/g, '') || mnSnippet(n.body, query), query, T)}</div>
         )}
         {!compact && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
             {query && Array.isArray(n.__matchedFields) && n.__matchedFields.length > 0 && (
               <span style={{
-                fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-                letterSpacing: '0.03em',
-                color: T.accent,
-                padding: '1px 6px', borderRadius: 3,
-                background: T.accentSoft,
+                fontFamily: 'var(--mn-ui)', fontSize: 11, color: T.accent,
               }}>{n.__matchedFields.join(', ')}</span>
             )}
             {(n.tags || []).map(t => (
-              <span key={t} style={{
-                fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-                letterSpacing: '0.03em',
-                color: mnGetTagColor(tagHue[t] ?? 240, theme),
-                padding: '1px 6px', borderRadius: 3,
-                background: mnGetTagBg(tagHue[t] ?? 240, theme),
-              }}>#{t}</span>
+              <React.Fragment key={t}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                  background: mnGetTagColor(tagHue[t] ?? 240, theme),
+                }} />
+                <span style={{
+                  fontFamily: 'var(--mn-ui)', fontSize: 11,
+                  color: active ? T.inkMed : T.inkDim,
+                }}>{t}</span>
+              </React.Fragment>
             ))}
           </div>
         )}
@@ -472,30 +477,30 @@ function MnNoteList({
 
   return (
     <div style={{
-      width: density === 'compact' ? 270 : 320, height: '100%',
+      width: dsPaneWidth('noteList', density), height: '100%',
       background: T.bgSub,
       borderRight: `1px solid ${T.line}`,
       display: 'flex', flexDirection: 'column', flexShrink: 0,
     }}>
       {/* Header */}
       <div style={{
-        padding: '20px 16px 12px', borderBottom: `1px solid ${T.lineSub}`,
-        background: T.bgSub,
+        padding: '16px 14px 12px', background: T.bgSub,
+        display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{
-          fontFamily: 'var(--mn-ui)', fontSize: 17, fontWeight: 600,
-          color: T.ink, letterSpacing: 0,
-        }}>{title}</div>
-        <div style={{
-          fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-          letterSpacing: '0.06em', marginTop: 4,
-        }}>{subtitle}</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <div style={{
+            fontFamily: 'var(--mn-ui)', fontSize: 17, fontWeight: 600,
+            color: T.ink, letterSpacing: '-0.01em',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{title}</div>
+          <div style={{ ...dsMachineStyle(T), flex: 1 }}>{subtitle}</div>
+        </div>
 
         {/* Search */}
         <div style={{
-          marginTop: 12, position: 'relative',
+          position: 'relative', height: 34,
           display: 'flex', alignItems: 'center',
-          background: T.bgInput || T.bgSub, borderRadius: 8,
+          background: T.bg, borderRadius: 9,
           border: `1px solid ${query ? T.selLine : T.lineSub}`,
           transition: 'border 120ms',
         }}>
@@ -509,10 +514,10 @@ function MnNoteList({
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') onQueryChange(''); }}
             aria-label="Search note contents"
-            placeholder="Search note contents…"
+            placeholder="Filter this list"
             style={{
               flex: 1, border: 'none', outline: 'none', background: 'transparent',
-              padding: '6px 26px 6px 28px',
+              padding: '0 26px 0 28px', height: '100%',
               fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.ink,
             }}
           />

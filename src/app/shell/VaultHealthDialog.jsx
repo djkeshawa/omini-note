@@ -36,7 +36,7 @@ function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 250, background: 'color-mix(in oklab, oklch(0.2 0.02 240) 32%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <section role="dialog" aria-modal="true" aria-labelledby="mn-vault-health-title" onClick={e => e.stopPropagation()} style={{ width: 'min(760px, 100%)', maxHeight: '86vh', overflow: 'auto', background: T.bg, color: T.ink, border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 28%, transparent)` }}>
         <div style={{ padding: 16, borderBottom: `1px solid ${T.lineSub}`, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div id="mn-vault-health-title" style={{ flex: 1, fontSize: 16, fontWeight: 720 }}>Vault Health</div>
+          <div id="mn-vault-health-title" style={{ flex: 1, fontSize: 15, fontWeight: 650 }}>Vault health</div>
           <button onClick={onRebuildIndex} style={mnSmallActionButton(T)}>Rebuild index</button>
           <button ref={closeRef} onClick={onClose} style={mnSmallActionButton(T)}>Close</button>
         </div>

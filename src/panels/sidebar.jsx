@@ -2,6 +2,7 @@ import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx'; i
 import { MnContextualTip } from '../features/onboarding/index.js';
 import { SidebarNavRow } from './SidebarNavRow.jsx';
 import { LocalStatusPopover } from './LocalStatusPopover.jsx';
+import { DS_HEIGHT, dsGroupLabelStyle, dsMachineStyle, dsPaneWidth, dsSelectedBarStyle, dsSelectedRow, mnSentenceCase } from '../shared/designSystem.js';
 const { useMemo: useMemoS } = React;
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
@@ -143,17 +144,14 @@ function MnSidebar({
     const open = !!openSections[sectionKey];
     return (
       <div onContextMenu={onContextMenu} style={{
-        padding: '0 10px',
-        margin: '0 6px',
+        height: 22, padding: '0 8px',
         display: 'flex', alignItems: 'center', gap: 4,
       }}>
         <button onClick={() => toggleSection(sectionKey)} style={{
           display: 'flex', alignItems: 'center', gap: 5,
-          flex: 1, padding: '4px 4px',
+          flex: 1, minWidth: 0, padding: 0,
           background: 'transparent', border: 'none', cursor: 'pointer',
-          color: T.inkDim, textAlign: 'left',
-          fontFamily: 'var(--mn-mono)', fontSize: 10,
-          letterSpacing: '0.12em', textTransform: 'uppercase',
+          textAlign: 'left', ...dsGroupLabelStyle(T),
         }}>
           <svg width="9" height="9" viewBox="0 0 12 12" fill="none" style={{
             transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
@@ -164,7 +162,7 @@ function MnSidebar({
           </svg>
           <span style={{ flex: 1 }}>{label}</span>
           {count != null && (
-            <span style={{ fontSize: 10, color: T.inkDim, opacity: 0.7 }}>{count}</span>
+            <span style={dsMachineStyle(T)}>{count}</span>
           )}
         </button>
         {action}
@@ -172,7 +170,12 @@ function MnSidebar({
     );
   };
 
-  const Row = props => <SidebarNavRow {...props} T={T} pad={pad} />;
+  // Nav rows are 34px at comfortable density; compact trims them to 30 so the
+  // density setting still shortens the sidebar.
+  const navRowHeight = density === 'compact' ? 30 : DS_HEIGHT.navRow;
+  // Tag and workflow rows sit one step below the primary destinations.
+  const subRowHeight = density === 'compact' ? 28 : 31;
+  const Row = props => <SidebarNavRow {...props} T={T} height={navRowHeight} />;
 
   const iconInbox = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 9L3 3H13L14 9" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M2 9V13H14V9H10.5L9.5 11H6.5L5.5 9H2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>);
   const iconToday = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5 2V4M11 2V4M2 7H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="8" cy="10.5" r="1.3" fill="currentColor"/></svg>);
@@ -188,7 +191,7 @@ function MnSidebar({
 
   return (
     <div style={{
-      width: density === 'compact' ? 220 : 260, height: '100%',
+      width: dsPaneWidth('sidebar', density), height: '100%',
       background: `color-mix(in oklab, ${T.bgSub} 94%, ${T.bgElevated || T.bg})`,
       borderRight: `1px solid ${T.line}`,
       display: 'flex', flexDirection: 'column', flexShrink: 0,
@@ -260,10 +263,7 @@ function MnSidebar({
                 marginBottom: 5,
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-                    letterSpacing: '0.12em', textTransform: 'uppercase', color: T.inkDim,
-                  }}>Switch vault</div>
+                  <div style={dsGroupLabelStyle(T)}>Switch vault</div>
                   <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.ink, marginTop: 2 }}>
                     {vaults.length} workspace{vaults.length === 1 ? '' : 's'}
                   </div>
@@ -468,9 +468,10 @@ function MnSidebar({
         <MnContextualTip tip={contextualTip} onDismiss={onDismissContextualTip} T={T} compact />
       </div>
 
-      <SectionHeader label="All Notes" sectionKey="allnotes" />
-      {openSections.allnotes && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
+      {/* The primary destinations carry no group label — the design keeps the
+          top of the sidebar quiet, and labels start at "More". */}
+      {(
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, marginTop: 4 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
                active={!selectedTag && !selectedWorkflow && !todayActive && !pinnedActive && !agendaActive && !graphActive && !smartViewsActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
                onClick={() => onSelectTag(null)} />
@@ -541,29 +542,21 @@ function MnSidebar({
             const count = workflowCounts?.[state.id] || 0;
             return (
               <div key={state.id} onClick={() => onSelectWorkflow(state.id)} style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: `${pad.py}px 10px`, margin: '0 6px', borderRadius: 6,
-                cursor: 'pointer', userSelect: 'none',
-                background: active ? T.selBg : 'transparent',
-                border: `1px solid ${active ? T.selLine : 'transparent'}`,
-                color: active ? T.ink : T.inkMed,
-                fontFamily: 'var(--mn-ui)', fontSize: 13,
-                transition: 'background 80ms',
+                ...dsSelectedRow(T, active, { height: subRowHeight }), fontSize: 13,
               }}
               onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
               onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
+                {active && <span style={dsSelectedBarStyle(T, 6)} />}
+                <span style={{ width: 16, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                  <span style={{
+                    width: 7, height: 7, borderRadius: '50%', background: state.color,
+                  }} />
+                </span>
                 <span style={{
-                  fontFamily: 'var(--mn-mono)', fontSize: 9.5, fontWeight: 700,
-                  color: state.color, background: state.bg,
-                  padding: '1px 5px', borderRadius: 3,
-                  minWidth: 42, textAlign: 'center',
-                }}>{state.id}</span>
-                <span style={{ flex: 1, minWidth: 0, color: 'inherit' }}>{state.id.toLowerCase()}</span>
-                <span style={{
-                  fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-                  padding: '1px 5px', borderRadius: 3,
-                  background: active ? 'transparent' : T.bgSub,
-                }}>{count}</span>
+                  flex: 1, minWidth: 0, color: 'inherit',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{mnSentenceCase(state.id)}</span>
+                <span style={dsMachineStyle(T, active ? T.inkMed : T.inkDim)}>{count}</span>
               </div>
             );
           })}
@@ -656,41 +649,20 @@ function MnSidebar({
             <div key={tag.name}
             onClick={() => { setTagMenu(null); onSelectTag(tag.name); }}
             onContextMenu={(e) => openTagMenu(e, tag.name)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: `${pad.py}px 10px`, margin: '0 6px', borderRadius: 6,
-              cursor: 'pointer', userSelect: 'none',
-              background: active ? T.selBg : 'transparent',
-              fontFamily: 'var(--mn-ui)', fontSize: 13,
-              color: active ? T.ink : T.inkMed,
-              transition: 'background 80ms',
-            }}
+            style={{ ...dsSelectedRow(T, active, { height: subRowHeight }), fontSize: 13 }}
             onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
             onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
+              {active && <span style={dsSelectedBarStyle(T, 6)} />}
+              <span style={{ width: 16, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />
+              </span>
               <span style={{
-                width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0,
-              }} />
-              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag.name}</span>
-              <span style={{
-                fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim,
-              }}>{noteCounts[tag.name] || 0}</span>
-              <button
-                type="button"
-                title="Remove tag"
-                onClick={(e) => { e.stopPropagation(); deleteTag(tag.name); }}
-                style={{
-                  width: 18, height: 18, borderRadius: 4,
-                  border: 'none', background: 'transparent',
-                  color: T.inkDim, cursor: 'pointer', padding: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  opacity: 0.72, flexShrink: 0,
-                }}
-                onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                onMouseLeave={e => e.currentTarget.style.opacity = 0.72}>
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-                  <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                </svg>
-              </button>
+                flex: 1, minWidth: 0, color: 'inherit',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>{tag.name}</span>
+              <span style={dsMachineStyle(T, active ? T.inkMed : T.inkDim)}>
+                {noteCounts[tag.name] || 0}
+              </span>
             </div>
           );
         })}
