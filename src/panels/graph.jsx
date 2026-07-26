@@ -5,7 +5,14 @@ import { DS_HEIGHT, DS_RADIUS, dsGroupLabelStyle, dsMachineStyle } from '../shar
 
 const { useEffect, useRef, useState, useMemo } = React;
 
-function MnGraph({ notes, links, style, focusId, onOpen, T, tags, theme, graphFilter = null, onGraphFilterChange }) {
+// The three arrangements the simulation already supports.
+const MN_GRAPH_LAYOUTS = [
+  { id: 'force', label: 'Force' },
+  { id: 'cluster', label: 'Cluster' },
+  { id: 'timeline', label: 'Timeline' },
+];
+
+function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags, theme, graphFilter = null, onGraphFilterChange }) {
   const frameRef = useRef(null);
   const svgRef = useRef(null);
   const rafRef = useRef(null);
@@ -261,6 +268,34 @@ function MnGraph({ notes, links, style, focusId, onOpen, T, tags, theme, graphFi
         background: T.bg,
       }}>
         <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink, flexShrink: 0 }}>Graph</span>
+        {/* Layout was only reachable from Settings, which is a long way from
+            the thing it changes. */}
+        {onStyleChange && (
+          <div style={{
+            display: 'flex', padding: 2, flexShrink: 0,
+            borderRadius: DS_RADIUS.control, background: T.bgSub,
+            border: `1px solid ${T.lineSub}`,
+          }}>
+            {MN_GRAPH_LAYOUTS.map(layout => {
+              const active = (style || 'force') === layout.id;
+              return (
+                <button
+                  key={layout.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => onStyleChange(layout.id)}
+                  style={{
+                    minHeight: 24, padding: '0 10px', borderRadius: DS_RADIUS.icon, border: 'none',
+                    background: active ? (T.bgElevated || T.bg) : 'transparent',
+                    color: active ? T.ink : T.inkMed,
+                    fontFamily: 'var(--mn-ui)', fontSize: 12,
+                    fontWeight: active ? 500 : 400, cursor: 'pointer',
+                    boxShadow: active ? `0 1px 2px color-mix(in oklab, ${T.ink} 10%, transparent)` : 'none',
+                  }}>{layout.label}</button>
+              );
+            })}
+          </div>
+        )}
         {/* Scope reads as a pill because it is a state you can leave, not a label. */}
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0,

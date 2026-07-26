@@ -410,7 +410,7 @@ function AppView({ model }) {
               <MnGraph
                 notes={graphVisibleNotes} links={links} tags={tags} theme={theme}
                 focusId={selectedId}
-                style={tweaks.graphStyle}
+                style={tweaks.graphStyle} onStyleChange={(value) => setTweak('graphStyle', value)}
                 graphFilter={activeVault?.novelistMode ? graphFilter : null}
                 onGraphFilterChange={setGraphFilter}
                 onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
