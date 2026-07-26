@@ -20,6 +20,15 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
   const [dims, setDims] = useState({ w: 900, h: 620 });
   const [nodes, setNodes] = useState(null);
   const [edges, setEdges] = useState([]);
+  const [inspectId, setInspectId] = useState(null);
+  const inspected = React.useMemo(
+    () => (notes || []).find(note => note.id === inspectId) || null,
+    [notes, inspectId]
+  );
+  const inspectedLinks = React.useMemo(
+    () => (links || []).filter(link => link.source === inspectId || link.target === inspectId).length,
+    [links, inspectId]
+  );
   // Only legend the tags that are actually on screen.
   const legendTags = React.useMemo(() => {
     const present = new Set();
@@ -359,6 +368,57 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
           />
         ) : (
           <>
+          {inspected && (
+            <div style={{
+              position: 'absolute', top: 20, right: 20, width: 264, zIndex: 3,
+              borderRadius: DS_RADIUS.panel, overflow: 'hidden',
+              background: T.bgElevated || T.bg, border: `1px solid ${T.lineSub}`,
+              boxShadow: `0 12px 32px color-mix(in oklab, ${T.ink} 12%, transparent)`,
+            }}>
+              <div style={{ padding: '14px 15px', borderBottom: `1px solid ${T.lineSub}` }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>
+                  {inspected.title || 'Untitled'}
+                </div>
+                <div style={{ marginTop: 4, ...dsMachineStyle(T), fontSize: 10.5 }}>
+                  {inspectedLinks} link{inspectedLinks === 1 ? '' : 's'}
+                </div>
+                {!!(inspected.tags || []).length && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                    {(inspected.tags || []).map(tag => (
+                      <span key={tag} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        fontSize: 11, color: T.inkDim,
+                      }}>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: '50%',
+                          background: mnGetTagColor((tags || []).find(t => t.name === tag)?.hue ?? 240, theme),
+                        }} />
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 7, padding: '12px 15px' }}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(inspected.id)}
+                  style={{
+                    flex: 1, height: 30, borderRadius: DS_RADIUS.control, cursor: 'pointer',
+                    border: `1px solid ${T.ink}`, background: T.ink, color: T.bg,
+                    fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 650,
+                  }}>Open note</button>
+                <button
+                  type="button"
+                  onClick={() => setInspectId(null)}
+                  style={{
+                    height: 30, padding: '0 11px', borderRadius: DS_RADIUS.control, cursor: 'pointer',
+                    border: `1px solid ${T.lineSub}`, background: T.bg, color: T.inkMed,
+                    fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 600,
+                  }}>Close</button>
+              </div>
+            </div>
+          )}
           {/* Legend sits over the canvas so the tag colours can be read
               without leaving the graph. */}
           {legendTags.length > 0 && (
@@ -434,7 +494,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
                 <g key={n.id}
                   onMouseEnter={() => setHoverId(n.id)}
                   onMouseLeave={() => setHoverId(null)}
-                  onClick={() => onOpen(n.id)}
+                  onClick={() => setInspectId(id => (id === n.id ? null : n.id))}
                   style={{ cursor: 'default', opacity: active ? 1 : 0.22 }}>
                   {focus && (
                     <circle cx={n.x} cy={n.y} r={n.r + 8}
