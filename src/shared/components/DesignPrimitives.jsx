@@ -108,7 +108,9 @@ function DsDialogShell({
         {children != null && <div style={{ padding: '0 20px' }}>{children}</div>}
         {actions && (
           <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+            // Three-action dialogs overflow a narrow window without wrapping.
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            gap: 8, flexWrap: 'wrap',
             padding: '16px 20px 18px',
           }}>{actions}</div>
         )}
