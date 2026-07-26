@@ -10,6 +10,7 @@ function source(relativePath) {
 test('note browsing uses a flat list with one visually primary creation action', () => {
   const noteList = source('src/panels/notelist.jsx');
   const sidebar = source('src/panels/sidebar.jsx');
+  const appBar = source('src/app/shell/AppBar.jsx');
   const view = source('src/app/AppView.jsx');
 
   assert.match(noteList, /data-mn-note-row="true"/);
@@ -18,7 +19,10 @@ test('note browsing uses a flat list with one visually primary creation action',
   assert.match(noteList, /background: active \? \(T\.bgElevated \|\| T\.bg\) : 'transparent'/);
   assert.match(noteList, /boxShadow: active \? `0 2px 8px/);
   assert.match(noteList, /: 'none'/);
-  assert.match(sidebar, /data-mn-primary-create="true"/);
+  // The primary create action moved to the app bar, beside the one search
+  // field, rather than competing with the sidebar's destinations.
+  assert.match(appBar, /data-mn-primary-create="true"/);
+  assert.doesNotMatch(sidebar, /data-mn-primary-create/);
   assert.match(sidebar, /label="Quick capture" hint=\{quickCaptureShortcut\}/);
   assert.match(view, /onOpenQuickCapture=\{\(\) => setCaptureOpen\(true\)\}/);
   assert.doesNotMatch(view, /\/\* FAB \*\//);

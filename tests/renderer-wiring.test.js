@@ -168,7 +168,7 @@ test('Note tag picker can create new tags from the editor', () => {
   assert.match(sidebar, /Remove tag/);
   assert.match(sidebar, /if \(newTagName\.trim\(\)\) return/);
   assert.match(sidebar, /tagCreatorRef\.current\?\.contains\(e\.target\)/);
-  assert.match(sidebar, /top: 50/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../src/app/shell/AppBar.jsx'), 'utf8'), /top: 40, left: 12, width: 250/);
   assert.match(app, /const removeTag = \(name\) =>/);
   assert.match(app, /onDeleteTag=\{removeTag\}/);
   assert.match(app, /MN_APP_MUTATIONS\.removeTagFromNotes\(notes, clean\)/);
@@ -1564,22 +1564,22 @@ test('Release builds omit AppX and MSIX Store package targets', () => {
 });
 
 test('Vault switcher uses VispNote icon instead of letter tiles', () => {
+  // The switcher moved to the app bar; vault management stays in Settings.
   const sidebar = [
-    '../src/panels/sidebar.jsx',
+    '../src/app/shell/AppBar.jsx',
     '../src/shared/components/VaultIcon.jsx',
   ].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
 
   assert.match(sidebar, /const VAULT_ICON_SRC = 'assets\/vispnote-icon\.png'/);
   assert.match(sidebar, /function VaultIcon/);
   assert.match(sidebar, /<img src=\{VAULT_ICON_SRC\} alt="" aria-hidden="true"/);
-  assert.match(sidebar, /<MnVaultIcon T=\{T\} size=\{22\} active \/>/);
-  assert.match(sidebar, /<MnVaultIcon T=\{T\} size=\{20\} active=\{active\} \/>/);
+  assert.match(sidebar, /<VaultIcon T=\{T\} size=\{22\} active \/>/);
   assert.match(sidebar, /Switch vault/);
   assert.match(sidebar, /vaultKindLabel/);
   assert.match(sidebar, /vaultNoteLabel/);
   assert.match(sidebar, /maxHeight: 260/);
   assert.match(sidebar, /aria-haspopup="menu"/);
-  assert.match(sidebar, /onRefreshVaults\(\{ reloadActive: false, reason: 'vault-dropdown' \}\)/);
+  assert.match(sidebar, /onRefreshVaults\?\.\(\{ reloadActive: false, reason: 'vault-dropdown' \}\)/);
   assert.match(sidebar, /Rename vault/);
   assert.doesNotMatch(sidebar, /activeVault\?\.name \|\| 'm'\)\[0\]\.toLowerCase/);
   assert.doesNotMatch(sidebar, /v\.name\[0\]\.toLowerCase/);
