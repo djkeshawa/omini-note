@@ -408,7 +408,7 @@ function AppView({ model }) {
   
             {featureState.showLabs && view === 'graph' && (
               <MnGraph
-                notes={graphVisibleNotes} links={links} tags={tags}
+                notes={graphVisibleNotes} links={links} tags={tags} theme={theme}
                 focusId={selectedId}
                 style={tweaks.graphStyle}
                 graphFilter={activeVault?.novelistMode ? graphFilter : null}
