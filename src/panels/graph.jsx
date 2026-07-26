@@ -272,7 +272,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
       <div style={{
         height: DS_HEIGHT.panelHeader, flexShrink: 0, boxSizing: 'border-box',
         display: 'flex', alignItems: 'center', gap: 12,
-        padding: '0 88px 0 20px',
+        padding: '0 20px',
         borderBottom: `1px solid ${T.lineSub}`,
         background: T.bg,
       }}>

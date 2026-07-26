@@ -17,7 +17,7 @@ function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote
       style={{
         position: 'fixed',
         top: topOffset,
-        right: 18,
+        right: 12,
         zIndex: 90,
       }}>
       <button
@@ -27,11 +27,11 @@ function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote
         style={{
           position: 'relative',
           zIndex: 2,
-          width: 30,
-          height: 30,
-          borderRadius: 6,
-          border: `1px solid ${open ? T.accent : T.lineSub}`,
-          background: open ? T.accentSoft : T.bg,
+          width: 28,
+          height: 28,
+          borderRadius: 8,
+          border: `1px solid ${open ? T.selLine : 'transparent'}`,
+          background: open ? T.accentSoft : 'transparent',
           color: open ? T.accent : T.inkMed,
           cursor: 'pointer',
           display: 'flex',
@@ -85,7 +85,7 @@ function MnReminderCenter({ open, items, dueCount, onToggle, onClose, onOpenNote
             style={{
               position: 'absolute',
               zIndex: 3,
-              top: 38,
+              top: 36,
               right: 0,
               width: 340,
               maxWidth: 'calc(100vw - 36px)',

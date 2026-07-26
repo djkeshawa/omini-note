@@ -120,7 +120,9 @@ function EditorHeader({
 
   return (
     <div data-mn-editor-header="true" style={{
-      padding: '0 clamp(58px, 6vw, 68px) 0 clamp(14px, 3vw, 28px)',
+      // The reminder bell moved into the app bar, so this no longer reserves
+      // room for it: 16px right, matching the prototype.
+      padding: '0 16px 0 clamp(14px, 3vw, 28px)',
       display: 'flex', alignItems: 'center', gap: 6,
       height: DS_HEIGHT.paneHeader, flexShrink: 0, boxSizing: 'border-box',
       borderBottom: `1px solid ${T.lineSub}`,

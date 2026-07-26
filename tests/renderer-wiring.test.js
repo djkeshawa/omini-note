@@ -817,9 +817,9 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(graph, /Characters \+ scenes/);
   assert.match(graph, /Plot threads \+ scenes/);
   assert.match(graph, /Research \+ scenes/);
-  // Panel header is 52px with the prototype's 20px gutter; the 88px right
-  // inset still keeps the header clear of the window controls.
-  assert.match(graph, /padding: '0 88px 0 20px'/);
+  // Symmetric 20px gutters: the 88px right inset used to reserve room for the
+  // floating reminder bell, which now lives in the app bar.
+  assert.match(graph, /padding: '0 20px'/);
   assert.match(graph, /right: 64/);
   assert.match(notelist, /function MnNoteList[\s\S]*novelistStructure = null/);
   assert.match(notelist, /allNotes = null/);
@@ -1776,7 +1776,8 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(appShell, /position: 'fixed'/);
   assert.match(appShell, /top: topOffset/);
   assert.match(appShell, /maxWidth: 'calc\(100vw - 36px\)'/);
-  assert.match(app, /const reminderCenterTop = view === 'ai' \? 17 : 14/);
+    // The bell centres in the 44px app bar rather than floating per view.
+  assert.match(app, /const reminderCenterTop = 8;/);
   assert.match(app, /topOffset=\{reminderCenterTop\}/);
 });
 
