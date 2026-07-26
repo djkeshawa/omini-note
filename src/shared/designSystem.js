@@ -55,8 +55,11 @@ const DS_PANE = {
   noteList: 336,
   connections: 292,
   aiChatList: 264,
-  // Prose column cap. Wider than this and lines stop being readable.
-  editorColumn: 656,
+  // Prose column cap, as measured in frame 1b. The spec allows 640–660; the
+  // frame draws 640, so that is what we use.
+  editorColumn: 640,
+  // Gutter between the pane edge and the prose column.
+  editorGutter: 40,
 };
 
 const DS_COMPACT_TRIM = 32;

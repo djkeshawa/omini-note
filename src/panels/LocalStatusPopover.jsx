@@ -68,7 +68,7 @@ function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = 
           <span style={{ marginLeft: 'auto', flexShrink: 0, color: saveStatus === 'Conflict' ? (T.danger || T.warn) : T.inkDim }}>{saveStatus}</span>
         )}
       </button>
-      <button type="button" onClick={onOpenSettings} aria-label="Open Settings" title="Settings" style={{
+      <button type="button" onClick={onOpenSettings} aria-label="Open settings" title="Settings" style={{
         width: 32, height: 32, borderRadius: 7,
         background: 'transparent', border: 'none', color: T.inkMed, cursor: 'pointer',
         padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,

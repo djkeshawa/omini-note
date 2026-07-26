@@ -229,8 +229,8 @@ function EditorHeader({
                 {referencePaneOpen ? 'Close reference pane' : 'Open reference pane'}
               </MenuItem>
             )}
-            {onOpenGraph && <MenuItem onClick={() => runMenuAction(onOpenGraph)} hint={shortcutLabel('graph', platform, { compact: true })} T={T}>Open Graph</MenuItem>}
-            {onOpenCalendar && <MenuItem onClick={() => runMenuAction(onOpenCalendar)} T={T}>Open Agenda</MenuItem>}
+            {onOpenGraph && <MenuItem onClick={() => runMenuAction(onOpenGraph)} hint={shortcutLabel('graph', platform, { compact: true })} T={T}>Open graph</MenuItem>}
+            {onOpenCalendar && <MenuItem onClick={() => runMenuAction(onOpenCalendar)} T={T}>Open agenda</MenuItem>}
             {onExport && <div role="separator" style={{ height: 1, background: T.lineSub, margin: '4px 6px' }} />}
             {onExport && <MenuItem onClick={() => runMenuAction(() => onExport('md'))} T={T}>Export as Markdown</MenuItem>}
             {onExport && <MenuItem onClick={() => runMenuAction(() => onExport('html'))} T={T}>Export as HTML</MenuItem>}

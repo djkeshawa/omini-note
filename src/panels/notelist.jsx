@@ -1,7 +1,7 @@
 // Middle pane: list of notes (filtered). Click to select.
 import { MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES } from '../editor/blockFeatures.jsx';
 import { mnGetTagColor } from '../shared/theme.jsx';
-import { DS_RADIUS, dsButtonStyle, dsMachineStyle, dsPaneWidth } from '../shared/designSystem.js';
+import { DS_RADIUS, dsButtonStyle, dsGroupLabelStyle, dsMachineStyle, dsPaneWidth } from '../shared/designSystem.js';
 import { DsEmptyState } from '../shared/components/DesignPrimitives.jsx';
 
 const { useMemo: useMemoL, useState: useStateL, useEffect: useEffectL } = React;
@@ -16,6 +16,21 @@ function mnFormatDate(iso) {
   if (sameYest) return 'Yesterday';
   if (now - d < 7 * 864e5) return d.toLocaleDateString([], { weekday: 'short' });
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+// Sentence-case buckets for the note list's date headings.
+function mnDateGroupLabel(iso) {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return 'Undated';
+  const now = new Date();
+  const startOfDay = value => new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  const days = Math.round((startOfDay(now) - startOfDay(d)) / 864e5);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return 'Earlier this week';
+  if (days < 30) return 'Earlier this month';
+  if (d.getFullYear() === now.getFullYear()) return 'Earlier this year';
+  return 'Older';
 }
 
 function mnPreview(body) {
@@ -183,6 +198,22 @@ function MnNoteList({
 
   useEffectL(() => { setVisibleLimit(160); }, [notes.length, query]);
   const visibleNotes = novelistStructure ? notes : (notes || []).slice(0, visibleLimit);
+
+  // Date headings follow the incoming order rather than imposing one, so a list
+  // sorted by title still reads correctly — the buckets just appear as reached.
+  const dateGroups = useMemoL(() => {
+    const groups = [];
+    let current = null;
+    visibleNotes.forEach(note => {
+      const label = mnDateGroupLabel(note.date);
+      if (!current || current.label !== label) {
+        current = { key: `${label}-${groups.length}`, label, notes: [] };
+        groups.push(current);
+      }
+      current.notes.push(note);
+    });
+    return groups;
+  }, [visibleNotes]);
 
   const startRename = (note) => {
     if (!note) return;
@@ -538,7 +569,10 @@ function MnNoteList({
       </div>
 
       {/* List */}
-      <div role="listbox" aria-label={`${title} notes`} style={{ flex: 1, overflow: 'auto', padding: '5px 0 12px' }}>
+      <div role="listbox" aria-label={`${title} notes`} style={{
+        flex: 1, overflow: 'auto', padding: '0 8px 12px',
+        display: 'flex', flexDirection: 'column', gap: 2,
+      }}>
         {notes.length === 0 && (query ? (
           <DsEmptyState
             T={T}
@@ -626,7 +660,12 @@ function MnNoteList({
             )}
             {novelistList.other.map(n => <NoteRow key={n.id} n={n} />)}
           </>
-        ) : visibleNotes.map(n => <NoteRow key={n.id} n={n} />)}
+        ) : dateGroups.map(group => (
+          <React.Fragment key={group.key}>
+            <div style={{ ...dsGroupLabelStyle(T), padding: '8px 8px 5px' }}>{group.label}</div>
+            {group.notes.map(n => <NoteRow key={n.id} n={n} />)}
+          </React.Fragment>
+        ))}
         {!novelistList && visibleLimit < notes.length && (
           <button type="button" onClick={() => setVisibleLimit(limit => limit + 160)} style={{
             width: 'calc(100% - 16px)', margin: '4px 8px 8px', padding: '9px 10px',

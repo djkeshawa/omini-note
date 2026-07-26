@@ -141,7 +141,7 @@ function NovelistAiConfigurationSection({ T, aiConfig, addAiPrompt, aiWordLimitD
               <textarea value={aiConfig.instructions || ''} onChange={(e) => updateAiConfig(current => ({ ...current, instructions: e.target.value }))} rows={3} style={mnPanelTextareaStyle(T)} />
             </label>
             <label style={{ display: 'grid', gap: 5, fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>
-              <span>Additional Context</span>
+              <span>Additional context</span>
               <textarea value={aiConfig.additionalContext || ''} onChange={(e) => updateAiConfig(current => ({ ...current, additionalContext: e.target.value }))} rows={3} style={mnPanelTextareaStyle(T)} />
             </label>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed }}>

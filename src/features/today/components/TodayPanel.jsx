@@ -376,7 +376,7 @@ function MnTodayPanel({
             name="agenda"
             title="Agenda"
             count={visibleAgendaItems.length}
-            action={onOpenAgenda ? <button type="button" onClick={onOpenAgenda} style={buttonStyle(false)}>Open Agenda</button> : null}
+            action={onOpenAgenda ? <button type="button" onClick={onOpenAgenda} style={buttonStyle(false)}>Open agenda</button> : null}
             T={T}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               {visibleAgendaItems.map(item => (
