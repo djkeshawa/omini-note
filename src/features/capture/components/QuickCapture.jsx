@@ -1,3 +1,4 @@
+import { DS_RADIUS } from '../../../shared/designSystem.js';
 import { shortcutLabel, useShortcutPlatform } from '../../../platform/shortcuts.js';
 import { mnGetTagBg, mnGetTagColor } from '../../../shared/theme.jsx';
 
@@ -56,27 +57,24 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
       paddingTop: 100, animation: 'mnFadeIn 120ms ease',
     }}>
       <div role="dialog" aria-modal="true" aria-label="Quick capture" onClick={(e) => e.stopPropagation()} style={{
-        width: 540, background: T.bg, borderRadius: 12,
+        width: 560, maxWidth: '92%', background: T.bgElevated || T.bg, borderRadius: DS_RADIUS.panel,
         border: `1px solid ${T.line}`,
         boxShadow: `0 24px 60px color-mix(in oklab, ${T.ink} 25%, transparent)`,
         overflow: 'hidden',
       }}>
         <div style={{
-          padding: '10px 14px', borderBottom: `1px solid ${T.lineSub}`,
-          fontFamily: 'var(--mn-ui)', fontWeight: 600, fontSize: 11,
-          color: T.inkDim,
-          display: 'flex', alignItems: 'center', gap: 8,
+          height: 44, padding: '0 16px', boxSizing: 'border-box',
+          borderBottom: `1px solid ${T.lineSub}`,
+          display: 'flex', alignItems: 'center', gap: 9,
         }}>
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-            <path d="M2.5 6L8 2L13.5 6V13C13.5 13.5 13 14 12.5 14H3.5C3 14 2.5 13.5 2.5 13V6Z"/>
-          </svg>
-          Quick capture
-          <div style={{ flex: 1 }} />
-          <span style={{
-            fontFamily: 'var(--mn-mono)', fontSize: 10,
-            padding: '2px 5px', borderRadius: 3,
-            background: T.bgSub, border: `1px solid ${T.lineSub}`,
-          }}>{shortcutLabel('quickCapture', shortcutPlatform, { compact: true })}</span>
+          <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 650, color: T.ink }}>
+            Quick capture
+          </span>
+          <span style={{ flex: 1 }} />
+          {/* Say where it goes, rather than repeating the shortcut that opened it. */}
+          <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkDim }}>
+            Lands in the inbox tag
+          </span>
         </div>
         <div style={{ padding: 16 }}>
           <div id="mn-capture-options" style={{
@@ -144,10 +142,10 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
                 submit();
               }
             }}
-            placeholder="Write what you want to remember…"
+            placeholder="Write it down now, file it later…"
             style={{
-              width: '100%', minHeight: 120,
-              fontFamily: 'var(--mn-body)', fontSize: 14.5, lineHeight: 1.6,
+              width: '100%', minHeight: 132,
+              fontFamily: 'var(--mn-body)', fontSize: 15, lineHeight: 1.6,
               color: T.ink, background: 'transparent', border: 'none', outline: 'none',
               resize: 'none', padding: 0,
             }} />

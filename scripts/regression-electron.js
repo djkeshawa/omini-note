@@ -1404,7 +1404,7 @@ async function runQuickCaptureSaveScenario(win) {
     `);
     return { ok: result.open && result.bodyFocused && !result.titleVisible && !result.optionsVisible, result };
   });
-  await setControlByPlaceholder(win, 'Write what you want to remember', body);
+  await setControlByPlaceholder(win, 'Write it down now, file it later', body);
   await clickButton(win, { text: 'Save to Today' });
   await waitFor(win, 'quick capture saved and closed', async () => {
     const current = await state(win);
@@ -1433,7 +1433,7 @@ async function runQuickCaptureSaveScenario(win) {
     const visible = await evaluate(win, `Boolean(document.querySelector('input[aria-label="New note title"]'))`);
     return { ok: visible, visible };
   });
-  await setControlByPlaceholder(win, 'Write what you want to remember', '# Derived capture title\nSupporting detail.');
+  await setControlByPlaceholder(win, 'Write it down now, file it later', '# Derived capture title\nSupporting detail.');
   await clickButton(win, { text: 'Save' });
   await waitForPersistedNote(win, 'Derived capture title', note => String(note.body || '').includes('Supporting detail.'));
 }
