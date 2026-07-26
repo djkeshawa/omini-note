@@ -144,11 +144,16 @@ test('Note delete confirmation uses themed in-app dialog', () => {
   assert.match(appShell, /className="mn-delete-note-dialog"/);
   assert.match(appShell, /role="dialog"/);
   assert.match(appShell, /aria-modal="true"/);
-  assert.match(appShell, /You can restore this note from Recently deleted/);
+  // The consequence line states both where the note goes and how long it can
+  // be recovered, which is stronger than the old reassurance-only copy.
+  assert.match(appShell, /It moves to Recently deleted and is removed from disk after 30 days\./);
   assert.match(app, /setDeleteTargetId\(id\)/);
   assert.match(app, /onDelete=\{\(\) => requestDeleteNote\(selectedNote\.id\)\}/);
   assert.match(app, /onConfirm=\{\(\) => deleteNote\(deleteTargetNote\.id\)\}/);
-  assert.match(appShell, /background: T\.danger/);
+  // Destructive tone now comes from the shared dialog shell rather than an
+  // inline colour, so assert the shell is asked for it.
+  assert.match(appShell, /tone="danger"/);
+  assert.match(appShell, /dsButtonStyle\(T, 'danger'/);
   assert.doesNotMatch(app, /confirm\(/);
 });
 

@@ -66,20 +66,21 @@ function DsEmptyState({ icon, headline, body, action, T, compact = false, style 
 function DsDialogShell({
   tone = 'neutral', icon, title, consequence, children, actions,
   T, onDismiss, titleId = 'mn-dialog-title', width = 420, className,
+  role = 'dialog', zIndex = 90,
 }) {
   return (
     <div
       className={className}
       onClick={onDismiss}
       style={{
-        position: 'absolute', inset: 0, zIndex: 90,
+        position: 'absolute', inset: 0, zIndex,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: T.overlay || `color-mix(in oklab, ${T.ink} 30%, transparent)`,
         backdropFilter: 'blur(2px)',
         animation: 'mnFadeIn 120ms ease',
       }}>
       <div
-        role="dialog"
+        role={role}
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={event => event.stopPropagation()}
@@ -91,10 +92,7 @@ function DsDialogShell({
           boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 26%, transparent)`,
           overflow: 'hidden', fontFamily: 'var(--mn-ui)',
         }}>
-        <div style={{
-          display: 'flex', gap: 12, padding: '18px 18px 14px',
-          borderBottom: `1px solid ${T.lineSub}`, background: T.bgSub,
-        }}>
+        <div style={{ display: 'flex', gap: 12, padding: '18px 20px 14px' }}>
           {icon && <span style={dsToneIconStyle(T, tone, 34)}>{icon}</span>}
           <div style={{ minWidth: 0 }}>
             <div id={titleId} style={{ fontSize: 15, fontWeight: 650, color: T.ink, marginBottom: 4 }}>
@@ -107,11 +105,13 @@ function DsDialogShell({
             )}
           </div>
         </div>
-        {children != null && <div style={{ padding: '16px 18px 0' }}>{children}</div>}
+        {children != null && <div style={{ padding: '0 20px' }}>{children}</div>}
         {actions && (
           <div style={{
-            display: 'flex', justifyContent: 'flex-end', gap: 8,
-            padding: '16px 18px 18px',
+            // Three-action dialogs overflow a narrow window without wrapping.
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            gap: 8, flexWrap: 'wrap',
+            padding: '16px 20px 18px',
           }}>{actions}</div>
         )}
       </div>

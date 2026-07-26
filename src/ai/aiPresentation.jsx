@@ -412,10 +412,9 @@ function MnCurrentNoteSuggestionsCard({ result, busy, error, T, onRefresh, onRej
         )}
         {result?.hosted && (
           <div style={{
-            fontFamily: 'var(--mn-mono)',
-            fontSize: 10,
+            fontFamily: 'var(--mn-ui)', fontWeight: 600,
+            fontSize: 11,
             color: T.warn || T.inkDim,
-            textTransform: 'uppercase',
           }}>Hosted provider</div>
         )}
         <div style={{ flex: 1 }} />
@@ -458,10 +457,9 @@ function MnCurrentNoteSuggestionsCard({ result, busy, error, T, onRefresh, onRej
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 4, flexWrap: 'wrap' }}>
                   <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 720, color: T.ink }}>{section.title}</div>
                   <div style={{
-                    fontFamily: 'var(--mn-mono)',
-                    fontSize: 10,
+                    fontFamily: 'var(--mn-ui)', fontWeight: 600,
+                    fontSize: 11,
                     color: section.kind === 'fact' ? T.inkDim : T.accent,
-                    textTransform: 'uppercase',
                   }}>{section.kind}</div>
                 </div>
                 <div style={{

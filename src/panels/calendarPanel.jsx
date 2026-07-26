@@ -416,11 +416,9 @@ function MnCalendarPanel({
         alignItems: 'center',
         justifyContent: 'space-between',
         marginBottom: 8,
-        fontFamily: 'var(--mn-mono)',
-        fontSize: 10.5,
+        fontFamily: 'var(--mn-ui)', fontWeight: 600,
+        fontSize: 11.5,
         color: T.inkDim,
-        letterSpacing: '0.1em',
-        textTransform: 'uppercase',
       }}>
         <span>{label}</span>
         <span>{list.length}</span>
@@ -532,11 +530,9 @@ function MnCalendarPanel({
                   <div key={label} style={{
                     padding: '8px 6px',
                     textAlign: 'center',
-                    fontFamily: 'var(--mn-mono)',
-                    fontSize: 10,
+                    fontFamily: 'var(--mn-ui)', fontWeight: 600,
+                    fontSize: 11,
                     color: T.inkDim,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
                   }}>{label}</div>
                 ))}
               </div>
