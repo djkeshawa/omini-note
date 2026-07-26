@@ -1,5 +1,7 @@
 function createSmartViewHelpers(scope = {}) {
   const SMART_VIEW_FORMAT = scope.SMART_VIEW_FORMAT;
+  const SMART_VIEW_FORMATS = scope.SMART_VIEW_FORMATS || [scope.SMART_VIEW_FORMAT];
+  const SMART_VIEW_LAYOUTS = scope.SMART_VIEW_LAYOUTS || ['list'];
   const SMART_VIEW_SORT_FIELDS = scope.SMART_VIEW_SORT_FIELDS;
   const SMART_VIEW_TYPES = scope.SMART_VIEW_TYPES;
   const agendaCleanActionText = (...args) => scope.agendaCleanActionText(...args);
@@ -123,6 +125,31 @@ function createSmartViewHelpers(scope = {}) {
     return Math.max(1, Math.min(500, Math.floor(parsed)));
   }
   
+  function smartViewNormalizeLayout(value = 'list') {
+    const clean = smartViewCleanText(value).toLowerCase();
+    return SMART_VIEW_LAYOUTS.includes(clean) ? clean : 'list';
+  }
+
+  // group.by is any property key found on notes, the literal 'tag', or a date
+  // field. Null means "do not group" — the only way to say it.
+  function smartViewNormalizeGroup(group = null) {
+    if (!group || typeof group !== 'object') return null;
+    const by = smartViewCleanText(group.by);
+    if (!by) return null;
+    return {
+      by,
+      direction: smartViewCleanText(group.direction).toLowerCase() === 'desc' ? 'desc' : 'asc',
+    };
+  }
+
+  // Columns are discovered from the notes, never declared in a schema file, so
+  // this only cleans what the caller chose to pin.
+  function smartViewNormalizeColumns(columns = null) {
+    if (!Array.isArray(columns)) return null;
+    const clean = columns.map(item => smartViewCleanText(item)).filter(Boolean);
+    return clean.length ? [...new Set(clean)] : null;
+  }
+
   function smartViewNormalizeDefinition(definition = {}) {
     const source = definition && typeof definition === 'object' ? definition : {};
     return {
@@ -132,6 +159,10 @@ function createSmartViewHelpers(scope = {}) {
       filters: smartViewNormalizeFilters(source.filters || source.query || {}),
       sort: smartViewNormalizeSort(source.sort || {}),
       limit: smartViewNormalizeLimit(source.limit),
+      // v2 keys. A v1 definition reads back as list / ungrouped / no columns.
+      layout: smartViewNormalizeLayout(source.layout),
+      group: smartViewNormalizeGroup(source.group),
+      columns: smartViewNormalizeColumns(source.columns),
     };
   }
   
@@ -414,6 +445,41 @@ function createSmartViewHelpers(scope = {}) {
     return smartViewQueryActions(notes, normalized, options);
   }
   
+  // Grouping is a pure post-pass over smartViewQuery results — same query, one
+  // more arrangement of it. Notes lacking the key land in a terminal "No <key>"
+  // group that is never hidden: it is how you find unfiled work.
+  function smartViewGroup(results = [], group = null, options = {}) {
+    const normalized = smartViewNormalizeGroup(group);
+    if (!normalized) return [{ key: '', label: '', items: [...results] }];
+    const by = normalized.by;
+    const readKey = (result) => {
+      const note = result?.note || result || {};
+      if (by === 'tag') {
+        const tags = Array.isArray(note.tags) ? note.tags.filter(Boolean) : [];
+        return tags.length ? tags : [''];
+      }
+      if (typeof options.valueFor === 'function') return [options.valueFor(note, by) ?? ''];
+      return [smartViewCleanText(bodyPropertyValue(note.body || '', by))];
+    };
+    const buckets = new Map();
+    results.forEach(result => {
+      readKey(result).forEach(value => {
+        const key = smartViewCleanText(value);
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(result);
+      });
+    });
+    const unfiledLabel = `No ${by}`;
+    const named = [...buckets.entries()].filter(([key]) => key !== '');
+    named.sort((a, b) => (normalized.direction === 'desc'
+      ? b[0].localeCompare(a[0])
+      : a[0].localeCompare(b[0])));
+    const out = named.map(([key, items]) => ({ key, label: key, items }));
+    // The unfiled bucket always exists and always sits last.
+    out.push({ key: '', label: unfiledLabel, items: buckets.get('') || [] });
+    return out;
+  }
+
   function smartViewIsPlainObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
   }
@@ -457,8 +523,17 @@ function createSmartViewHelpers(scope = {}) {
   
   function smartViewValidateSavedDefinition(definition = {}) {
     if (!smartViewIsPlainObject(definition)) throw new Error('Smart View definition must be an object');
-    smartViewAssertAllowedKeys(definition, ['format', 'id', 'title', 'type', 'filters', 'sort', 'limit'], 'Smart View definition');
-    if (definition.format && definition.format !== SMART_VIEW_FORMAT) throw new Error('Unsupported Smart View format');
+    smartViewAssertAllowedKeys(definition, ['format', 'id', 'title', 'type', 'filters', 'sort', 'limit', 'layout', 'group', 'columns'], 'Smart View definition');
+    // Accept every format we have ever written, not just the one we write now,
+    // so a view saved before v2 still opens.
+    if (definition.format && !SMART_VIEW_FORMATS.includes(definition.format)) throw new Error('Unsupported Smart View format');
+    if (definition.layout != null && !SMART_VIEW_LAYOUTS.includes(definition.layout)) throw new Error('Invalid Smart View layout');
+    if (definition.group != null) {
+      if (!smartViewIsPlainObject(definition.group)) throw new Error('Smart View group must be an object');
+      smartViewAssertAllowedKeys(definition.group, ['by', 'direction'], 'Smart View group');
+      if (!smartViewCleanText(definition.group.by)) throw new Error('Smart View group needs a by key');
+    }
+    if (definition.columns != null && !Array.isArray(definition.columns)) throw new Error('Smart View columns must be an array');
     const id = smartViewCleanText(definition.id);
     if (!/^[A-Za-z][A-Za-z0-9_-]{1,63}$/.test(id)) throw new Error('Invalid Smart View id');
     const title = smartViewCleanText(definition.title);
@@ -511,7 +586,10 @@ function createSmartViewHelpers(scope = {}) {
   
     return {
       format: SMART_VIEW_FORMAT,
-      ...smartViewNormalizeDefinition({ id, title, type: definition.type || 'notes', filters, sort, limit: definition.limit }),
+      ...smartViewNormalizeDefinition({
+        id, title, type: definition.type || 'notes', filters, sort, limit: definition.limit,
+        layout: definition.layout, group: definition.group, columns: definition.columns,
+      }),
     };
   }
   
@@ -581,6 +659,15 @@ function createSmartViewHelpers(scope = {}) {
       lines.push(`  field: ${smartViewYamlScalar(saved.sort.field)}`);
       lines.push(`  direction: ${smartViewYamlScalar(saved.sort.direction)}`);
       lines.push(`limit: ${saved.limit}`);
+      lines.push(`layout: ${smartViewYamlScalar(saved.layout)}`);
+      if (saved.group) {
+        // group is a nested map, which the two-level parser already handles.
+        lines.push('group:');
+        lines.push(`  by: ${smartViewYamlScalar(saved.group.by)}`);
+        lines.push(`  direction: ${smartViewYamlScalar(saved.group.direction)}`);
+      }
+      // columns goes through the scalar writer, which JSON-stringifies arrays.
+      if (saved.columns) lines.push(`columns: ${smartViewYamlScalar(saved.columns)}`);
       return `${lines.join('\n')}\n`;
     }
     return JSON.stringify(saved, null, 2);
@@ -633,7 +720,7 @@ function createSmartViewHelpers(scope = {}) {
       saved,
     ];
   }
-  return { smartViewCleanText, smartViewCleanList, smartViewDateKey, smartViewWorkflowKey, smartViewNormalizeType, smartViewNormalizeActionStatus, smartViewNormalizeActionType, smartViewNormalizePropertyFilters, smartViewNormalizeFilters, smartViewNormalizeSort, smartViewNormalizeLimit, smartViewNormalizeDefinition, smartViewBodyHasProperty, smartViewMatchesProperties, smartViewNoteWorkflowStatus, smartViewNoteLookup, smartViewLinkedTargetKeys, smartViewMatchesLinkedNotes, smartViewNoteDateInRange, smartViewMatchesNormalizedNote, smartViewMatchesNote, smartViewSortValue, smartViewCompareNotes, smartViewNoteResult, smartViewQueryNotes, smartViewDefaultReminderParser, smartViewActionStatus, smartViewActionResult, smartViewMatchesActionFilters, smartViewDateInRange, smartViewActionSortValue, smartViewCompareActionResults, smartViewQueryActions, smartViewQuery, smartViewIsPlainObject, smartViewAssertAllowedKeys, smartViewValidateDateFilters, smartViewValidateActionFilters, smartViewValidateSavedDefinition, smartViewYamlScalar, smartViewParseYamlScalar, smartViewParseDefinitionYaml, smartViewSerializeDefinition, smartViewParseDefinitionText, smartViewParseEmbedBlock, smartViewUpsertSavedDefinition };
+  return { smartViewCleanText, smartViewCleanList, smartViewDateKey, smartViewWorkflowKey, smartViewNormalizeType, smartViewNormalizeActionStatus, smartViewNormalizeActionType, smartViewNormalizePropertyFilters, smartViewNormalizeFilters, smartViewNormalizeSort, smartViewNormalizeLimit, smartViewNormalizeDefinition, smartViewBodyHasProperty, smartViewMatchesProperties, smartViewNoteWorkflowStatus, smartViewNoteLookup, smartViewLinkedTargetKeys, smartViewMatchesLinkedNotes, smartViewNoteDateInRange, smartViewMatchesNormalizedNote, smartViewMatchesNote, smartViewSortValue, smartViewCompareNotes, smartViewNoteResult, smartViewQueryNotes, smartViewDefaultReminderParser, smartViewActionStatus, smartViewActionResult, smartViewMatchesActionFilters, smartViewDateInRange, smartViewActionSortValue, smartViewCompareActionResults, smartViewQueryActions, smartViewQuery, smartViewGroup, smartViewNormalizeLayout, smartViewNormalizeGroup, smartViewNormalizeColumns, smartViewIsPlainObject, smartViewAssertAllowedKeys, smartViewValidateDateFilters, smartViewValidateActionFilters, smartViewValidateSavedDefinition, smartViewYamlScalar, smartViewParseYamlScalar, smartViewParseDefinitionYaml, smartViewSerializeDefinition, smartViewParseDefinitionText, smartViewParseEmbedBlock, smartViewUpsertSavedDefinition };
 }
 
 module.exports = { createSmartViewHelpers };

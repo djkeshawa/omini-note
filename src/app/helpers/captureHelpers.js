@@ -52,8 +52,12 @@ function createCaptureHelpers(scope = {}) {
       body: '# Task - {date}\n\ntype:: task\ndate:: {date}\n\n- [ ] {text}\n',
     },
   ];
-  const SMART_VIEW_FORMAT = 'vispnote.smartView.v1';
+  // v2 adds layout, group and columns. New writes use v2; v1 keeps reading, so
+  // stored views survive the upgrade untouched.
+  const SMART_VIEW_FORMAT = 'vispnote.smartView.v2';
+  const SMART_VIEW_FORMATS = ['vispnote.smartView.v1', 'vispnote.smartView.v2'];
   const SMART_VIEW_TYPES = ['notes', 'tasks', 'reminders', 'actions'];
+  const SMART_VIEW_LAYOUTS = ['list', 'table', 'cards', 'timeline', 'board', 'calendar'];
   const SMART_VIEW_SORT_FIELDS = ['title', 'created', 'modified', 'reminder'];
   const CONTEXTUAL_AI_SECTION_KINDS = ['fact', 'suggestion', 'preview'];
   const ZOTERO_ITEM_KEY_RE = /^[A-Za-z0-9_-]{1,80}$/;
@@ -383,7 +387,7 @@ function createCaptureHelpers(scope = {}) {
     if (!metricKey) return 0;
     return phase5SanitizeMetrics(metrics).counters[metricKey] || 0;
   }
-  return { NOTE_TEMPLATES, CAPTURE_DESTINATIONS, CAPTURE_TEMPLATES, SMART_VIEW_FORMAT, SMART_VIEW_TYPES, SMART_VIEW_SORT_FIELDS, CONTEXTUAL_AI_SECTION_KINDS, ZOTERO_ITEM_KEY_RE, ZOTERO_SOURCE_TAGS, PHASE5_METRICS_FORMAT, PHASE5_METRIC_KEYS, PHASE5_METRIC_DETAIL_KEYS, CONTEXTUAL_AI_PROVIDER_LABELS, todayIsoDate, captureCleanText, captureTitleFromBody, captureSlug, captureUniqueTags, captureReplaceTokens, expandTemplate, templateById, captureTemplateById, captureTemplateChoices, expandCaptureTemplate, captureFindInboxNote, captureDestinationChoices, captureDestinationById, captureBuildAppendMarkdown, captureBuildSavePlan, phase5MetricChoices, phase5NormalizeMetricKey, phase5CleanMetricDetailValue, phase5SanitizeMetricDetails, phase5SanitizeMetrics, phase5RecordMetric, phase5MetricCount };
+  return { NOTE_TEMPLATES, CAPTURE_DESTINATIONS, CAPTURE_TEMPLATES, SMART_VIEW_FORMAT, SMART_VIEW_FORMATS, SMART_VIEW_LAYOUTS, SMART_VIEW_TYPES, SMART_VIEW_SORT_FIELDS, CONTEXTUAL_AI_SECTION_KINDS, ZOTERO_ITEM_KEY_RE, ZOTERO_SOURCE_TAGS, PHASE5_METRICS_FORMAT, PHASE5_METRIC_KEYS, PHASE5_METRIC_DETAIL_KEYS, CONTEXTUAL_AI_PROVIDER_LABELS, todayIsoDate, captureCleanText, captureTitleFromBody, captureSlug, captureUniqueTags, captureReplaceTokens, expandTemplate, templateById, captureTemplateById, captureTemplateChoices, expandCaptureTemplate, captureFindInboxNote, captureDestinationChoices, captureDestinationById, captureBuildAppendMarkdown, captureBuildSavePlan, phase5MetricChoices, phase5NormalizeMetricKey, phase5CleanMetricDetailValue, phase5SanitizeMetricDetails, phase5SanitizeMetrics, phase5RecordMetric, phase5MetricCount };
 }
 
 module.exports = { createCaptureHelpers };
