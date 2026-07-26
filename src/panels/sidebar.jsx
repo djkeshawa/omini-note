@@ -53,7 +53,6 @@ function MnSidebar({
     });
   };
   const activeVault = vaults?.find(v => v.id === activeVaultId);
-  const pad = density === 'compact' ? { py: 4, gap: 0, header: 10 } : { py: 6, gap: 2, header: 14 };
   const noteCounts = useMemoS(() => {
     const c = {};
     tags.forEach(t => { c[t.name] = 0; });
@@ -195,17 +194,24 @@ function MnSidebar({
       background: `color-mix(in oklab, ${T.bgSub} 94%, ${T.bgElevated || T.bg})`,
       borderRight: `1px solid ${T.line}`,
       display: 'flex', flexDirection: 'column', flexShrink: 0,
-      paddingTop: 14,
     }}>
       {/* The vault switcher and the primary create action live in the app
           bar now, so the sidebar opens straight into its destinations. */}
       <div style={{ padding: '0 10px 6px', position: 'relative' }}>
         <MnContextualTip tip={contextualTip} onDismiss={onDismissContextualTip} T={T} compact />
       </div>
+      {/* One scrolling column for every destination, with the prototype's
+          14/10 inset and an 18px gap between groups. The groups no longer
+          space themselves, so they cannot drift apart. */}
+      <div style={{
+        flex: 1, minHeight: 0, overflowY: 'auto',
+        padding: '14px 10px 0',
+        display: 'flex', flexDirection: 'column', gap: 18,
+      }}>
       {/* The primary destinations carry no group label — the design keeps the
           top of the sidebar quiet, and labels start at "More". */}
       {(
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, marginTop: 4 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Row icon={iconInbox} label="All notes" count={notes.length}
                active={!selectedTag && !selectedWorkflow && !todayActive && !pinnedActive && !agendaActive && !graphActive && !smartViewsActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
                onClick={() => onSelectTag(null)} />
@@ -239,11 +245,11 @@ function MnSidebar({
         </div>
       )}
 
-      <div style={{ marginTop: pad.header }}>
+      <div>
         <SectionHeader label="More" sectionKey="more" />
       </div>
       {openSections.more && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: pad.gap, marginTop: 4 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {onOpenQuickCapture && (
             <Row icon={iconCapture} label="Quick capture" hint={quickCaptureShortcut} onClick={onOpenQuickCapture} />
           )}
@@ -261,14 +267,14 @@ function MnSidebar({
       <div style={{ borderTop: `1px solid ${T.lineSub}`, margin: '14px 14px 0' }} />
 
       {featureState.showWorkflow && (
-        <div style={{ marginTop: pad.header }}>
+        <div>
           <SectionHeader label="Workflow" sectionKey="workflow" count={workflowTotal || 0} />
         </div>
       )}
 
       {featureState.showWorkflow && openSections.workflow && (
         <div style={{
-          display: 'flex', flexDirection: 'column', gap: pad.gap,
+          display: 'flex', flexDirection: 'column', gap: 1,
           marginTop: 4, marginBottom: 12,
         }}>
           {(workflowStates || []).map(state => {
@@ -297,7 +303,7 @@ function MnSidebar({
         </div>
       )}
 
-      <div style={{ marginTop: pad.header }}>
+      <div>
         <SectionHeader
           label="Tags"
           sectionKey="tags"
@@ -326,10 +332,8 @@ function MnSidebar({
       </div>
 
       <div style={{
-        flex: 1, overflow: 'auto',
         display: openSections.tags ? 'flex' : 'none',
-        flexDirection: 'column', gap: pad.gap,
-        marginTop: 4,
+        flexDirection: 'column', gap: 1,
       }}>
         {creatingTag && (
           <div style={{
@@ -449,6 +453,7 @@ function MnSidebar({
           )}
         </div>
       )}
+      </div>
 
       <LocalStatusPopover
         activeVault={activeVault}
