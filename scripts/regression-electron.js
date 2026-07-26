@@ -923,7 +923,7 @@ async function runEditorUsabilityScenario(win) {
             && header.textContent.includes('0 words')
             && headerButtons.some(button => button.aria === 'Pin note' && !button.text)
             && headerButtons.some(button => button.aria === 'More note actions' && !button.text)
-            && !headerButtons.some(button => ['Duplicate note', 'Version history', 'Delete note', 'Open Graph', 'Open Agenda'].includes(button.text))
+            && !headerButtons.some(button => ['Duplicate note', 'Version history', 'Delete note', 'Open graph', 'Open agenda'].includes(button.text))
             && Boolean(primaryCreate)
             && !floatingCapture
             // Exactly one row lifts off the pane: the selected one.
@@ -948,7 +948,7 @@ async function runEditorUsabilityScenario(win) {
       return {
         text,
         hasCoreActions: ['Duplicate note', 'Version history', 'Export as Markdown', 'Delete note'].every(label => text.includes(label)),
-        hasDisabledPackActions: text.includes('Open Graph') || text.includes('Open Agenda'),
+        hasDisabledPackActions: text.includes('Open graph') || text.includes('Open agenda'),
       };
     })()
   `);
@@ -1555,7 +1555,7 @@ async function runUnifiedPaletteScenario(win) {
 }
 
 async function runNavigationPanelsScenario(win) {
-  await runCommandPaletteCommand(win, 'open agenda', 'Open Agenda');
+  await runCommandPaletteCommand(win, 'open agenda', 'Open agenda');
   await waitFor(win, 'sidebar agenda opens calendar planner with captured task', async () => {
     const visible = await evaluate(win, `document.body.textContent.includes('Agenda') && document.body.textContent.includes('QE quick capture todo')`);
     return { ok: visible, visible };
@@ -1575,7 +1575,7 @@ async function runCalendarPlannerScenario(win) {
   });
   const title = (await state(win)).selectedTitle;
   await openEditorMoreMenu(win);
-  await clickButton(win, { aria: 'Open Agenda' });
+  await clickButton(win, { aria: 'Open agenda' });
   await waitFor(win, 'agenda panel opens from editor More menu', async () => {
     const visible = await evaluate(win, `document.body.textContent.includes('Agenda') && document.body.textContent.includes('Inbox todos')`);
     return { ok: visible, visible };

@@ -296,7 +296,7 @@ function MnSmartViewsPanel({
         borderBottom: `1px solid ${T.line}`,
       }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 18, fontWeight: 760, color: T.ink }}>Smart Views</div>
+          <div style={{ fontSize: 18, fontWeight: 760, color: T.ink }}>Smart views</div>
           <div style={{ marginTop: 4, fontSize: 12, color: T.inkDim }}>
             {resultCount} result{resultCount === 1 ? '' : 's'} · {notes.length} notes · {tagCount} tags
           </div>

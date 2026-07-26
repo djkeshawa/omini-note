@@ -753,7 +753,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panels, /Status/);
   assert.match(panels, /AI Config/);
   assert.doesNotMatch(panels, /CreateButtonGroup/);
-  assert.match(panels, /Story Structure/);
+  assert.match(panels, /Story structure/);
   assert.match(panels, /Act -> Chapter -> Scene/);
   assert.match(panels, /function MnNovelistPanel[\s\S]*childrenByActId/);
   assert.match(panels, /Word Count by Act/);
@@ -931,7 +931,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(app, /onPlanItem=\{featureState\.showAgenda \? \(\) => \{ navigateView\('calendar'\)/);
   assert.match(app, /view === 'calendar'/);
   assert.match(app, /id: 'calendar'/);
-  assert.match(app, /id: 'calendar'[\s\S]*label: 'Open Agenda'[\s\S]*openView\('calendar'\)/);
+  assert.match(app, /id: 'calendar'[\s\S]*label: 'Open agenda'[\s\S]*openView\('calendar'\)/);
   assert.match(app, /id: 'todos'[\s\S]*hidden: true[\s\S]*aiHidden: true[\s\S]*openView\('calendar'\)/);
   assert.match(app, /mnCalendarTaskContent\(text, date, type === 'reminder' \? time : ''\)/);
   assert.match(app, /mnWriteSnoozedReminder/);
@@ -978,7 +978,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(calendarPanel, /onSnoozeItem/);
   assert.doesNotMatch(appShell, /function MnAppTopToolbar/);
   assert.match(editor, /onOpenCalendar/);
-  assert.match(editorHeader, />Open Agenda<\/MenuItem>/);
+  assert.match(editorHeader, />Open agenda<\/MenuItem>/);
   assert.match(utilityPanels, /onSnooze \|\| onDismiss/);
   assert.match(utilityPanels, /rollupFormat === 'short'/);
   assert.match(utilityPanels, /tasks = \[\], reminders = \[\], todayNote = null, agendaItems = \[\]/);
@@ -991,7 +991,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(utilityPanels, /sources\.map/);
   assert.match(utilityPanels, /sections\.map/);
   assert.match(utilityPanels, /title="Agenda"/);
-  assert.match(utilityPanels, /Open Agenda/);
+  assert.match(utilityPanels, /Open agenda/);
   assert.doesNotMatch(utilityPanels, /No agenda items today/);
   assert.match(utilityPanels, /rollupFilterTaskItems/);
   assert.match(utilityPanels, /rollupFilterReminderItems/);

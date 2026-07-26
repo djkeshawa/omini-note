@@ -1,5 +1,6 @@
 // Editor pane: VispNote block outliner with focused title, tags, metadata, and connections.
 
+import { DS_PANE } from '../shared/designSystem.js';
 import {
   cleanPropertyKey,
   ConnectionsSection,
@@ -301,10 +302,12 @@ function MnEditor({
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 clamp(18px, 4.5vw, 56px) 44px' }}>
         <div ref={editorSearchScopeRef} style={{
-          maxWidth: editorWidth === 'narrow' ? 720
+          // The default caps at the design system's prose measure; wider
+          // settings stay available as deliberate overrides.
+          maxWidth: editorWidth === 'narrow' ? 560
                   : editorWidth === 'wide' ? 1280
                   : editorWidth === 'full' ? 'none'
-                  : 1000,
+                  : DS_PANE.editorColumn,
           margin: '0 auto', paddingTop: 22,
           fontSize: fontSize === 'small' ? '13px' : fontSize === 'large' ? '16px' : '14.5px',
         }}>

@@ -158,7 +158,7 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeK
           )}
           <button onClick={() => onChangeKind(block.id, { hidden: !block.hidden })} style={mnTinyIconButton(T)}>{block.hidden ? 'Show' : 'Hide'}</button>
           <button disabled={aiActive} onClick={() => onAiAction?.('summarize', 'section', { blockId: block.id, plotPointsAction: 'summarize' })} style={aiButtonStyle}>Summarize</button>
-          <button disabled={aiActive} onClick={() => onAiAction?.('write', 'section', { blockId: block.id, plotPointsAction: 'write-scene' })} style={aiButtonStyle}>Write Scene</button>
+          <button disabled={aiActive} onClick={() => onAiAction?.('write', 'section', { blockId: block.id, plotPointsAction: 'write-scene' })} style={aiButtonStyle}>Write scene</button>
           <button disabled={aiActive} onClick={() => onAiAction?.('improve', 'section', { blockId: block.id, plotPointsAction: 'improve' })} style={aiButtonStyle}>Improve</button>
           <button onClick={() => onDelete(block.id)} style={{ ...mnTinyIconButton(T), color: T.danger || T.warn }}>x</button>
         </div>
