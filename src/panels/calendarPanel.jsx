@@ -1,3 +1,4 @@
+import { DS_TYPE } from '../shared/designSystem.js';
 // Agenda panel for dated reminders and todo planning.
 
 import MN_APP_HELPERS from '../app/appHelpers.js';
@@ -521,8 +522,11 @@ function MnCalendarPanel({
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: mode === 'agenda' ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(300px, 380px)',
-          gap: 14,
+          // The day rail is a fixed column in both modes: the agenda list and
+          // the month grid are two ways of choosing a day, and the rail is what
+          // you chose.
+          gridTemplateColumns: 'minmax(0, 1fr) 340px',
+          gap: 0,
           alignItems: 'start',
           flex: 1,
           minHeight: 0,
@@ -655,10 +659,9 @@ function MnCalendarPanel({
           )}
 
           <div style={{
-            border: `1px solid ${T.lineSub}`,
-            background: T.bg,
-            borderRadius: 8,
-            padding: 14,
+            borderLeft: `1px solid ${T.lineSub}`,
+            background: T.bgSub,
+            padding: '18px 16px 24px',
             minWidth: 0,
             height: '100%',
             minHeight: 0,
@@ -667,7 +670,7 @@ function MnCalendarPanel({
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: T.ink }}>{mode === 'agenda' ? 'Agenda' : selectedTitle}</div>
+                <div style={{ ...DS_TYPE.sectionHead, fontSize: 20, color: T.ink }}>{mode === 'agenda' ? 'Agenda' : selectedTitle}</div>
                 {mode !== 'agenda' && (
                   <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
                     {selectedItems.length} scheduled
