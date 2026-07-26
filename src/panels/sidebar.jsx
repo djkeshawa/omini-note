@@ -2,7 +2,7 @@ import { VaultIcon as MnVaultIcon } from '../shared/components/VaultIcon.jsx'; i
 import { MnContextualTip } from '../features/onboarding/index.js';
 import { SidebarNavRow } from './SidebarNavRow.jsx';
 import { LocalStatusPopover } from './LocalStatusPopover.jsx';
-import { dsGroupLabelStyle, dsMachineStyle, dsPaneWidth, dsSelectedBarStyle, dsSelectedRow, mnSentenceCase } from '../shared/designSystem.js';
+import { DS_HEIGHT, dsGroupLabelStyle, dsMachineStyle, dsPaneWidth, dsSelectedBarStyle, dsSelectedRow, mnSentenceCase } from '../shared/designSystem.js';
 const { useMemo: useMemoS } = React;
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
@@ -170,7 +170,12 @@ function MnSidebar({
     );
   };
 
-  const Row = props => <SidebarNavRow {...props} T={T} pad={pad} />;
+  // Nav rows are 34px at comfortable density; compact trims them to 30 so the
+  // density setting still shortens the sidebar.
+  const navRowHeight = density === 'compact' ? 30 : DS_HEIGHT.navRow;
+  // Tag and workflow rows sit one step below the primary destinations.
+  const subRowHeight = density === 'compact' ? 28 : 31;
+  const Row = props => <SidebarNavRow {...props} T={T} height={navRowHeight} />;
 
   const iconInbox = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 9L3 3H13L14 9" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M2 9V13H14V9H10.5L9.5 11H6.5L5.5 9H2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>);
   const iconToday = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5 2V4M11 2V4M2 7H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="8" cy="10.5" r="1.3" fill="currentColor"/></svg>);
@@ -537,7 +542,7 @@ function MnSidebar({
             const count = workflowCounts?.[state.id] || 0;
             return (
               <div key={state.id} onClick={() => onSelectWorkflow(state.id)} style={{
-                ...dsSelectedRow(T, active, { height: 31 }), fontSize: 13,
+                ...dsSelectedRow(T, active, { height: subRowHeight }), fontSize: 13,
               }}
               onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
               onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
@@ -644,7 +649,7 @@ function MnSidebar({
             <div key={tag.name}
             onClick={() => { setTagMenu(null); onSelectTag(tag.name); }}
             onContextMenu={(e) => openTagMenu(e, tag.name)}
-            style={{ ...dsSelectedRow(T, active, { height: 31 }), fontSize: 13 }}
+            style={{ ...dsSelectedRow(T, active, { height: subRowHeight }), fontSize: 13 }}
             onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
             onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
               {active && <span style={dsSelectedBarStyle(T, 6)} />}
