@@ -184,12 +184,24 @@ function SectionAdvanced({ tweaks, setTweak, T, enabledPacks = [], featureState 
       <H T={T} label="Optional packs" sub="Enable specialist tools only when they support your work." />
       <SettingsCard T={T}>
         {packs.map((pack, index) => {
-          const checked = enabledPacks.includes(pack.id) || inferred.has(pack.id);
+          // The toggle reports whether you turned the pack on, not whether its
+          // views happen to be showing. Those are different things: a pack is
+          // also revealed by matching notes, and reading that back as "on" left
+          // the control checked and disabled with nothing the user could do —
+          // which is how a vault with workflow notes but no dated ones ended up
+          // unable to reach Agenda at all.
+          const checked = enabledPacks.includes(pack.id);
+          const detected = inferred.has(pack.id);
+          const note = detected
+            ? (checked
+              ? ' Also found in your notes, so its views stay even if you turn this off.'
+              : ' Already showing where your notes support it. Turn on for the rest.')
+            : '';
           return (
             <Row key={pack.id} T={T} label={pack.label}
-              sub={`${pack.description}${inferred.has(pack.id) ? ' Detected from existing data.' : ''}`}
+              sub={`${pack.description}${note}`}
               last={index === packs.length - 1}>
-              <Toggle T={T} checked={checked} disabled={inferred.has(pack.id)}
+              <Toggle T={T} checked={checked}
                 label={`${checked ? 'Disable' : 'Enable'} ${pack.label} pack`}
                 dataId={pack.id}
                 onChange={value => onSetPack?.(pack.id, value)} />

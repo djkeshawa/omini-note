@@ -242,6 +242,12 @@ test('App and editor font size settings use stepper controls', () => {
   const appRuntime = fs.readFileSync(path.join(__dirname, '../src/app/appRuntime.js'), 'utf8');
   const outliner = outlinerSource(__dirname);
 
+  // An optional pack toggle reports explicit opt-in only, and is never
+  // disabled by inference — a checked-and-disabled toggle left a vault with
+  // workflow notes unable to reach Agenda at all.
+  assert.match(settings, /const checked = enabledPacks\.includes\(pack\.id\);/);
+  assert.doesNotMatch(settings, /disabled=\{inferred\.has\(pack\.id\)\}/);
+
   assert.match(settingsControls, /function FontSizeStepper/);
   assert.match(settings, /label="App font size"/);
   assert.match(settings, /label="Font size"/);
