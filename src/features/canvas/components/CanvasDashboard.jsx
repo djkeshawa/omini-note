@@ -1,5 +1,5 @@
 const { useState: useStateC, useEffect: useEffectC, useRef: useRefC, useMemo: useMemoC } = React;
-import { DS_TYPE } from '../../../shared/designSystem.js';
+import { DS_RADIUS, DS_TYPE } from '../../../shared/designSystem.js';
 const {
   MN_CANVAS_TOOLS, MN_CANVAS_COLORS, MN_CANVAS_DEFAULT_STYLE, mnCloneCanvasState, mnCanvasId,
   mnNewCanvas, mnCanvasElement, mnCanvasNoteElement, mnCanvasNotePreview, mnCanvasDate,
@@ -112,8 +112,11 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, onDelete, T }) {
         ) : (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 360px), 1fr))',
+            // Four across, as the prototype has it: a board is recognised by
+            // its shape, so the preview wants width more than the title does.
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))',
             gap: 16,
+            alignContent: 'start',
           }}>
             {canvases.map(canvas => (
               <button
@@ -121,71 +124,46 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, onDelete, T }) {
                 onClick={() => onOpen && onOpen(canvas.id)}
                 onContextMenu={(e) => openCanvasCardMenu(e, canvas)}
                 style={{
-                  minHeight: 132,
                   textAlign: 'left',
-                  border: `1px solid ${T.line}`,
-                  borderRadius: 8,
-                  background: T.bg,
+                  border: `1px solid ${T.lineSub}`,
+                  borderRadius: DS_RADIUS.panel,
+                  background: T.bgElevated || T.bg,
                   color: T.ink,
-                  padding: 14,
+                  padding: 0,
+                  overflow: 'hidden',
                   cursor: 'pointer',
-                  boxShadow: `0 12px 30px color-mix(in oklab, ${T.ink} 7%, transparent)`,
-                  transition: 'transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease',
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1fr) 154px',
-                  alignItems: 'stretch',
-                  gap: 14,
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = T.bgHover;
-                  e.currentTarget.style.borderColor = T.selLine;
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = `0 16px 38px color-mix(in oklab, ${T.ink} 10%, transparent)`;
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = T.bg;
-                  e.currentTarget.style.borderColor = T.line;
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = `0 12px 30px color-mix(in oklab, ${T.ink} 7%, transparent)`;
-                }}>
-                <div style={{
-                  minWidth: 0,
+                  boxShadow: `0 2px 8px color-mix(in oklab, ${T.ink} 5%, transparent)`,
+                  transition: 'transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease',
                   display: 'flex',
                   flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  padding: '3px 0',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = T.selLine;
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = `0 10px 24px color-mix(in oklab, ${T.ink} 10%, transparent)`;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = T.lineSub;
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = `0 2px 8px color-mix(in oklab, ${T.ink} 5%, transparent)`;
                 }}>
-                  <div>
-                    <div style={{
-                      fontFamily: 'var(--mn-ui)',
-                      fontSize: 15,
-                      fontWeight: 700,
-                      lineHeight: 1.25,
-                      color: T.ink,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}>{canvas.title || 'Untitled canvas'}</div>
-                  </div>
-                  <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    alignSelf: 'flex-start',
-                    gap: 7,
-                    fontFamily: 'var(--mn-mono)',
-                    fontSize: 10.5,
-                    color: T.inkDim,
-                    padding: '5px 8px',
-                    borderRadius: 999,
-                    border: `1px solid ${T.lineSub}`,
-                    background: T.bgSub,
-                    maxWidth: '100%',
-                  }}>
-                    <span>{canvas.elementCount || 0} item{canvas.elementCount === 1 ? '' : 's'}</span>
-                  </div>
+                {/* Preview first: you recognise a board by its shape. */}
+                <div style={{
+                  height: 116, flexShrink: 0, position: 'relative', overflow: 'hidden',
+                  borderBottom: `1px solid ${T.lineSub}`,
+                  background: mnCanvasStageBackground(T, 14),
+                }}>
+                  <MnCanvasMiniPreview canvas={canvas} T={T} />
                 </div>
-                <MnCanvasMiniPreview canvas={canvas} T={T} />
+                <div style={{ padding: '12px 13px', minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: 'var(--mn-ui)', fontSize: 13.5, fontWeight: 600, color: T.ink,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{canvas.title || 'Untitled canvas'}</div>
+                  <div style={{
+                    marginTop: 4, fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkDim,
+                  }}>{canvas.elementCount || 0} item{canvas.elementCount === 1 ? '' : 's'}</div>
+                </div>
               </button>
             ))}
           </div>
