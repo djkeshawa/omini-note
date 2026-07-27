@@ -1,6 +1,6 @@
 import { mnNormalizeWorkflowId, mnNormalizeWorkflowStates, mnWorkflowIsClosed } from '../../editor/blockFeatures.jsx';
 import { SectionHead } from '../../panels/panelShared.jsx';
-import { DS_RADIUS, mnSentenceCase } from '../../shared/designSystem.js';
+import { DS_RADIUS, dsGroupLabelStyle, mnSentenceCase } from '../../shared/designSystem.js';
 import { mnGetTagBg, mnGetTagColor } from '../../shared/theme.jsx';
 
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
@@ -15,6 +15,8 @@ function MnWorkflowPanel({
   const [mode, setMode] = useStateP('kanban');
   const [dragItem, setDragItem] = useStateP(null);
   const [dragOverState, setDragOverState] = useStateP(null);
+  const [extraColumns, setExtraColumns] = useStateP([]);
+  const [columnMenuOpen, setColumnMenuOpen] = useStateP(false);
   const [dragPreview, setDragPreview] = useStateP(null);
   const [showArchived, setShowArchived] = useStateP(false);
   const [stateDraft, setStateDraft] = useStateP('');
@@ -549,6 +551,29 @@ function MnWorkflowPanel({
     return (workflowItems?.[state.id] || []).map(item => ({ ...item, state }));
   });
 
+  // Columns are the union of property keys present on the notes in view —
+  // discovered, never declared, so a note that gains a `pov::` line starts
+  // offering pov as a column with no schema to update.
+  const RESERVED_KEYS = new Set(['status']);
+  const availableColumns = useMemoP(() => {
+    const seen = new Map();
+    allItems.forEach(item => {
+      Object.keys(item.properties || {}).forEach(key => {
+        if (RESERVED_KEYS.has(key.toLowerCase())) return;
+        seen.set(key, (seen.get(key) || 0) + 1);
+      });
+    });
+    // Most-used first: the key on the most notes is the one worth showing.
+    return [...seen.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([key]) => key);
+  }, [allItems]);
+  const shownColumns = extraColumns.filter(key => availableColumns.includes(key));
+  const tableGrid = [
+    '108px', 'minmax(220px, 1.5fr)', 'minmax(150px, 0.8fr)', 'minmax(180px, 1fr)',
+    ...shownColumns.map(() => 'minmax(120px, 0.8fr)'),
+    '176px',
+  ].join(' ');
+  const tableMinWidth = 880 + shownColumns.length * 140;
+
   return (
     <div style={{
       flex: 1, height: '100%', background: T.bg,
@@ -605,6 +630,76 @@ function MnWorkflowPanel({
             <ModeButton id="kanban" label="Kanban" />
             <ModeButton id="table" label="Table" />
             <ModeButton id="list" label="List" />
+            {mode === 'table' && availableColumns.length > 0 && (
+              <div style={{ position: 'relative', marginLeft: 4 }}>
+                <button
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={columnMenuOpen}
+                  onClick={() => setColumnMenuOpen(open => !open)}
+                  style={{
+                    height: 28, padding: '0 10px', borderRadius: DS_RADIUS.control,
+                    border: `1px dashed ${T.line}`, background: 'transparent', color: T.inkMed,
+                    fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                  }}>
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                    <path d="M6 2.5v7M2.5 6h7" strokeLinecap="round" />
+                  </svg>
+                  Column{shownColumns.length ? ` · ${shownColumns.length}` : ''}
+                </button>
+                {columnMenuOpen && (
+                  <div
+                    role="menu"
+                    aria-label="Table columns"
+                    style={{
+                      position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 40,
+                      minWidth: 200, maxHeight: 260, overflowY: 'auto', padding: 6,
+                      background: T.bgElevated || T.bg, border: `1px solid ${T.line}`,
+                      borderRadius: DS_RADIUS.panel,
+                      boxShadow: `0 16px 40px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+                    }}>
+                    <div style={{ ...dsGroupLabelStyle(T), padding: '4px 8px 6px' }}>
+                      Properties on these notes
+                    </div>
+                    {availableColumns.map(key => {
+                      const on = shownColumns.includes(key);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          role="menuitemcheckbox"
+                          aria-checked={on}
+                          onClick={() => setExtraColumns(current => (
+                            current.includes(key) ? current.filter(k => k !== key) : [...current, key]
+                          ))}
+                          style={{
+                            width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                            padding: '7px 8px', borderRadius: DS_RADIUS.control,
+                            border: 'none', background: on ? T.selBg : 'transparent',
+                            color: T.ink, cursor: 'pointer', textAlign: 'left',
+                            fontFamily: 'var(--mn-ui)', fontSize: 12.5,
+                          }}>
+                          <span style={{
+                            width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                            border: `1.5px solid ${on ? T.accent : T.line}`,
+                            background: on ? T.accent : 'transparent',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {on && (
+                              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke={T.bg} strokeWidth="2" aria-hidden="true">
+                                <path d="M2.5 6.5L5 9L9.5 3.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </span>
+                          <span style={{ flex: 1, minWidth: 0 }}>{key}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             <button onClick={() => setShowArchived(v => !v)} style={{
               padding: '5px 10px',
               borderRadius: 5,
@@ -678,7 +773,7 @@ function MnWorkflowPanel({
               }}>
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '108px minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(180px, 1fr) 176px',
+                  gridTemplateColumns: tableGrid,
                   gap: 0,
                   padding: '8px 12px',
                   background: T.bgSub,
@@ -689,22 +784,24 @@ function MnWorkflowPanel({
                   fontFamily: 'var(--mn-ui)', fontWeight: 600,
                   fontSize: 11,
                   color: T.inkDim,
-                  minWidth: 880,
+                  minWidth: tableMinWidth,
                   boxSizing: 'border-box',
                 }}>
-                  <span>Status</span><span>Note</span><span>Title</span><span>Tags</span><span>Change</span>
+                  <span>Status</span><span>Note</span><span>Title</span><span>Tags</span>
+                  {shownColumns.map(key => <span key={key}>{key}</span>)}
+                  <span>Change</span>
                 </div>
                 {allItems.map(({ state, ...item }) => (
                   <div key={item.id} style={{
                     display: 'grid',
-                    gridTemplateColumns: '108px minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(180px, 1fr) 176px',
+                    gridTemplateColumns: tableGrid,
                     gap: 0,
                     padding: '10px 12px',
                     borderBottom: `1px solid ${T.lineSub}`,
                     alignItems: 'start',
                     fontFamily: 'var(--mn-ui)',
                     fontSize: 13,
-                    minWidth: 880,
+                    minWidth: tableMinWidth,
                     boxSizing: 'border-box',
                     background: T.bg,
                   }}>
@@ -730,6 +827,16 @@ function MnWorkflowPanel({
                       minWidth: 0,
                     }}>{item.noteTitle}</span>
                     <TagEditorCell item={item} />
+                    {/* Discovered property cells. Read-only for now: writing a
+                        cell is a markdown edit and wants its own single writer. */}
+                    {shownColumns.map(key => (
+                      <div key={key} style={{
+                        minWidth: 0, paddingTop: 3, paddingRight: 10,
+                        fontFamily: 'var(--mn-ui)', fontSize: 12,
+                        color: item.properties?.[key] ? T.inkMed : T.inkDim,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>{item.properties?.[key] || '—'}</div>
+                    ))}
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
                       <select value={state.id} onChange={(e) => moveItem(item, e.target.value)} style={{
                         border: `1px solid ${T.line}`,
@@ -743,7 +850,7 @@ function MnWorkflowPanel({
                         flex: 1,
                         boxSizing: 'border-box',
                       }}>
-                        {(workflowStates || []).map(s => <option key={s.id} value={s.id}>{s.id}</option>)}
+                        {(workflowStates || []).map(s => <option key={s.id} value={s.id}>{mnSentenceCase(s.id)}</option>)}
                       </select>
                       <ArchiveButton item={item} compact />
                     </div>

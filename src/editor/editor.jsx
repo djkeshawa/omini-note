@@ -55,6 +55,9 @@ function MnEditor({
   const [zoomBlockId, setZoomBlockId] = useStateE(null);
   const [metadataOpen, setMetadataOpen] = useStateE(false);
   const [connectionsOpen, setConnectionsOpen] = useStateE(false);
+  // The rail is permanent by default but must be dismissible — it takes 292px
+  // from the prose column, and not every note is about its links.
+  const [railHidden, setRailHidden] = useStateE(false);
   const [toast, setToast] = useStateE(null);
   const toastTimerRef = useRefE(null);
   const editorSearchScopeRef = useRefE(null);
@@ -170,6 +173,12 @@ function MnEditor({
   };
 
   const revealConnections = () => {
+    if (connectionsRail) {
+      // In rail mode the control is a toggle: the panel is already on screen,
+      // so "show connections" can only sensibly mean "hide them again".
+      setRailHidden(hidden => !hidden);
+      return;
+    }
     setConnectionsOpen(true);
     requestAnimationFrame(() => connectionsRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }));
   };
@@ -288,6 +297,7 @@ function MnEditor({
         onToggleNoteList={onToggleNoteList}
         onPinToggle={onPinToggle}
         onScrollToConnections={revealConnections}
+        connectionsRailOpen={connectionsRail && !railHidden && connectionCount > 0}
         onDuplicate={onDuplicate}
         onOpenVersions={onOpenVersions}
         onExport={onExport}
@@ -577,7 +587,7 @@ function MnEditor({
 
           {/* Below the rail breakpoint connections fall back to the accordion
               under the note, so they are never simply unreachable. */}
-          {!connectionsRail && (
+          {(!connectionsRail || railHidden) && (
             <div ref={connectionsRef}>
               <ConnectionsSection {...connectionsProps} expanded={connectionsOpen} onExpandedChange={setConnectionsOpen} />
             </div>
@@ -585,7 +595,7 @@ function MnEditor({
 
         </div>
       </div>
-        {connectionsRail && connectionCount > 0 && (
+        {connectionsRail && !railHidden && connectionCount > 0 && (
           <aside
             ref={connectionsRef}
             aria-label="Connections"

@@ -257,6 +257,21 @@ function createWorkflowHelpers(scope = {}) {
         return match ? String(match[1] || '').trim() : '';
       };
   
+    // Columns are discovered from the notes, never declared, so every
+    // `key:: value` line a note carries is offered to the table.
+    const readProperties = (body = '') => {
+      const out = {};
+      String(body || '').split('\n').forEach(line => {
+        const match = line.match(/^\s*(?:-\s*)?([A-Za-z][A-Za-z0-9 _-]{0,40})::\s*(.*)$/);
+        if (!match) return;
+        const key = match[1].trim();
+        const value = match[2].trim();
+        if (!key || out[key] != null) return;
+        out[key] = value;
+      });
+      return out;
+    };
+
     (notes || []).forEach(note => {
       const workflow = normalizeWorkflowStatus(propertyValue(note.body || '', 'status'), safeStates, options.normalizeId);
       if (!workflow || !Object.prototype.hasOwnProperty.call(counts, workflow)) return;
@@ -269,6 +284,7 @@ function createWorkflowHelpers(scope = {}) {
         text: workflowNotePreview(note),
         kind: 'note',
         workflow,
+        properties: readProperties(note.body),
         modifiedAt: note.modifiedAt || note.date,
       };
       if (note.workflowArchived) {
