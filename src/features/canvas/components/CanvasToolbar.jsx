@@ -1,3 +1,4 @@
+import { DS_HEIGHT, dsMachineStyle } from '../../../shared/designSystem.js';
 import { MnCanvasToolButton, MnCanvasActionButton, MnCanvasColorControl, MnCanvasDivider, MnCanvasStatusPill } from './CanvasControls.jsx';
 import { mnCanvasIconButton, mnCanvasToolbarGroup, mnCanvasToolbarShelf, mnCanvasToolbarRow, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid } from './CanvasStyles.js';
 import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';
@@ -48,13 +49,12 @@ function CanvasToolbar({
         boxShadow: `0 1px 0 color-mix(in oklab, ${T.bg} 84%, white) inset`,
       }}>
         <div style={{
-          minHeight: 52,
+          height: DS_HEIGHT.panelHeader,
+          boxSizing: 'border-box',
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          // Right inset keeps the "Delete canvas" button clear of the floating
-          // reminder bell (fixed at top:14, right:18) in the top-right corner.
-          padding: '9px 60px 7px 18px',
+          gap: 12,
+          padding: '0 20px',
         }}>
           <button
             onMouseDown={(e) => e.preventDefault()}
@@ -87,9 +87,9 @@ function CanvasToolbar({
               background: 'transparent',
               color: T.ink,
               fontFamily: 'var(--mn-ui)',
-              fontSize: 16,
-              fontWeight: 700,
-              padding: '5px 7px',
+              fontSize: 15,
+              fontWeight: 600,
+              padding: '4px 7px',
             }}
             onFocus={e => {
               setTitleFocused(true);
@@ -101,8 +101,12 @@ function CanvasToolbar({
               e.currentTarget.style.borderColor = 'transparent';
             }}
           />
-          <MnCanvasStatusPill T={T}>{(draft.elements || []).length} object{(draft.elements || []).length === 1 ? '' : 's'}</MnCanvasStatusPill>
-          <MnCanvasStatusPill T={T}>{selectedIds.length ? `${selectedIds.length} selected` : 'No selection'}</MnCanvasStatusPill>
+          {/* One machine value, as the frame has it: what is here and what is
+              picked, rather than two pills saying half each. */}
+          <span style={{ ...dsMachineStyle(T), fontSize: 11, flexShrink: 0, whiteSpace: 'nowrap' }}>
+            {(draft.elements || []).length} object{(draft.elements || []).length === 1 ? '' : 's'}
+            {selectedIds.length ? ` · ${selectedIds.length} selected` : ''}
+          </span>
           <div style={{ flex: 1 }} />
           <MnCanvasActionButton icon="canvas-trash" label="Delete canvas" onClick={() => setDeleteDialogOpen(true)} T={T} tone="danger" />
         </div>
