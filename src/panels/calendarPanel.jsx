@@ -1,4 +1,4 @@
-import { DS_TYPE } from '../shared/designSystem.js';
+import { DS_TYPE, DS_HEIGHT, DS_RADIUS, dsMachineStyle } from '../shared/designSystem.js';
 // Agenda panel for dated reminders and todo planning.
 
 import MN_APP_HELPERS from '../app/appHelpers.js';
@@ -215,15 +215,18 @@ function MnCalendarPanel({
   };
 
   const pillBtn = (active) => ({
-    minHeight: 30,
+    height: DS_HEIGHT.toolbar,
+    boxSizing: 'border-box',
     border: `1px solid ${active ? T.selLine : T.lineSub}`,
     background: active ? T.accentSoft : T.bg,
     color: active ? T.accent : T.inkMed,
-    borderRadius: 7,
-    padding: '0 10px',
+    borderRadius: DS_RADIUS.control,
+    padding: '0 11px',
     fontFamily: 'var(--mn-ui)',
     fontSize: 12,
-    fontWeight: 650,
+    // Weight carries the selected state alongside the tint; an unselected
+    // control has no reason to shout.
+    fontWeight: active ? 600 : 400,
     cursor: 'pointer',
   });
 
@@ -243,6 +246,44 @@ function MnCalendarPanel({
     alignItems: 'center',
     justifyContent: 'center',
   });
+
+  // A month cell entry: a flat tinted chip carrying the time and the label.
+  // The tone is the same three-way read the rail's card uses on its left edge.
+  const DayChip = ({ item, first }) => {
+    const overdue = item.remindAt?.at && item.remindAt.at < new Date();
+    const tone = item.isReminderOnly ? T.warn : overdue ? T.danger : T.accent;
+    const stamp = item.remindAt?.time || '';
+    return (
+      <div
+        onClick={(event) => { event.stopPropagation(); setActiveKey(item.key); }}
+        title={item.label || item.text || 'Reminder'}
+        style={{
+          marginTop: first ? 5 : 3,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+          height: 19,
+          padding: '0 6px',
+          borderRadius: 5,
+          background: `color-mix(in oklab, ${tone} 12%, ${T.bg})`,
+          cursor: 'pointer',
+          minWidth: 0,
+        }}>
+        {stamp && (
+          <span style={{ ...dsMachineStyle(T), fontSize: 9.5, color: tone, flexShrink: 0 }}>{stamp}</span>
+        )}
+        <span style={{
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 11,
+          color: T.ink,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0,
+        }}>{item.label || item.text || 'Reminder'}</span>
+      </div>
+    );
+  };
 
   const ItemCard = ({ item, compact = false }) => {
     const overdue = item.remindAt?.at && item.remindAt.at < new Date();
@@ -325,8 +366,8 @@ function MnCalendarPanel({
                 gap: 7,
                 flexWrap: 'wrap',
                 color: T.inkDim,
-                fontFamily: 'var(--mn-mono)',
-                fontSize: 10,
+                fontFamily: 'var(--mn-ui)',
+                fontSize: 11,
               }}>
                 <span style={{ color: T.inkMed }}>{detail.sourceNoteTitle || item.noteTitle}</span>
                 {detail.reason && <span style={{ color: overdue ? T.danger : T.accent }}>{detail.reason}</span>}
@@ -367,24 +408,34 @@ function MnCalendarPanel({
   return (
     <div style={{
       flex: 1,
+      minWidth: 0,
       height: '100%',
       overflow: 'hidden',
-      background: `linear-gradient(180deg, ${T.bgElevated || T.bg} 0%, ${T.bg} 28%)`,
-      padding: '28px max(58px, clamp(18px, 3vw, 34px)) 22px clamp(18px, 3vw, 34px)',
+      background: T.bg,
+      display: 'flex',
+      flexDirection: 'column',
       boxSizing: 'border-box',
     }}>
       <div style={{
-        maxWidth: 1280,
-        height: '100%',
-        margin: '0 auto',
+        flex: 1,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
-        minHeight: 0,
       }}>
         {/* One header row: the month you are on, how to move, and what is
             actually pressing. The month name carries the date, so the panel
-            title stays a plain label. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+            title stays a plain label. A 52px bar like every other panel —
+            this used to be a loose strip floating in a centred, inset page. */}
+        <div style={{
+          height: DS_HEIGHT.panelHeader,
+          flexShrink: 0,
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '0 20px',
+          borderBottom: `1px solid ${T.lineSub}`,
+        }}>
           <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>Agenda</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <button onClick={() => moveMonth(-1)} aria-label="Previous month" title="Previous month" style={mnAgendaStepBtn(T)}>
@@ -400,8 +451,36 @@ function MnCalendarPanel({
             </button>
           </div>
           <button onClick={selectToday} style={pillBtn(selectedKey === todayKey)}>Today</button>
-          <button onClick={() => setMode('month')} style={pillBtn(mode === 'month')}>Month</button>
-          <button onClick={() => setMode('agenda')} style={pillBtn(mode === 'agenda')}>Agenda</button>
+          {/* A segmented control, not two loose pills — they are one choice.
+              The second mode is "List": calling it Agenda inside the Agenda
+              panel named the panel, not the view. */}
+          <div style={{
+            display: 'flex',
+            padding: 2,
+            borderRadius: DS_RADIUS.control,
+            background: T.bgSub,
+            border: `1px solid ${T.lineSub}`,
+          }}>
+            {[['month', 'Month'], ['agenda', 'List']].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={mode === value}
+                onClick={() => setMode(value)}
+                style={{
+                  height: 24,
+                  padding: '0 12px',
+                  borderRadius: DS_RADIUS.icon,
+                  border: `1px solid ${mode === value ? T.lineSub : 'transparent'}`,
+                  background: mode === value ? T.bg : 'transparent',
+                  color: mode === value ? T.ink : T.inkMed,
+                  fontFamily: 'var(--mn-ui)',
+                  fontSize: 12,
+                  fontWeight: mode === value ? 600 : 400,
+                  cursor: 'pointer',
+                }}>{label}</button>
+            ))}
+          </div>
           <span style={{ flex: 1 }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: T.inkDim }}>
             {grouped.overdue.length > 0 && (
@@ -417,7 +496,11 @@ function MnCalendarPanel({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          flexShrink: 0, padding: '10px 20px',
+          borderBottom: `1px solid ${T.lineSub}`,
+        }}>
           {[
             ['all', 'All'],
             ['overdue', 'Overdue'],
@@ -451,34 +534,25 @@ function MnCalendarPanel({
           // you chose.
           gridTemplateColumns: 'minmax(0, 1fr) 340px',
           gap: 0,
-          alignItems: 'start',
+          // Full-bleed now, so both columns fill the row rather than sitting
+          // content-height against the panel background.
+          alignItems: 'stretch',
           flex: 1,
           minHeight: 0,
           overflow: 'hidden',
         }}>
+          {/* No card and no second month title: the header bar already says
+              which month this is, and the rail already says which day. */}
           {mode === 'month' && (
             <div style={{
-              border: `1px solid ${T.lineSub}`,
-              background: T.bg,
-              borderRadius: 8,
-              overflow: 'hidden',
               minWidth: 0,
               height: '100%',
               minHeight: 0,
+              overflow: 'hidden',
+              borderRight: `1px solid ${T.lineSub}`,
               display: 'flex',
               flexDirection: 'column',
             }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 14px',
-                borderBottom: `1px solid ${T.lineSub}`,
-                background: T.bgSub,
-              }}>
-                <div style={{ fontSize: 17, fontWeight: 700, color: T.ink }}>{monthTitle}</div>
-                <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>{selectedTitle}</div>
-              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', borderBottom: `1px solid ${T.lineSub}` }}>
                 {weekLabels.map(label => (
                   <div key={label} style={{
@@ -569,10 +643,17 @@ function MnCalendarPanel({
                             }}>+</button>
                         )}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {dayItems.slice(0, 2).map(item => <ItemCard key={item.key} item={item} compact />)}
-                        {dayItems.length > 2 && (
-                          <div style={{ fontSize: 11, color: T.inkDim, padding: '2px 4px' }}>+{dayItems.length - 2} more</div>
+                      {/* A cell entry is a chip, not a card. A bordered card
+                          with its own checkbox is the rail's job; in a 7-wide
+                          grid it only has room to say when and what. */}
+                      <div>
+                        {dayItems.slice(0, selected ? 2 : 1).map((item, chipIndex) => (
+                          <DayChip key={item.key} item={item} first={chipIndex === 0} />
+                        ))}
+                        {dayItems.length > (selected ? 2 : 1) && (
+                          <div style={{ marginTop: 3, fontSize: 11, color: T.inkDim, padding: '0 6px' }}>
+                            +{dayItems.length - (selected ? 2 : 1)} more
+                          </div>
                         )}
                       </div>
                     </div>
@@ -583,7 +664,7 @@ function MnCalendarPanel({
           )}
 
           <div style={{
-            borderLeft: `1px solid ${T.lineSub}`,
+            borderLeft: mode === 'month' ? 'none' : `1px solid ${T.lineSub}`,
             background: T.bgSub,
             padding: '18px 16px 24px',
             minWidth: 0,
@@ -596,7 +677,7 @@ function MnCalendarPanel({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ ...DS_TYPE.sectionHead, fontSize: 20, color: T.ink }}>{mode === 'agenda' ? 'Agenda' : selectedTitle}</div>
                 {mode !== 'agenda' && (
-                  <div style={{ marginTop: 3, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
+                  <div style={{ marginTop: 3, fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkDim }}>
                     {selectedItems.length} scheduled
                   </div>
                 )}
@@ -646,7 +727,7 @@ function MnCalendarPanel({
                       <input type="time" value={createTime} onChange={e => setCreateTime(e.target.value)} style={mnCalendarInput(T)} />
                     </div>
                   )}
-                  {scheduleError && <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.danger }}>{scheduleError}</div>}
+                  {scheduleError && <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.danger }}>{scheduleError}</div>}
                   <button onClick={addItem} disabled={!createText.trim() || !createNoteId} style={mnCalendarPrimaryButton(T, !createText.trim() || !createNoteId)}>Add</button>
                 </div>
               </div>
@@ -669,7 +750,7 @@ function MnCalendarPanel({
                     <input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)} style={mnCalendarInput(T)} />
                     <input type="time" value={draftTime} onChange={e => setDraftTime(e.target.value)} style={mnCalendarInput(T)} />
                   </div>
-                  {scheduleError && <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.danger }}>{scheduleError}</div>}
+                  {scheduleError && <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.danger }}>{scheduleError}</div>}
                   <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                     <button onClick={saveActive} disabled={!draftText.trim()} style={mnCalendarPrimaryButton(T, !draftText.trim())}>Save</button>
                     <button onClick={clearActiveDate} disabled={!activeItem.remindAt} style={pillBtn(false)}>Clear date</button>
@@ -677,7 +758,7 @@ function MnCalendarPanel({
                     {!activeItem.isReminderOnly && <button onClick={() => onToggleCheck?.(activeItem)} style={pillBtn(false)}>{activeItem.checked ? 'Reopen' : 'Complete'}</button>}
                     <button onClick={() => onOpen?.(activeItem.noteId)} style={pillBtn(false)}>Open note</button>
                   </div>
-                  <div style={{ fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+                  <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkDim }}>
                     Linked to {activeItem.noteTitle || 'Untitled'}.
                   </div>
                   {(() => {
@@ -691,11 +772,11 @@ function MnCalendarPanel({
                       ['Tags', (detail.inheritedTags || []).length ? detail.inheritedTags.map(tag => `#${tag}`).join(' ') : 'None'],
                     ];
                     return (
-                      <div style={{ display: 'grid', gap: 4, fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
+                      <div style={{ display: 'grid', gap: 4, fontFamily: 'var(--mn-ui)', fontSize: 11, color: T.inkDim }}>
                         {rows.map(([label, value]) => (
                           <div key={label} style={{ display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr)', gap: 8 }}>
                             <span>{label}</span>
-                            <span style={{ color: T.inkMed, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+                            <span style={{ ...dsMachineStyle(T), color: T.inkMed, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
                           </div>
                         ))}
                       </div>
