@@ -74,6 +74,32 @@ test('preference connector accepts known fields and rejects unknown or unsafe pa
   assert.throws(() => preferences.sanitizePrefsPatchFromIpc(unsafe), /Invalid|Unsupported/);
 });
 
+test('smart view preferences round-trip both formats and carry the v2 fields', () => {
+  // The renderer writes v2 and echoes stored v1 back on boot; the boundary
+  // must accept both, or the whole prefs patch is dropped on every launch —
+  // which is exactly what happened when this file stayed on v1.
+  const v2 = {
+    format: 'vispnote.smartView.v2', id: 'open-tasks', title: 'Open tasks', type: 'tasks',
+    filters: {}, sort: {}, layout: 'board', group: { by: 'status', direction: 'desc' }, columns: ['status', 'due'],
+  };
+  const v1 = { format: 'vispnote.smartView.v1', id: 'recent', title: 'Recent', type: 'notes' };
+  const clean = preferences.sanitizePrefsPatchFromIpc({ smartViews: [v2, v1] }).smartViews;
+  assert.equal(clean[0].format, 'vispnote.smartView.v2');
+  assert.equal(clean[0].layout, 'board');
+  assert.deepEqual(clean[0].group, { by: 'status', direction: 'desc' });
+  assert.deepEqual(clean[0].columns, ['status', 'due']);
+  // v1 upgrades on write and gains nothing it did not have
+  assert.equal(clean[1].format, 'vispnote.smartView.v2');
+  assert.equal(clean[1].layout, undefined);
+  assert.equal(clean[1].group, undefined);
+  // hostile or malformed v2 fields still throw
+  assert.throws(() => preferences.sanitizePrefsPatchFromIpc({ smartViews: [{ ...v2, format: 'vispnote.smartView.v3' }] }), /Unsupported Smart View format/);
+  assert.throws(() => preferences.sanitizePrefsPatchFromIpc({ smartViews: [{ ...v2, layout: 'spiral' }] }), /Invalid Smart View layout/);
+  assert.throws(() => preferences.sanitizePrefsPatchFromIpc({ smartViews: [{ ...v2, group: { by: 'x', extra: 1 } }] }), /Unsupported Smart View group field/);
+  assert.throws(() => preferences.sanitizePrefsPatchFromIpc({ smartViews: [{ ...v2, group: { by: 'x', direction: 'up' } }] }), /Invalid Smart View group direction/);
+  assert.throws(() => preferences.sanitizePrefsPatchFromIpc({ smartViews: [{ ...v2, columns: Array(13).fill('c') }] }), /Invalid Smart View columns/);
+});
+
 test('main composition and connector modules respect the phase-two line budget', () => {
   const main = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf8');
   assert.ok(main.split(/\r?\n/).length <= 800, 'main.js must remain a composition module');

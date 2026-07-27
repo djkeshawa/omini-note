@@ -29,7 +29,8 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvasModel, /id: 'triangle'/);
   assert.match(canvasModel, /id: 'eraser'/);
   assert.match(canvas, /function MnCanvasToolIcon/);
-  assert.match(canvas, /aria-label=\{tool\.label\}/);
+  // The tool buttons live on the dock now; each is labelled by its tool.
+  assert.match(canvas, /aria-label=\{item\.label\}/);
   assert.match(canvas, /mnCanvasIconToolButton/);
   assert.match(canvas, /function MnCanvasContextMenu/);
   assert.match(canvas, /onContextMenu=\{\(e\) => e\.preventDefault\(\)\}/);

@@ -78,23 +78,6 @@ function MnCanvasNotePicker({ notes = [], onPick, onClose, T }) {
   );
 }
 
-function MnCanvasToolButton({ tool, active, onClick, T }) {
-  return (
-    <button
-      onClick={onClick}
-      title={tool.label}
-      aria-label={tool.label}
-      style={{
-        ...mnCanvasIconToolButton(T),
-        background: active ? T.selBg : 'transparent',
-        borderColor: active ? T.accent : T.lineSub,
-        color: active ? T.accent : T.inkMed,
-      }}>
-      <MnCanvasToolIcon id={tool.id} />
-    </button>
-  );
-}
-
 function MnCanvasActionButton({ icon, label, onClick, disabled = false, T, tone = 'default', expanded, hasPopup = false, size }) {
   const isExpandedToggle = typeof expanded === 'boolean';
   return (
@@ -142,30 +125,6 @@ function MnCanvasActionIcon({ id }) {
   if (id === 'trash' || id === 'canvas-trash') return <svg {...common}><path d="M3 4.5H13M6 4.5V3C6 2.5 6.5 2 7 2H9C9.5 2 10 2.5 10 3V4.5M5 4.5V13C5 13.5 5.5 14 6 14H10C10.5 14 11 13.5 11 13V4.5" strokeLinecap="round"/></svg>;
   if (id === 'more') return <svg {...common}><circle cx="4.5" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="11.5" cy="8" r="1"/></svg>;
   return null;
-}
-
-function MnCanvasDivider({ T }) {
-  return <span aria-hidden="true" style={{ width: 1, height: 21, background: T.lineSub, margin: '0 2px' }} />;
-}
-
-function MnCanvasStatusPill({ children, T }) {
-  return (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      height: 24,
-      border: `1px solid ${T.lineSub}`,
-      borderRadius: 999,
-      padding: '0 9px',
-      background: T.bgSub,
-      color: T.inkDim,
-      fontFamily: 'var(--mn-mono)',
-      fontSize: 10.5,
-      whiteSpace: 'nowrap',
-    }}>
-      {children}
-    </span>
-  );
 }
 
 function MnCanvasResizeHandles({ bounds, onPointerDown, T }) {
@@ -450,5 +409,5 @@ function MnCanvasDeleteDialog({ canvas, T, onCancel, onConfirm }) {
   );
 }
 
-export { MnCanvasNotePicker, MnCanvasToolButton, MnCanvasActionButton, MnCanvasActionIcon, MnCanvasDivider, MnCanvasStatusPill, MnCanvasResizeHandles, MnCanvasToolIcon, MnCanvasContextMenu, MnCanvasDeleteDialog };
+export { MnCanvasNotePicker, MnCanvasActionButton, MnCanvasActionIcon, MnCanvasResizeHandles, MnCanvasToolIcon, MnCanvasContextMenu, MnCanvasDeleteDialog };
 import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';

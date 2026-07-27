@@ -37,22 +37,6 @@ function mnCanvasPrimaryButton(T) {
   };
 }
 
-function mnCanvasIconButton(T) {
-  return {
-    width: 30,
-    height: 30,
-    borderRadius: 7,
-    border: `1px solid ${T.lineSub}`,
-    background: T.bg,
-    color: T.inkMed,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 0,
-  };
-}
-
 function mnCanvasToolButton(T) {
   return {
     border: `1px solid ${T.lineSub}`,
@@ -148,4 +132,4 @@ function mnCanvasDialogButton(T) {
   };
 }
 
-export { mnCanvasPrimaryButton, mnCanvasIconButton, mnCanvasHeaderButton, mnCanvasToolButton, mnCanvasIconToolButton, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid, mnCanvasStageBackground, mnCanvasDialogButton };
+export { mnCanvasPrimaryButton, mnCanvasHeaderButton, mnCanvasToolButton, mnCanvasIconToolButton, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid, mnCanvasStageBackground, mnCanvasDialogButton };
