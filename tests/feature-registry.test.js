@@ -69,6 +69,21 @@ test('planning data reveals only the capability supported by that data', () => {
   assert.equal(workflow.showWorkflow, true);
 });
 
+test('opting into planning reveals the half your data has not asked for yet', () => {
+  // Workflow notes infer the planning pack, but Agenda stays hidden because it
+  // is gated on agenda data of its own. Explicitly enabling the pack is the way
+  // out of that, so the Settings toggle must never be the only route and must
+  // never be unclickable — see the toggle assertions in ui-regressions.
+  const inferredOnly = features.deriveFeatureState({ workflowTotal: 3, agendaCount: 0 });
+  assert.deepEqual(inferredOnly.inferred, ['planning']);
+  assert.equal(inferredOnly.showAgenda, false);
+
+  const optedIn = features.deriveFeatureState({ enabledPacks: ['planning'], workflowTotal: 3, agendaCount: 0 });
+  assert.equal(optedIn.showAgenda, true);
+  assert.equal(optedIn.showWorkflow, true);
+  assert.equal(features.isViewAvailable('todos', optedIn), true);
+});
+
 test('feature artifacts and plugin actions preserve specialist access for existing data', () => {
   const artifacts = features.detectFeatureArtifacts([
     { body: '{{canvas c1}}\n{{ SMART-VIEW open_tasks}}', tags: [] },

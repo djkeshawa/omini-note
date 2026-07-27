@@ -7,6 +7,7 @@ const {
   mnCanvasSyncConnectors, mnCanvasCloneElements,
 } = MN_CANVAS_MODEL;
 import { mnCanvasDialogButton, mnCanvasIconToolButton } from './CanvasStyles.js';
+import { DS_RADIUS } from '../../../shared/designSystem.js';
 
 function MnCanvasNotePicker({ notes = [], onPick, onClose, T }) {
   const [query, setQuery] = useStateC('');
@@ -94,7 +95,7 @@ function MnCanvasToolButton({ tool, active, onClick, T }) {
   );
 }
 
-function MnCanvasActionButton({ icon, label, onClick, disabled = false, T, tone = 'default', expanded, hasPopup = false }) {
+function MnCanvasActionButton({ icon, label, onClick, disabled = false, T, tone = 'default', expanded, hasPopup = false, size }) {
   const isExpandedToggle = typeof expanded === 'boolean';
   return (
     <button
@@ -106,6 +107,9 @@ function MnCanvasActionButton({ icon, label, onClick, disabled = false, T, tone 
       aria-haspopup={hasPopup ? 'menu' : undefined}
       style={{
         ...mnCanvasIconToolButton(T),
+        // The header sizes its buttons to the prototype's 28px; the More menu
+        // grid keeps the default so its 4-column layout still lines up.
+        ...(size ? { width: size, height: size, borderRadius: DS_RADIUS.control } : null),
         background: isExpandedToggle && expanded ? T.selBg : T.bg,
         borderColor: isExpandedToggle && expanded ? T.accent : T.lineSub,
         color: disabled ? T.inkDim : tone === 'danger' ? T.danger : T.inkMed,

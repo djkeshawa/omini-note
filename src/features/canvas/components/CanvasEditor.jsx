@@ -15,7 +15,7 @@ import { useCanvasKeyboardShortcuts } from '../useCanvasKeyboardShortcuts.js';
 import { CanvasToolDock } from './CanvasToolDock.jsx';
 import { CanvasStyleBar } from './CanvasStyleBar.jsx';
 import { CanvasZoomCluster } from './CanvasZoomCluster.jsx';
-import { mnCanvasPrimaryButton, mnCanvasIconButton, mnCanvasToolButton, mnCanvasIconToolButton, mnCanvasToolbarGroup, mnCanvasToolbarShelf, mnCanvasToolbarRow, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid, mnCanvasStageBackground, mnCanvasDialogButton } from './CanvasStyles.js';
+import { mnCanvasStageBackground } from './CanvasStyles.js';
 
 function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNote, onTextEditingChange, T }) {
   const [draft, setDraft] = useStateC(canvas);
@@ -609,23 +609,10 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
         canvas={canvas}
         selectedIds={selectedIds}
         setDeleteDialogOpen={setDeleteDialogOpen}
-        tool={tool}
-        setTool={setTool}
-        notes={notes}
-        notePickerOpen={notePickerOpen}
-        setNotePickerOpen={setNotePickerOpen}
-        activeStroke={activeStroke}
-        applyColor={applyColor}
-        activeFill={activeFill}
-        activeStrokeWidth={activeStrokeWidth}
-        applyStrokeWidth={applyStrokeWidth}
         undoCanvas={undoCanvas}
         canUndo={canUndo}
         canRedo={canRedo}
         redoCanvas={redoCanvas}
-        setZoom={setZoom}
-        viewport={viewport}
-        fitToScreen={fitToScreen}
         toolbarMenuRef={toolbarMenuRef}
         setToolbarMenuOpen={setToolbarMenuOpen}
         toolbarMenuOpen={toolbarMenuOpen}

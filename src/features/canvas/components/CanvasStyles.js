@@ -1,5 +1,26 @@
 
-import { dsGroupLabelStyle } from '../../../shared/designSystem.js';
+import { DS_HEIGHT, DS_RADIUS, dsGroupLabelStyle } from '../../../shared/designSystem.js';
+
+// The header's own icon button. The prototype draws these at 28x28 radius 8
+// (prototype.html:750, :760), which is DS_HEIGHT.toolbar and DS_RADIUS.control.
+// It is separate from mnCanvasIconToolButton because that one also sizes the
+// More menu's 31px action grid, which the prototype does not model.
+function mnCanvasHeaderButton(T) {
+  return {
+    width: DS_HEIGHT.toolbar,
+    height: DS_HEIGHT.toolbar,
+    borderRadius: DS_RADIUS.control,
+    border: '1px solid transparent',
+    background: 'transparent',
+    color: T.inkMed,
+    cursor: 'pointer',
+    padding: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  };
+}
 
 function mnCanvasPrimaryButton(T) {
   return {
@@ -61,41 +82,6 @@ function mnCanvasIconToolButton(T) {
   };
 }
 
-function mnCanvasToolbarGroup(T) {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: 4,
-    border: `1px solid ${T.lineSub}`,
-    borderRadius: 8,
-    background: `color-mix(in oklab, ${T.bg} 78%, ${T.bgSub})`,
-    flexShrink: 0,
-  };
-}
-
-function mnCanvasToolbarShelf() {
-  return {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 8,
-    padding: '7px 18px 10px',
-    overflow: 'visible',
-  };
-}
-
-function mnCanvasToolbarRow() {
-  return {
-    minHeight: 40,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-    flex: '0 1 auto',
-    minWidth: 0,
-  };
-}
-
 function mnCanvasToolbarMoreSlot() {
   return {
     position: 'relative',
@@ -107,7 +93,7 @@ function mnCanvasToolbarMoreSlot() {
 function mnCanvasMoreMenu(T) {
   return {
     position: 'absolute',
-    top: 38,
+    top: 35,
     right: 0,
     zIndex: 30,
     width: 238,
@@ -162,4 +148,4 @@ function mnCanvasDialogButton(T) {
   };
 }
 
-export { mnCanvasPrimaryButton, mnCanvasIconButton, mnCanvasToolButton, mnCanvasIconToolButton, mnCanvasToolbarGroup, mnCanvasToolbarShelf, mnCanvasToolbarRow, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid, mnCanvasStageBackground, mnCanvasDialogButton };
+export { mnCanvasPrimaryButton, mnCanvasIconButton, mnCanvasHeaderButton, mnCanvasToolButton, mnCanvasIconToolButton, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid, mnCanvasStageBackground, mnCanvasDialogButton };
