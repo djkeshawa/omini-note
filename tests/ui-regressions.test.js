@@ -85,10 +85,14 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvas, /function mnCanvasMoreMenu/);
   assert.match(canvas, /function mnCanvasMoreMenuGrid/);
   assert.match(canvas, /function mnCanvasToolbarMoreSlot/);
-  assert.match(canvas, /function mnCanvasToolbarShelf/);
-  assert.match(canvas, /function mnCanvasToolbarRow/);
-  assert.match(canvas, /function mnCanvasToolbarMoreSlot/);
-  assert.match(canvas, /padding: '7px 18px 10px'/);
+  // The shelf band is gone — the header is one 52px row, as the prototype
+  // draws it. Its geometry assertions move to the row that replaced it.
+  assert.doesNotMatch(canvas, /function mnCanvasToolbarShelf/);
+  assert.doesNotMatch(canvas, /function mnCanvasToolbarRow/);
+  assert.doesNotMatch(canvas, /function mnCanvasToolbarGroup/);
+  assert.match(canvas, /height: DS_HEIGHT\.panelHeader/);
+  assert.match(canvas, /padding: '0 20px'/);
+  assert.match(canvas, /function mnCanvasHeaderButton/);
   assert.match(canvas, /flex: '0 0 auto'/);
   assert.match(canvas, /flexWrap: 'wrap'/);
   assert.doesNotMatch(canvas, /overflowX: 'auto'/);
