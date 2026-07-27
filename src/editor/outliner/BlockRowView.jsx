@@ -69,15 +69,18 @@ function MnBlockRowView({ model }) {
         ))}
   
         {/* Disclosure triangle, parked in the gutter just left of this row's
-            indent so the text column starts at the same place on every line. */}
-        <MnDisclosure
-          open={!block.collapsed}
-          hasChildren={hasChildren}
-          onClick={() => hasChildren && onToggleCollapse(block.id)}
-          padTop={mnGripPadTop(block)}
-          left={indentPx - 18}
-          T={T}
-        />
+            indent so the text column starts at the same place on every line.
+            Only a block with children has anything to fold, so only such a
+            block gets one. */}
+        {hasChildren && (
+          <MnDisclosure
+            open={!block.collapsed}
+            onClick={() => onToggleCollapse(block.id)}
+            padTop={mnGripPadTop(block)}
+            left={indentPx - 18}
+            T={T}
+          />
+        )}
   
         {/* Block-kind affordance: bullet dot + drag handle */}
         <div

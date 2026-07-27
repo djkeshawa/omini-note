@@ -97,26 +97,30 @@ function MnCanvasPicker({ canvases = [], onPick, onCreate, onClose, T }) {
 
 // ── Disclosure triangle ────────────────────────────────────────────────
 // The triangle sits in the gutter, not in the text column. It is chrome, and
-// reserving 18px of the writing measure for it pushed every line right —
-// including the great majority of blocks that have no children to fold.
-function MnDisclosure({ open, hasChildren, onClick, T, padTop, left = -18 }) {
+// reserving 18px of the writing measure for it pushed every line right.
+//
+// Render it only for a block that actually has children. The row's hover rule
+// carries `!important`, so a disclosure on a childless block was revealed on
+// hover regardless of its inline opacity — an arrow that appeared on every
+// line and did nothing, since the click is guarded on having children.
+function MnDisclosure({ open, onClick, T, padTop, left = -18 }) {
   return (
     <button
       onClick={onClick}
       className="mn-disclosure"
-      title={hasChildren ? (open ? 'Collapse' : 'Expand') : ''}
+      title={open ? 'Collapse' : 'Expand'}
       style={{
         position: 'absolute', left, top: 0,
         width: 18, height: 22, background: 'none', border: 'none',
         padding: 0, flexShrink: 0,
-        cursor: hasChildren ? 'pointer' : 'default',
+        cursor: 'pointer',
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         // Pad so the visible triangle aligns with the text baseline of the
         // first line. Caller passes the same value used for the grip handle.
         paddingTop: (padTop != null ? padTop : 4) - 1,
         // Always visible when collapsed (signals hidden content);
         // hover-revealed when expanded.
-        opacity: hasChildren ? (open ? 0 : 1) : 0,
+        opacity: open ? 0 : 1,
         transition: 'opacity 80ms',
         marginRight: 0,
       }}>

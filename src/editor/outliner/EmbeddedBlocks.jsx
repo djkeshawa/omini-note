@@ -70,7 +70,6 @@ const {
 const mnSpellWords = spellWords;
 const mnRenderSpellCheckedText = renderSpellCheckedText;
 const MnSpellSuggestionMenu = SpellSuggestionMenu;
-import { MnDisclosure } from './OutlinerChrome.jsx';
 
 function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeKind, onDelete, onAiAction, aiActive = false }) {
   const [contextPickerOpen, setContextPickerOpen] = useStateOE(false);
