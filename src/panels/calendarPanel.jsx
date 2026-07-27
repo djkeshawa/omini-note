@@ -3,86 +3,10 @@ import { DS_TYPE } from '../shared/designSystem.js';
 
 import MN_APP_HELPERS from '../app/appHelpers.js';
 import { mnGetTagColor } from '../shared/theme.jsx';
+import { mnCalendarDateKey, mnCalendarDateFromKey, mnCalendarMonthDays, mnCalendarItemDateKey, mnCalendarTimeText } from './calendarDates.js';
+import { mnCalendarIcon, mnAgendaStepBtn, mnCalendarInput, mnCalendarPrimaryButton } from './calendarChrome.jsx';
 
 const { useEffect: useEffectC, useMemo: useMemoC, useState: useStateC } = React;
-
-function mnCalendarDateKey(date = new Date()) {
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return '';
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function mnCalendarDateFromKey(key) {
-  const match = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return new Date();
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-}
-
-function mnCalendarMonthDays(anchor, weekStart = 'monday') {
-  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const start = new Date(first);
-  const startDay = weekStart === 'sunday' ? first.getDay() : (first.getDay() + 6) % 7;
-  start.setDate(first.getDate() - startDay);
-  return Array.from({ length: 42 }, (_, index) => {
-    const day = new Date(start);
-    day.setDate(start.getDate() + index);
-    return {
-      date: day,
-      key: mnCalendarDateKey(day),
-      inMonth: day.getMonth() === anchor.getMonth(),
-      today: mnCalendarDateKey(day) === mnCalendarDateKey(new Date()),
-    };
-  });
-}
-
-function mnCalendarItemDateKey(item) {
-  return item?.remindAt?.date || '';
-}
-
-function mnCalendarTimeText(item) {
-  return item?.remindAt?.time || 'all day';
-}
-
-function mnCalendarIcon(kind, T) {
-  if (kind === 'bell') {
-    return (
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-        <path d="M4.5 7C4.5 4.8 5.8 3.2 8 3.2S11.5 4.8 11.5 7V9.5L13 11H3L4.5 9.5V7Z" />
-        <path d="M6.8 12.2C7.1 13 7.5 13.3 8 13.3S8.9 13 9.2 12.2" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  if (kind === 'calendar') {
-    return (
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-        <rect x="2.5" y="3.5" width="11" height="10" rx="1.4" />
-        <path d="M5 2.5V5M11 2.5V5M2.5 7H13.5" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  return (
-    <span style={{
-      width: 13,
-      height: 13,
-      borderRadius: 3,
-      border: `1.5px solid ${T.line}`,
-      display: 'inline-block',
-      boxSizing: 'border-box',
-    }} />
-  );
-}
-
-function mnAgendaStepBtn(T) {
-  return {
-    width: 28, height: 28, borderRadius: 8,
-    border: '1px solid transparent', background: 'transparent',
-    color: T.inkMed, cursor: 'pointer', padding: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  };
-}
 
 function MnCalendarPanel({
   notes = [],
@@ -785,37 +709,6 @@ function MnCalendarPanel({
       </div>
     </div>
   );
-}
-
-function mnCalendarInput(T) {
-  return {
-    width: '100%',
-    minWidth: 0,
-    boxSizing: 'border-box',
-    border: `1px solid ${T.lineSub}`,
-    borderRadius: 7,
-    background: T.bgSub,
-    color: T.ink,
-    padding: '8px 9px',
-    outline: 'none',
-    fontFamily: 'var(--mn-ui)',
-    fontSize: 12.5,
-  };
-}
-
-function mnCalendarPrimaryButton(T, disabled) {
-  return {
-    minHeight: 32,
-    border: `1px solid ${disabled ? T.lineSub : T.ink}`,
-    background: disabled ? T.bgSub : T.ink,
-    color: disabled ? T.inkDim : T.bg,
-    borderRadius: 7,
-    padding: '0 12px',
-    fontFamily: 'var(--mn-ui)',
-    fontSize: 12.5,
-    fontWeight: 700,
-    cursor: disabled ? 'default' : 'pointer',
-  };
 }
 
 export { MnCalendarPanel };

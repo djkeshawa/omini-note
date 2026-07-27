@@ -34,12 +34,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=moderate
-
-      - name: Full dependency audit
-        run: npm audit --audit-level=high
-
+      # Code checks run before the audits. A step failure skips the rest of the
+      # job, so an advisory in a transitive dev dependency used to mask lint,
+      # tests, the architecture gate and the build all at once — which is how
+      # two files drifted past the 800-line hard limit unnoticed. The audits
+      # still run and still fail the job; they just no longer hide anything.
       - name: Lint and syntax checks
         run: npm run check:main
 
@@ -48,6 +47,12 @@ jobs:
 
       - name: Renderer build
         run: npm run build:renderer
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Full dependency audit
+        run: npm audit --audit-level=high
 
   electron-regression:
     name: Electron regression suite
