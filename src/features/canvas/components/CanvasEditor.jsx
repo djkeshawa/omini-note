@@ -6,7 +6,7 @@ const {
   mnCanvasMoveElement, mnCanvasAlign, mnCanvasDistribute, mnCanvasIsConnector,
   mnCanvasAnchorTargetAt, mnCanvasResolveConnector, mnCanvasSyncConnectors, mnCanvasCloneElements,
 } = MN_CANVAS_MODEL;
-import { MnCanvasNotePicker, MnCanvasToolButton, MnCanvasActionButton, MnCanvasDivider, MnCanvasStatusPill, MnCanvasResizeHandles, MnCanvasContextMenu, MnCanvasDeleteDialog } from './CanvasControls.jsx';
+import { MnCanvasNotePicker, MnCanvasActionButton, MnCanvasResizeHandles, MnCanvasContextMenu, MnCanvasDeleteDialog } from './CanvasControls.jsx';
 import { MnCanvasElement } from './CanvasElements.jsx';
 import { CanvasToolbar } from './CanvasToolbar.jsx';
 import { CanvasOverlays } from './CanvasOverlays.jsx';
