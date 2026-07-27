@@ -68,7 +68,7 @@ function EditorHeader({
   T, note, saveStatus, wordCount, connectionCount,
   novelistPath, onOpen, onBack,
   sidebarHidden, noteListHidden, onToggleSidebar, onToggleNoteList,
-  onPinToggle, onScrollToConnections, onDuplicate, onOpenVersions,
+  onPinToggle, onScrollToConnections, connectionsRailOpen = false, onDuplicate, onOpenVersions,
   onExport, referencePaneOpen, onToggleReferencePane, onOpenGraph, onOpenCalendar, onDelete,
   assistanceControl = null,
 }) {
@@ -196,7 +196,13 @@ function EditorHeader({
         </svg>
       </HeaderButton>
       {connectionCount > 0 && (
-        <HeaderButton label={`Show ${connectionCount} connections`} onClick={onScrollToConnections} T={T}>
+        <HeaderButton
+          label={connectionsRailOpen
+            ? `Hide ${connectionCount} connections`
+            : `Show ${connectionCount} connections`}
+          active={connectionsRailOpen}
+          onClick={onScrollToConnections}
+          T={T}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true">
             <path d="M6.2 9.8L9.8 6.2M5.1 11.9L3.8 13.2a2.2 2.2 0 01-3.1-3.1L3.4 7.4a2.2 2.2 0 013.1 0M10.9 4.1l1.3-1.3a2.2 2.2 0 013.1 3.1l-2.7 2.7a2.2 2.2 0 01-3.1 0" strokeLinecap="round" />
           </svg>
