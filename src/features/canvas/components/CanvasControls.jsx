@@ -1,6 +1,6 @@
 const { useState: useStateC, useEffect: useEffectC, useRef: useRefC, useMemo: useMemoC } = React;
 const {
-  MN_CANVAS_TOOLS, MN_CANVAS_COLORS, MN_CANVAS_DEFAULT_STYLE, mnCloneCanvasState, mnCanvasId,
+  MN_CANVAS_TOOLS, MN_CANVAS_DEFAULT_STYLE, mnCloneCanvasState, mnCanvasId,
   mnNewCanvas, mnCanvasElement, mnCanvasNoteElement, mnCanvasNotePreview, mnCanvasDate,
   mnCanvasPreviewElements, mnCanvasCloneElement, mnCanvasBounds, mnCanvasSelectionBounds,
   mnCanvasMoveElement, mnCanvasIsConnector, mnCanvasAnchorTargetAt, mnCanvasResolveConnector,
@@ -72,39 +72,6 @@ function MnCanvasNotePicker({ notes = [], onPick, onClose, T }) {
             <div style={{ padding: 16, color: T.inkDim, fontSize: 13, textAlign: 'center' }}>No matching notes</div>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function MnCanvasColorControl({ label, value, onChange, T }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>{label}</span>
-      <input
-        type="color"
-        value={value || '#000000'}
-        onChange={(e) => onChange && onChange(e.target.value)}
-        title={`${label} color`}
-        style={{ width: 26, height: 26, padding: 2, border: `1px solid ${T.lineSub}`, borderRadius: 6, background: T.bg, cursor: 'pointer' }}
-      />
-      <div style={{ display: 'flex', gap: 3 }}>
-        {MN_CANVAS_COLORS.slice(0, 6).map(color => (
-          <button
-            key={`${label}-${color}`}
-            onClick={() => onChange && onChange(color)}
-            title={color}
-            style={{
-              width: 16,
-              height: 16,
-              borderRadius: 3,
-              border: `1px solid ${T.lineSub}`,
-              background: color,
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          />
-        ))}
       </div>
     </div>
   );
@@ -479,5 +446,5 @@ function MnCanvasDeleteDialog({ canvas, T, onCancel, onConfirm }) {
   );
 }
 
-export { MnCanvasNotePicker, MnCanvasColorControl, MnCanvasToolButton, MnCanvasActionButton, MnCanvasActionIcon, MnCanvasDivider, MnCanvasStatusPill, MnCanvasResizeHandles, MnCanvasToolIcon, MnCanvasContextMenu, MnCanvasDeleteDialog };
+export { MnCanvasNotePicker, MnCanvasToolButton, MnCanvasActionButton, MnCanvasActionIcon, MnCanvasDivider, MnCanvasStatusPill, MnCanvasResizeHandles, MnCanvasToolIcon, MnCanvasContextMenu, MnCanvasDeleteDialog };
 import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';

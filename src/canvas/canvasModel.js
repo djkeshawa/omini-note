@@ -320,6 +320,55 @@ function mnCanvasAddNoteCard(canvas, note, stage = {}) {
 }
 
 
+// Align every selected element to one edge (or centre line) of the selection's
+// own bounding box. Elements outside the selection are returned untouched.
+function mnCanvasAlign(elements, ids, mode) {
+  const list = Array.isArray(elements) ? elements : [];
+  const selected = new Set(ids || []);
+  const picked = list.filter(el => selected.has(el.id));
+  if (picked.length < 2) return list;
+  const box = mnCanvasSelectionBounds(picked);
+  if (!box) return list;
+  return list.map(el => {
+    if (!selected.has(el.id)) return el;
+    const b = mnCanvasBounds(el);
+    if (mode === 'left') return mnCanvasMoveElement(el, box.x - b.x, 0);
+    if (mode === 'right') return mnCanvasMoveElement(el, box.x + box.w - (b.x + b.w), 0);
+    if (mode === 'top') return mnCanvasMoveElement(el, 0, box.y - b.y);
+    if (mode === 'bottom') return mnCanvasMoveElement(el, 0, box.y + box.h - (b.y + b.h));
+    if (mode === 'center-x') return mnCanvasMoveElement(el, box.x + box.w / 2 - (b.x + b.w / 2), 0);
+    if (mode === 'center-y') return mnCanvasMoveElement(el, 0, box.y + box.h / 2 - (b.y + b.h / 2));
+    return el;
+  });
+}
+
+// Even out the gaps along one axis: the outermost two stay put and everything
+// between them is spread at a constant centre-to-centre step.
+function mnCanvasDistribute(elements, ids, axis) {
+  const list = Array.isArray(elements) ? elements : [];
+  const selected = new Set(ids || []);
+  const picked = list.filter(el => selected.has(el.id));
+  if (picked.length < 3) return list;
+  const sorted = [...picked].sort((a, b) => {
+    const ba = mnCanvasBounds(a);
+    const bb = mnCanvasBounds(b);
+    return axis === 'x' ? ba.x - bb.x : ba.y - bb.y;
+  });
+  const first = mnCanvasBounds(sorted[0]);
+  const last = mnCanvasBounds(sorted[sorted.length - 1]);
+  const start = axis === 'x' ? first.x + first.w / 2 : first.y + first.h / 2;
+  const end = axis === 'x' ? last.x + last.w / 2 : last.y + last.h / 2;
+  const step = (end - start) / (sorted.length - 1);
+  const centers = new Map(sorted.map((el, i) => [el.id, start + step * i]));
+  return list.map(el => {
+    if (!centers.has(el.id)) return el;
+    const b = mnCanvasBounds(el);
+    return axis === 'x'
+      ? mnCanvasMoveElement(el, centers.get(el.id) - (b.x + b.w / 2), 0)
+      : mnCanvasMoveElement(el, 0, centers.get(el.id) - (b.y + b.h / 2));
+  });
+}
+
 const MN_CANVAS_MODEL_API = {
   MN_CANVAS_TOOLS,
   MN_CANVAS_COLORS,
@@ -337,6 +386,8 @@ const MN_CANVAS_MODEL_API = {
   mnCanvasBounds,
   mnCanvasSelectionBounds,
   mnCanvasMoveElement,
+  mnCanvasAlign,
+  mnCanvasDistribute,
   MN_CANVAS_ANCHORABLE_TYPES,
   mnCanvasIsConnector,
   mnCanvasAnchorTargetAt,

@@ -13,6 +13,12 @@ import { mnCanvasArrowHead } from './CanvasElements.jsx';
 
 function MnCanvasDashboard({ canvases, onCreate, onOpen, onDelete, T }) {
   const [title, setTitle] = useStateC('');
+  const [filter, setFilter] = useStateC('');
+  const visibleCanvases = useMemoC(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return canvases;
+    return canvases.filter(c => String(c.title || '').toLowerCase().includes(needle));
+  }, [canvases, filter]);
   const [cardMenu, setCardMenu] = useStateC(null);
   const [deleteTarget, setDeleteTarget] = useStateC(null);
   const submit = () => {
@@ -42,12 +48,32 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, onDelete, T }) {
       color: T.ink,
     }}>
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 18, marginBottom: 26 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 26, fontWeight: 700, letterSpacing: 0, color: T.ink }}>Canvas</div>
-            <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.inkDim, marginTop: 5 }}>
-              {canvases.length} canvas{canvases.length === 1 ? '' : 'es'} in this vault
-            </div>
+        {/* One header row: what this is, how many, how to find one, and the
+            single action that makes another. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600, color: T.ink }}>Thinking Board</span>
+          <span style={{ fontFamily: 'var(--mn-mono)', fontSize: 11, color: T.inkDim }}>
+            {canvases.length} canvas{canvases.length === 1 ? '' : 'es'}
+          </span>
+          <span style={{ flex: 1 }} />
+          <div style={{
+            width: 240, height: 28, display: 'flex', alignItems: 'center', gap: 8,
+            padding: '0 10px', borderRadius: DS_RADIUS.control,
+            background: T.bgSub, border: `1px solid ${T.lineSub}`,
+          }}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke={T.inkDim} strokeWidth="1.4" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.2" /><path d="M10.2 10.2L13.5 13.5" strokeLinecap="round" />
+            </svg>
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              aria-label="Filter canvases"
+              placeholder="Filter canvases"
+              style={{
+                flex: 1, minWidth: 0, border: 'none', background: 'transparent',
+                outline: 'none', fontFamily: 'var(--mn-ui)', fontSize: 12.5, color: T.ink,
+              }}
+            />
           </div>
           <div style={{
             display: 'flex',
@@ -118,7 +144,7 @@ function MnCanvasDashboard({ canvases, onCreate, onOpen, onDelete, T }) {
             gap: 16,
             alignContent: 'start',
           }}>
-            {canvases.map(canvas => (
+            {visibleCanvases.map(canvas => (
               <button
                 key={canvas.id}
                 onClick={() => onOpen && onOpen(canvas.id)}

@@ -3,16 +3,18 @@ const {
   MN_CANVAS_TOOLS, MN_CANVAS_COLORS, MN_CANVAS_DEFAULT_STYLE, mnCloneCanvasState, mnCanvasId,
   mnNewCanvas, mnCanvasElement, mnCanvasNoteElement, mnCanvasNotePreview, mnCanvasDate,
   mnCanvasPreviewElements, mnCanvasCloneElement, mnCanvasBounds, mnCanvasSelectionBounds,
-  mnCanvasMoveElement, mnCanvasIsConnector, mnCanvasAnchorTargetAt, mnCanvasResolveConnector,
-  mnCanvasSyncConnectors, mnCanvasCloneElements,
+  mnCanvasMoveElement, mnCanvasAlign, mnCanvasDistribute, mnCanvasIsConnector,
+  mnCanvasAnchorTargetAt, mnCanvasResolveConnector, mnCanvasSyncConnectors, mnCanvasCloneElements,
 } = MN_CANVAS_MODEL;
-import { MnCanvasNotePicker, MnCanvasColorControl, MnCanvasToolButton, MnCanvasActionButton, MnCanvasDivider, MnCanvasStatusPill, MnCanvasResizeHandles, MnCanvasContextMenu, MnCanvasDeleteDialog } from './CanvasControls.jsx';
+import { MnCanvasNotePicker, MnCanvasToolButton, MnCanvasActionButton, MnCanvasDivider, MnCanvasStatusPill, MnCanvasResizeHandles, MnCanvasContextMenu, MnCanvasDeleteDialog } from './CanvasControls.jsx';
 import { MnCanvasElement } from './CanvasElements.jsx';
 import { CanvasToolbar } from './CanvasToolbar.jsx';
 import { CanvasOverlays } from './CanvasOverlays.jsx';
 import { CanvasDialogs } from './CanvasDialogs.jsx';
 import { useCanvasKeyboardShortcuts } from '../useCanvasKeyboardShortcuts.js';
 import { CanvasToolDock } from './CanvasToolDock.jsx';
+import { CanvasStyleBar } from './CanvasStyleBar.jsx';
+import { CanvasZoomCluster } from './CanvasZoomCluster.jsx';
 import { mnCanvasPrimaryButton, mnCanvasIconButton, mnCanvasToolButton, mnCanvasIconToolButton, mnCanvasToolbarGroup, mnCanvasToolbarShelf, mnCanvasToolbarRow, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid, mnCanvasStageBackground, mnCanvasDialogButton } from './CanvasStyles.js';
 
 function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNote, onTextEditingChange, T }) {
@@ -292,46 +294,17 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
 
   const alignSelected = (mode) => {
     if (selectedElements.length < 2) return;
-    const bounds = mnCanvasSelectionBounds(selectedElements);
-    if (!bounds) return;
     updateDraft(prev => ({
       ...prev,
-      elements: (prev.elements || []).map(el => {
-        if (!selectedIds.includes(el.id)) return el;
-        const b = mnCanvasBounds(el);
-        if (mode === 'left') return mnCanvasMoveElement(el, bounds.x - b.x, 0);
-        if (mode === 'right') return mnCanvasMoveElement(el, bounds.x + bounds.w - (b.x + b.w), 0);
-        if (mode === 'top') return mnCanvasMoveElement(el, 0, bounds.y - b.y);
-        if (mode === 'bottom') return mnCanvasMoveElement(el, 0, bounds.y + bounds.h - (b.y + b.h));
-        if (mode === 'center-x') return mnCanvasMoveElement(el, bounds.x + bounds.w / 2 - (b.x + b.w / 2), 0);
-        if (mode === 'center-y') return mnCanvasMoveElement(el, 0, bounds.y + bounds.h / 2 - (b.y + b.h / 2));
-        return el;
-      }),
+      elements: mnCanvasAlign(prev.elements || [], selectedIds, mode),
     }), true);
   };
 
   const distributeSelected = (axis) => {
     if (selectedElements.length < 3) return;
-    const sorted = [...selectedElements].sort((a, b) => {
-      const ba = mnCanvasBounds(a);
-      const bb = mnCanvasBounds(b);
-      return axis === 'x' ? ba.x - bb.x : ba.y - bb.y;
-    });
-    const first = mnCanvasBounds(sorted[0]);
-    const last = mnCanvasBounds(sorted[sorted.length - 1]);
-    const start = axis === 'x' ? first.x + first.w / 2 : first.y + first.h / 2;
-    const end = axis === 'x' ? last.x + last.w / 2 : last.y + last.h / 2;
-    const step = (end - start) / (sorted.length - 1);
-    const targetCenters = new Map(sorted.map((el, i) => [el.id, start + step * i]));
     updateDraft(prev => ({
       ...prev,
-      elements: (prev.elements || []).map(el => {
-        if (!targetCenters.has(el.id)) return el;
-        const b = mnCanvasBounds(el);
-        return axis === 'x'
-          ? mnCanvasMoveElement(el, targetCenters.get(el.id) - (b.x + b.w / 2), 0)
-          : mnCanvasMoveElement(el, 0, targetCenters.get(el.id) - (b.y + b.h / 2));
-      }),
+      elements: mnCanvasDistribute(prev.elements || [], selectedIds, axis),
     }), true);
   };
 
@@ -670,6 +643,27 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
         overflow: 'hidden',
         background: `linear-gradient(180deg, ${T.bgSub}, ${T.bg})`,
       }}>
+        <CanvasStyleBar
+          strokeColors={MN_CANVAS_COLORS.slice(0, 6)}
+          fillColors={MN_CANVAS_COLORS.slice(6)}
+          activeStroke={activeStroke}
+          activeFill={activeFill}
+          activeStrokeWidth={activeStrokeWidth}
+          applyColor={applyColor}
+          applyStrokeWidth={applyStrokeWidth}
+          selectedIds={selectedIds}
+          alignSelected={alignSelected}
+          removeElements={removeElements}
+          T={T}
+        />
+        <CanvasZoomCluster
+          scale={viewport.scale || 1}
+          onZoomIn={() => setZoom((viewport.scale || 1) + 0.15)}
+          onZoomOut={() => setZoom((viewport.scale || 1) - 0.15)}
+          onFit={fitToScreen}
+          fitDisabled={!(draft.elements || []).length}
+          T={T}
+        />
         <CanvasToolDock
           tools={dockTools}
           tool={tool}
@@ -772,9 +766,6 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     </div>
   );
 }
-
-// Picker for placing a note card: fuzzy-filtered note list, Enter/click to
-// place at the viewport center.
 
 export { MnCanvasEditor };
 import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';

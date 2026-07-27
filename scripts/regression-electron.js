@@ -1614,7 +1614,7 @@ async function runCanvasCreateScenario(win) {
   await runCommandPaletteCommand(win, 'canvas dashboard', 'Open canvas dashboard');
   await waitFor(win, 'canvas dashboard visible', async () => {
     const current = await state(win);
-    return { ok: current.text.includes('Canvas') && current.text.includes('canvas'), current };
+    return { ok: current.text.includes('Thinking Board') && current.text.includes('canvas'), current };
   });
   await setControlByPlaceholder(win, 'Canvas name', title);
   await clickButton(win, { text: 'Create' });
