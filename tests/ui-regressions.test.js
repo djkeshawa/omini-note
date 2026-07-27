@@ -47,10 +47,11 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvas, /element\.type === 'diamond'/);
   assert.match(canvas, /element\.type === 'triangle'/);
   assert.match(canvas, /tool === 'eraser'/);
-  assert.match(canvas, /function MnCanvasColorControl/);
+  assert.match(canvas, /function CanvasStyleBar/);
+  assert.match(canvas, /function CustomSwatch/);
   assert.match(canvas, /type="color"/);
-  assert.match(canvas, /applyColor\('stroke'/);
-  assert.match(canvas, /applyColor\('fill'/);
+  assert.match(canvas, /applyColor\?\.\('stroke'/);
+  assert.match(canvas, /applyColor\?\.\('fill'/);
   assert.match(canvas, /function MnCanvasDeleteDialog/);
   assert.match(canvas, /role="dialog"/);
   assert.doesNotMatch(canvas, /window\.confirm\('Delete this canvas\?'\)/);

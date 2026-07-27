@@ -1,5 +1,5 @@
 import { DS_HEIGHT, dsMachineStyle } from '../../../shared/designSystem.js';
-import { MnCanvasToolButton, MnCanvasActionButton, MnCanvasColorControl, MnCanvasDivider, MnCanvasStatusPill } from './CanvasControls.jsx';
+import { MnCanvasToolButton, MnCanvasActionButton, MnCanvasDivider, MnCanvasStatusPill } from './CanvasControls.jsx';
 import { mnCanvasIconButton, mnCanvasToolbarGroup, mnCanvasToolbarShelf, mnCanvasToolbarRow, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid } from './CanvasStyles.js';
 import MN_CANVAS_MODEL from '../../../canvas/canvasModel.js';
 const { MN_CANVAS_TOOLS } = MN_CANVAS_MODEL;
@@ -116,31 +116,13 @@ function CanvasToolbar({
                 shelf keeps the style controls that act on a selection. */}
             <div style={mnCanvasToolbarGroup(T)}>
             </div>
-            <div style={mnCanvasToolbarGroup(T)}>
-              <MnCanvasColorControl label="Stroke" value={activeStroke} onChange={(v) => applyColor('stroke', v)} T={T} />
-              <MnCanvasColorControl label="Fill" value={activeFill === 'transparent' ? '#ffffff' : activeFill} onChange={(v) => applyColor('fill', v)} T={T} />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim }}>
-                Width
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={activeStrokeWidth}
-                  onChange={(e) => applyStrokeWidth(e.target.value)}
-                  style={{ width: 74, accentColor: T.accent }}
-                />
-              </label>
-            </div>
+            {/* Stroke, fill and width moved to the contextual style bar on
+                the board, where they appear against the selection they act on. */}
             <div style={mnCanvasToolbarGroup(T)}>
               <MnCanvasActionButton icon="undo" label="Undo" onClick={undoCanvas} disabled={!canUndo} T={T} />
               <MnCanvasActionButton icon="redo" label="Redo" onClick={redoCanvas} disabled={!canRedo} T={T} />
-              <MnCanvasDivider T={T} />
-              <MnCanvasActionButton icon="zoom-out" label="Zoom out" onClick={() => setZoom((viewport.scale || 1) - 0.15)} T={T} />
-              <span style={{ minWidth: 42, textAlign: 'center', fontFamily: 'var(--mn-mono)', fontSize: 10.5, color: T.inkDim }}>
-                {Math.round((viewport.scale || 1) * 100)}%
-              </span>
-              <MnCanvasActionButton icon="zoom-in" label="Zoom in" onClick={() => setZoom((viewport.scale || 1) + 0.15)} T={T} />
-              <MnCanvasActionButton icon="fit" label="Fit to screen (Shift+1)" onClick={fitToScreen} disabled={!(draft.elements || []).length} T={T} />
+              {/* Zoom moved to its own cluster at the bottom-right of the
+                  board, next to the thing it scales. */}
             </div>
           </div>
           <div ref={toolbarMenuRef} style={mnCanvasToolbarMoreSlot()}>
