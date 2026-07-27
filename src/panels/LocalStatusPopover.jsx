@@ -1,7 +1,7 @@
-import { dsGroupLabelStyle, dsMachineStyle } from '../shared/designSystem.js';
+import { DS_RADIUS, dsGroupLabelStyle, dsMachineStyle } from '../shared/designSystem.js';
 const { useEffect, useRef, useState } = React;
 
-function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = null, onOpenVaultHealth, onExportBackup, onOpenSettings, T }) {
+function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = null, onOpenVaultHealth, onExportBackup, T }) {
   const [open, setOpen] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
   const rootRef = useRef(null);
@@ -34,6 +34,9 @@ function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = 
   const backupLabel = lastBackupAt && Number.isFinite(new Date(lastBackupAt).getTime())
     ? new Date(lastBackupAt).toLocaleString()
     : 'No backup recorded';
+  const backupShort = lastBackupAt && Number.isFinite(new Date(lastBackupAt).getTime())
+    ? new Date(lastBackupAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : '';
   const runBackup = async () => {
     if (!onExportBackup || backupBusy) return;
     setBackupBusy(true);
@@ -43,44 +46,51 @@ function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = 
 
   return (
     <div ref={rootRef} style={{
-      padding: '7px 10px', borderTop: `1px solid ${T.lineSub}`,
-      display: 'flex', alignItems: 'center', gap: 6,
-      flexShrink: 0, minWidth: 0, position: 'relative',
+      flexShrink: 0, margin: 10, position: 'relative',
     }}>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={`Local status: ${saveStatus}`}
-        title="Local vault status"
-        onClick={() => setOpen(value => !value)}
-        style={{
-          minWidth: 0, flex: 1, minHeight: 32, padding: '4px 6px',
-          display: 'flex', alignItems: 'center', gap: 7,
-          border: `1px solid ${open ? T.lineSub : 'transparent'}`, borderRadius: 7,
-          background: open ? T.bg : 'transparent', color: T.inkDim, cursor: 'pointer',
-          fontFamily: 'var(--mn-ui)', fontSize: 11, textAlign: 'left',
-        }}>
-        <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
-        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Local</span>
-        {saveStatus !== 'Saved' && (
-          <span style={{ marginLeft: 'auto', flexShrink: 0, color: saveStatus === 'Conflict' ? (T.danger || T.warn) : T.inkDim }}>{saveStatus}</span>
-        )}
-      </button>
-      <button type="button" onClick={onOpenSettings} aria-label="Open settings" title="Settings" style={{
-        width: 32, height: 32, borderRadius: 7,
-        background: 'transparent', border: 'none', color: T.inkMed, cursor: 'pointer',
-        padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      {/* The footer states where the vault is and whether it is saved. The
+          button opens the detail; settings live in the app bar. */}
+      <div style={{
+        padding: '10px 11px', borderRadius: DS_RADIUS.row,
+        background: T.bgElevated || T.bg, border: `1px solid ${T.lineSub}`,
+        display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto',
+        alignItems: 'center', gap: 9,
       }}>
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-          <circle cx="8" cy="8" r="2.2"/>
-          <path d="M8 1.5V3M8 13V14.5M14.5 8H13M3 8H1.5M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6M12.6 12.6L11.5 11.5M4.5 4.5L3.4 3.4" strokeLinecap="round"/>
-        </svg>
-      </button>
+        <span aria-hidden="true" style={{
+          width: 8, height: 8, borderRadius: '50%', background: statusColor,
+          boxShadow: `0 0 0 3px color-mix(in oklab, ${statusColor} 16%, transparent)`,
+        }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 12, fontWeight: 600, color: T.ink }}>
+            {saveStatus === 'Saved' ? 'All changes saved' : saveStatus}
+          </div>
+          <div title={activeVault?.path || ''} style={{
+            marginTop: 2, ...dsMachineStyle(T), fontSize: 9.5,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{activeVault?.path || 'Unavailable'}{lastBackupAt ? ` · backed up ${backupShort}` : ''}</div>
+        </div>
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={`Local status: ${saveStatus}`}
+          title="Local vault status"
+          onClick={() => setOpen(value => !value)}
+          style={{
+            width: 24, height: 24, borderRadius: DS_RADIUS.icon,
+            border: `1px solid ${T.lineSub}`, background: T.bgSub, color: T.inkMed,
+            cursor: 'pointer', padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+            <path d="M4 6.5L8 10.5L12 6.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
       {open && (
         <div role="dialog" aria-label="Local vault status" style={{
-          position: 'absolute', left: 10, right: 10, bottom: 'calc(100% + 6px)', zIndex: 80,
+          position: 'absolute', left: 0, right: 0, bottom: 'calc(100% + 6px)', zIndex: 80,
           padding: 11, border: `1px solid ${T.line}`, borderRadius: 9,
           background: T.bg, color: T.ink,
           boxShadow: `0 14px 36px color-mix(in oklab, ${T.ink} 20%, transparent)`,

@@ -399,18 +399,25 @@ function MnEditor({
           }}>
             {note.tags.map(t => (
               <button type="button" key={t} onClick={() => onRemoveTag(t)} aria-label={`Remove tag ${t}`} style={{
-                fontFamily: 'var(--mn-mono)', fontSize: 10.5,
+                // A tag is a pill with its own colour; the dot inherits it, so
+                // the hash is redundant.
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                height: 24, padding: '0 9px', borderRadius: DS_RADIUS.pill,
+                fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 500,
                 color: mnGetTagColor(tagHue[t] ?? 240, theme),
-                minHeight: 28, padding: '2px 8px', borderRadius: 5,
                 background: mnGetTagBg(tagHue[t] ?? 240, theme),
-                border: `1px solid color-mix(in oklab, ${mnGetTagColor(tagHue[t] ?? 240, theme)} 20%, transparent)`,
-                cursor: 'pointer',
-              }} title={`Remove tag ${t}`}>#{t}</button>
+                border: 'none', cursor: 'pointer',
+              }} title={`Remove tag ${t}`}>
+                <span aria-hidden="true" style={{
+                  width: 5, height: 5, borderRadius: '50%', background: 'currentColor',
+                }} />
+                {t}
+              </button>
             ))}
             <div style={{ position: 'relative' }}>
               <button ref={tagButtonRef} type="button" aria-haspopup="dialog" aria-expanded={showTags} onClick={() => setShowTags(v => !v)} style={{
-                fontFamily: 'var(--mn-mono)', fontSize: 10.5,
-                color: T.inkDim, minHeight: 28, padding: '2px 8px', borderRadius: 5,
+                height: 24, padding: '0 9px', borderRadius: DS_RADIUS.pill,
+                fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkDim,
                 background: 'transparent', border: `1px dashed ${T.line}`,
                 cursor: 'pointer',
               }}>+ Tag</button>

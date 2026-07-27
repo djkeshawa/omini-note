@@ -130,7 +130,9 @@ function MnSmartViewResultRow({ result, helpers, onOpen, T }) {
         }}>
           <span>{mnSmartViewResultSource(result)}</span>
           {date && <span>{date}</span>}
-          {tags.slice(0, 3).map(tag => <span key={tag}>#{tag}</span>)}
+          {/* No hue in scope here, so the name stands alone rather than
+              wearing a colour that would not match the tag's own. */}
+          {tags.slice(0, 3).map(tag => <span key={tag}>{tag}</span>)}
         </div>
         {preview && <div style={{
           marginTop: 6,

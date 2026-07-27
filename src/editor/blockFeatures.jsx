@@ -1,3 +1,4 @@
+import { DS_RADIUS, mnSentenceCase } from '../shared/designSystem.js';
 // VispNote block features: workflow markers, block refs, embeds, properties, context menu.
 //
 // Block markers: legacy workflow tokens kept for markdown compatibility.
@@ -88,17 +89,24 @@ function MnWorkflowPill({ state, onClick, T }) {
       onClick={onClick}
       title={`Click to cycle block marker (next: ${s.next || 'remove'})`}
       style={{
-        fontFamily: 'var(--mn-mono)', fontSize: 9.5,
-        fontWeight: 700, letterSpacing: '0.06em',
+        // A block marker is a state, so it follows the status-pill rule:
+        // a dot and a sentence-case word, never an uppercase mono badge.
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        fontFamily: 'var(--mn-ui)', fontSize: 11, fontWeight: 600,
         color: s.color, background: s.bg,
-        padding: '1px 5px', borderRadius: 3,
+        padding: '1px 8px', borderRadius: DS_RADIUS.pill,
         border: 'none', cursor: 'pointer',
         marginRight: 5,
-        verticalAlign: 'middle', display: 'inline-block',
+        verticalAlign: 'middle',
         lineHeight: 1.5,
         textDecoration: mnWorkflowIsClosed(s) ? 'line-through' : 'none',
         opacity: mnWorkflowIsClosed(s) ? 0.7 : 1,
-      }}>{s.id}</button>
+      }}>
+      <span aria-hidden="true" style={{
+        width: 5, height: 5, borderRadius: '50%', background: 'currentColor', flexShrink: 0,
+      }} />
+      {mnSentenceCase(s.id)}
+    </button>
   );
 }
 
