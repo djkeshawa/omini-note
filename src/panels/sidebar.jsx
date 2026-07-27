@@ -461,7 +461,6 @@ function MnSidebar({
         lastBackupAt={lastBackupAt}
         onOpenVaultHealth={onOpenVaultHealth}
         onExportBackup={onExportBackup}
-        onOpenSettings={onOpenSettings}
         T={T}
       />
     </div>

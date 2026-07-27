@@ -91,9 +91,13 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
           }}>
             <span style={{ color: T.inkMed }}>{it.noteTitle}</span>
             {it.noteTags.slice(0, 2).map(t => (
-              <span key={t} style={{
-                color: mnGetTagColor(tagHue[t] ?? 240, theme),
-              }}>#{t}</span>
+              <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: T.inkDim }}>
+                <span aria-hidden="true" style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: mnGetTagColor(tagHue[t] ?? 240, theme),
+                }} />
+                {t}
+              </span>
             ))}
             {it.remindAt && (
               <span style={{

@@ -402,7 +402,7 @@ async function availableCommandIds(win) {
 }
 
 async function setPackEnabledForRegression(win, packId, enabled) {
-  await clickButton(win, { titleIncludes: 'Settings' });
+  await clickButton(win, { titleIncludes: 'Open settings' });
   await waitFor(win, `settings open for ${packId}`, async () => {
     const current = await state(win);
     return { ok: current.settingsOpen, current };
@@ -665,7 +665,7 @@ async function assertViewportUsable(win, label) {
         hasQuickCapture: buttons.some(btn => String(btn.title || '').includes('Quick capture'))
           || [...document.querySelectorAll('[role="button"][aria-label^="Quick capture"]')].some(visible)
           || buttons.some(btn => btn.text === 'More'),
-        hasSettings: buttons.some(btn => String(btn.title || '').includes('Settings')),
+        hasSettings: buttons.some(btn => String(btn.title || '').toLowerCase().includes('settings')),
         hasSearch: [...document.querySelectorAll('input')].filter(visible).some(el => el.getAttribute('aria-label') === 'Search note contents'),
       };
     })()
@@ -677,7 +677,7 @@ async function assertViewportUsable(win, label) {
 }
 
 async function setAssistanceEnabledForRegression(win, enabled) {
-  await clickButton(win, { titleIncludes: 'Settings' });
+  await clickButton(win, { titleIncludes: 'Open settings' });
   await waitFor(win, 'settings open for assistance', async () => {
     const current = await state(win);
     return { ok: current.settingsOpen, current };
@@ -1882,7 +1882,7 @@ async function runViewportAccessibilityScenario(win) {
     });
     await setAssistanceEnabledForRegression(win, false);
 
-    await clickButton(win, { titleIncludes: 'Settings' });
+    await clickButton(win, { titleIncludes: 'Open settings' });
     await waitFor(win, 'settings open at minimum supported window', async () => {
       const current = await state(win);
       return { ok: current.settingsOpen && current.buttons.some(btn => btn.aria === 'Close settings'), current };
@@ -1982,7 +1982,7 @@ async function runThemeAccessibilityScenario(win) {
   try {
     await setRegressionWindowSize(win, 1440, 900);
     await waitForLayoutMode(win, 'three-pane');
-    await clickButton(win, { titleIncludes: 'Settings' });
+    await clickButton(win, { titleIncludes: 'Open settings' });
     await waitFor(win, 'theme settings are available', async () => {
       const result = await evaluate(win, `
         (() => {
@@ -2331,7 +2331,7 @@ async function runRegression() {
     await runDeleteRestoreScenario(win);
   });
   await runScenario(win, 'Settings', 'settings opens with clear context and closes', async () => {
-    await clickButton(win, { titleIncludes: 'Settings' });
+    await clickButton(win, { titleIncludes: 'Open settings' });
     await waitFor(win, 'settings open', async () => {
       const current = await state(win);
       return {
