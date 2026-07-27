@@ -112,24 +112,9 @@ function CanvasToolbar({
         </div>
         <div style={mnCanvasToolbarShelf()}>
           <div style={mnCanvasToolbarRow()}>
+            {/* Tools moved to the floating dock on the board itself; the
+                shelf keeps the style controls that act on a selection. */}
             <div style={mnCanvasToolbarGroup(T)}>
-              {MN_CANVAS_TOOLS.map(item => (
-                <MnCanvasToolButton
-                  key={item.id}
-                  tool={item}
-                  active={tool === item.id}
-                  onClick={() => setTool(item.id)}
-                  T={T}
-                />
-              ))}
-              {(notes || []).length > 0 && (
-                <MnCanvasToolButton
-                  tool={{ id: 'note', label: 'Note card' }}
-                  active={notePickerOpen}
-                  onClick={() => setNotePickerOpen(v => !v)}
-                  T={T}
-                />
-              )}
             </div>
             <div style={mnCanvasToolbarGroup(T)}>
               <MnCanvasColorControl label="Stroke" value={activeStroke} onChange={(v) => applyColor('stroke', v)} T={T} />

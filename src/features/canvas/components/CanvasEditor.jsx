@@ -12,12 +12,20 @@ import { CanvasToolbar } from './CanvasToolbar.jsx';
 import { CanvasOverlays } from './CanvasOverlays.jsx';
 import { CanvasDialogs } from './CanvasDialogs.jsx';
 import { useCanvasKeyboardShortcuts } from '../useCanvasKeyboardShortcuts.js';
+import { CanvasToolDock } from './CanvasToolDock.jsx';
 import { mnCanvasPrimaryButton, mnCanvasIconButton, mnCanvasToolButton, mnCanvasIconToolButton, mnCanvasToolbarGroup, mnCanvasToolbarShelf, mnCanvasToolbarRow, mnCanvasToolbarMoreSlot, mnCanvasMoreMenu, mnCanvasMoreMenuSection, mnCanvasMoreMenuLabel, mnCanvasMoreMenuGrid, mnCanvasStageBackground, mnCanvasDialogButton } from './CanvasStyles.js';
 
 function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNote, onTextEditingChange, T }) {
   const [draft, setDraft] = useStateC(canvas);
   const [tool, setTool] = useStateC('select');
   const [notePickerOpen, setNotePickerOpen] = useStateC(false);
+  // The note card sits after a divider, as the prototype has it — it places
+  // something that already exists rather than drawing something new.
+  const dockTools = useMemoC(() => (
+    (notes || []).length
+      ? [...MN_CANVAS_TOOLS, { id: 'note', label: 'Note card', divider: true }]
+      : MN_CANVAS_TOOLS
+  ), [notes]);
   const [titleFocused, setTitleFocused] = useStateC(false);
   const [selectedIds, setSelectedIds] = useStateC([]);
   const [style, setStyle] = useStateC(MN_CANVAS_DEFAULT_STYLE);
@@ -662,6 +670,12 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
         overflow: 'hidden',
         background: `linear-gradient(180deg, ${T.bgSub}, ${T.bg})`,
       }}>
+        <CanvasToolDock
+          tools={dockTools}
+          tool={tool}
+          onSelect={id => (id === 'note' ? setNotePickerOpen(v => !v) : setTool(id))}
+          T={T}
+        />
         <svg
           ref={svgRef}
           data-mn-canvas-stage="true"
