@@ -96,13 +96,17 @@ function MnCanvasPicker({ canvases = [], onPick, onCreate, onClose, T }) {
 }
 
 // ── Disclosure triangle ────────────────────────────────────────────────
-function MnDisclosure({ open, hasChildren, onClick, T, padTop }) {
+// The triangle sits in the gutter, not in the text column. It is chrome, and
+// reserving 18px of the writing measure for it pushed every line right —
+// including the great majority of blocks that have no children to fold.
+function MnDisclosure({ open, hasChildren, onClick, T, padTop, left = -18 }) {
   return (
     <button
       onClick={onClick}
       className="mn-disclosure"
       title={hasChildren ? (open ? 'Collapse' : 'Expand') : ''}
       style={{
+        position: 'absolute', left, top: 0,
         width: 18, height: 22, background: 'none', border: 'none',
         padding: 0, flexShrink: 0,
         cursor: hasChildren ? 'pointer' : 'default',

@@ -59,20 +59,23 @@ function MnBlockRowView({ model }) {
           <div key={i} style={{
             position: 'absolute',
             // Align with the bullet center of the ancestor at depth i:
-            // paddingLeft (i*24) + disclosure(18) + bullet halfWidth (9) = i*24 + 27
-            left: i * 24 + 27, top: 0, bottom: 0,
+            // paddingLeft (i*24) + bullet halfWidth (9) = i*24 + 9. The
+            // disclosure is no longer in the flow, so it adds nothing here.
+            left: i * 24 + 9, top: 0, bottom: 0,
             width: 1, background: T.line,
             pointerEvents: 'none',
             opacity: 0.55,
           }} />
         ))}
   
-        {/* Disclosure triangle (separate from bullet) */}
+        {/* Disclosure triangle, parked in the gutter just left of this row's
+            indent so the text column starts at the same place on every line. */}
         <MnDisclosure
           open={!block.collapsed}
           hasChildren={hasChildren}
           onClick={() => hasChildren && onToggleCollapse(block.id)}
           padTop={mnGripPadTop(block)}
+          left={indentPx - 18}
           T={T}
         />
   
@@ -99,8 +102,13 @@ function MnBlockRowView({ model }) {
             flexShrink: 0,
             display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
             paddingTop: mnAffordancePadTop(displayBlock),
-            marginRight: 8,
-            minWidth: 18,
+            // A list marker is content — a bullet, a number, a checkbox — and
+            // earns its indent. For heading, paragraph, quote and code this
+            // slot holds only the hover-revealed grip, so it joins the
+            // disclosure in the gutter and prose starts where the title does.
+            ...(['todo', 'ordered', 'bullet'].includes(block.kind)
+              ? { marginRight: 8, minWidth: 18 }
+              : { position: 'absolute', left: indentPx - 36, top: 0, marginRight: 0, minWidth: 18 }),
             cursor: 'grab',
           }}>
           {block.kind === 'todo' ? (

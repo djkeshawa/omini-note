@@ -320,10 +320,12 @@ function MnEditor({
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
       {/* Frame 1b draws 34px above the title and a 40px gutter. The gutter
-          only shrinks below the design width, never grows past it. */}
+          only shrinks below the design width, never grows past it — and never
+          below 36px, which is what the fold arrow and drag grip need to sit
+          beside the text instead of inside it. */}
       <div style={{
         flex: 1, minWidth: 0, overflow: 'auto',
-        padding: `34px clamp(20px, 3vw, ${DS_PANE.editorGutter}px) 44px`,
+        padding: `34px clamp(36px, 3vw, ${DS_PANE.editorGutter}px) 44px`,
       }}>
         <div ref={editorSearchScopeRef} style={{
           // The default caps at the design system's prose measure; wider
