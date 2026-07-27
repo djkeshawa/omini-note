@@ -212,6 +212,29 @@ test('Block area selection can delete as one undoable operation and redo it', ()
   assert.match(outliner, /onRedo=\{redo\}/);
 });
 
+test('Outliner chrome stays out of the text column and off childless rows', () => {
+  const outliner = outlinerSource(__dirname);
+
+  // The fold arrow and the drag grip are chrome. They sit in the gutter, so
+  // prose starts where the note title does instead of 44px to its right.
+  assert.match(outliner, /position: 'absolute', left, top: 0,/);
+  assert.match(outliner, /left=\{indentPx - 18\}/);
+  assert.match(outliner, /position: 'absolute', left: indentPx - 36/);
+  // A list marker is content and keeps its inline indent.
+  assert.match(outliner, /\['todo', 'ordered', 'bullet'\]\.includes\(block\.kind\)/);
+
+  // Only a block with children gets a disclosure. The row hover rule carries
+  // !important, so rendering one on a childless block put a dead arrow on
+  // every line no matter what its inline opacity said.
+  assert.match(outliner, /\{hasChildren && \(\s*<MnDisclosure/);
+  assert.doesNotMatch(outliner, /opacity: hasChildren \? \(open \? 0 : 1\) : 0/);
+  assert.doesNotMatch(outliner, /cursor: hasChildren \? 'pointer' : 'default'/);
+
+  // Indent guides no longer count the disclosure in their offset.
+  assert.match(outliner, /left: i \* 24 \+ 9,/);
+  assert.doesNotMatch(outliner, /left: i \* 24 \+ 27,/);
+});
+
 test('Typing in a section groups into one undo entry per edit session', () => {
   const outliner = outlinerSource(__dirname);
 
