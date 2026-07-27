@@ -25,10 +25,21 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
     () => (notes || []).find(note => note.id === inspectId) || null,
     [notes, inspectId]
   );
-  const inspectedLinks = React.useMemo(
-    () => (links || []).filter(link => link.source === inspectId || link.target === inspectId).length,
-    [links, inspectId]
-  );
+  const inspectedLinks = React.useMemo(() => {
+    if (!inspectId) return [];
+    const titleById = new Map((notes || []).map(note => [note.id, note.title || 'Untitled']));
+    const seen = new Set();
+    const out = [];
+    (links || []).forEach(link => {
+      const other = link.source === inspectId ? link.target
+        : link.target === inspectId ? link.source
+        : null;
+      if (!other || seen.has(other) || !titleById.has(other)) return;
+      seen.add(other);
+      out.push({ id: other, title: titleById.get(other) });
+    });
+    return out;
+  }, [links, notes, inspectId]);
   // Only legend the tags that are actually on screen.
   const legendTags = React.useMemo(() => {
     const present = new Set();
@@ -317,6 +328,14 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
         <span style={{ ...dsMachineStyle(T), fontSize: 11, flexShrink: 0 }}>
           {(nodes || []).length} notes · {(edges || []).length} links
         </span>
+        <button
+          type="button"
+          onClick={exportSvg}
+          style={{
+            height: 28, padding: '0 10px', borderRadius: DS_RADIUS.control, flexShrink: 0,
+            border: `1px solid ${T.lineSub}`, background: T.bg, color: T.inkMed,
+            fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
+          }}>Export SVG</button>
         {graphFilter && (
           <select
             value={graphFilter}
@@ -370,7 +389,10 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
           <>
           {inspected && (
             <div style={{
-              position: 'absolute', top: 20, right: 20, width: 264, zIndex: 3,
+              // Bottom-right: the controls own the top-right corner, and a
+              // panel that appears on click must not land under one that was
+              // already there.
+              position: 'absolute', bottom: 18, right: 20, width: 264, zIndex: 4,
               borderRadius: DS_RADIUS.panel, overflow: 'hidden',
               background: T.bgElevated || T.bg, border: `1px solid ${T.lineSub}`,
               boxShadow: `0 12px 32px color-mix(in oklab, ${T.ink} 12%, transparent)`,
@@ -380,7 +402,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
                   {inspected.title || 'Untitled'}
                 </div>
                 <div style={{ marginTop: 4, ...dsMachineStyle(T), fontSize: 10.5 }}>
-                  {inspectedLinks} link{inspectedLinks === 1 ? '' : 's'}
+                  {inspectedLinks.length} connection{inspectedLinks.length === 1 ? '' : 's'}
                 </div>
                 {!!(inspected.tags || []).length && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -397,6 +419,32 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
                       </span>
                     ))}
                   </div>
+                )}
+              </div>
+              <div style={{
+                maxHeight: 148, overflowY: 'auto', padding: '10px 15px 0',
+                display: 'flex', flexDirection: 'column', gap: 2,
+              }}>
+                {inspectedLinks.map(link => (
+                  <button
+                    key={link.id}
+                    type="button"
+                    onClick={() => setInspectId(link.id)}
+                    style={{
+                      textAlign: 'left', border: 'none', background: 'transparent',
+                      padding: '5px 6px', borderRadius: DS_RADIUS.icon, cursor: 'pointer',
+                      fontFamily: 'var(--mn-ui)', fontSize: 12, color: T.inkMed,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={event => { event.currentTarget.style.background = T.bgHover; }}
+                    onMouseLeave={event => { event.currentTarget.style.background = 'transparent'; }}>
+                    {link.title}
+                  </button>
+                ))}
+                {!inspectedLinks.length && (
+                  <div style={{
+                    fontFamily: 'var(--mn-body)', fontSize: 12.5, color: T.inkDim, padding: '2px 6px',
+                  }}>No links yet.</div>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 7, padding: '12px 15px' }}>
@@ -424,6 +472,9 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
           {legendTags.length > 0 && (
             <div style={{
               position: 'absolute', left: 20, bottom: 18, zIndex: 2,
+              // Yield to the inspector rather than sliding under it when the
+              // pane is too narrow to hold both corners.
+              maxWidth: inspected ? 'calc(100% - 320px)' : 'calc(100% - 40px)',
               padding: '12px 14px', borderRadius: DS_RADIUS.row,
               background: `color-mix(in oklab, ${T.bgElevated || T.bg} 92%, transparent)`,
               border: `1px solid ${T.lineSub}`,
@@ -431,7 +482,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
               display: 'flex', flexDirection: 'column', gap: 8,
             }}>
               <div style={dsGroupLabelStyle(T)}>Tags</div>
-              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', maxWidth: 320 }}>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', maxWidth: 300 }}>
                 {legendTags.map(tag => (
                   <span key={tag.name} style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -444,6 +495,11 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
                     {tag.name}
                   </span>
                 ))}
+              </div>
+              {/* The hint used to be its own overlay in this corner, which the
+                  legend then covered. One panel, one corner. */}
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 11, color: T.inkDim }}>
+                Hover to isolate · click to inspect
               </div>
             </div>
           )}
@@ -532,15 +588,6 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
           </svg>
           </>
         )}
-
-        <div style={{
-          position: 'absolute', left: 18, bottom: 14,
-          fontFamily: 'var(--mn-mono)', fontSize: 10,
-          color: T.inkDim, letterSpacing: '0.04em',
-          background: `color-mix(in oklab, ${T.bg} 78%, transparent)`,
-          border: `1px solid ${T.lineSub}`,
-          borderRadius: 6, padding: '5px 8px',
-        }}>{graphFilter ? 'novelist graph filter' : 'search in All notes'} · hover to isolate · click to open</div>
 
         <MnGraphControls
           T={T}
