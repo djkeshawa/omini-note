@@ -4,6 +4,22 @@ import { SidebarNavRow } from './SidebarNavRow.jsx';
 import { LocalStatusPopover } from './LocalStatusPopover.jsx';
 import { DS_HEIGHT, dsGroupLabelStyle, dsMachineStyle, dsPaneWidth, dsSelectedBarStyle, dsSelectedRow, mnSentenceCase } from '../shared/designSystem.js';
 const { useMemo: useMemoS } = React;
+
+// Open todo lines plus dated reminders, counted once per note object.
+const mnAgendaLineCache = new WeakMap();
+
+function mnAgendaLinesForNote(note) {
+  const hit = mnAgendaLineCache.get(note);
+  if (hit !== undefined) return hit;
+  let count = 0;
+  for (const line of String(note?.body || '').split('\n')) {
+    if (/^\s*-\s+\[[xX]\]/.test(line)) continue;
+    if (/^\s*-\s+\[ \]/.test(line) || /@remind\s+\d{4}-\d{2}-\d{2}/.test(line)) count += 1;
+  }
+  mnAgendaLineCache.set(note, count);
+  return count;
+}
+
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
   onOpenToday, onOpenPinned, todayActive, pinnedActive = false, agendaActive, graphActive,
@@ -60,13 +76,13 @@ function MnSidebar({
     return c;
   }, [tags, notes]);
 
-  const agendaCount = useMemoS(() => notes.reduce((acc, n) => {
-    const lines = String(n.body || '').split('\n');
-    return acc + lines.filter(line => {
-      if (/^\s*-\s+\[[xX]\]/.test(line)) return false;
-      return /^\s*-\s+\[ \]/.test(line) || /@remind\s+\d{4}-\d{2}-\d{2}/.test(line);
-    }).length;
-  }, 0), [notes]);
+  // Cached per note object, the way buildLinks caches its link targets. The
+  // note-object identities are stable across keystrokes, so editing one note
+  // re-counts that note instead of splitting every body in the vault.
+  const agendaCount = useMemoS(
+    () => notes.reduce((acc, note) => acc + mnAgendaLinesForNote(note), 0),
+    [notes]
+  );
 
   const rollupCount = Number.isFinite(todayCount) ? Math.max(0, todayCount) : 0;
   const pinnedCount = notes.filter(note => note.pinned).length;

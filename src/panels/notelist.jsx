@@ -65,8 +65,21 @@ function mnWorkflowRegex() {
   return regex;
 }
 
-function mnSnippet(body, query) {
-  const plain = body
+// Stripping a body to plain text is eight passes over the whole string and
+// does not depend on the query, so it is cached per note object — otherwise
+// every visible row redid it on every render, including every keystroke.
+const mnPlainBodyCache = new WeakMap();
+
+function mnPlainBody(note) {
+  const hit = mnPlainBodyCache.get(note);
+  if (hit !== undefined) return hit;
+  const plain = mnStripBody(String(note?.body || ''));
+  mnPlainBodyCache.set(note, plain);
+  return plain;
+}
+
+function mnStripBody(body) {
+  return body
     .split('\n')
     .filter(l => !/^[a-zA-Z][a-zA-Z0-9_-]*::\s/.test(l))  // skip page properties
     .join('\n')
@@ -79,6 +92,10 @@ function mnSnippet(body, query) {
     .replace(/@remind\s+\S+\s*\S*/g, '')
     .replace(mnWorkflowRegex() || /$^/, '')
     .trim().replace(/\s+/g, ' ');
+}
+
+function mnSnippet(note, query) {
+  const plain = mnPlainBody(note);
   if (!query) return plain.slice(0, 140);
   const idx = plain.toLowerCase().indexOf(query.toLowerCase());
   if (idx === -1) return plain.slice(0, 140);
@@ -335,7 +352,7 @@ function MnNoteList({
             marginTop: 3, display: '-webkit-box',
             WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
-          }}>{mnHighlight(String(n.__searchSnippet || '').replace(/<\/?mark>/g, '') || mnSnippet(n.body, query), query, T)}</div>
+          }}>{mnHighlight(String(n.__searchSnippet || '').replace(/<\/?mark>/g, '') || mnSnippet(n, query), query, T)}</div>
         )}
         {!compact && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
