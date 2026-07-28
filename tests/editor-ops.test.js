@@ -235,6 +235,36 @@ test('Outliner chrome stays out of the text column and off childless rows', () =
   assert.doesNotMatch(outliner, /left: i \* 24 \+ 27,/);
 });
 
+test('a block ignores vault-wide churn unless it renders other notes', async () => {
+  const { blockRowMemoEqual, blockReadsOtherNotes } = await import('../src/editor/outliner/blockRowMemo.js');
+
+  // Only embeds, block refs and plot-points read other notes at render time;
+  // a plain paragraph — or a plain [[wiki link]], which renders its own label —
+  // does not, and re-rendering every block per keystroke came from pretending
+  // it did.
+  assert.equal(blockReadsOtherNotes({ content: 'plain text' }), false);
+  assert.equal(blockReadsOtherNotes({ content: 'see [[Other Note]]' }), false);
+  assert.equal(blockReadsOtherNotes({ content: 'see ((b_ref_1))' }), true);
+  assert.equal(blockReadsOtherNotes({ content: '{{embed [[Other]]}}' }), true);
+  assert.equal(blockReadsOtherNotes({ kind: 'plot-points', content: '' }), true);
+
+  const base = {
+    block: { id: 'b1', content: 'plain text' },
+    depth: 0, focusId: null, T: {}, allNotes: [], allCanvases: [], vaultId: 'v',
+    aiEnabled: false, aiPreview: null, aiTarget: null, selectedBlockIds: null,
+    editorFontSize: 14, indentGuides: true, spellCheck: true, autoLink: true,
+    collapseByDefault: false, novelistMode: false, workflowEnabled: false,
+    onCreateCanvas: null,
+  };
+  const churned = { ...base, allNotes: [] }; // fresh identity, same content
+  assert.equal(blockRowMemoEqual(base, churned), true, 'a plain block skips the re-render');
+
+  const embedBlock = { id: 'b2', content: '{{embed [[Other]]}}' };
+  const embedPrev = { ...base, block: embedBlock };
+  const embedNext = { ...embedPrev, allNotes: [] };
+  assert.equal(blockRowMemoEqual(embedPrev, embedNext), false, 'an embed re-renders so its content stays live');
+});
+
 test('Typing in a section groups into one undo entry per edit session', () => {
   const outliner = outlinerSource(__dirname);
 
