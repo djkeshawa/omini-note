@@ -48,11 +48,22 @@ jobs:
       - name: Renderer build
         run: npm run build:renderer
 
+      # The gate is scoped to what ships. Dev-tool advisories (electron-builder's
+      # transitive tree) cannot reach a user, and letting them fail the job kept
+      # CI red for weeks — which taught everyone to ignore it, and a red job
+      # nobody reads is how a real failure slips through.
+      #
+      # The gate runs at --audit-level=low because severity labels do not map to
+      # our exposure: the DOMPurify sanitizer bypass (GHSA-c2j3-45gr-mqc4) sat on
+      # the note-content-to-DOM path and was rated "low", so a moderate threshold
+      # waved it through.
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=moderate
+        run: npm audit --omit=dev --audit-level=low
 
-      - name: Full dependency audit
+      # Dev advisories stay visible in the logs but are advisory-only.
+      - name: Full dependency audit (advisory)
         run: npm audit --audit-level=high
+        continue-on-error: true
 
   electron-regression:
     name: Electron regression suite
