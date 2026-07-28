@@ -63,6 +63,7 @@ function specialistPanelsSource() {
     '../src/features/writer/NovelistSections.jsx',
     '../src/features/writer/SupportingNoteSection.jsx',
     '../src/features/workflow/WorkflowPanel.jsx',
+    '../src/features/workflow/WorkflowBoardParts.jsx',
     '../src/features/workflow/WorkflowSupportPanels.jsx',
     '../src/shared/panels/panelStyles.js',
   ];
@@ -873,7 +874,11 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   const editor = fs.readFileSync(path.join(__dirname, '../src/editor/editor.jsx'), 'utf8');
   const editorHeader = fs.readFileSync(path.join(__dirname, '../src/editor/EditorHeader.jsx'), 'utf8');
   const todosPanel = fs.readFileSync(path.join(__dirname, '../src/panels/todosPanel.jsx'), 'utf8');
-  const calendarPanel = fs.readFileSync(path.join(__dirname, '../src/panels/calendarPanel.jsx'), 'utf8');
+  const calendarPanel = [
+    fs.readFileSync(path.join(__dirname, '../src/panels/calendarPanel.jsx'), 'utf8'),
+    // The item card lives in calendarChrome.jsx now, at module scope.
+    fs.readFileSync(path.join(__dirname, '../src/panels/calendarChrome.jsx'), 'utf8'),
+  ].join('\n');
   const appShell = appShellSource();
   const utilityPanels = [
     '../src/features/today/components/TodayPanel.jsx',
@@ -1675,7 +1680,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(panels, /clearActiveDragItem/);
   assert.match(panels, /updateDragPreview/);
   assert.match(panels, /setTransparentDragImage/);
-  assert.match(panels, /const WorkflowDragPreview = \(\) =>/);
+  // Hoisted to module scope in WorkflowBoardParts.jsx — the drag preview used
+  // to be redefined per render along with the card being dragged.
+  assert.match(panels, /function WorkflowDragPreview\(\{ board \}\)/);
   assert.match(panels, /suppressCardClickRef/);
   assert.match(panels, /workflowStateFromPoint/);
   assert.match(panels, /beginCardPointerDrag/);

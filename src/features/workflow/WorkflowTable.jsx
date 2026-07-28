@@ -72,7 +72,7 @@ function TagEditorCell({ item, tags, onSetNoteTags, tagHue, theme, T }) {
 
 function WorkflowTable({
   allItems, workflowStates, shownColumns, tableGrid, tableMinWidth,
-  StatePill, ArchiveButton, onOpen, moveItem,
+  StatePill, ArchiveButton, archiveNote, onOpen, moveItem,
   tags, onSetNoteTags, tagHue, theme, T,
 }) {
   return (
@@ -118,7 +118,7 @@ function WorkflowTable({
           background: T.bg,
         }}>
           <div style={{ minWidth: 0, paddingTop: 3, overflow: 'hidden' }}>
-            <StatePill state={state} />
+            <StatePill state={state} T={T} />
           </div>
           <span onClick={() => onOpen(item.noteId)} style={{
             color: T.ink, cursor: 'pointer',
@@ -164,7 +164,7 @@ function WorkflowTable({
             }}>
               {(workflowStates || []).map(s => <option key={s.id} value={s.id}>{mnSentenceCase(s.id)}</option>)}
             </select>
-            <ArchiveButton item={item} compact />
+            <ArchiveButton item={item} compact archiveNote={archiveNote} T={T} />
           </div>
         </div>
       ))}

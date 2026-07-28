@@ -247,6 +247,23 @@ test('list rows and graph controls are declared at module scope', () => {
   assert.match(graph, /^function Toggle\(\{ label, value, onChange \}\)/m);
   assert.match(graph, /^function Range\(\{ label, min, max, step, value, onChange, T \}\)/m);
   assert.doesNotMatch(graph, /const Range = \(/);
+
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/features/workflow/WorkflowBoardParts.jsx'), 'utf8');
+  const workflowPanel = fs.readFileSync(path.join(__dirname, '../src/features/workflow/WorkflowPanel.jsx'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
+  const todos = fs.readFileSync(path.join(__dirname, '../src/panels/todosPanel.jsx'), 'utf8');
+  const calendarChrome = fs.readFileSync(path.join(__dirname, '../src/panels/calendarChrome.jsx'), 'utf8');
+
+  // The board card used to remount on every pointer move of a drag.
+  assert.match(workflow, /^function Card\(\{ item, state, board \}\)/m);
+  assert.match(workflow, /^function DropColumn\(/m);
+  assert.doesNotMatch(workflowPanel, /const Card = \(/);
+  assert.doesNotMatch(workflowPanel, /const DropColumn = \(/);
+  assert.match(sidebar, /^function SectionHeader\(/m);
+  assert.doesNotMatch(sidebar, /const SectionHeader = \(/);
+  assert.doesNotMatch(sidebar, /const Row = props =>/);
+  assert.match(todos, /^function Card\(\{ it, idx, ctx \}\)/m);
+  assert.match(calendarChrome, /^function MnItemCard\(/m);
 });
 
 test('App and editor font size settings use stepper controls', () => {

@@ -367,6 +367,12 @@ function MnNovelistPanel({
     ) : null
   );
 
+  // These structure components are declared inline deliberately, unlike the
+  // hoisted rows elsewhere. This panel re-renders only on direct interaction
+  // (collapse, menus) — never per keystroke — and contains no text inputs, so
+  // the remount-per-render defect class (caret jumps, dropped drags) cannot
+  // occur here. Hoisting would mean threading ~15 closures through five
+  // interdependent components for no observable gain.
   const StructureNoteButton = ({ note, label, linkedTo, extraParent, count, depth = 0 }) => (
     <button
       onClick={(e) => { e.stopPropagation(); onOpen && onOpen(note.id); }}
