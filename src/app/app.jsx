@@ -382,7 +382,12 @@ function MnApp() {
   }, [notes]);
   const notesWithBodyRef = useRefA([]);
   useEffectA(() => { notesWithBodyRef.current = notesWithBody; }, [notesWithBody]);
-  const novelistStructure = useMemoA(() => mnBuildNovelistStructure(notesWithBody), [notesWithBody]);
+  // Only a novelist vault has a manuscript to build a structure from, so an
+  // ordinary vault should not pay for one on every keystroke.
+  const novelistStructure = useMemoA(
+    () => (activeVault?.novelistMode ? mnBuildNovelistStructure(notesWithBody) : mnBuildNovelistStructure([])),
+    [activeVault?.novelistMode, notesWithBody]
+  );
   const novelistNotes = novelistStructure.novelNotes || [];
 
   const links = useMemoA(() => buildLinks(notesWithBody), [notesWithBody]);
@@ -546,11 +551,15 @@ function MnApp() {
     [notesWithBody]
   );
 
+  // Only the Agenda renders these, and decorating them walks the whole vault.
+  // Doing that on every keystroke while you are writing in the editor is work
+  // nothing is looking at.
   const calendarActionItems = useMemoA(
-    () => MN_APP_HELPERS.agendaDecorateActionItems
-      ? MN_APP_HELPERS.agendaDecorateActionItems(calendarTaskItems, notesWithBody)
-      : calendarTaskItems,
-    [calendarTaskItems, notesWithBody]
+    () => (view !== 'calendar' ? calendarTaskItems
+      : MN_APP_HELPERS.agendaDecorateActionItems
+        ? MN_APP_HELPERS.agendaDecorateActionItems(calendarTaskItems, notesWithBody)
+        : calendarTaskItems),
+    [view, calendarTaskItems, notesWithBody]
   );
 
   const smartViewDefinitions = useMemoA(() => (

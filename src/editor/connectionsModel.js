@@ -14,10 +14,19 @@
     return [...new Set(String(value || '').toLowerCase().split(/[^a-z0-9_-]+/).filter(token => token.length >= 3 && !STOP_WORDS.has(token)))];
   }
 
-  function connectionCandidateScore(currentNote, candidate, relatedRank = -1, mode = '') {
-    const currentTags = new Set((currentNote?.tags || []).map(tag => String(tag).toLowerCase()));
+  // The current note's tags and title tokens are the same for every candidate,
+  // so a caller scoring a whole pool builds them once and passes them in.
+  // Without that this re-tokenized the current note 800 times per run.
+  function connectionCurrentSignals(currentNote) {
+    return {
+      currentTags: new Set((currentNote?.tags || []).map(tag => String(tag).toLowerCase())),
+      currentTokens: new Set(connectionTitleTokens(currentNote?.title)),
+    };
+  }
+
+  function connectionCandidateScore(currentNote, candidate, relatedRank = -1, mode = '', signals = null) {
+    const { currentTags, currentTokens } = signals || connectionCurrentSignals(currentNote);
     const sharedTags = (candidate?.tags || []).map(tag => String(tag).toLowerCase()).filter(tag => currentTags.has(tag));
-    const currentTokens = new Set(connectionTitleTokens(currentNote?.title));
     const sharedTitleTokens = connectionTitleTokens(candidate?.title).filter(token => currentTokens.has(token));
     let score = 0;
     const reasons = [];
@@ -59,10 +68,11 @@
       if (id && !candidates.has(id)) candidates.set(id, { ...note, noteId: id });
     });
     const ranked = [];
+    const signals = connectionCurrentSignals(currentNote);
     for (const item of candidates.values()) {
       const id = connectionNoteId(item);
       if (!id || id === currentId || ignored.has(id) || connected.has(id)) continue;
-      const signal = connectionCandidateScore(currentNote, item, relatedRank.has(id) ? relatedRank.get(id) : -1, mode);
+      const signal = connectionCandidateScore(currentNote, item, relatedRank.has(id) ? relatedRank.get(id) : -1, mode, signals);
       if (signal.score <= 0) continue;
       ranked.push({ ...item, noteId: id, reason: signal.reason, reasons: signal.reasons, connectionScore: signal.score });
     }
@@ -89,5 +99,5 @@
     return `${source}${source ? '\n\n' : ''}## Connections\n${line}`;
   }
 
-  return { connectionNoteId, connectionTitleTokens, connectionCandidateScore, suggestedConnections, appendConnectionMarkdown };
+  return { connectionNoteId, connectionTitleTokens, connectionCurrentSignals, connectionCandidateScore, suggestedConnections, appendConnectionMarkdown };
 });

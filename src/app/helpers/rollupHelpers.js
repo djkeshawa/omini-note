@@ -149,8 +149,11 @@ function createRollupHelpers(scope = {}) {
     return 'upcoming';
   }
   
+  // options.noteById lets a caller decorating many items build the lookup once.
+  // Without it this rebuilt a Map of the whole vault for every single item,
+  // which made decorating an agenda O(items x notes).
   function agendaActionDetail(item = {}, notes = [], options = {}) {
-    const noteById = new Map((notes || []).map(note => [note.id, note]));
+    const noteById = options.noteById || new Map((notes || []).map(note => [note.id, note]));
     const note = noteById.get(item.noteId) || null;
     const status = agendaActionStatus(item, options.now || new Date());
     const tags = Array.from(new Set([
@@ -174,8 +177,10 @@ function createRollupHelpers(scope = {}) {
   }
   
   function agendaDecorateActionItems(items = [], notes = [], options = {}) {
+    const noteById = options.noteById || new Map((notes || []).map(note => [note.id, note]));
+    const shared = { ...options, noteById };
     return (items || []).map(item => {
-      const detail = agendaActionDetail(item, notes, options);
+      const detail = agendaActionDetail(item, notes, shared);
       return { ...item, actionStatus: detail.status, actionDetail: detail };
     });
   }

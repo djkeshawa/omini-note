@@ -8,6 +8,17 @@ export function useSearchController({ query, activeVaultId, notes, dirtyNotes, h
   const [details, setDetails] = useState(new Map());
   const sequence = useRef(0);
 
+  // notes and dirtyNotes both get a fresh identity on every keystroke — notes
+  // because notesWithBody remaps, dirtyNotes because markDirty allocates a new
+  // Map. Depending on them re-armed this effect, and its 150ms debounce, on
+  // every character typed anywhere in the app: with a query active the indexed
+  // search never fired until typing stopped completely. The effect reads both
+  // through refs instead and depends only on what should actually restart it.
+  const notesRef = useRef(notes);
+  const dirtyNotesRef = useRef(dirtyNotes);
+  notesRef.current = notes;
+  dirtyNotesRef.current = dirtyNotes;
+
   useEffect(() => {
     const requestId = ++sequence.current;
     const cleanQuery = query.trim();
@@ -16,11 +27,11 @@ export function useSearchController({ query, activeVaultId, notes, dirtyNotes, h
       setDetails(new Map());
       return;
     }
-    const hasUnsavedNotes = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
+    const hasUnsavedNotes = [...dirtyNotesRef.current.values()].some(entry => entry.vaultId === activeVaultId);
     if (!hasDisk || !activeVaultId || hasUnsavedNotes) {
       const handle = setTimeout(() => {
         const lowerQuery = cleanQuery.toLowerCase();
-        const ids = notes.filter(note => note.title.toLowerCase().includes(lowerQuery)
+        const ids = notesRef.current.filter(note => note.title.toLowerCase().includes(lowerQuery)
           || (note.body || '').toLowerCase().includes(lowerQuery)
           || note.tags.some(tag => tag.toLowerCase().includes(lowerQuery))).map(note => note.id);
         if (requestId === sequence.current) {
@@ -48,7 +59,7 @@ export function useSearchController({ query, activeVaultId, notes, dirtyNotes, h
       }
     }, 150);
     return () => clearTimeout(handle);
-  }, [activeVaultId, dirtyNotes, hasDisk, notes, query, search]);
+  }, [activeVaultId, hasDisk, query, search]);
 
   const hitIds = hits?.vaultId === activeVaultId && hits.query === query.trim() ? hits.ids : null;
   const filteredNotes = useMemo(() => filterAndSortNotes({ notes, view, selectedTag, selectedWorkflow, workflowData, hitIds, details, tweaks, decorate }),
