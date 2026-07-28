@@ -231,7 +231,11 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(preload, /deleteVault: \(vaultId\) => ipcRenderer\.invoke\(NOTES_VAULTS_CHANNELS\.vaultDelete, \{ vaultId \}\)/);
   assert.match(app, /const deleteVault = useCallbackA\(async \(id\) =>/);
   assert.match(app, /const refreshVaultRegistry = useCallbackA/);
-  assert.match(app, /refreshVaultRegistry\(\{ reloadActive: true, reason: 'focus' \}\)/);
+  // Focus still refreshes the registry, but the full note-body reload is now
+  // gated on the vault fingerprint having moved while the window was away.
+  assert.match(app, /refreshVaultRegistry\(\{ reloadActive: !unchanged, reason: 'focus' \}\)/);
+  assert.match(app, /vaultStamp/);
+  assert.match(app, /now\.maxMtimeMs === away\.maxMtimeMs/);
   assert.match(app, /onRefreshVaults=\{refreshVaultRegistry\}/);
   assert.match(app, /onCreateVault=\{createVault\}/);
   assert.match(preferenceModels, /function normalizeOnboardingMode/);

@@ -101,23 +101,39 @@ function createWindowLifecycle({
     }).catch(error => console.error('quit save warning failed', error));
   }
 
-  function flushDirtyNotes(win, timeoutMs = 3500) {
+  // timeoutMs is an idle deadline, not a total one. The renderer heartbeats
+  // once a second while its flush is still running, and each beat re-arms
+  // the timer — many dirty notes on a slow disk take as long as they take.
+  // hardLimitMs is the backstop for a renderer that is genuinely hung.
+  function flushDirtyNotes(win, timeoutMs = 3500, hardLimitMs = 30000) {
     if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return Promise.resolve({ ok: true, skipped: true });
     const requestId = `flush_${Date.now().toString(36)}_${++flushSequence}`;
     return new Promise(resolve => {
       let settled = false;
+      let timer = null;
       const finish = result => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        clearTimeout(hardTimer);
         ipcMain.removeListener('mn:flushDirtyNotesResult', onResult);
+        ipcMain.removeListener('mn:flushDirtyNotesHeartbeat', onHeartbeat);
         resolve(result || { ok: true });
+      };
+      const armTimer = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => finish({ ok: false, error: 'Timed out waiting for dirty-note flush' }), timeoutMs);
       };
       const onResult = (event, id, result) => {
         if (event.sender === win.webContents && id === requestId) finish(result);
       };
-      const timer = setTimeout(() => finish({ ok: false, error: 'Timed out waiting for dirty-note flush' }), timeoutMs);
+      const onHeartbeat = (event, id) => {
+        if (event.sender === win.webContents && id === requestId && !settled) armTimer();
+      };
+      const hardTimer = setTimeout(() => finish({ ok: false, error: 'Dirty-note flush exceeded the hard time limit' }), hardLimitMs);
+      armTimer();
       ipcMain.on('mn:flushDirtyNotesResult', onResult);
+      ipcMain.on('mn:flushDirtyNotesHeartbeat', onHeartbeat);
       try {
         win.webContents.send('mn:flushDirtyNotes', requestId);
       } catch (error) {

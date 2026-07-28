@@ -503,7 +503,10 @@ test('Note saves create restorable versions and reject stale disk writes', async
     }, { expectedModifiedAt: first.diskModifiedAt });
 
     const versions = await store.listNoteVersions(vault.id, note.id);
-    assert.ok(versions.length >= 2);
+    // Two saves 12ms apart snapshot once, not twice: autosave fires every
+    // half second, and versioning each burst filled history with copies of
+    // the same minute. One snapshot per note per minute is the contract now.
+    assert.equal(versions.length, 1);
     assert.match(versions[0].versionId, /^ver_/);
     const preview = await store.getNoteVersion(vault.id, note.id, versions[0].versionId);
     assert.equal(preview.noteId, note.id);
@@ -1359,4 +1362,27 @@ test('Data safety wiring exposes trash, versions, and save conflict recovery', (
   assert.match(settings, /Recently deleted/);
   assert.match(settings, /onRestoreDeletedNote/);
   assert.match(editorHeader, /Version history/);
+});
+
+test('vaultStamp reports change cheaply and saveNote reports the previous title', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    // Seed notes materialize on first load, so load before fingerprinting.
+    const loaded = await store.loadVault(vault.id);
+    const note = loaded.notes[0];
+    const before = await store.vaultStamp(vault.id);
+    assert.ok(before.count > 0);
+    assert.ok(before.maxMtimeMs > 0);
+
+    await new Promise(resolve => setTimeout(resolve, 12));
+    const saved = await store.saveNote(vault.id, { ...note, title: 'Renamed by stamp test', body: 'changed' }, {});
+
+    // The save path reads the old file once and hands the old title back, so
+    // the rename-links pass no longer needs its own read of the same file.
+    assert.equal(saved.previousTitle, note.title);
+
+    const after = await store.vaultStamp(vault.id);
+    assert.equal(after.count, before.count);
+    assert.ok(after.maxMtimeMs > before.maxMtimeMs, 'a save moves the fingerprint');
+  });
 });

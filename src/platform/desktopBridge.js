@@ -26,7 +26,7 @@ const platformApi = Object.freeze({
     return currentBridge() !== EMPTY_BRIDGE;
   },
   notes: methodGroup('notes', [
-    'listNotes', 'openNote', 'loadVault', 'saveNote', 'deleteNote', 'listDeletedNotes',
+    'listNotes', 'openNote', 'loadVault', 'vaultStamp', 'saveNote', 'deleteNote', 'listDeletedNotes',
     'restoreDeletedNote', 'purgeDeletedNote', 'listNoteVersions',
     'getNoteVersion', 'restoreNoteVersion', 'exportNote', 'saveAttachment',
     'describeAttachment', 'openAttachment',
