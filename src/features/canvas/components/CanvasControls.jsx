@@ -211,17 +211,26 @@ function MnCanvasContextMenu({ menu, canPaste, onCopy, onCut, onPaste, onDelete,
       if (e.target.closest?.('.mn-canvas-context-menu')) return;
       onClose && onClose();
     };
+    // Escape dismisses like any menu; mousedown-only left it stuck open for
+    // keyboard users.
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose && onClose();
+    };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [onClose]);
 
   const item = (label, action, disabled = false, danger = false) => (
     <button
       disabled={disabled}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        if (!disabled) action && action();
-      }}
+      // mousedown still eats focus steal, but the action runs on click so
+      // Enter and Space work when the item is reached by keyboard.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => { if (!disabled) action && action(); }}
       style={{
         width: '100%',
         border: 'none',

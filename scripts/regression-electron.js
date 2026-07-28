@@ -1819,6 +1819,21 @@ async function runViewportAccessibilityScenario(win) {
       const overlay = await evaluate(win, `Boolean(document.querySelector('[data-mn-note-list-mode="overlay"]'))`);
       return { ok: overlay, overlay };
     });
+    // The overlay can appear a frame before its rows do — wait for a row
+    // instead of clicking into the gap and calling it a failure.
+    // Wait for a row rather than clicking into the render gap. The overlay
+    // text rides along so a failure says what the list was showing — this is
+    // how a stale-search-results bug was diagnosed rather than retried away.
+    await waitFor(win, 'compact graph note list has a note', async () => {
+      const current = await evaluate(win, `(() => {
+        const overlay = document.querySelector('[data-mn-note-list-mode="overlay"]');
+        return {
+          present: Boolean(overlay?.querySelector('[role="option"]')),
+          text: overlay ? overlay.textContent.slice(0, 120) : '(no overlay)',
+        };
+      })()`);
+      return { ok: current.present, current };
+    });
     const openedGraphNote = await evaluate(win, `
       (() => {
         const option = document.querySelector('[data-mn-note-list-mode="overlay"] [role="option"]');

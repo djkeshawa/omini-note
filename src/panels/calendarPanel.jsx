@@ -4,7 +4,7 @@ import { DS_TYPE, DS_HEIGHT, DS_RADIUS, dsMachineStyle } from '../shared/designS
 import MN_APP_HELPERS from '../app/appHelpers.js';
 import { mnGetTagColor } from '../shared/theme.jsx';
 import { mnCalendarDateKey, mnCalendarDateFromKey, mnCalendarMonthDays, mnCalendarItemDateKey, mnCalendarTimeText } from './calendarDates.js';
-import { mnCalendarIcon, mnAgendaStepBtn, mnCalendarInput, mnCalendarPrimaryButton } from './calendarChrome.jsx';
+import { mnCalendarIcon, mnAgendaStepBtn, mnCalendarInput, mnCalendarPrimaryButton, MnDayChip } from './calendarChrome.jsx';
 
 const { useEffect: useEffectC, useMemo: useMemoC, useState: useStateC } = React;
 
@@ -43,6 +43,7 @@ function MnCalendarPanel({
   const [createWhen, setCreateWhen] = useStateC('');
   const [draftWhen, setDraftWhen] = useStateC('');
   const [scheduleError, setScheduleError] = useStateC('');
+  const [showAllUpcoming, setShowAllUpcoming] = useStateC(false);
   const helpers = MN_APP_HELPERS;
 
   useEffectC(() => {
@@ -72,11 +73,14 @@ function MnCalendarPanel({
   const tagOptions = useMemoC(() => {
     const names = new Set();
     (items || []).forEach(item => (item.actionDetail?.inheritedTags || item.noteTags || []).forEach(tag => names.add(tag)));
-    tags.forEach(tag => { if (names.has(tag.name)) names.add(tag.name); });
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }, [items, tags]);
   const activeItem = useMemoC(() => filteredItems.find(item => item.key === activeKey) || null, [filteredItems, activeKey]);
 
+  // Keyed on which item is selected, not on the item object itself. The
+  // decorated items are re-cloned whenever any note changes in the background
+  // (an autosave, a checkbox elsewhere), so keying on the object identity
+  // wiped an edit you were mid-way through typing.
   useEffectC(() => {
     if (!activeItem) return;
     setDraftText(activeItem.label || activeItem.text || '');
@@ -84,7 +88,7 @@ function MnCalendarPanel({
     setDraftTime(activeItem.remindAt?.time || '');
     setDraftWhen('');
     setScheduleError('');
-  }, [activeItem]);
+  }, [activeKey]);
 
   const grouped = useMemoC(() => {
     const byDate = {};
@@ -249,41 +253,6 @@ function MnCalendarPanel({
 
   // A month cell entry: a flat tinted chip carrying the time and the label.
   // The tone is the same three-way read the rail's card uses on its left edge.
-  const DayChip = ({ item, first }) => {
-    const overdue = item.remindAt?.at && item.remindAt.at < new Date();
-    const tone = item.isReminderOnly ? T.warn : overdue ? T.danger : T.accent;
-    const stamp = item.remindAt?.time || '';
-    return (
-      <div
-        onClick={(event) => { event.stopPropagation(); setActiveKey(item.key); }}
-        title={item.label || item.text || 'Reminder'}
-        style={{
-          marginTop: first ? 5 : 3,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 5,
-          height: 19,
-          padding: '0 6px',
-          borderRadius: 5,
-          background: `color-mix(in oklab, ${tone} 12%, ${T.bg})`,
-          cursor: 'pointer',
-          minWidth: 0,
-        }}>
-        {stamp && (
-          <span style={{ ...dsMachineStyle(T), fontSize: 9.5, color: tone, flexShrink: 0 }}>{stamp}</span>
-        )}
-        <span style={{
-          fontFamily: 'var(--mn-ui)',
-          fontSize: 11,
-          color: T.ink,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          minWidth: 0,
-        }}>{item.label || item.text || 'Reminder'}</span>
-      </div>
-    );
-  };
 
   const ItemCard = ({ item, compact = false }) => {
     const overdue = item.remindAt?.at && item.remindAt.at < new Date();
@@ -532,7 +501,7 @@ function MnCalendarPanel({
           // The day rail is a fixed column in both modes: the agenda list and
           // the month grid are two ways of choosing a day, and the rail is what
           // you chose.
-          gridTemplateColumns: 'minmax(0, 1fr) 340px',
+          gridTemplateColumns: mode === 'month' ? 'minmax(0, 1fr) 340px' : 'minmax(0, 1fr)',
           gap: 0,
           // Full-bleed now, so both columns fill the row rather than sitting
           // content-height against the panel background.
@@ -648,7 +617,7 @@ function MnCalendarPanel({
                           grid it only has room to say when and what. */}
                       <div>
                         {dayItems.slice(0, selected ? 2 : 1).map((item, chipIndex) => (
-                          <DayChip key={item.key} item={item} first={chipIndex === 0} />
+                          <MnDayChip key={item.key} item={item} first={chipIndex === 0} onPick={setActiveKey} T={T} />
                         ))}
                         {dayItems.length > (selected ? 2 : 1) && (
                           <div style={{ marginTop: 3, fontSize: 11, color: T.inkDim, padding: '0 6px' }}>
@@ -733,7 +702,17 @@ function MnCalendarPanel({
               </div>
             )}
 
-            {agendaList(mode === 'agenda' ? 'Upcoming' : 'Selected day', mode === 'agenda' ? grouped.upcoming.slice(0, 12) : selectedItems, 'No scheduled items for this day')}
+            {agendaList(mode === 'agenda' ? 'Upcoming' : 'Selected day', mode === 'agenda' && !showAllUpcoming ? grouped.upcoming.slice(0, 12) : mode === 'agenda' ? grouped.upcoming : selectedItems, 'No scheduled items for this day')}
+            {/* The header count says how many are scheduled, so the list must
+                not silently stop at twelve of them. */}
+            {mode === 'agenda' && grouped.upcoming.length > 12 && (
+              <button
+                type="button"
+                onClick={() => setShowAllUpcoming(value => !value)}
+                style={{ ...pillBtn(false), marginTop: 8 }}>
+                {showAllUpcoming ? 'Show fewer' : `Show all ${grouped.upcoming.length}`}
+              </button>
+            )}
             {agendaList('Overdue', grouped.overdue, 'No overdue reminders')}
             {agendaList('Inbox todos', grouped.undated, 'No undated todos')}
 

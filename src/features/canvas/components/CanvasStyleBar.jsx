@@ -86,7 +86,7 @@ function BarButton({ label, onClick, disabled, tone = 'default', children, T }) 
 function CanvasStyleBar({
   strokeColors = [], fillColors = [],
   activeStroke, activeFill, activeStrokeWidth,
-  applyColor, applyStrokeWidth,
+  applyColor, applyStrokeWidth, beginStrokeWidthEdit,
   selectedIds = [], alignSelected, removeElements, T,
 }) {
   if (!selectedIds.length) return null;
@@ -156,6 +156,10 @@ function CanvasStyleBar({
         max="10"
         aria-label="Stroke width"
         value={activeStrokeWidth}
+        // History is captured once at the start of the drag; each step then
+        // saves without spending an undo entry, so one drag is one undo.
+        onPointerDown={() => beginStrokeWidthEdit?.()}
+        onKeyDown={event => { if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) beginStrokeWidthEdit?.(); }}
         onChange={event => applyStrokeWidth?.(event.target.value)}
         style={{ width: 64, height: 4, accentColor: T.accent }}
       />

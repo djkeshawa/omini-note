@@ -1,9 +1,12 @@
 const { useEffect } = React;
 
-function useCanvasKeyboardShortcuts({ rootRef, handlersRef, selectedIdsRef, setSpaceDown }) {
+function useCanvasKeyboardShortcuts({ rootRef, handlersRef, selectedIdsRef, setSpaceDown, modalOpenRef }) {
   useEffect(() => {
       const onKeyDown = async (e) => {
         if (!rootRef.current?.contains(document.activeElement)) return;
+        // A modal owns the keyboard while it is up. Without this, the delete
+        // dialog's focused button let board shortcuts through behind it.
+        if (modalOpenRef?.current) return;
         if (e.code === 'Space') {
           setSpaceDown(true);
           if (e.target === rootRef.current || e.target === document.body) e.preventDefault();
