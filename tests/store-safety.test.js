@@ -904,7 +904,12 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   const markdownInputRules = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf8');
   const storeSource = storeProcessSource();
-  const indexSource = fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8');
+  // The schema, migrations and vec0 table handling live beside the query
+  // surface in indexSchema.js; both halves are "the index" for these checks.
+  const indexSource = [
+    fs.readFileSync(path.join(__dirname, '../lib/index.js'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, '../lib/indexSchema.js'), 'utf8'),
+  ].join('\n');
   const aiSource = backendAiSource(__dirname);
   const releaseWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release-builds.yml'), 'utf8');
   const store = require('../lib/store');
