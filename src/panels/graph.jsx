@@ -617,12 +617,13 @@ function mnGraphCurve(a, b) {
   return `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`;
 }
 
-function MnGraphControls({
-  T, open, setOpen, opts, setOpt,
-  notesCount, edgesCount, onReset, onExportSvg,
-}) {
-  const toggle = (key) => setOpen(prev => ({ ...prev, [key]: !prev[key] }));
-  const Row = ({ id, title, children }) => (
+// Module scope, not inside MnGraphControls. Redefined per render these were a
+// new component type each time, so React tore down and rebuilt the inputs —
+// dragging a slider was dropped after the first step, and a checkbox lost
+// focus on click. The simulation re-renders this panel constantly, so it hit
+// every frame.
+function Row({ id, title, children, open, toggle, T }) {
+  return (
     <div>
       <button onClick={() => toggle(id)} style={{
         width: '100%', height: 38,
@@ -654,7 +655,10 @@ function MnGraphControls({
       )}
     </div>
   );
-  const Toggle = ({ label, value, onChange }) => (
+}
+
+function Toggle({ label, value, onChange }) {
+  return (
     <label style={{
       display: 'flex', alignItems: 'center', gap: 8,
       padding: '5px 0', cursor: 'pointer',
@@ -663,7 +667,10 @@ function MnGraphControls({
       <span>{label}</span>
     </label>
   );
-  const Range = ({ label, min, max, step, value, onChange }) => (
+}
+
+function Range({ label, min, max, step, value, onChange, T }) {
+  return (
     <label style={{ display: 'block', padding: '7px 0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
         <span>{label}</span>
@@ -680,7 +687,13 @@ function MnGraphControls({
       />
     </label>
   );
+}
 
+function MnGraphControls({
+  T, open, setOpen, opts, setOpt,
+  notesCount, edgesCount, onReset, onExportSvg,
+}) {
+  const toggle = (key) => setOpen(prev => ({ ...prev, [key]: !prev[key] }));
   return (
     <div style={{
       position: 'absolute',
@@ -696,16 +709,16 @@ function MnGraphControls({
         : `0 18px 42px color-mix(in oklab, ${T.ink} 12%, transparent)`,
       overflow: 'hidden',
     }}>
-      <Row id="nodes" title="Nodes">
+      <Row id="nodes" title="Nodes" open={open} toggle={toggle} T={T}>
         <div style={{ marginBottom: 6 }}>{notesCount} visible notes</div>
         <Toggle label="Show labels" value={opts.labels} onChange={(v) => setOpt('labels', v)} />
         <Toggle label="Tag colors" value={opts.tagColors} onChange={(v) => setOpt('tagColors', v)} />
         <Toggle label="Size by content" value={opts.sizeByContent} onChange={(v) => setOpt('sizeByContent', v)} />
       </Row>
-      <Row id="forces" title="Forces">
-        <Range label="Link distance" min="70" max="180" step="1" value={opts.linkDistance} onChange={(v) => setOpt('linkDistance', v)} />
-        <Range label="Repulsion" min="20" max="60" step="1" value={opts.repulsion} onChange={(v) => setOpt('repulsion', v)} />
-        <Range label="Center pull" min="0" max="0.02" step="0.001" value={opts.center} onChange={(v) => setOpt('center', v)} />
+      <Row id="forces" title="Forces" open={open} toggle={toggle} T={T}>
+        <Range label="Link distance" min="70" max="180" step="1" value={opts.linkDistance} onChange={(v) => setOpt('linkDistance', v)} T={T} />
+        <Range label="Repulsion" min="20" max="60" step="1" value={opts.repulsion} onChange={(v) => setOpt('repulsion', v)} T={T} />
+        <Range label="Center pull" min="0" max="0.02" step="0.001" value={opts.center} onChange={(v) => setOpt('center', v)} T={T} />
         <button onClick={onReset} style={{
           marginTop: 6,
           padding: '5px 8px',
@@ -718,7 +731,7 @@ function MnGraphControls({
           cursor: 'pointer',
         }}>Reset layout</button>
       </Row>
-      <Row id="export" title="Export">
+      <Row id="export" title="Export" open={open} toggle={toggle} T={T}>
         <div style={{ marginBottom: 8 }}>{edgesCount} visible links</div>
         <button onClick={onExportSvg} style={{
           padding: '6px 9px',
