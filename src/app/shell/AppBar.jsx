@@ -37,6 +37,9 @@ function MnAppBar({
   const [renameVal, setRenameVal] = useStateB('');
   const rootRef = useRefB(null);
 
+  const renameIdRef = useRefB(renameId);
+  renameIdRef.current = renameId;
+
   useEffectB(() => {
     if (!vaultOpen) { setRenameId(null); return undefined; }
     onRefreshVaults?.({ reloadActive: false, reason: 'vault-dropdown' });
@@ -44,7 +47,13 @@ function MnAppBar({
       if (!rootRef.current?.contains(event.target)) setVaultOpen(false);
     };
     const closeOnEscape = event => {
-      if (event.key === 'Escape') { event.preventDefault(); setVaultOpen(false); }
+      if (event.key !== 'Escape') return;
+      // This runs in the capture phase, ahead of the rename input's own
+      // Escape handler. Cancelling a rename should return to the vault list,
+      // not tear the whole menu down.
+      if (renameIdRef.current) { event.preventDefault(); setRenameId(null); return; }
+      event.preventDefault();
+      setVaultOpen(false);
     };
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('keydown', closeOnEscape, true);

@@ -108,7 +108,10 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
         linkCount,
         contentSize,
         tag: n.tags[0] || 'untagged',
-        date: new Date(n.date).getTime(),
+        // A hand-edited date like "yesterday" parses to NaN, and one NaN
+        // position spreads to every neighbour through the repulsion pass
+        // until the whole graph goes blank. Epoch zero just sorts it first.
+        date: (() => { const t = new Date(n.date).getTime(); return Number.isFinite(t) ? t : 0; })(),
         fixedX: null,
         cx: null,
         cy: null,
@@ -245,7 +248,10 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
     // layoutSeed restarts the loop on "reset layout" — required now that the
     // simulation can settle and stop before its tick budget runs out.
-  }, [edges, style, W, H, opts.linkDistance, opts.repulsion, opts.center, layoutSeed]);
+    // opts.sizeByContent is here because the node-build effect scatters the
+    // nodes afresh when it flips; without a matching restart the scatter is
+    // what stays on screen, frozen.
+  }, [edges, style, W, H, opts.linkDistance, opts.repulsion, opts.center, layoutSeed, opts.sizeByContent]);
 
   const nodeById = useMemo(() => Object.fromEntries((nodes || []).map(n => [n.id, n])), [nodes]);
   const themeName = T === MN_THEMES.dark ? 'dark' : 'light';
@@ -359,12 +365,8 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
             <option value="research-scenes">Research + scenes</option>
           </select>
         )}
-        <div style={{
-          fontFamily: 'var(--mn-mono)', fontSize: 11,
-          color: T.inkDim,
-          flexShrink: 0,
-          whiteSpace: 'nowrap',
-        }}>{notes.length} notes · {edges.length} links · {style}</div>
+        {/* The counts live once, in the machine-value span beside the scope
+            pill — this row used to print them a second time. */}
       </div>
 
       <div style={{

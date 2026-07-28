@@ -111,10 +111,13 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     return saved;
   };
 
+  // persist may be `true` or persistCanvas options — `{ history: false }`
+  // saves to disk without spending an undo entry, which is what viewport
+  // moves and mid-drag style updates want.
   const updateDraft = (updater, persist = false) => {
     const prev = draftRef.current;
     const next = typeof updater === 'function' ? updater(prev) : updater;
-    if (persist) return persistCanvas(next);
+    if (persist) return persistCanvas(next, typeof persist === 'object' ? persist : {});
     setDraftLocal(next);
     return next;
   };
@@ -275,6 +278,13 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     }), true);
   };
 
+  // Dragging the width slider fires once per step. History is captured once,
+  // at the start of the drag, so the whole gesture is one undo entry instead
+  // of nine — and nine saves becomes saves-per-step with no history cost.
+  const beginStrokeWidthEdit = () => {
+    if (selectedIds.length) rememberCanvas();
+  };
+
   const applyStrokeWidth = (value) => {
     const width = Number(value) || 1;
     setStyle(prev => ({ ...prev, strokeWidth: width }));
@@ -282,7 +292,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     updateDraft(prev => ({
       ...prev,
       elements: (prev.elements || []).map(el => selectedIds.includes(el.id) ? { ...el, strokeWidth: width } : el),
-    }), true);
+    }), { history: false });
   };
 
   const editText = (el) => {
@@ -311,7 +321,9 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
   const setZoom = (nextScale) => {
     const current = draftRef.current.viewport || { x: 0, y: 0, scale: 1 };
     const scale = Math.max(0.25, Math.min(3, nextScale));
-    updateDraft(prev => ({ ...prev, viewport: { ...current, scale } }), true);
+    // Where you are looking is not something to undo. The wheel-zoom path
+    // already skips history; the buttons now match it.
+    updateDraft(prev => ({ ...prev, viewport: { ...current, scale } }), { history: false });
   };
 
   const fitToScreen = () => {
@@ -330,7 +342,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
         x: rect.width / 2 - (bounds.x + bounds.w / 2) * scale,
         y: rect.height / 2 - (bounds.y + bounds.h / 2) * scale,
       },
-    }), true);
+    }), { history: false });
   };
   handlersRef.current.fitToScreen = fitToScreen;
 
@@ -569,7 +581,12 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     onSave && onSave(saved);
   };
 
-  useCanvasKeyboardShortcuts({ rootRef, handlersRef, selectedIdsRef, setSpaceDown });
+  // The delete-confirm dialog focuses a button, which the INPUT/TEXTAREA
+  // guard inside the hook does not catch — so Backspace and Ctrl+Z were still
+  // deleting and mutating the board behind the modal.
+  const modalOpenRef = useRefC(false);
+  modalOpenRef.current = deleteDialogOpen || notePickerOpen;
+  useCanvasKeyboardShortcuts({ rootRef, handlersRef, selectedIdsRef, setSpaceDown, modalOpenRef });
 
   const viewport = draft.viewport || { x: 0, y: 0, scale: 1 };
   const activeStroke = selectedElement?.stroke || style.stroke;
@@ -638,6 +655,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
           activeStrokeWidth={activeStrokeWidth}
           applyColor={applyColor}
           applyStrokeWidth={applyStrokeWidth}
+          beginStrokeWidthEdit={beginStrokeWidthEdit}
           selectedIds={selectedIds}
           alignSelected={alignSelected}
           removeElements={removeElements}

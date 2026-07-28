@@ -3,21 +3,23 @@ import searchModel from './searchModel.js';
 const { useEffect, useMemo, useRef, useState } = React;
 const { filterAndSortNotes } = searchModel;
 
+// Lowercased searchable text, cached per note object. Note identities are
+// stable across keystrokes — only the edited note is a new object — so an
+// in-memory search re-lowercases one note, not the whole vault.
+const mnSearchTextCache = new WeakMap();
+
+function mnSearchTextForNote(note) {
+  const hit = mnSearchTextCache.get(note);
+  if (hit !== undefined) return hit;
+  const text = `${note.title}\n${note.body || ''}\n${(note.tags || []).join('\n')}`.toLowerCase();
+  mnSearchTextCache.set(note, text);
+  return text;
+}
+
 export function useSearchController({ query, activeVaultId, notes, dirtyNotes, hasDisk, search, view, selectedTag, selectedWorkflow, workflowData, tweaks, decorate }) {
   const [hits, setHits] = useState(null);
   const [details, setDetails] = useState(new Map());
   const sequence = useRef(0);
-
-  // notes and dirtyNotes both get a fresh identity on every keystroke — notes
-  // because notesWithBody remaps, dirtyNotes because markDirty allocates a new
-  // Map. Depending on them re-armed this effect, and its 150ms debounce, on
-  // every character typed anywhere in the app: with a query active the indexed
-  // search never fired until typing stopped completely. The effect reads both
-  // through refs instead and depends only on what should actually restart it.
-  const notesRef = useRef(notes);
-  const dirtyNotesRef = useRef(dirtyNotes);
-  notesRef.current = notes;
-  dirtyNotesRef.current = dirtyNotes;
 
   useEffect(() => {
     const requestId = ++sequence.current;
@@ -27,13 +29,11 @@ export function useSearchController({ query, activeVaultId, notes, dirtyNotes, h
       setDetails(new Map());
       return;
     }
-    const hasUnsavedNotes = [...dirtyNotesRef.current.values()].some(entry => entry.vaultId === activeVaultId);
+    const hasUnsavedNotes = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
     if (!hasDisk || !activeVaultId || hasUnsavedNotes) {
       const handle = setTimeout(() => {
         const lowerQuery = cleanQuery.toLowerCase();
-        const ids = notesRef.current.filter(note => note.title.toLowerCase().includes(lowerQuery)
-          || (note.body || '').toLowerCase().includes(lowerQuery)
-          || note.tags.some(tag => tag.toLowerCase().includes(lowerQuery))).map(note => note.id);
+        const ids = notes.filter(note => mnSearchTextForNote(note).includes(lowerQuery)).map(note => note.id);
         if (requestId === sequence.current) {
           setHits({ vaultId: activeVaultId || '', query: cleanQuery, ids });
           setDetails(new Map());
@@ -59,7 +59,13 @@ export function useSearchController({ query, activeVaultId, notes, dirtyNotes, h
       }
     }, 150);
     return () => clearTimeout(handle);
-  }, [activeVaultId, hasDisk, query, search]);
+    // notes and dirtyNotes stay in the deps deliberately. An earlier attempt
+    // read them through refs so typing would not re-arm the debounce — and it
+    // made active search results stale: delete or restore a note with a query
+    // set and the list kept showing the old answer until you retyped it. The
+    // per-keystroke cost lived in re-lowercasing every body, and that is what
+    // the cache above removes; the re-arm itself is a timer swap.
+  }, [activeVaultId, dirtyNotes, hasDisk, notes, query, search]);
 
   const hitIds = hits?.vaultId === activeVaultId && hits.query === query.trim() ? hits.ids : null;
   const filteredNotes = useMemo(() => filterAndSortNotes({ notes, view, selectedTag, selectedWorkflow, workflowData, hitIds, details, tweaks, decorate }),

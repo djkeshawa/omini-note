@@ -1,3 +1,5 @@
+import { dsMachineStyle } from '../shared/designSystem.js';
+
 // The agenda's small presentational pieces: the two item-kind glyphs and the
 // control styles shared between the month grid and the create row.
 
@@ -70,4 +72,42 @@ function mnCalendarPrimaryButton(T, disabled) {
   };
 }
 
-export { mnCalendarIcon, mnAgendaStepBtn, mnCalendarInput, mnCalendarPrimaryButton };
+// A month-cell entry: flat tinted chip carrying the time and the label. At
+// module scope so the grid rows are reconciled, not rebuilt, on re-render.
+function MnDayChip({ item, first, onPick, T }) {
+  const overdue = item.remindAt?.at && item.remindAt.at < new Date();
+  const tone = item.isReminderOnly ? T.warn : overdue ? T.danger : T.accent;
+  const stamp = item.remindAt?.time || '';
+  return (
+    <div
+      onClick={(event) => { event.stopPropagation(); onPick?.(item.key); }}
+      title={item.label || item.text || 'Reminder'}
+      style={{
+        marginTop: first ? 5 : 3,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        height: 19,
+        padding: '0 6px',
+        borderRadius: 5,
+        background: `color-mix(in oklab, ${tone} 12%, ${T.bg})`,
+        cursor: 'pointer',
+        minWidth: 0,
+      }}>
+      {stamp && (
+        <span style={{ ...dsMachineStyle(T), fontSize: 9.5, color: tone, flexShrink: 0 }}>{stamp}</span>
+      )}
+      <span style={{
+        fontFamily: 'var(--mn-ui)',
+        fontSize: 11,
+        color: T.ink,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        minWidth: 0,
+      }}>{item.label || item.text || 'Reminder'}</span>
+    </div>
+  );
+}
+
+export { mnCalendarIcon, mnAgendaStepBtn, mnCalendarInput, mnCalendarPrimaryButton , MnDayChip };
