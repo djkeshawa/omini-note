@@ -8,6 +8,100 @@ import { mnGetTagColor } from '../shared/theme.jsx';
 
 const { useMemo: useMemoP } = React;
 
+// Module scope so re-renders update cards in place instead of rebuilding
+// them — declared inside the panel it was a new component type per render.
+function Card({ it, idx, ctx }) {
+  const { onOpen, onToggleCheck, T, theme, tagHue, variant } = ctx;
+  const isOverdue = it.remindAt && it.remindAt.at < new Date();
+  const label = it.label || MN_REMIND.strip(it.text) || String(it.text || '').trim();
+  return (
+    <div
+      onClick={() => onOpen(it.noteId)}
+      style={{
+        padding: variant === 'compact' ? '8px 12px' : '12px 14px',
+        background: T.bg, border: `1px solid ${T.lineSub}`,
+        borderLeft: it.remindAt
+          ? `3px solid ${isOverdue ? T.danger : T.warn}`
+          : `3px solid ${T.lineSub}`,
+        borderRadius: 6, cursor: 'pointer',
+        display: 'flex', alignItems: 'flex-start', gap: 10,
+        transition: 'background 80ms',
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+      onMouseLeave={e => e.currentTarget.style.background = T.bg}>
+      {it.isReminderOnly ? (
+        <span style={{
+          width: 15, height: 15, marginTop: 2, flexShrink: 0,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          color: isOverdue ? T.danger : T.warn,
+        }}>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+            <circle cx="8" cy="9" r="5.5"/><path d="M8 6V9L10 10" strokeLinecap="round"/>
+          </svg>
+        </span>
+      ) : (
+        <button
+          type="button"
+          aria-label={`${it.checked ? 'Reopen' : 'Complete'} ${label || it.text || 'todo'}`}
+          title={it.checked ? 'Reopen todo' : 'Complete todo'}
+          onClick={(e) => { e.stopPropagation(); onToggleCheck(it); }}
+          style={{
+          width: 15, height: 15, marginTop: 2, flexShrink: 0,
+          border: `1.5px solid ${it.checked ? T.accent : T.line}`,
+          background: it.checked ? T.accent : 'transparent',
+          borderRadius: 4, cursor: 'pointer', padding: 0,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {it.checked && (
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+              <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </button>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'var(--mn-body)', fontSize: 14.5,
+          color: it.checked ? T.inkDim : T.ink,
+          textDecoration: it.checked ? 'line-through' : 'none',
+          lineHeight: 1.5,
+        }}>
+          {label || <span style={{ color: T.inkDim, fontStyle: 'italic' }}>Reminder</span>}
+        </div>
+        <div style={{
+          marginTop: 6, display: 'flex', gap: 8, alignItems: 'center',
+          fontFamily: 'var(--mn-mono)', fontSize: 10.5,
+          color: T.inkDim, flexWrap: 'wrap',
+        }}>
+          <span style={{ color: T.inkMed }}>{it.noteTitle}</span>
+          {it.noteTags.slice(0, 2).map(t => (
+            <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: T.inkDim }}>
+              <span aria-hidden="true" style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: mnGetTagColor(tagHue[t] ?? 240, theme),
+              }} />
+              {t}
+            </span>
+          ))}
+          {it.remindAt && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              color: isOverdue ? T.danger : T.warn, fontWeight: 500,
+            }}>
+              <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+                <circle cx="8" cy="9" r="5.5"/>
+                <path d="M8 6V9L10 10" strokeLinecap="round"/>
+              </svg>
+              {it.remindAt.date}{it.remindAt.time ? ' ' + it.remindAt.time : ''}
+              {isOverdue && ' · overdue'}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant }) {
   const tagHue = useMemoP(() => {
     const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
@@ -27,96 +121,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
     it.text || '',
   ].join('|');
 
-  const Card = ({ it, idx }) => {
-    const isOverdue = it.remindAt && it.remindAt.at < new Date();
-    const label = it.label || MN_REMIND.strip(it.text) || String(it.text || '').trim();
-    return (
-      <div
-        onClick={() => onOpen(it.noteId)}
-        style={{
-          padding: variant === 'compact' ? '8px 12px' : '12px 14px',
-          background: T.bg, border: `1px solid ${T.lineSub}`,
-          borderLeft: it.remindAt
-            ? `3px solid ${isOverdue ? T.danger : T.warn}`
-            : `3px solid ${T.lineSub}`,
-          borderRadius: 6, cursor: 'pointer',
-          display: 'flex', alignItems: 'flex-start', gap: 10,
-          transition: 'background 80ms',
-        }}
-        onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
-        onMouseLeave={e => e.currentTarget.style.background = T.bg}>
-        {it.isReminderOnly ? (
-          <span style={{
-            width: 15, height: 15, marginTop: 2, flexShrink: 0,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            color: isOverdue ? T.danger : T.warn,
-          }}>
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-              <circle cx="8" cy="9" r="5.5"/><path d="M8 6V9L10 10" strokeLinecap="round"/>
-            </svg>
-          </span>
-        ) : (
-          <button
-            type="button"
-            aria-label={`${it.checked ? 'Reopen' : 'Complete'} ${label || it.text || 'todo'}`}
-            title={it.checked ? 'Reopen todo' : 'Complete todo'}
-            onClick={(e) => { e.stopPropagation(); onToggleCheck(it); }}
-            style={{
-            width: 15, height: 15, marginTop: 2, flexShrink: 0,
-            border: `1.5px solid ${it.checked ? T.accent : T.line}`,
-            background: it.checked ? T.accent : 'transparent',
-            borderRadius: 4, cursor: 'pointer', padding: 0,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {it.checked && (
-              <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </button>
-        )}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontFamily: 'var(--mn-body)', fontSize: 14.5,
-            color: it.checked ? T.inkDim : T.ink,
-            textDecoration: it.checked ? 'line-through' : 'none',
-            lineHeight: 1.5,
-          }}>
-            {label || <span style={{ color: T.inkDim, fontStyle: 'italic' }}>Reminder</span>}
-          </div>
-          <div style={{
-            marginTop: 6, display: 'flex', gap: 8, alignItems: 'center',
-            fontFamily: 'var(--mn-mono)', fontSize: 10.5,
-            color: T.inkDim, flexWrap: 'wrap',
-          }}>
-            <span style={{ color: T.inkMed }}>{it.noteTitle}</span>
-            {it.noteTags.slice(0, 2).map(t => (
-              <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: T.inkDim }}>
-                <span aria-hidden="true" style={{
-                  width: 6, height: 6, borderRadius: '50%',
-                  background: mnGetTagColor(tagHue[t] ?? 240, theme),
-                }} />
-                {t}
-              </span>
-            ))}
-            {it.remindAt && (
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 3,
-                color: isOverdue ? T.danger : T.warn, fontWeight: 500,
-              }}>
-                <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-                  <circle cx="8" cy="9" r="5.5"/>
-                  <path d="M8 6V9L10 10" strokeLinecap="round"/>
-                </svg>
-                {it.remindAt.date}{it.remindAt.time ? ' ' + it.remindAt.time : ''}
-                {isOverdue && ' · overdue'}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const cardCtx = { onOpen, onToggleCheck, T, theme, tagHue, variant };
 
   if (variant === 'kanban') {
     const buckets = [
@@ -153,7 +158,7 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
                 <span>{b.items.length}</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {b.items.map((it, i) => <Card key={itemKey(it, i)} it={it} idx={i} />)}
+                {b.items.map((it, i) => <Card key={itemKey(it, i)} it={it} idx={i} ctx={cardCtx} />)}
                 {b.items.length === 0 && (
                   <div style={{
                     padding: 14, textAlign: 'center',
@@ -189,21 +194,21 @@ function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant })
           <>
             <SectionHead T={T} label="Reminders" count={withRem.length} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 28 }}>
-              {withRem.map((it, i) => <Card key={itemKey(it, i)} it={it} idx={i} />)}
+              {withRem.map((it, i) => <Card key={itemKey(it, i)} it={it} idx={i} ctx={cardCtx} />)}
             </div>
           </>
         )}
 
         <SectionHead T={T} label="Open" count={open.filter(i => !i.remindAt).length} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 28 }}>
-          {open.filter(i => !i.remindAt).map((it, i) => <Card key={itemKey(it, `o${i}`)} it={it} idx={'o' + i} />)}
+          {open.filter(i => !i.remindAt).map((it, i) => <Card key={itemKey(it, `o${i}`)} it={it} idx={'o' + i} ctx={cardCtx} />)}
         </div>
 
         {done.length > 0 && (
           <>
             <SectionHead T={T} label="Done" count={done.length} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {done.map((it, i) => <Card key={itemKey(it, `d${i}`)} it={it} idx={'d' + i} />)}
+              {done.map((it, i) => <Card key={itemKey(it, `d${i}`)} it={it} idx={'d' + i} ctx={cardCtx} />)}
             </div>
           </>
         )}

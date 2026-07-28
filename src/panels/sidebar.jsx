@@ -20,6 +20,40 @@ function mnAgendaLinesForNote(note) {
   return count;
 }
 
+// Module scope: declared inside MnSidebar these were a new component type on
+// every render, so every keystroke anywhere rebuilt the section headers' DOM
+// instead of updating it. Same class of defect as the note-list rows in #96.
+function SectionHeader({ label, sectionKey, count, action, onContextMenu, ctx }) {
+  const { openSections, toggleSection, T } = ctx;
+  const open = !!openSections[sectionKey];
+  return (
+    <div onContextMenu={onContextMenu} style={{
+      height: 22, padding: '0 8px',
+      display: 'flex', alignItems: 'center', gap: 4,
+    }}>
+      <button onClick={() => toggleSection(sectionKey)} style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        flex: 1, minWidth: 0, padding: 0,
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        textAlign: 'left', ...dsGroupLabelStyle(T),
+      }}>
+        <svg width="9" height="9" viewBox="0 0 12 12" fill="none" style={{
+          transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+          transition: 'transform 120ms cubic-bezier(.4,0,.2,1)',
+          flexShrink: 0,
+        }}>
+          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <span style={{ flex: 1 }}>{label}</span>
+        {count != null && (
+          <span style={dsMachineStyle(T)}>{count}</span>
+        )}
+      </button>
+      {action}
+    </div>
+  );
+}
+
 function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
   onOpenToday, onOpenPinned, todayActive, pinnedActive = false, agendaActive, graphActive,
@@ -155,42 +189,17 @@ function MnSidebar({
     };
   }, [tagMenu]);
 
-  const SectionHeader = ({ label, sectionKey, count, action, onContextMenu }) => {
-    const open = !!openSections[sectionKey];
-    return (
-      <div onContextMenu={onContextMenu} style={{
-        height: 22, padding: '0 8px',
-        display: 'flex', alignItems: 'center', gap: 4,
-      }}>
-        <button onClick={() => toggleSection(sectionKey)} style={{
-          display: 'flex', alignItems: 'center', gap: 5,
-          flex: 1, minWidth: 0, padding: 0,
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          textAlign: 'left', ...dsGroupLabelStyle(T),
-        }}>
-          <svg width="9" height="9" viewBox="0 0 12 12" fill="none" style={{
-            transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
-            transition: 'transform 120ms cubic-bezier(.4,0,.2,1)',
-            flexShrink: 0,
-          }}>
-            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <span style={{ flex: 1 }}>{label}</span>
-          {count != null && (
-            <span style={dsMachineStyle(T)}>{count}</span>
-          )}
-        </button>
-        {action}
-      </div>
-    );
-  };
+  const sectionCtx = { openSections, toggleSection, T };
+
 
   // Nav rows are 34px at comfortable density; compact trims them to 30 so the
   // density setting still shortens the sidebar.
   const navRowHeight = density === 'compact' ? 30 : DS_HEIGHT.navRow;
   // Tag and workflow rows sit one step below the primary destinations.
   const subRowHeight = density === 'compact' ? 28 : 31;
-  const Row = props => <SidebarNavRow {...props} T={T} height={navRowHeight} />;
+  // SidebarNavRow is already a stable module-scope type; wrapping it in a
+  // per-render alias re-created the wrapper type each render and remounted
+  // every nav row. The shared props ride along at each use instead.
 
   const iconInbox = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 9L3 3H13L14 9" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M2 9V13H14V9H10.5L9.5 11H6.5L5.5 9H2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>);
   const iconToday = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5 2V4M11 2V4M2 7H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="8" cy="10.5" r="1.3" fill="currentColor"/></svg>);
@@ -228,54 +237,54 @@ function MnSidebar({
           top of the sidebar quiet, and labels start at "More". */}
       {(
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Row icon={iconInbox} label="All notes" count={notes.length}
+          <SidebarNavRow T={T} height={navRowHeight} icon={iconInbox} label="All notes" count={notes.length}
                active={!selectedTag && !selectedWorkflow && !todayActive && !pinnedActive && !agendaActive && !graphActive && !smartViewsActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
                onClick={() => onSelectTag(null)} />
-          <Row icon={iconToday} label="Today" count={rollupCount}
+          <SidebarNavRow T={T} height={navRowHeight} icon={iconToday} label="Today" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
-          <Row icon={iconInbox} label="Pinned" count={pinnedCount}
+          <SidebarNavRow T={T} height={navRowHeight} icon={iconInbox} label="Pinned" count={pinnedCount}
                active={pinnedActive} onClick={onOpenPinned} />
           {featureState.showAgenda && (
-            <Row icon={iconAgenda} label="Agenda" count={agendaCount}
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconAgenda} label="Agenda" count={agendaCount}
                  active={agendaActive || calendarActive}
                  onClick={onOpenAgenda} accent={T.warn} />
           )}
           {featureState.showWorkflow && (
-            <Row icon={iconWorkflow} label="Workflow" count={workflowTotal || 0}
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconWorkflow} label="Workflow" count={workflowTotal || 0}
                  active={workflowActive}
                  onClick={onOpenWorkflowPanel} accent={T.accent} />
           )}
           {featureState.showWriter && novelistEnabled && (
-            <Row icon={iconNovelist} label="Novelist" count={novelistCount}
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconNovelist} label="Novelist" count={novelistCount}
                  active={novelistActive}
                  onClick={onOpenNovelist} accent={T.accent} />
           )}
           {featureState.showCanvas && (
-            <Row icon={iconCanvas} label="Thinking Board" count={canvasCount}
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconCanvas} label="Thinking Board" count={canvasCount}
                  active={canvasActive}
                  onClick={onOpenCanvas} accent={T.accent} />
           )}
           {featureState.showAskAi && onOpenAskAI && (
-            <Row icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
           )}
         </div>
       )}
 
       <div>
-        <SectionHeader label="More" sectionKey="more" />
+        <SectionHeader ctx={sectionCtx} label="More" sectionKey="more" />
       </div>
       {openSections.more && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {onOpenQuickCapture && (
-            <Row icon={iconCapture} label="Quick capture" hint={quickCaptureShortcut} onClick={onOpenQuickCapture} />
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconCapture} label="Quick capture" hint={quickCaptureShortcut} onClick={onOpenQuickCapture} />
           )}
           {featureState.showLabs && <>
-            <Row icon={iconSmartViews} label="Smart Views" count={smartViewCount}
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconSmartViews} label="Smart Views" count={smartViewCount}
                  active={smartViewsActive} onClick={onOpenSmartViews} accent={T.focus || T.accent} />
-            <Row icon={iconGraph} label="Graph" active={graphActive} onClick={onOpenGraph} />
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconGraph} label="Graph" active={graphActive} onClick={onOpenGraph} />
           </>}
           {onOpenTrash && (
-            <Row icon={iconTrash} label="Recently deleted" count={trashCount}
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconTrash} label="Recently deleted" count={trashCount}
                  active={trashActive} onClick={onOpenTrash} accent={T.warn || T.danger} />
           )}
         </div>
@@ -284,7 +293,7 @@ function MnSidebar({
 
       {featureState.showWorkflow && (
         <div>
-          <SectionHeader label="Workflow" sectionKey="workflow" count={workflowTotal || 0} />
+          <SectionHeader ctx={sectionCtx} label="Workflow" sectionKey="workflow" count={workflowTotal || 0} />
         </div>
       )}
 
@@ -321,6 +330,7 @@ function MnSidebar({
 
       <div>
         <SectionHeader
+          ctx={sectionCtx}
           label="Tags"
           sectionKey="tags"
           count={tags.length}

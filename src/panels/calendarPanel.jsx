@@ -4,7 +4,7 @@ import { DS_TYPE, DS_HEIGHT, DS_RADIUS, dsMachineStyle } from '../shared/designS
 import MN_APP_HELPERS from '../app/appHelpers.js';
 import { mnGetTagColor } from '../shared/theme.jsx';
 import { mnCalendarDateKey, mnCalendarDateFromKey, mnCalendarMonthDays, mnCalendarItemDateKey, mnCalendarTimeText } from './calendarDates.js';
-import { mnCalendarIcon, mnAgendaStepBtn, mnCalendarInput, mnCalendarPrimaryButton, MnDayChip } from './calendarChrome.jsx';
+import { mnCalendarIcon, mnAgendaStepBtn, mnCalendarInput, mnCalendarPrimaryButton, MnDayChip, MnItemCard } from './calendarChrome.jsx';
 
 const { useEffect: useEffectC, useMemo: useMemoC, useState: useStateC } = React;
 
@@ -254,104 +254,7 @@ function MnCalendarPanel({
   // A month cell entry: a flat tinted chip carrying the time and the label.
   // The tone is the same three-way read the rail's card uses on its left edge.
 
-  const ItemCard = ({ item, compact = false }) => {
-    const overdue = item.remindAt?.at && item.remindAt.at < new Date();
-    const label = item.label || item.text || 'Reminder';
-    const detail = item.actionDetail || helpers.agendaActionDetail?.(item, notes) || {};
-    const detailTags = detail.inheritedTags || item.noteTags || [];
-    const dateDetails = [
-      detail.scheduledDate ? `scheduled ${detail.scheduledDate}${detail.scheduledTime ? ` ${detail.scheduledTime}` : ''}` : '',
-      detail.createdDate ? `created ${detail.createdDate}` : detail.titleDate ? `title ${detail.titleDate}` : '',
-      detail.modifiedDate ? `modified ${detail.modifiedDate}` : '',
-    ].filter(Boolean);
-    return (
-      <div
-        onClick={() => setActiveKey(item.key)}
-        style={{
-          border: `1px solid ${activeKey === item.key ? T.selLine : T.lineSub}`,
-          background: activeKey === item.key ? T.selBg : T.bg,
-          borderLeft: `3px solid ${item.isReminderOnly ? T.warn : overdue ? T.danger : T.accent}`,
-          borderRadius: 7,
-          padding: compact ? '7px 8px' : '9px 10px',
-          cursor: 'pointer',
-          minWidth: 0,
-        }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
-          {item.isReminderOnly ? (
-            <span style={{
-              color: T.warn,
-              flexShrink: 0,
-              marginTop: 2,
-              display: 'inline-flex',
-            }}>
-              {mnCalendarIcon('bell', T)}
-            </span>
-          ) : (
-            <button
-              type="button"
-              aria-label={`${item.checked ? 'Reopen' : 'Complete'} ${label}`}
-              title={item.checked ? 'Reopen todo' : 'Complete todo'}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleCheck?.(item);
-              }}
-              style={{
-                width: 15,
-                height: 15,
-                marginTop: 2,
-                flexShrink: 0,
-                border: `1.5px solid ${item.checked ? T.accent : T.line}`,
-                background: item.checked ? T.accent : 'transparent',
-                borderRadius: 4,
-                cursor: 'pointer',
-                padding: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-              {item.checked && (
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                  <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </button>
-          )}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontFamily: 'var(--mn-body)',
-              fontSize: compact ? 12.5 : 13.5,
-              lineHeight: 1.35,
-              color: item.checked ? T.inkDim : T.ink,
-              textDecoration: item.checked ? 'line-through' : 'none',
-              whiteSpace: compact ? 'nowrap' : 'normal',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}>{label}</div>
-            {!compact && (
-              <div style={{
-                marginTop: 5,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                flexWrap: 'wrap',
-                color: T.inkDim,
-                fontFamily: 'var(--mn-ui)',
-                fontSize: 11,
-              }}>
-                <span style={{ color: T.inkMed }}>{detail.sourceNoteTitle || item.noteTitle}</span>
-                {detail.reason && <span style={{ color: overdue ? T.danger : T.accent }}>{detail.reason}</span>}
-                {item.remindAt && <span style={{ color: overdue ? T.danger : T.warn }}>{mnCalendarTimeText(item)}</span>}
-                {detailTags.slice(0, 3).map(tag => (
-                  <span key={tag} style={{ color: mnGetTagColor(tagHue[tag] ?? 240, theme) }}>#{tag}</span>
-                ))}
-                {dateDetails.slice(0, 2).map(text => <span key={text}>{text}</span>)}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const itemCtx = { T, theme, tagHue, notes, helpers, activeKey, setActiveKey, onToggleCheck };
 
   const agendaList = (label, list, empty) => (
     <div style={{ marginTop: 16 }}>
@@ -368,7 +271,7 @@ function MnCalendarPanel({
         <span>{list.length}</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-        {list.map(item => <ItemCard key={item.key} item={item} />)}
+        {list.map(item => <MnItemCard key={item.key} item={item} ctx={itemCtx} />)}
         {!list.length && <div style={{ color: T.inkDim, fontSize: 12.5, fontStyle: 'italic', padding: '8px 2px' }}>{empty}</div>}
       </div>
     </div>
