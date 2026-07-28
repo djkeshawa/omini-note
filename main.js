@@ -350,14 +350,21 @@ registerWindowHandlers(ipcMain, {
 async function rescanAllVaults() {
   if (!searchIndexAvailable) return;
   const cfg = await store.loadConfig();
-  await Promise.all((cfg.vaults || []).map(async (v) => {
+  const rescanOne = async (v) => {
     try {
       const data = await store.loadVault(v.id);
       runOptionalSearchIndexTask('boot vault rescan', () => idx.rescanVault(v.id, data.notes));
     } catch (e) {
       console.error('rescan failed for vault', v.id, e);
     }
-  }));
+  };
+  // The active vault is what the renderer is reading right now, so it goes
+  // first and alone. The rest used to load in parallel with first paint —
+  // every note body of every vault contending with the vault the user is
+  // actually looking at — and now follow one at a time afterwards.
+  const vaults = [...(cfg.vaults || [])];
+  vaults.sort((a, b) => (a.id === cfg.activeVaultId ? -1 : 0) - (b.id === cfg.activeVaultId ? -1 : 0));
+  for (const v of vaults) await rescanOne(v);
 }
 
 // ── App lifecycle ────────────────────────────────────────────────────────────

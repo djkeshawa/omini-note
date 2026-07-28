@@ -1,4 +1,4 @@
-function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVaultId, bootState, canvases, desktopBridge, dirtyNotes, loadVaultBundle, mnNormalizeCustomThemesForApp, navigateView, notes, recordPhase5Metric, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setCustomThemes, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setTags, setTweaks, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, useEffectA, vaultActivationSeq }) {
+function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVaultId, bootState, canvases, desktopBridge, dirtyNotes, loadVaultBundle, mnNormalizeCustomThemesForApp, navigateView, notes, recordPhase5Metric, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setCustomThemes, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setTags, setTweaks, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, useEffectA, useRefA, vaultActivationSeq }) {
   const refreshVaultRegistry = useCallbackA(async ({ reloadActive = false, reason = '' } = {}) => {
       if (!HAS_DISK) return { ok: true };
       try {
@@ -98,19 +98,55 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
       }
     }, [activeVaultId, dirtyNotes, loadVaultBundle, notes, tags, selectedId, canvases, navigateView]);
   
+    // Coming back to the window used to re-read every note body in the vault,
+    // ship them all over IPC and re-parse them — on every alt-tab, and twice,
+    // because focus and visibilitychange both fired. Now leaving the window
+    // takes a cheap fingerprint (file count + newest mtime, no bodies), and
+    // returning compares against it. Nothing moved, nothing reloads. Our own
+    // saves happen while focused, so they never trip the comparison.
+    const awayStampRef = useRefA(null);
+    const stampCheckBusyRef = useRefA(false);
+
     useEffectA(() => {
       if (!HAS_DISK || bootState !== 'ready') return;
-      const refreshVisible = () => {
+      const takeStamp = async () => {
+        try {
+          const response = await desktopBridge.notes.vaultStamp?.(activeVaultId);
+          return response?.ok ? response.value : null;
+        } catch { return null; }
+      };
+      const captureAway = () => {
+        if (!activeVaultId) return;
+        takeStamp().then(stamp => { awayStampRef.current = stamp; });
+      };
+      const refreshVisible = async () => {
         if (document.visibilityState && document.visibilityState !== 'visible') return;
-        refreshVaultRegistry({ reloadActive: true, reason: 'focus' });
+        if (stampCheckBusyRef.current) return;
+        stampCheckBusyRef.current = true;
+        try {
+          const away = awayStampRef.current;
+          awayStampRef.current = null;
+          const now = away ? await takeStamp() : null;
+          const unchanged = away && now
+            && now.count === away.count
+            && now.maxMtimeMs === away.maxMtimeMs;
+          // The vault list itself (names, counts) stays cheap to refresh; the
+          // full reload of note bodies only happens when the stamp moved or
+          // when there is no stamp to compare against.
+          refreshVaultRegistry({ reloadActive: !unchanged, reason: 'focus' });
+        } finally {
+          stampCheckBusyRef.current = false;
+        }
       };
       window.addEventListener('focus', refreshVisible);
+      window.addEventListener('blur', captureAway);
       document.addEventListener('visibilitychange', refreshVisible);
       return () => {
         window.removeEventListener('focus', refreshVisible);
+        window.removeEventListener('blur', captureAway);
         document.removeEventListener('visibilitychange', refreshVisible);
       };
-    }, [bootState, refreshVaultRegistry]);
+    }, [bootState, refreshVaultRegistry, activeVaultId]);
   
     useEffectA(() => {
       if (!HAS_DISK || bootState !== 'ready' || !desktopBridge.events?.onVaultFilesChanged) return undefined;

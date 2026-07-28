@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('mn', {
   listNotes: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteList, payload),
   openNote: (payload = {}) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteOpen, payload),
   loadVault: (vaultId) => ipcRenderer.invoke('mn:loadVault', vaultId),
+  vaultStamp: (vaultId) => ipcRenderer.invoke('mn:vaultStamp', vaultId),
   saveNote: (vaultId, note, options) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteSave, { vaultId, noteId: note?.id, note, options }),
   deleteNote: (vaultId, noteId, noteSnapshot) => ipcRenderer.invoke(NOTES_VAULTS_CHANNELS.noteDelete, { vaultId, noteId, noteSnapshot }),
   saveAttachment: (vaultId, payload) => ipcRenderer.invoke('mn:saveAttachment', vaultId, payload),
@@ -228,6 +229,12 @@ contextBridge.exposeInMainWorld('mn', {
   onFlushDirtyNotes: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = async (_event, requestId) => {
+      // While the flush is still running, tell the main process so its
+      // deadline extends. Ten dirty notes on a slow disk can take longer
+      // than the base budget, and refusing to quit mid-save helped nobody.
+      const heartbeat = setInterval(() => {
+        try { ipcRenderer.send('mn:flushDirtyNotesHeartbeat', requestId); } catch {}
+      }, 1000);
       try {
         const value = await callback();
         ipcRenderer.send('mn:flushDirtyNotesResult', requestId, {
@@ -237,6 +244,8 @@ contextBridge.exposeInMainWorld('mn', {
         });
       } catch (e) {
         ipcRenderer.send('mn:flushDirtyNotesResult', requestId, { ok: false, error: e?.message || String(e) });
+      } finally {
+        clearInterval(heartbeat);
       }
     };
     ipcRenderer.on('mn:flushDirtyNotes', listener);

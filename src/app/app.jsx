@@ -269,7 +269,7 @@ function MnApp() {
   });
 
   const { refreshVaultRegistry, setTweak, importThemeFile } = useAppLifecycleController({
-    HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVaultId, bootState, canvases, desktopBridge: platformApi, dirtyNotes, loadVaultBundle, mnNormalizeCustomThemesForApp, navigateView, notes, recordPhase5Metric, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setCustomThemes, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setTags, setTweaks, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, useEffectA, vaultActivationSeq,
+    HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVaultId, bootState, canvases, desktopBridge: platformApi, dirtyNotes, loadVaultBundle, mnNormalizeCustomThemesForApp, navigateView, notes, recordPhase5Metric, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setCustomThemes, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setTags, setTweaks, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, useEffectA, useRefA, vaultActivationSeq,
   });
 
   const theme = tweaks.theme;
