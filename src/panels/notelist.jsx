@@ -126,6 +126,157 @@ function mnHighlight(text, query, T) {
   return parts;
 }
 
+// Defined at module scope on purpose. Declared inside MnNoteList it was a new
+// component type on every render, so React unmounted and rebuilt every row —
+// which is why renaming a note sent the caret to the end of the field on each
+// keystroke, and why the whole list rebuilt its DOM as you typed a query.
+function NoteRow({ n, depth = 0, compact = false, meta = '', ctx }) {
+  const {
+    T, density, onSelect, query, renameId, renameValue, selectedId,
+    setMenu, setRenameId, setRenameValue, submitRename, tagHue, tags, theme,
+  } = ctx;
+  const active = n.id === selectedId;
+  const isRenaming = renameId === n.id;
+  return (
+    <div
+      key={n.id}
+      data-mn-note-row="true"
+      data-mn-note-row-active={active ? 'true' : 'false'}
+      role="option"
+      aria-selected={active}
+      tabIndex={0}
+      draggable
+      onDragStart={(e) => {
+        const payload = JSON.stringify({ noteId: n.id });
+        e.dataTransfer.setData('text/mn-note', payload);
+        e.dataTransfer.setData('text/plain', `mn-note:${n.id}`);
+        e.dataTransfer.effectAllowed = 'copyMove';
+      }}
+      onClick={() => { if (!isRenaming) onSelect(n.id); }}
+      onKeyDown={(e) => {
+        if (!isRenaming && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          onSelect(n.id);
+        }
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setMenu({ x: e.clientX, y: e.clientY, note: n });
+      }}
+      style={{
+        padding: density === 'compact' || compact ? '8px 11px' : '10px 12px',
+        paddingLeft: 12 + depth * 16,
+        margin: '0 0 2px',
+        border: `1px solid ${active ? T.selLine : 'transparent'}`,
+        borderRadius: DS_RADIUS.row,
+        cursor: 'pointer',
+        background: active ? (T.bgElevated || T.bg) : 'transparent',
+        position: 'relative',
+        boxShadow: active ? `0 2px 8px color-mix(in oklab, ${T.ink} 6%, transparent)` : 'none',
+        transition: 'background 100ms ease',
+      }}
+      onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
+      onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
+      {active && (
+        <span style={{
+          position: 'absolute', left: 0, top: 12, bottom: 12,
+          width: 2.5, borderRadius: '0 2px 2px 0', background: T.accent,
+        }} />
+      )}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        {n.pinned && (
+          <svg width="9" height="9" viewBox="0 0 10 10" fill={T.accent}>
+            <circle cx="5" cy="5" r="3" />
+          </svg>
+        )}
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={submitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); submitRename(); }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setRenameId(null);
+                setRenameValue('');
+              }
+            }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              border: `1px solid ${T.accent}`,
+              borderRadius: 5,
+              background: T.bg,
+              color: T.ink,
+              padding: '4px 6px',
+              outline: 'none',
+              fontFamily: 'var(--mn-ui)',
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          />
+        ) : (
+          <div style={{
+            flex: 1, fontFamily: 'var(--mn-ui)',
+            fontSize: 13.5, fontWeight: depth ? 500 : 600,
+            color: T.ink, letterSpacing: 0,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{mnHighlight(n.title, query, T)}</div>
+        )}
+        <div style={{
+          fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim,
+          flexShrink: 0,
+        }}>{mnFormatDate(n.date)}</div>
+      </div>
+      {density !== 'compact' && !compact && (
+        <div style={{
+          fontFamily: 'var(--mn-body)', fontSize: 13,
+          color: T.inkMed, lineHeight: 1.5,
+          marginTop: 3, display: '-webkit-box',
+          WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}>{mnHighlight(String(n.__searchSnippet || '').replace(/<\/?mark>/g, '') || mnSnippet(n, query), query, T)}</div>
+      )}
+      {!compact && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
+          {query && Array.isArray(n.__matchedFields) && n.__matchedFields.length > 0 && (
+            <span style={{
+              fontFamily: 'var(--mn-ui)', fontSize: 11, color: T.accent,
+            }}>{n.__matchedFields.join(', ')}</span>
+          )}
+          {(n.tags || []).map(t => (
+            <React.Fragment key={t}>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                background: mnGetTagColor(tagHue[t] ?? 240, theme),
+              }} />
+              <span style={{
+                fontFamily: 'var(--mn-ui)', fontSize: 11,
+                color: active ? T.inkMed : T.inkDim,
+              }}>{t}</span>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+      {meta && (
+        <div style={{
+          marginTop: compact ? 2 : 5,
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 11.5,
+          color: T.inkDim,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>{meta}</div>
+      )}
+    </div>
+  );
+}
+
 function MnNoteList({
   notes, selectedId, onSelect, title, subtitle,
   query, onQueryChange,
@@ -247,148 +398,7 @@ function MnNoteList({
     setRenameValue('');
   };
 
-  const NoteRow = ({ n, depth = 0, compact = false, meta = '' }) => {
-    const active = n.id === selectedId;
-    const isRenaming = renameId === n.id;
-    return (
-      <div
-        key={n.id}
-        data-mn-note-row="true"
-        data-mn-note-row-active={active ? 'true' : 'false'}
-        role="option"
-        aria-selected={active}
-        tabIndex={0}
-        draggable
-        onDragStart={(e) => {
-          const payload = JSON.stringify({ noteId: n.id });
-          e.dataTransfer.setData('text/mn-note', payload);
-          e.dataTransfer.setData('text/plain', `mn-note:${n.id}`);
-          e.dataTransfer.effectAllowed = 'copyMove';
-        }}
-        onClick={() => { if (!isRenaming) onSelect(n.id); }}
-        onKeyDown={(e) => {
-          if (!isRenaming && (e.key === 'Enter' || e.key === ' ')) {
-            e.preventDefault();
-            onSelect(n.id);
-          }
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setMenu({ x: e.clientX, y: e.clientY, note: n });
-        }}
-        style={{
-          padding: density === 'compact' || compact ? '8px 11px' : '10px 12px',
-          paddingLeft: 12 + depth * 16,
-          margin: '0 0 2px',
-          border: `1px solid ${active ? T.selLine : 'transparent'}`,
-          borderRadius: DS_RADIUS.row,
-          cursor: 'pointer',
-          background: active ? (T.bgElevated || T.bg) : 'transparent',
-          position: 'relative',
-          boxShadow: active ? `0 2px 8px color-mix(in oklab, ${T.ink} 6%, transparent)` : 'none',
-          transition: 'background 100ms ease',
-        }}
-        onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
-        onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
-        {active && (
-          <span style={{
-            position: 'absolute', left: 0, top: 12, bottom: 12,
-            width: 2.5, borderRadius: '0 2px 2px 0', background: T.accent,
-          }} />
-        )}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          {n.pinned && (
-            <svg width="9" height="9" viewBox="0 0 10 10" fill={T.accent}>
-              <circle cx="5" cy="5" r="3" />
-            </svg>
-          )}
-          {isRenaming ? (
-            <input
-              autoFocus
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onBlur={submitRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') { e.preventDefault(); submitRename(); }
-                if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setRenameId(null);
-                  setRenameValue('');
-                }
-              }}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                border: `1px solid ${T.accent}`,
-                borderRadius: 5,
-                background: T.bg,
-                color: T.ink,
-                padding: '4px 6px',
-                outline: 'none',
-                fontFamily: 'var(--mn-ui)',
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            />
-          ) : (
-            <div style={{
-              flex: 1, fontFamily: 'var(--mn-ui)',
-              fontSize: 13.5, fontWeight: depth ? 500 : 600,
-              color: T.ink, letterSpacing: 0,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>{mnHighlight(n.title, query, T)}</div>
-          )}
-          <div style={{
-            fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim,
-            flexShrink: 0,
-          }}>{mnFormatDate(n.date)}</div>
-        </div>
-        {density !== 'compact' && !compact && (
-          <div style={{
-            fontFamily: 'var(--mn-body)', fontSize: 13,
-            color: T.inkMed, lineHeight: 1.5,
-            marginTop: 3, display: '-webkit-box',
-            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}>{mnHighlight(String(n.__searchSnippet || '').replace(/<\/?mark>/g, '') || mnSnippet(n, query), query, T)}</div>
-        )}
-        {!compact && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
-            {query && Array.isArray(n.__matchedFields) && n.__matchedFields.length > 0 && (
-              <span style={{
-                fontFamily: 'var(--mn-ui)', fontSize: 11, color: T.accent,
-              }}>{n.__matchedFields.join(', ')}</span>
-            )}
-            {(n.tags || []).map(t => (
-              <React.Fragment key={t}>
-                <span style={{
-                  width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                  background: mnGetTagColor(tagHue[t] ?? 240, theme),
-                }} />
-                <span style={{
-                  fontFamily: 'var(--mn-ui)', fontSize: 11,
-                  color: active ? T.inkMed : T.inkDim,
-                }}>{t}</span>
-              </React.Fragment>
-            ))}
-          </div>
-        )}
-        {meta && (
-          <div style={{
-            marginTop: compact ? 2 : 5,
-            fontFamily: 'var(--mn-ui)',
-            fontSize: 11.5,
-            color: T.inkDim,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>{meta}</div>
-        )}
-      </div>
-    );
-  };
+  const rowCtx = { T, density, onSelect, query, renameId, renameValue, selectedId, setMenu, setRenameId, setRenameValue, submitRename, tagHue, tags, theme };
 
   const GroupHeader = ({ note, depth = 0, count = 0, type = '', linkedTo = '' }) => {
     const isCollapsed = collapsed[note.id] === true;
@@ -636,7 +646,7 @@ function MnNoteList({
                     return (
                       <React.Fragment key={chapter.id}>
                         <GroupHeader note={chapter} depth={1} count={scenes.length} type="chapter" linkedTo={`Linked to ${act.title || 'act'}`} />
-                        {!chapterCollapsed && scenes.map(scene => <NoteRow key={scene.id} n={scene} depth={2} compact meta={`Linked to ${chapter.title || 'chapter'}`} />)}
+                        {!chapterCollapsed && scenes.map(scene => <NoteRow key={scene.id} n={scene} ctx={rowCtx} depth={2} compact meta={`Linked to ${chapter.title || 'chapter'}`} />)}
                       </React.Fragment>
                     );
                   })}
@@ -652,7 +662,7 @@ function MnNoteList({
                   return (
                     <React.Fragment key={chapter.id}>
                       <GroupHeader note={chapter} depth={1} count={scenes.length} type="chapter" />
-                      {!chapterCollapsed && scenes.map(scene => <NoteRow key={scene.id} n={scene} depth={2} compact meta={`Linked to ${chapter.title || 'chapter'}`} />)}
+                      {!chapterCollapsed && scenes.map(scene => <NoteRow key={scene.id} n={scene} ctx={rowCtx} depth={2} compact meta={`Linked to ${chapter.title || 'chapter'}`} />)}
                     </React.Fragment>
                   );
                 })}
@@ -662,7 +672,7 @@ function MnNoteList({
               <>
                 <CollectionHeader id="mn-loose-scenes" label="Unlinked scenes" count={novelistList.looseScenes.length} />
                 {collapsed['mn-loose-scenes'] !== true && novelistList.looseScenes.map(scene => (
-                  <NoteRow key={scene.id} n={scene} depth={1} compact />
+                  <NoteRow key={scene.id} n={scene} ctx={rowCtx} depth={1} compact />
                 ))}
               </>
             )}
@@ -675,12 +685,12 @@ function MnNoteList({
                 borderBottom: `1px solid ${T.lineSub}`,
               }}>Other notes</div>
             )}
-            {novelistList.other.map(n => <NoteRow key={n.id} n={n} />)}
+            {novelistList.other.map(n => <NoteRow key={n.id} n={n} ctx={rowCtx} />)}
           </>
         ) : dateGroups.map(group => (
           <React.Fragment key={group.key}>
             <div style={{ ...dsGroupLabelStyle(T), padding: '8px 8px 5px' }}>{group.label}</div>
-            {group.notes.map(n => <NoteRow key={n.id} n={n} />)}
+            {group.notes.map(n => <NoteRow key={n.id} n={n} ctx={rowCtx} />)}
           </React.Fragment>
         ))}
         {!novelistList && visibleLimit < notes.length && (

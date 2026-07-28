@@ -231,6 +231,24 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
   assert.ok(appIcon.size > 0);
 });
 
+test('list rows and graph controls are declared at module scope', () => {
+  const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
+  const graph = fs.readFileSync(path.join(__dirname, '../src/panels/graph.jsx'), 'utf8');
+
+  // A component declared inside a render function is a new type on every
+  // render, so React unmounts and rebuilds its DOM. That put the caret at the
+  // end of the note-rename field on every keystroke, and dropped a drag on the
+  // graph's force sliders after the first step.
+  assert.match(notelist, /^function NoteRow\(/m);
+  assert.doesNotMatch(notelist, /const NoteRow = \(/);
+  assert.match(notelist, /<NoteRow key=\{[^}]+\} n=\{[^}]+\} ctx=\{rowCtx\}/);
+
+  assert.match(graph, /^function Row\(\{ id, title, children, open, toggle, T \}\)/m);
+  assert.match(graph, /^function Toggle\(\{ label, value, onChange \}\)/m);
+  assert.match(graph, /^function Range\(\{ label, min, max, step, value, onChange, T \}\)/m);
+  assert.doesNotMatch(graph, /const Range = \(/);
+});
+
 test('App and editor font size settings use stepper controls', () => {
   const settingsRoot = path.join(__dirname, '../src/settings');
   const settings = [
