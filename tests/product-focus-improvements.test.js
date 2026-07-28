@@ -100,9 +100,10 @@ test('vault watcher filters private folders and debounces Markdown changes', asy
     },
   });
   watcher.refresh([{ id: 'v1', path: 'C:\\vault' }]);
-  watcher.markInternal('v1', 250);
-  callback('change', 'internal.md');
-  await new Promise(resolve => setTimeout(resolve, 260));
+  // Repeated events for one file coalesce into a single change, and files the
+  // vault does not own are never reported. Whether a change is ours is decided
+  // by file mtime now, so that half is covered in tests/vault-watcher.test.js
+  // against a real directory rather than by a timer here.
   callback('change', 'one.md');
   callback('change', 'one.md');
   callback('change', '.meta.json');
