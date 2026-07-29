@@ -1341,6 +1341,56 @@ test('grouping reads the source note of a task, not just a note result', () => {
   assert.deepEqual(appHelpers.smartViewGroup(notes, { by: 'status' }).map(g => g.label), ['DONE', 'No status']);
 });
 
+test('a view row resolves to the exact block it was parsed from', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const write = loadRendererModule('src/features/views/viewsWrite.js');
+  const walk = (blocks, fn) => (blocks || []).forEach(b => { fn(b); walk(b.children, fn); });
+
+  // The common case: the row remembers the block it came from, so the edit
+  // lands exactly there rather than being matched by text.
+  const anchored = write.mnViewsActionItem({
+    noteId: 'n1', label: 'ship it', text: '- [ ] ship it', checked: false,
+    source: { blockId: 'b_7', line: null, text: '- [ ] ship it' },
+  }, { note: { id: 'n1', blocks: [] }, walk });
+  assert.equal(anchored.ok, true);
+  assert.equal(anchored.item.blockId, 'b_7');
+  assert.equal(anchored.item.noteId, 'n1');
+
+  // Anchor gone, but the text occurs once: re-find it.
+  const note = { id: 'n1', blocks: [
+    { id: 'b_1', content: 'unrelated', children: [] },
+    { id: 'b_2', content: 'ship it', children: [] },
+  ] };
+  const relocated = write.mnViewsActionItem({
+    noteId: 'n1', label: 'ship it', text: 'ship it', source: {},
+  }, { note, walk });
+  assert.equal(relocated.ok, true);
+  assert.equal(relocated.item.blockId, 'b_2');
+
+  // Anchor gone and the text appears twice: refuse. Picking either one is a
+  // coin flip against the user's note, and the old path silently edited
+  // nothing while reporting success.
+  const twice = { id: 'n1', blocks: [
+    { id: 'b_1', content: 'standup', children: [] },
+    { id: 'b_2', content: 'standup', children: [] },
+  ] };
+  const ambiguous = write.mnViewsActionItem({
+    noteId: 'n1', label: 'standup', text: 'standup', source: {},
+  }, { note: twice, walk });
+  assert.equal(ambiguous.ok, false);
+  assert.equal(ambiguous.reason, 'ambiguous');
+
+  // Nothing matches at all.
+  const missing = write.mnViewsActionItem({
+    noteId: 'n1', label: 'gone', text: 'gone', source: {},
+  }, { note, walk });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.reason, 'unlocatable');
+
+  // A row with no note cannot be written anywhere.
+  assert.equal(write.mnViewsActionItem({ label: 'orphan' }, {}).ok, false);
+});
+
 test('the calendar places rows by the date the other layouts print', async () => {
   const { loadRendererModule } = require('./helpers/rendererModule.js');
   const cal = loadRendererModule('src/features/views/ViewsCalendar.jsx');

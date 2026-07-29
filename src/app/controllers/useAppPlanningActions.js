@@ -31,18 +31,25 @@ function useAppPlanningActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, markDirty, ma
         });
         return true;
       }
+      // Last resort: find the line by its text. This rung cannot act when the
+      // same text appears twice, and it used to report success anyway — so a
+      // caller was told the edit landed while the note was untouched.
+      let replaced = false;
       updateNoteBody(item.noteId, body => {
         const source = String(item.text || '').trim();
         if (!source) return body;
-        if (MN_APP_HELPERS.agendaReplaceUniqueSourceText) {
-          return MN_APP_HELPERS.agendaReplaceUniqueSourceText(body, source, nextText);
-        }
-        const text = String(body || '');
-        const index = text.indexOf(source);
-        if (index < 0 || text.indexOf(source, index + source.length) >= 0) return body;
-        return `${text.slice(0, index)}${nextText}${text.slice(index + source.length)}`;
+        const next = MN_APP_HELPERS.agendaReplaceUniqueSourceText
+          ? MN_APP_HELPERS.agendaReplaceUniqueSourceText(body, source, nextText)
+          : (() => {
+            const text = String(body || '');
+            const index = text.indexOf(source);
+            if (index < 0 || text.indexOf(source, index + source.length) >= 0) return body;
+            return `${text.slice(0, index)}${nextText}${text.slice(index + source.length)}`;
+          })();
+        replaced = next !== body;
+        return next;
       });
-      return true;
+      return replaced;
     }, [notes, updateNote, updateNoteBody]);
   
     const createCalendarTaskItem = useCallbackA(({ noteId, text, type, date, time } = {}) => {

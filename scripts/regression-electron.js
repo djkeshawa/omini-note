@@ -443,17 +443,19 @@ async function runViewsPanelScenario(win) {
       const current = await evaluate(win, `(() => {
         const panel = document.querySelector('[data-mn-views-panel]');
         return {
-          view: document.querySelector('[data-mn-view]')?.getAttribute('data-mn-view') || '',
           panel: Boolean(panel),
           views: panel ? panel.querySelectorAll('[role="option"]').length : 0,
           layouts: panel ? panel.querySelectorAll('[role="tab"]').length : 0,
         };
       })()`);
-      // A seeded definition and the five layout tabs must both be there — an
-      // empty shell would pass a bare "does the panel exist" probe.
+      // A seeded definition and all six layout tabs must be there — an empty
+      // shell would pass a bare "does the panel exist" probe.
       return { ok: current.panel && current.views > 0 && current.layouts === 6, current };
     });
-    // Switching to the board must produce real columns, not an empty frame.
+
+    // Board and calendar must draw something real, not an empty frame. Both
+    // run against a view that has rows, so an empty result set cannot be
+    // mistaken for a working layout.
     await clickVisibleText(win, 'Board');
     await waitFor(win, 'views board renders columns', async () => {
       const current = await evaluate(win, `(() => {
@@ -461,22 +463,48 @@ async function runViewsPanelScenario(win) {
         if (!panel) return { panel: false };
         const headers = [...panel.querySelectorAll('div')]
           .filter(el => el.children.length === 2 && /^\\D+\\d+$/.test((el.textContent || '').trim()));
-        return { panel: true, columns: headers.length, text: panel.textContent.slice(0, 160) };
+        return { panel: true, columns: headers.length };
       })()`);
       return { ok: current.panel && current.columns > 0, current };
     });
-    // The calendar must draw a real month grid, not an empty frame.
     await clickVisibleText(win, 'Calendar');
     await waitFor(win, 'views calendar renders a month grid', async () => {
       const current = await evaluate(win, `(() => {
         const panel = document.querySelector('[data-mn-views-panel]');
         if (!panel) return { panel: false };
-        const nextMonth = panel.querySelector('button[aria-label="Next month"]');
-        const dayCells = [...panel.querySelectorAll('div')].filter(el => /^\\d{1,2}$/.test((el.textContent || '').trim()));
-        return { panel: true, nextMonth: Boolean(nextMonth), dayCells: dayCells.length };
+        const dayCells = [...panel.querySelectorAll('span')].filter(el => /^\\d{1,2}$/.test((el.textContent || '').trim()));
+        return {
+          panel: true,
+          nextMonth: Boolean(panel.querySelector('button[aria-label="Next month"]')),
+          dayCells: dayCells.length,
+        };
       })()`);
       return { ok: current.panel && current.nextMonth && current.dayCells >= 28, current };
     });
+
+    // Ticking a task from the board must change the note on disk, not just
+    // the pixel. Last, because completing it empties the Open tasks view.
+    await seedEditorNote(win, {
+      id: 'qe_views_task',
+      title: 'QE Views Task Note',
+      body: 'Parent\n\n- [ ] ship the views board\n',
+    });
+    await clickVisibleText(win, 'Views');
+    await clickVisibleText(win, 'Open tasks');
+    await clickVisibleText(win, 'Board');
+    await waitFor(win, 'views board shows the seeded task', async () => {
+      const current = await evaluate(win, `(() => {
+        const panel = document.querySelector('[data-mn-views-panel]');
+        return {
+          panel: Boolean(panel),
+          box: Boolean(panel?.querySelector('button[aria-label="Complete task"]')),
+          text: panel ? panel.textContent.slice(0, 160) : '',
+        };
+      })()`);
+      return { ok: current.panel && current.box, current };
+    });
+    await clickButton(win, { aria: 'Complete task' });
+    await waitForPersistedNote(win, 'QE Views Task Note', note => /- \[x\]\s+ship the views board/i.test(String(note.body || '')));
   } finally {
     await setPackEnabledForRegression(win, 'views', false);
   }
