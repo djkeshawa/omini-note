@@ -435,6 +435,26 @@ async function setPackEnabledForRegression(win, packId, enabled) {
   });
 }
 
+async function setViewsRowSearch(win, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const value = ${JSON.stringify(value)};
+      const el = document.querySelector('input[aria-label="Search these rows"]');
+      if (!el) return { ok: false };
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error('Views row search input not found');
+}
+
+async function viewsRowCount(win) {
+  return evaluate(win, `document.querySelector('[data-mn-views-body]')?.querySelectorAll('[data-mn-view-row]').length ?? -1`);
+}
+
 async function runViewsPanelScenario(win) {
   await setPackEnabledForRegression(win, 'views', true);
   try {
@@ -442,15 +462,46 @@ async function runViewsPanelScenario(win) {
     await waitFor(win, 'views panel renders a saved view', async () => {
       const current = await evaluate(win, `(() => {
         const panel = document.querySelector('[data-mn-views-panel]');
+        if (!panel) return { panel: false };
+        const tabs = panel.querySelector('[role="tablist"][aria-label="Saved views"]');
         return {
-          panel: Boolean(panel),
-          views: panel ? panel.querySelectorAll('[role="option"]').length : 0,
-          layouts: panel ? panel.querySelectorAll('[role="tab"]').length : 0,
+          panel: true,
+          views: tabs ? tabs.querySelectorAll('[role="tab"]').length : 0,
+          // Every tab states its own count, so a tab bar of empty labels fails.
+          counted: tabs
+            ? [...tabs.querySelectorAll('[role="tab"]')].filter(el => /\\d/.test(el.textContent || '')).length
+            : 0,
+          layouts: panel.querySelectorAll('[role="tablist"][aria-label="Layout"] [role="tab"]').length,
+          search: Boolean(panel.querySelector('input[aria-label="Search these rows"]')),
+          newView: Boolean(panel.querySelector('button[aria-label="New view"]')),
+          saveState: /Saved/.test(panel.textContent || ''),
+          rowsChip: /Rows/.test(panel.textContent || ''),
         };
       })()`);
-      // A seeded definition and all six layout tabs must be there — an empty
-      // shell would pass a bare "does the panel exist" probe.
-      return { ok: current.panel && current.views > 0 && current.layouts === 6, current };
+      // The two-row chrome from the prototype: view tabs carrying counts, the
+      // row search, the new-view control, the state pill, the Rows chip, and
+      // all six layout segments. An empty shell fails every one of these.
+      return {
+        ok: current.panel && current.views > 0 && current.counted > 0 && current.layouts === 6
+          && current.search && current.newView && current.saveState && current.rowsChip,
+        current,
+      };
+    });
+
+    // The row search must actually narrow the rows, not just render a box.
+    // A nonsense term empties the view; clearing brings every row back.
+    const allRows = await viewsRowCount(win);
+    if (allRows <= 0) throw new Error(`Views list rendered no rows to search: ${allRows}`);
+    await setViewsRowSearch(win, 'zzqx-no-such-row');
+    await waitFor(win, 'views row search narrows the list', async () => {
+      const rows = await viewsRowCount(win);
+      const empty = await evaluate(win, `/No rows match that search/.test(document.querySelector('[data-mn-views-body]')?.textContent || '')`);
+      return { ok: rows === 0 && empty, rows, empty, allRows };
+    });
+    await clickButton(win, { aria: 'Clear row search' });
+    await waitFor(win, 'clearing views row search restores the rows', async () => {
+      const rows = await viewsRowCount(win);
+      return { ok: rows === allRows, rows, allRows };
     });
 
     // Board and calendar must draw something real, not an empty frame. Both
@@ -459,7 +510,7 @@ async function runViewsPanelScenario(win) {
     await clickVisibleText(win, 'Board');
     await waitFor(win, 'views board renders columns', async () => {
       const current = await evaluate(win, `(() => {
-        const panel = document.querySelector('[data-mn-views-panel]');
+        const panel = document.querySelector('[data-mn-views-body]');
         if (!panel) return { panel: false };
         const headers = [...panel.querySelectorAll('div')]
           .filter(el => el.children.length === 2 && /^\\D+\\d+$/.test((el.textContent || '').trim()));
@@ -470,7 +521,7 @@ async function runViewsPanelScenario(win) {
     await clickVisibleText(win, 'Calendar');
     await waitFor(win, 'views calendar renders a month grid', async () => {
       const current = await evaluate(win, `(() => {
-        const panel = document.querySelector('[data-mn-views-panel]');
+        const panel = document.querySelector('[data-mn-views-body]');
         if (!panel) return { panel: false };
         const dayCells = [...panel.querySelectorAll('span')].filter(el => /^\\d{1,2}$/.test((el.textContent || '').trim()));
         return {
