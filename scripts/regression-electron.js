@@ -435,6 +435,82 @@ async function setPackEnabledForRegression(win, packId, enabled) {
   });
 }
 
+async function setInputByAria(win, ariaLabel, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const value = ${JSON.stringify(value)};
+      const el = document.querySelector('input[aria-label=' + ${JSON.stringify(JSON.stringify(ariaLabel))} + ']');
+      if (!el) return { ok: false };
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error('Input not found for aria-label: ' + ariaLabel);
+}
+
+async function renameActiveView(win, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const value = ${JSON.stringify(value)};
+      const el = document.querySelector('input[aria-label="View name"]');
+      if (!el) return { ok: false };
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error('Views rename input not found');
+}
+
+async function viewsTableTitles(win) {
+  return evaluate(win, `(() => {
+    const table = document.querySelector('[data-mn-views-table]');
+    if (!table) return [];
+    return [...table.querySelectorAll('[data-mn-view-row]')].map(row => (row.children[1]?.textContent || '').trim());
+  })()`);
+}
+
+async function viewsTabTitles(win) {
+  return evaluate(win, `(() => {
+    const bar = document.querySelector('[role="tablist"][aria-label="Saved views"]');
+    if (!bar) return [];
+    return [...bar.querySelectorAll('[role="tab"]')].map(el => (el.firstChild?.textContent || '').trim());
+  })()`);
+}
+
+async function viewsSaveStateText(win) {
+  return evaluate(win, `(() => {
+    const bar = document.querySelector('[role="tablist"][aria-label="Saved views"]');
+    return bar ? (bar.textContent || '') : '';
+  })()`);
+}
+
+async function setViewsRowSearch(win, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const value = ${JSON.stringify(value)};
+      const el = document.querySelector('input[aria-label="Search these rows"]');
+      if (!el) return { ok: false };
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error('Views row search input not found');
+}
+
+async function viewsRowCount(win) {
+  return evaluate(win, `document.querySelector('[data-mn-views-body]')?.querySelectorAll('[data-mn-view-row]').length ?? -1`);
+}
+
 async function runViewsPanelScenario(win) {
   await setPackEnabledForRegression(win, 'views', true);
   try {
@@ -442,15 +518,46 @@ async function runViewsPanelScenario(win) {
     await waitFor(win, 'views panel renders a saved view', async () => {
       const current = await evaluate(win, `(() => {
         const panel = document.querySelector('[data-mn-views-panel]');
+        if (!panel) return { panel: false };
+        const tabs = panel.querySelector('[role="tablist"][aria-label="Saved views"]');
         return {
-          panel: Boolean(panel),
-          views: panel ? panel.querySelectorAll('[role="option"]').length : 0,
-          layouts: panel ? panel.querySelectorAll('[role="tab"]').length : 0,
+          panel: true,
+          views: tabs ? tabs.querySelectorAll('[role="tab"]').length : 0,
+          // Every tab states its own count, so a tab bar of empty labels fails.
+          counted: tabs
+            ? [...tabs.querySelectorAll('[role="tab"]')].filter(el => /\\d/.test(el.textContent || '')).length
+            : 0,
+          layouts: panel.querySelectorAll('[role="tablist"][aria-label="Layout"] [role="tab"]').length,
+          search: Boolean(panel.querySelector('input[aria-label="Search these rows"]')),
+          newView: Boolean(panel.querySelector('button[aria-label="New view"]')),
+          saveState: /Saved/.test(panel.textContent || ''),
+          rowsChip: /Rows/.test(panel.textContent || ''),
         };
       })()`);
-      // A seeded definition and all six layout tabs must be there — an empty
-      // shell would pass a bare "does the panel exist" probe.
-      return { ok: current.panel && current.views > 0 && current.layouts === 6, current };
+      // The two-row chrome from the prototype: view tabs carrying counts, the
+      // row search, the new-view control, the state pill, the Rows chip, and
+      // all six layout segments. An empty shell fails every one of these.
+      return {
+        ok: current.panel && current.views > 0 && current.counted > 0 && current.layouts === 6
+          && current.search && current.newView && current.saveState && current.rowsChip,
+        current,
+      };
+    });
+
+    // The row search must actually narrow the rows, not just render a box.
+    // A nonsense term empties the view; clearing brings every row back.
+    const allRows = await viewsRowCount(win);
+    if (allRows <= 0) throw new Error(`Views list rendered no rows to search: ${allRows}`);
+    await setViewsRowSearch(win, 'zzqx-no-such-row');
+    await waitFor(win, 'views row search narrows the list', async () => {
+      const rows = await viewsRowCount(win);
+      const empty = await evaluate(win, `/No rows match that search/.test(document.querySelector('[data-mn-views-body]')?.textContent || '')`);
+      return { ok: rows === 0 && empty, rows, empty, allRows };
+    });
+    await clickButton(win, { aria: 'Clear row search' });
+    await waitFor(win, 'clearing views row search restores the rows', async () => {
+      const rows = await viewsRowCount(win);
+      return { ok: rows === allRows, rows, allRows };
     });
 
     // Board and calendar must draw something real, not an empty frame. Both
@@ -459,7 +566,7 @@ async function runViewsPanelScenario(win) {
     await clickVisibleText(win, 'Board');
     await waitFor(win, 'views board renders columns', async () => {
       const current = await evaluate(win, `(() => {
-        const panel = document.querySelector('[data-mn-views-panel]');
+        const panel = document.querySelector('[data-mn-views-body]');
         if (!panel) return { panel: false };
         const headers = [...panel.querySelectorAll('div')]
           .filter(el => el.children.length === 2 && /^\\D+\\d+$/.test((el.textContent || '').trim()));
@@ -470,7 +577,7 @@ async function runViewsPanelScenario(win) {
     await clickVisibleText(win, 'Calendar');
     await waitFor(win, 'views calendar renders a month grid', async () => {
       const current = await evaluate(win, `(() => {
-        const panel = document.querySelector('[data-mn-views-panel]');
+        const panel = document.querySelector('[data-mn-views-body]');
         if (!panel) return { panel: false };
         const dayCells = [...panel.querySelectorAll('span')].filter(el => /^\\d{1,2}$/.test((el.textContent || '').trim()));
         return {
@@ -480,6 +587,283 @@ async function runViewsPanelScenario(win) {
         };
       })()`);
       return { ok: current.panel && current.nextMonth && current.dayCells >= 28, current };
+    });
+
+    // The table is the prototype's, not the one inherited from Smart Views:
+    // a sortable header per column, with property-sourced keys shown as key::.
+    await clickVisibleText(win, 'Table');
+    await waitFor(win, 'views table renders sortable headers', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        if (!table) return { table: false };
+        const heads = [...table.querySelectorAll('button[aria-sort]')];
+        return {
+          table: true,
+          heads: heads.map(el => (el.textContent || '').trim()),
+          titled: heads.filter(el => /Read from the note|property line/.test(el.getAttribute('title') || '')).length,
+          rows: table.querySelectorAll('[data-mn-view-row]').length,
+        };
+      })()`);
+      return {
+        ok: current.table && current.heads.length >= 4 && current.rows > 0
+          && current.titled === current.heads.length,
+        current,
+      };
+    });
+
+    // Sorting has to actually reorder the rows, not just paint an arrow.
+    const titlesBefore = await viewsTableTitles(win);
+    await clickButton(win, { aria: 'Sort by Title' });
+    await waitFor(win, 'sorting the table reorders its rows', async () => {
+      const titles = await viewsTableTitles(win);
+      const expected = [...titlesBefore].sort((a, b) => a.localeCompare(b));
+      return { ok: titles.length === titlesBefore.length && titles.join('|') === expected.join('|'), titles, titlesBefore };
+    });
+    await clickButton(win, { aria: 'Sort by Title' });
+    await waitFor(win, 'sorting again reverses the rows', async () => {
+      const titles = await viewsTableTitles(win);
+      const expected = [...titlesBefore].sort((a, b) => b.localeCompare(a));
+      return { ok: titles.join('|') === expected.join('|'), titles };
+    });
+
+    // Columns are discovered, not configured: a key exists in this menu only
+    // because it was written into a note. Seed one and check it turns up.
+    await seedEditorNote(win, {
+      id: 'qe_views_prop',
+      title: 'QE Views Property Note',
+      body: 'A note that carries a property line.\n\nowner:: sam\n',
+      expect: 'A note that carries a property line',
+    });
+    await clickVisibleText(win, 'Views');
+    await clickVisibleText(win, 'Recent notes');
+    await clickVisibleText(win, 'Table');
+    await clickButton(win, { aria: 'Columns' });
+    await waitFor(win, 'the columns menu finds a key that was written', async () => {
+      const current = await evaluate(win, `(() => {
+        const menu = document.querySelector('[data-mn-views-columns]');
+        if (!menu) return { menu: false };
+        return {
+          menu: true,
+          text: (menu.textContent || '').slice(0, 400),
+          owner: Boolean(menu.querySelector('button[aria-label="Show the owner column"]')),
+          declared: /Nothing here was declared/.test(menu.textContent || ''),
+          coverage: /1 of \\d+/.test(menu.textContent || ''),
+        };
+      })()`);
+      return { ok: current.menu && current.owner && current.declared && current.coverage, current };
+    });
+
+    // Turning it on has to add a real column to the table, headed with the
+    // key and its colons, and mark the view as changed.
+    await clickButton(win, { aria: 'Show the owner column' });
+    await waitFor(win, 'turning a property on adds its column', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        const bar = document.querySelector('[role="tablist"][aria-label="Saved views"]');
+        const heads = table ? [...table.querySelectorAll('button[aria-sort]')].map(el => (el.textContent || '').trim()) : [];
+        const cells = table ? [...table.querySelectorAll('[data-mn-view-row]')].map(row => (row.textContent || '')) : [];
+        return { heads, dirty: /Unsaved changes/.test(bar ? bar.textContent : ''), sam: cells.filter(text => text.includes('sam')).length };
+      })()`);
+      return { ok: current.heads.includes('owner::') && current.dirty && current.sam === 1, current };
+    });
+    await clickVisibleText(win, 'Save view');
+    await waitFor(win, 'a chosen column is stored with the view', async () => {
+      const current = await evaluate(win, `(async () => {
+        const prefs = await window.mn?.preferences?.getPrefs?.();
+        const views = prefs?.value?.smartViews || [];
+        const recent = views.find(view => view && view.title === 'Recent notes');
+        return { columns: recent ? recent.columns : null };
+      })()`);
+      return { ok: Array.isArray(current.columns) && current.columns.includes('owner'), current };
+    });
+
+    // Conditions keep or drop rows once scope has picked the notes. The
+    // seeded note carries owner:: sam, so a condition on it must leave one row
+    // and its opposite must leave none.
+    await clickButton(win, { aria: 'Conditions' });
+    await waitFor(win, 'the conditions menu offers a written key', async () => {
+      const current = await evaluate(win, `(() => {
+        const menu = document.querySelector('[data-mn-views-conditions]');
+        if (!menu) return { menu: false };
+        return {
+          menu: true,
+          add: Boolean(menu.querySelector('button[aria-label="Add condition"]')),
+          match: Boolean(menu.querySelector('[role="tablist"][aria-label="Match"]')),
+          empty: /every row that scope let through/.test(menu.textContent || ''),
+        };
+      })()`);
+      return { ok: current.menu && current.add && current.match && current.empty, current };
+    });
+
+    await clickButton(win, { aria: 'Add condition' });
+    await waitFor(win, 'a condition row appears on a key someone wrote', async () => {
+      const current = await evaluate(win, `(() => {
+        const menu = document.querySelector('[data-mn-views-conditions]');
+        const key = menu?.querySelector('select[aria-label="Condition 1 property"]');
+        return {
+          key: key ? key.value : '',
+          value: Boolean(menu?.querySelector('input[aria-label="Condition 1 value"]')),
+          test: Boolean(menu?.querySelector('select[aria-label="Condition 1 test"]')),
+        };
+      })()`);
+      return { ok: current.key === 'owner' && current.value && current.test, current };
+    });
+
+    await setInputByAria(win, 'Condition 1 value', 'sam');
+    await waitFor(win, 'a condition narrows the rows to the ones that match', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        const chip = document.querySelector('button[aria-label="Conditions"]');
+        return {
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : -1,
+          chip: chip ? (chip.textContent || '').trim() : '',
+        };
+      })()`);
+      return { ok: current.rows === 1 && /owner is sam/.test(current.chip), current };
+    });
+
+    // "is not" has to be the opposite, not a no-op — an operator that silently
+    // falls back to "is" would still look like it worked.
+    await setSelectByAria(win, 'Condition 1 test', 'not');
+    await waitFor(win, 'is-not excludes what is matched', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        const body = document.querySelector('[data-mn-views-body]');
+        return {
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : 0,
+          empty: /Nothing matches this view yet/.test(body ? body.textContent : ''),
+        };
+      })()`);
+      return { ok: current.rows === 0 && current.empty, current };
+    });
+
+    // Asking whether a key is missing must not require it to be present.
+    await setSelectByAria(win, 'Condition 1 test', 'empty');
+    await waitFor(win, 'is-empty finds the notes without the key', async () => {
+      const rows = await evaluate(win, `document.querySelector('[data-mn-views-table]')?.querySelectorAll('[data-mn-view-row]').length ?? -1`);
+      return { ok: rows === 2, rows };
+    });
+
+    await clickVisibleText(win, 'Clear all');
+    await clickButton(win, { aria: 'Conditions' });
+    await waitFor(win, 'clearing conditions brings every row back', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        const chip = document.querySelector('button[aria-label="Conditions"]');
+        return {
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : -1,
+          chip: chip ? (chip.textContent || '').trim() : '',
+        };
+      })()`);
+      return { ok: current.rows === 3 && /None/.test(current.chip), current };
+    });
+
+    // Scope narrows which notes the view looks at, and the chip has to say so
+    // — an unexplained short list is indistinguishable from a broken query.
+    await clickButton(win, { aria: 'Scope' });
+    await waitFor(win, 'the scope menu offers the vault tags', async () => {
+      const current = await evaluate(win, `(() => {
+        const menu = document.querySelector('[data-mn-views-scope]');
+        if (!menu) return { menu: false };
+        const rows = [...menu.querySelectorAll('[role="menuitemcheckbox"]')].map(el => (el.textContent || '').trim());
+        return { menu: true, rows, every: /every tag you pick/.test(menu.textContent || '') };
+      })()`);
+      return { ok: current.menu && current.rows.includes('#qe-regression') && current.every, current };
+    });
+
+    const scopedFrom = await viewsRowCount(win);
+    await clickVisibleText(win, '#qe-regression');
+    await waitFor(win, 'choosing a tag scopes the view and the chip says so', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('button[aria-label="Scope"]');
+        const table = document.querySelector('[data-mn-views-table]');
+        return {
+          chip: strip ? (strip.textContent || '').trim() : '',
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : -1,
+        };
+      })()`);
+      return { ok: /qe-regression/.test(current.chip) && current.rows === 1 && current.rows < scopedFrom, current, scopedFrom };
+    });
+    await clickVisibleText(win, 'Whole vault');
+    await waitFor(win, 'clearing scope brings the rest back', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('button[aria-label="Scope"]');
+        const table = document.querySelector('[data-mn-views-table]');
+        return {
+          chip: strip ? (strip.textContent || '').trim() : '',
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : -1,
+        };
+      })()`);
+      return { ok: /Whole vault/.test(current.chip) && current.rows === scopedFrom, current, scopedFrom };
+    });
+    await clickButton(win, { aria: 'Scope' });
+
+    // View management: a view you make, name, shape and save has to be there
+    // afterwards. Each step is checked by what the tab bar actually shows.
+    const before = await viewsTabTitles(win);
+    await clickButton(win, { aria: 'New view' });
+    await waitFor(win, 'a new view appears as a tab', async () => {
+      const titles = await viewsTabTitles(win);
+      return { ok: titles.length === before.length + 1 && titles.includes('New view'), titles, before };
+    });
+
+    await clickButton(win, { aria: 'View options' });
+    await clickVisibleText(win, 'Rename');
+    await renameActiveView(win, 'QE Renamed View');
+    await waitFor(win, 'renaming a view relabels its tab', async () => {
+      const titles = await viewsTabTitles(win);
+      return { ok: titles.includes('QE Renamed View') && !titles.includes('New view'), titles };
+    });
+
+    // Changing the layout is a draft until saved: the pill has to say so, and
+    // saving has to make it stick across a switch away and back.
+    await clickVisibleText(win, 'Cards');
+    await waitFor(win, 'an unsaved layout change is announced', async () => {
+      const text = await viewsSaveStateText(win);
+      return { ok: /Unsaved changes/.test(text), text };
+    });
+    await clickVisibleText(win, 'Save view');
+    await waitFor(win, 'saving a view clears the unsaved state', async () => {
+      const text = await viewsSaveStateText(win);
+      return { ok: /Saved/.test(text) && !/Unsaved changes/.test(text), text };
+    });
+    await clickVisibleText(win, before[0]);
+    await clickVisibleText(win, 'QE Renamed View');
+    await waitFor(win, 'a saved layout is what the view reopens as', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('[role="tablist"][aria-label="Layout"]');
+        const on = strip ? [...strip.querySelectorAll('[role="tab"]')].find(el => el.getAttribute('aria-selected') === 'true') : null;
+        return { layout: on ? (on.textContent || '').trim() : '' };
+      })()`);
+      return { ok: current.layout === 'Cards', current };
+    });
+
+    // The point of saving is that it outlives the window, so check the stored
+    // preference rather than only the pixels the panel is showing.
+    await waitFor(win, 'a saved view is written to preferences', async () => {
+      const current = await evaluate(win, `(async () => {
+        const prefs = await window.mn?.preferences?.getPrefs?.();
+        const views = prefs?.value?.smartViews || [];
+        const made = views.find(view => view && view.title === 'QE Renamed View');
+        return { count: views.length, layout: made ? made.layout : '', found: Boolean(made) };
+      })()`);
+      return { ok: current.found && current.layout === 'cards', current };
+    });
+
+    await clickButton(win, { aria: 'View options' });
+    await clickVisibleText(win, 'Delete');
+    await clickVisibleText(win, 'Delete view');
+    await waitFor(win, 'deleting a view removes its tab', async () => {
+      const titles = await viewsTabTitles(win);
+      return { ok: !titles.includes('QE Renamed View') && titles.length === before.length, titles };
+    });
+    await waitFor(win, 'a deleted view is gone from preferences too', async () => {
+      const current = await evaluate(win, `(async () => {
+        const prefs = await window.mn?.preferences?.getPrefs?.();
+        const views = prefs?.value?.smartViews || [];
+        return { titles: views.map(view => view && view.title) };
+      })()`);
+      return { ok: !current.titles.includes('QE Renamed View'), current };
     });
 
     // Ticking a task from the board must change the note on disk, not just
@@ -1252,7 +1636,7 @@ async function runScenario(win, area, name, fn) {
   }
 }
 
-async function seedEditorNote(win, { id, title, body }) {
+async function seedEditorNote(win, { id, title, body, expect = 'Parent' }) {
   await evaluate(win, `
     (async () => {
       const unwrap = (result, label) => {
@@ -1285,7 +1669,7 @@ async function seedEditorNote(win, { id, title, body }) {
     return {
       ok: current.selectedTitle === title
         && rows.length >= 1
-        && rows[0].text.includes('Parent'),
+        && rows[0].text.includes(expect),
       current,
       rows,
     };

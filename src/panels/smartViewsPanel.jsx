@@ -105,7 +105,7 @@ function MnSmartViewResultRow({ result, helpers, onOpen, T }) {
   const preview = mnSmartViewResultPreview(result);
   const tags = mnSmartViewResultTags(result);
   return (
-    <div style={{
+    <div data-mn-view-row="true" style={{
       display: 'grid',
       gridTemplateColumns: 'minmax(0, 1fr) auto',
       gap: 12,

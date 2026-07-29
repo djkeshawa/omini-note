@@ -59,6 +59,9 @@ function createCaptureHelpers(scope = {}) {
   const SMART_VIEW_TYPES = ['notes', 'tasks', 'reminders', 'actions'];
   const SMART_VIEW_LAYOUTS = ['list', 'table', 'cards', 'timeline', 'board', 'calendar'];
   const SMART_VIEW_SORT_FIELDS = ['title', 'created', 'modified', 'reminder'];
+  // Property conditions: is / is not / contains / before / after, plus the two
+  // that ask whether the key is there at all.
+  const SMART_VIEW_PROPERTY_OPS = ['is', 'not', 'has', 'lt', 'gt', 'empty', 'filled'];
   const CONTEXTUAL_AI_SECTION_KINDS = ['fact', 'suggestion', 'preview'];
   const ZOTERO_ITEM_KEY_RE = /^[A-Za-z0-9_-]{1,80}$/;
   const ZOTERO_SOURCE_TAGS = ['research', 'source', 'zotero'];
@@ -387,7 +390,7 @@ function createCaptureHelpers(scope = {}) {
     if (!metricKey) return 0;
     return phase5SanitizeMetrics(metrics).counters[metricKey] || 0;
   }
-  return { NOTE_TEMPLATES, CAPTURE_DESTINATIONS, CAPTURE_TEMPLATES, SMART_VIEW_FORMAT, SMART_VIEW_FORMATS, SMART_VIEW_LAYOUTS, SMART_VIEW_TYPES, SMART_VIEW_SORT_FIELDS, CONTEXTUAL_AI_SECTION_KINDS, ZOTERO_ITEM_KEY_RE, ZOTERO_SOURCE_TAGS, PHASE5_METRICS_FORMAT, PHASE5_METRIC_KEYS, PHASE5_METRIC_DETAIL_KEYS, CONTEXTUAL_AI_PROVIDER_LABELS, todayIsoDate, captureCleanText, captureTitleFromBody, captureSlug, captureUniqueTags, captureReplaceTokens, expandTemplate, templateById, captureTemplateById, captureTemplateChoices, expandCaptureTemplate, captureFindInboxNote, captureDestinationChoices, captureDestinationById, captureBuildAppendMarkdown, captureBuildSavePlan, phase5MetricChoices, phase5NormalizeMetricKey, phase5CleanMetricDetailValue, phase5SanitizeMetricDetails, phase5SanitizeMetrics, phase5RecordMetric, phase5MetricCount };
+  return { NOTE_TEMPLATES, CAPTURE_DESTINATIONS, CAPTURE_TEMPLATES, SMART_VIEW_FORMAT, SMART_VIEW_FORMATS, SMART_VIEW_LAYOUTS, SMART_VIEW_TYPES, SMART_VIEW_SORT_FIELDS, SMART_VIEW_PROPERTY_OPS, CONTEXTUAL_AI_SECTION_KINDS, ZOTERO_ITEM_KEY_RE, ZOTERO_SOURCE_TAGS, PHASE5_METRICS_FORMAT, PHASE5_METRIC_KEYS, PHASE5_METRIC_DETAIL_KEYS, CONTEXTUAL_AI_PROVIDER_LABELS, todayIsoDate, captureCleanText, captureTitleFromBody, captureSlug, captureUniqueTags, captureReplaceTokens, expandTemplate, templateById, captureTemplateById, captureTemplateChoices, expandCaptureTemplate, captureFindInboxNote, captureDestinationChoices, captureDestinationById, captureBuildAppendMarkdown, captureBuildSavePlan, phase5MetricChoices, phase5NormalizeMetricKey, phase5CleanMetricDetailValue, phase5SanitizeMetricDetails, phase5SanitizeMetrics, phase5RecordMetric, phase5MetricCount };
 }
 
 module.exports = { createCaptureHelpers };

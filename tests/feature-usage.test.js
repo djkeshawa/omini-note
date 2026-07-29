@@ -64,3 +64,34 @@ test('feature usage reports reject every prohibited content class', () => {
     assert.equal(summaryText.includes(secret), false);
   }
 });
+
+test('every renderer usage call names a feature and action the main process accepts', () => {
+  // The renderer reports usage over IPC and swallows the rejection with a
+  // console warning, so a wrong key is invisible in the app and only shows up
+  // as a silently missing metric. This is the only thing checking the two
+  // lists still agree.
+  const fs = require('fs');
+  const path = require('path');
+  const root = path.join(__dirname, '..', 'src');
+
+  const files = [];
+  (function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.jsx?$/.test(entry.name)) files.push(full);
+    }
+  })(root);
+
+  const calls = [];
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    for (const match of source.matchAll(/recordFeatureUsage\(\s*'([^']+)'\s*(?:,\s*'([^']+)')?\s*\)/g)) {
+      calls.push({ file: path.relative(root, file), feature: match[1], action: match[2] || 'used' });
+    }
+  }
+
+  assert.ok(calls.length >= 8, `expected renderer usage call sites, found ${calls.length}`);
+  const bad = calls.filter(call => !usage.FEATURE_KEYS.has(call.feature) || !usage.ACTION_KEYS.has(call.action));
+  assert.deepEqual(bad, [], `unsupported usage events: ${JSON.stringify(bad)}`);
+});

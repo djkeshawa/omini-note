@@ -347,7 +347,10 @@ test('Smart View helpers normalize definitions and query notes without mutation'
       createdTo: '2026-06-06',
       modifiedFrom: '',
       modifiedTo: '',
-      properties: [{ key: 'priority', values: ['high'] }],
+      // A definition written before operators existed normalizes to "is",
+      // matched all-of, so it keeps meaning exactly what it meant.
+      properties: [{ key: 'priority', values: ['high'], op: 'is' }],
+      propertiesMatch: 'all',
       workflowStatuses: ['DOING'],
       linkedNotes: ['Research AI'],
       actionStatuses: [],
@@ -1339,6 +1342,430 @@ test('grouping reads the source note of a task, not just a note result', () => {
   // Note results keep working unchanged.
   const notes = [{ noteId: 'n', note: { id: 'n', tags: ['x'], body: 'status:: DONE\n' } }];
   assert.deepEqual(appHelpers.smartViewGroup(notes, { by: 'status' }).map(g => g.label), ['DONE', 'No status']);
+});
+
+test('view table columns read real fields and only save a sort the vault accepts', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const c = loadRendererModule('src/features/views/viewsColumns.js');
+  const helpers = { bodyPropertyValue: (body, key) => {
+    const found = String(body || '').match(new RegExp('^' + key + ':: *(.*)$', 'm'));
+    return found ? found[1].trim() : '';
+  } };
+
+  // Notes and actions get different catalogues; pinned property keys are
+  // appended, deduped against the built-ins, and marked as property-sourced.
+  assert.deepEqual(c.mnViewsColumns({ type: 'notes' }).map(col => col.key),
+    ['title', 'tags', 'modified', 'created', 'words']);
+  // An explicit list is the whole list, in order, and the row's own column is
+  // put back at the front if it was left out.
+  const withProps = c.mnViewsColumns({ type: 'notes', columns: ['priority', 'tags', 'owner', '  ', 'tags'] });
+  assert.deepEqual(withProps.map(col => col.key), ['title', 'priority', 'tags', 'owner']);
+  assert.equal(withProps.find(col => col.key === 'priority').origin, 'property');
+  assert.equal(withProps.find(col => col.key === 'tags').origin, 'file');
+
+  // Every column reads a field the query actually puts on the row.
+  const noteRow = {
+    type: 'note', title: 'Ship it', tags: ['work'], modifiedDate: '2026-07-20',
+    createdDate: '2026-07-01', note: { body: 'one two three\npriority:: high\n' },
+  };
+  // Resolve against everything the row type offers, not just what is showing.
+  const cell = (row, key, type = 'notes') =>
+    c.mnViewsCellValue(row, c.mnViewsBaseColumns(type).find(col => col.key === key) || c.mnViewsPropertyColumn(key), helpers);
+  assert.equal(cell(noteRow, 'title'), 'Ship it');
+  assert.deepEqual(cell(noteRow, 'tags'), ['work']);
+  assert.equal(cell(noteRow, 'modified'), '2026-07-20');
+  assert.equal(cell(noteRow, 'words'), 5);
+  assert.equal(cell(noteRow, 'priority'), 'high');
+  assert.equal(cell(noteRow, 'owner'), '');
+
+  const taskRow = {
+    type: 'task', title: 'call back', status: 'open', noteTitle: 'Inbox',
+    reminderDate: '2026-08-02', noteTags: ['calls'],
+    sourceNote: { body: 'owner:: sam\n' },
+  };
+  assert.equal(cell(taskRow, 'note', 'tasks'), 'Inbox');
+  assert.equal(cell(taskRow, 'due', 'tasks'), '2026-08-02');
+  assert.deepEqual(cell(taskRow, 'tags', 'tasks'), ['calls']);
+  assert.equal(cell(taskRow, 'owner', 'tasks'), 'sam');
+
+  // Only title / created / modified / due map to a storable sort field. The
+  // preference sanitizer throws on anything else, so the rest must report as
+  // not storable rather than being written into a definition.
+  assert.equal(c.mnViewsSortIsStorable('title'), true);
+  assert.equal(c.mnViewsSortIsStorable('due'), true);
+  assert.equal(c.mnViewsSortField('due'), 'reminder');
+  assert.equal(c.mnViewsSortIsStorable('tags'), false);
+  assert.equal(c.mnViewsSortIsStorable('words'), false);
+  assert.equal(c.mnViewsSortIsStorable('priority'), false);
+  assert.equal(c.mnViewsSortField('priority'), '');
+
+  // A saved definition round-trips into the table's own sort shape.
+  assert.deepEqual(c.mnViewsSortFromDefinition({ sort: { field: 'reminder', direction: 'desc' } }), { key: 'due', direction: 'desc' });
+  assert.equal(c.mnViewsSortFromDefinition({ sort: { field: 'nonsense' } }), null);
+
+  // Clicking a header cycles asc, desc, then back to the saved order.
+  assert.deepEqual(c.mnViewsNextSort(null, 'title'), { key: 'title', direction: 'asc' });
+  assert.deepEqual(c.mnViewsNextSort({ key: 'title', direction: 'asc' }, 'title'), { key: 'title', direction: 'desc' });
+  assert.equal(c.mnViewsNextSort({ key: 'title', direction: 'desc' }, 'title'), null);
+  assert.deepEqual(c.mnViewsNextSort({ key: 'title', direction: 'desc' }, 'tags'), { key: 'tags', direction: 'asc' });
+
+  // Rows with no value sort last either way, so the table never opens on a
+  // block of blanks.
+  const rows = [
+    { id: 'a', __cells: { owner: 'zoe' } },
+    { id: 'b', __cells: { owner: '' } },
+    { id: 'c', __cells: { owner: 'ana' } },
+  ];
+  const cols = c.mnViewsColumns({ type: 'notes', columns: ['owner'] });
+  assert.deepEqual(c.mnViewsSortResults(rows, cols, { key: 'owner', direction: 'asc' }).map(r => r.id), ['c', 'a', 'b']);
+  assert.deepEqual(c.mnViewsSortResults(rows, cols, { key: 'owner', direction: 'desc' }).map(r => r.id), ['a', 'c', 'b']);
+});
+
+test('property conditions support operators and keep meaning what they meant', () => {
+  const note = (body) => ({ id: 'n', title: 'n', body });
+  const match = (body, properties, propertiesMatch) =>
+    appHelpers.smartViewMatchesNote(note(body), { filters: { properties, propertiesMatch } });
+
+  // Written before operators existed: a bare key/value still means "is".
+  assert.equal(match('priority:: high\n', [{ key: 'priority', value: 'high' }]), true);
+  assert.equal(match('priority:: low\n', [{ key: 'priority', value: 'high' }]), false);
+
+  assert.equal(match('priority:: high\n', [{ key: 'priority', op: 'not', value: 'low' }]), true);
+  assert.equal(match('priority:: low\n', [{ key: 'priority', op: 'not', value: 'low' }]), false);
+  assert.equal(match('owner:: Sam Ray\n', [{ key: 'owner', op: 'has', value: 'sam' }]), true);
+  assert.equal(match('owner:: Ana\n', [{ key: 'owner', op: 'has', value: 'sam' }]), false);
+
+  // Dates compare as text, which is what ISO dates want; numbers compare as
+  // numbers, so 9 is not "more than" 10.
+  assert.equal(match('due:: 2026-08-02\n', [{ key: 'due', op: 'lt', value: '2026-08-10' }]), true);
+  assert.equal(match('due:: 2026-08-20\n', [{ key: 'due', op: 'lt', value: '2026-08-10' }]), false);
+  assert.equal(match('effort:: 9\n', [{ key: 'effort', op: 'gt', value: '10' }]), false);
+  assert.equal(match('effort:: 12\n', [{ key: 'effort', op: 'gt', value: '10' }]), true);
+
+  // Asking whether a key is missing must not first require it to exist —
+  // the old matcher rejected any note without the key before reading the op.
+  assert.equal(match('title only\n', [{ key: 'owner', op: 'empty' }]), true);
+  assert.equal(match('owner:: sam\n', [{ key: 'owner', op: 'empty' }]), false);
+  assert.equal(match('owner:: sam\n', [{ key: 'owner', op: 'filled' }]), true);
+  assert.equal(match('title only\n', [{ key: 'owner', op: 'filled' }]), false);
+
+  // An unknown operator falls back to "is" rather than matching everything.
+  assert.equal(match('priority:: high\n', [{ key: 'priority', op: 'sql-injection', value: 'high' }]), true);
+  assert.equal(match('priority:: low\n', [{ key: 'priority', op: 'sql-injection', value: 'high' }]), false);
+
+  // all vs any across several conditions.
+  const two = [{ key: 'priority', op: 'is', value: 'high' }, { key: 'owner', op: 'is', value: 'sam' }];
+  assert.equal(match('priority:: high\nowner:: sam\n', two), true);
+  assert.equal(match('priority:: high\nowner:: ana\n', two), false);
+  assert.equal(match('priority:: high\nowner:: ana\n', two, 'any'), true);
+  assert.equal(match('priority:: low\nowner:: ana\n', two, 'any'), false);
+});
+
+test('the conditions builder writes filters the query engine already understands', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const c = loadRendererModule('src/features/views/viewsConditions.js');
+
+  // The labels the menu shows must cover exactly the operators the engine
+  // accepts — a new operator with no label renders a blank dropdown entry.
+  assert.deepEqual(
+    c.MN_VIEW_CONDITION_OPS.map(item => item.op).sort(),
+    [...appHelpers.SMART_VIEW_PROPERTY_OPS].sort()
+  );
+
+  const base = { id: 'work_view', title: 'Work view', type: 'notes', filters: { tags: ['work'] } };
+  const added = c.mnViewsAddCondition(base, 'priority');
+  assert.deepEqual(added.filters.properties, [{ key: 'priority', op: 'is' }]);
+  // Scope is not a condition and has to survive one being added.
+  assert.deepEqual(added.filters.tags, ['work']);
+
+  // Several values on one condition are comma separated in the UI and a list
+  // in the file, which is the shape the engine reads.
+  const valued = c.mnViewsUpdateCondition({ filters: added.filters }, 0, { value: 'high, urgent ,' });
+  assert.deepEqual(valued.filters.properties, [{ key: 'priority', op: 'is', value: ['high', 'urgent'] }]);
+
+  // An operator that asks whether a value exists stores no value, so a stale
+  // one cannot sit in the file looking like it means something.
+  const emptied = c.mnViewsUpdateCondition({ filters: valued.filters }, 0, { op: 'empty' });
+  assert.deepEqual(emptied.filters.properties, [{ key: 'priority', op: 'empty' }]);
+
+  // Match mode is only written when it can matter, and never as the default.
+  const second = c.mnViewsAddCondition({ filters: valued.filters }, 'owner');
+  assert.equal('propertiesMatch' in second.filters, false);
+  const any = c.mnViewsSetConditionsMatch({ filters: second.filters }, 'any');
+  assert.equal(any.filters.propertiesMatch, 'any');
+  assert.equal('propertiesMatch' in c.mnViewsSetConditionsMatch({ filters: any.filters }, 'all').filters, false);
+  // One condition cannot be "any of them", so the field is dropped again.
+  const back = c.mnViewsRemoveCondition({ filters: any.filters }, 1);
+  assert.equal('propertiesMatch' in back.filters, false);
+
+  // Clearing removes the key rather than storing an empty list.
+  const cleared = c.mnViewsClearConditions({ filters: any.filters });
+  assert.equal('properties' in cleared.filters, false);
+  assert.equal('propertiesMatch' in cleared.filters, false);
+  // Clearing conditions must not clear the scope; they are separate controls.
+  assert.deepEqual(cleared.filters.tags, ['work']);
+
+  // Refusals rather than throws, and the caps the sanitizer enforces.
+  assert.equal(c.mnViewsAddCondition(base, '   ').reason, 'key');
+  assert.equal(c.mnViewsRemoveCondition(base, 3).reason, 'missing');
+  assert.equal(c.mnViewsUpdateCondition({ filters: added.filters }, 0, { value: 'x'.repeat(501) }).reason, 'long');
+  const full = { filters: { properties: Array.from({ length: 20 }, (_, n) => ({ key: `k${n}`, op: 'is' })) } };
+  assert.equal(c.mnViewsAddCondition(full, 'one-more').reason, 'cap');
+
+  // Reading tolerates a definition written before operators existed.
+  assert.deepEqual(
+    c.mnViewsConditions({ filters: { properties: [{ key: 'priority', value: ['high'] }] } }),
+    [{ key: 'priority', op: 'is', value: 'high' }]
+  );
+
+  // The chip has to say whether rows are being held back.
+  assert.equal(c.mnViewsConditionsSummary(base), 'None');
+  assert.equal(c.mnViewsConditionsSummary({ filters: valued.filters }), 'priority is high, urgent');
+  assert.equal(c.mnViewsConditionsSummary({ filters: emptied.filters }), 'priority is empty');
+  assert.equal(c.mnViewsConditionsSummary({ filters: any.filters }), '2 any');
+
+  // End to end: what the builder writes is what the engine matches on, and it
+  // survives the sanitizer that would otherwise reject the whole save.
+  const manage = loadRendererModule('src/features/views/viewsManage.js');
+  const saved = manage.mnViewsApplyDraft([base], { id: 'work_view', filters: any.filters });
+  assert.equal(manage.mnViewsCheckSavable(saved.definitions).ok, true);
+  const note = { id: 'n', title: 'n', body: 'priority:: high\nowner:: ana\n', tags: ['work'] };
+  assert.equal(appHelpers.smartViewMatchesNote(note, saved.definitions[0]), true);
+});
+
+test('normalizing a definition twice does not change what it matches', () => {
+  // smartViewQuery normalizes and passes the result to smartViewQueryNotes,
+  // which normalizes again. Any field that changes name between the raw and
+  // normalized shapes is silently lost on that second pass.
+  const definition = {
+    id: 'checks', title: 'Checks', type: 'notes',
+    filters: {
+      properties: [{ key: 'owner', op: 'not', value: ['sam'] }],
+      propertiesMatch: 'any',
+      tags: ['work'],
+      linkedNotes: ['Atlas'],
+      actionStatuses: ['open'],
+    },
+    sort: { field: 'title', direction: 'asc' },
+  };
+  const once = appHelpers.smartViewNormalizeDefinition(definition);
+  const twice = appHelpers.smartViewNormalizeDefinition(once);
+  assert.deepEqual(twice, once);
+
+  // And the whole way through the query, which is where it actually bit.
+  const notes = [
+    { id: 'a', title: 'A', tags: ['work'], body: 'owner:: sam\n' },
+    { id: 'b', title: 'B', tags: ['work'], body: 'owner:: ana\n' },
+  ];
+  const query = { id: 'q', title: 'Q', type: 'notes', filters: { properties: [{ key: 'owner', op: 'is', value: ['sam'] }] } };
+  assert.deepEqual(appHelpers.smartViewQuery(notes, query, { allNotes: notes }).map(r => r.noteId), ['a']);
+  const negated = { ...query, filters: { properties: [{ key: 'owner', op: 'not', value: ['sam'] }] } };
+  assert.deepEqual(appHelpers.smartViewQuery(notes, negated, { allNotes: notes }).map(r => r.noteId), ['b']);
+});
+
+test('the renderer and the main process allow exactly the same filter keys', () => {
+  // These two lists are mirrored by hand. When they disagree, a view saves in
+  // the renderer and is rejected at the IPC boundary, which surfaces as a
+  // failed save rather than as anything pointing at the mismatch.
+  const fs = require('fs');
+  const path = require('path');
+  const readList = (file, marker, end) => {
+    const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    const start = source.indexOf(marker);
+    assert.ok(start > 0, `marker not found in ${file}: ${marker}`);
+    const block = source.slice(start, source.indexOf(end, start));
+    return [...block.matchAll(/'([a-zA-Z]+)'/g)].map(hit => hit[1]).sort();
+  };
+  const ipc = readList('lib/connectors/ipc/preferenceValidation.js', 'const SMART_VIEW_FILTER_KEYS = new Set([', ']);');
+  const renderer = readList('src/app/helpers/smartViewHelpers.js', "smartViewAssertAllowedKeys(filters, [", "], 'Smart View filters');");
+  assert.ok(ipc.length > 20, `expected a real filter allowlist, got ${ipc.length}`);
+  assert.deepEqual(renderer, ipc);
+  assert.ok(ipc.includes('propertiesMatch'));
+});
+
+test('scope narrows a view without losing the filters it already had', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const sc = loadRendererModule('src/features/views/viewsScope.js');
+  const manage = loadRendererModule('src/features/views/viewsManage.js');
+
+  // Scope is stored in the filters the query engine already understands, so
+  // the filters a view came with have to survive being scoped.
+  const base = { id: 'open_tasks', title: 'Open tasks', type: 'tasks', filters: { actionStatus: 'open' } };
+  const tagged = sc.mnViewsToggleScope(base, 'tags', 'Work');
+  assert.equal(tagged.ok, true);
+  assert.deepEqual(tagged.filters, { actionStatus: 'open', tags: ['Work'] });
+
+  // Toggling is case-insensitive, so the same tag cannot be added twice under
+  // a different case and then fail to come off.
+  const twice = sc.mnViewsToggleScope({ ...base, filters: tagged.filters }, 'tags', 'work');
+  assert.deepEqual(twice.filters, { actionStatus: 'open' });
+
+  // An emptied scope removes the key rather than storing an empty array.
+  assert.equal('tags' in twice.filters, false);
+
+  // The sanitizer caps a filter array at 40 items and a string at 500 chars.
+  const many = { filters: { tags: Array.from({ length: 40 }, (_, n) => `t${n}`) } };
+  assert.equal(sc.mnViewsToggleScope(many, 'tags', 'one-more').reason, 'cap');
+  assert.equal(sc.mnViewsToggleScope(base, 'tags', 'x'.repeat(501)).reason, 'long');
+  assert.equal(sc.mnViewsToggleScope(base, 'tags', '   ').reason, 'empty');
+
+  // Clearing scope leaves everything that was not scope alone.
+  const linked = sc.mnViewsToggleScope({ ...base, filters: tagged.filters }, 'linkedNotes', 'Project Atlas');
+  assert.deepEqual(linked.filters, { actionStatus: 'open', tags: ['Work'], linkedNotes: ['Project Atlas'] });
+  assert.deepEqual(sc.mnViewsClearScope({ ...base, filters: linked.filters }).filters, { actionStatus: 'open' });
+
+  // The chip has to say why you are not seeing everything.
+  assert.equal(sc.mnViewsScopeSummary(base), 'Whole vault');
+  assert.equal(sc.mnViewsScopeSummary({ filters: tagged.filters }), '#Work');
+  assert.equal(sc.mnViewsScopeSummary({ filters: { tags: ['a', 'b'] } }), '2 tags');
+  assert.equal(sc.mnViewsScopeSummary({ filters: linked.filters }), '#Work + links to Project Atlas');
+  assert.equal(sc.mnViewsScopeIsSet({ filters: linked.filters }), true);
+  assert.equal(sc.mnViewsScopeIsSet(base), false);
+
+  // The pickable tags are what the notes carry, not only what the vault has
+  // registered — a tag typed into a note is real to the query, so refusing to
+  // offer it would make a view filterable by something the menu cannot show.
+  const choices = sc.mnViewsScopeTagChoices(
+    [{ name: 'welcome', hue: 20 }],
+    [{ tags: ['qe-regression', 'Welcome'] }, { tags: ['work'] }, {}],
+    ['gone-from-the-vault']
+  );
+  assert.deepEqual(choices, ['gone-from-the-vault', 'qe-regression', 'welcome', 'work']);
+
+  // Whatever the menu produces has to survive the preference sanitizer.
+  const saved = manage.mnViewsApplyDraft([base], { id: 'open_tasks', filters: linked.filters });
+  assert.equal(manage.mnViewsCheckSavable(saved.definitions).ok, true);
+  assert.deepEqual(saved.definitions[0].filters, linked.filters);
+});
+
+test('columns are discovered from what notes actually carry, and reorder safely', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const c = loadRendererModule('src/features/views/viewsColumns.js');
+
+  const rows = [
+    { type: 'note', title: 'A', tags: ['x'], note: { body: 'priority:: high\nowner:: sam\n' } },
+    { type: 'note', title: 'B', note: { body: '- owner:: ana\nPRIORITY:: low\n' } },
+    { type: 'note', title: 'C', note: { body: 'notakey::\nSome:: thing\n' } },
+  ];
+
+  // A key exists because it was written. Coverage counts rows, keys sort by
+  // how many rows carry them, and a key with no value on the line is not one.
+  const found = c.mnViewsDiscoverProperties(rows, ['title', 'tags', 'modified', 'created', 'words']);
+  const byKey = Object.fromEntries(found.map(col => [col.key, col.count]));
+  assert.equal(byKey.owner, 2);
+  assert.equal(byKey.priority, 1);
+  assert.equal(byKey.PRIORITY, 1);
+  assert.equal(byKey.Some, 1);
+  assert.equal('notakey' in byKey, false);
+  assert.deepEqual(found.map(col => col.key)[0], 'owner');
+  assert.equal(found[0].origin, 'property');
+
+  // A property key that collides with a built-in column would shadow it, so
+  // it is not offered twice.
+  const shadowed = c.mnViewsDiscoverProperties(
+    [{ type: 'note', note: { body: 'tags:: one\nowner:: sam\n' } }],
+    ['title', 'tags']
+  );
+  assert.deepEqual(shadowed.map(col => col.key), ['owner']);
+
+  // The catalogue is the built-ins with their own coverage, then the found keys.
+  const cat = c.mnViewsCatalogue({ type: 'notes' }, rows);
+  assert.deepEqual(cat.slice(0, 5).map(col => col.key), ['title', 'tags', 'modified', 'created', 'words']);
+  assert.equal(cat.find(col => col.key === 'title').count, 3);
+  assert.equal(cat.find(col => col.key === 'tags').count, 1);
+  assert.equal(cat.find(col => col.key === 'owner').count, 2);
+
+  // The first toggle starts from what is showing, so turning one key on does
+  // not silently drop the columns the row type came with.
+  const on = c.mnViewsToggleColumn({ type: 'notes' }, 'owner');
+  assert.deepEqual(on.columns, ['title', 'tags', 'modified', 'created', 'words', 'owner']);
+  const off = c.mnViewsToggleColumn({ type: 'notes', columns: on.columns }, 'modified');
+  assert.deepEqual(off.columns, ['title', 'tags', 'created', 'words', 'owner']);
+
+  // The row's own column cannot be turned off, and the list cannot be emptied.
+  assert.equal(c.mnViewsToggleColumn({ type: 'notes' }, 'title').reason, 'fixed');
+  assert.equal(c.mnViewsToggleColumn({ type: 'notes', columns: ['title'] }, 'title').reason, 'fixed');
+
+  // Reorder never moves anything into the first slot and never runs off an end.
+  const start = { type: 'notes', columns: ['title', 'tags', 'modified', 'owner'] };
+  assert.deepEqual(c.mnViewsMoveColumn(start, 'modified', -1).columns, ['title', 'modified', 'tags', 'owner']);
+  assert.deepEqual(c.mnViewsMoveColumn(start, 'modified', 1).columns, ['title', 'tags', 'owner', 'modified']);
+  assert.equal(c.mnViewsMoveColumn(start, 'tags', -1).reason, 'edge');
+  assert.equal(c.mnViewsMoveColumn(start, 'owner', 1).reason, 'edge');
+  assert.equal(c.mnViewsMoveColumn(start, 'title', -1).reason, 'edge');
+  assert.equal(c.mnViewsMoveColumn(start, 'title', 1).reason, 'edge');
+
+  // Whatever the panel produces has to survive the preference sanitizer.
+  const manage = loadRendererModule('src/features/views/viewsManage.js');
+  const saved = manage.mnViewsApplyDraft(
+    [{ id: 'recent_notes', title: 'Recent notes', type: 'notes' }],
+    { id: 'recent_notes', columns: on.columns }
+  );
+  assert.equal(manage.mnViewsCheckSavable(saved.definitions).ok, true);
+  assert.deepEqual(saved.definitions[0].columns, on.columns);
+});
+
+test('managing saved views refuses what the preference layer would throw on', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const m = loadRendererModule('src/features/views/viewsManage.js');
+  const seed = [
+    { format: 'vispnote.smartView.v2', id: 'recent_notes', title: 'Recent notes', type: 'notes', filters: {}, limit: 60 },
+    { format: 'vispnote.smartView.v2', id: 'open_tasks', title: 'Open tasks', type: 'tasks', filters: {}, limit: 80 },
+  ];
+
+  // Ids are derived from the title, and the id rule the sanitizer enforces
+  // (leading letter, then letters/digits/_/-) has to hold for free text.
+  const made = m.mnViewsCreate(seed, { title: '  3 things!!  ', format: 'vispnote.smartView.v2' });
+  assert.equal(made.ok, true);
+  assert.match(made.definitions[2].id, m.MN_VIEW_ID_RE);
+  assert.equal(made.definitions[2].title, '3 things!!');
+  assert.equal(made.definitions[2].format, 'vispnote.smartView.v2');
+
+  // A title with nothing id-safe in it still has to produce a legal id.
+  const symbols = m.mnViewsCreate(seed, { title: '???' });
+  assert.equal(symbols.ok, true);
+  assert.match(symbols.definitions[2].id, m.MN_VIEW_ID_RE);
+
+  // Never two views with the same id: the sanitizer throws on a duplicate.
+  const twice = m.mnViewsCreate(m.mnViewsCreate(seed, { title: 'Notes' }).definitions, { title: 'Notes' });
+  assert.equal(twice.ok, true);
+  assert.equal(new Set(twice.definitions.map(d => d.id)).size, twice.definitions.length);
+  assert.equal(new Set(twice.definitions.map(d => d.title)).size, twice.definitions.length);
+
+  // The cap is 24 and the sanitizer throws above it, so creating the 25th is
+  // refused with a reason rather than attempted.
+  const full = Array.from({ length: 24 }, (_, n) => ({ id: `view_${n + 1}`, title: `View ${n + 1}` }));
+  assert.deepEqual(m.mnViewsCreate(full, { title: 'One more' }), { ok: false, reason: 'cap' });
+  assert.equal(m.mnViewsCheckSavable(full).ok, true);
+  assert.equal(m.mnViewsCheckSavable([...full, { id: 'view_25', title: 'x' }]).reason, 'cap');
+
+  // A duplicate lands beside its source, carrying the source's shape.
+  const copied = m.mnViewsDuplicate(seed, 'recent_notes');
+  assert.equal(copied.ok, true);
+  assert.equal(copied.definitions[1].title, 'Recent notes copy');
+  assert.equal(copied.definitions[1].type, 'notes');
+  assert.equal(copied.definitions[1].limit, 60);
+  assert.equal(copied.definitions[2].id, 'open_tasks');
+
+  // Renaming refuses a blank or a name already in use.
+  assert.equal(m.mnViewsRename(seed, 'open_tasks', '  ').reason, 'empty');
+  assert.equal(m.mnViewsRename(seed, 'open_tasks', 'recent notes').reason, 'duplicate');
+  assert.equal(m.mnViewsRename(seed, 'open_tasks', ' Doing  now ').definitions[1].title, 'Doing now');
+
+  // Deleting the last view is refused: an empty saved list makes the app fall
+  // back to the built-in defaults, so the view would appear to come back.
+  assert.equal(m.mnViewsDelete(seed, 'open_tasks').definitions.length, 1);
+  assert.equal(m.mnViewsDelete([seed[0]], 'recent_notes').reason, 'last');
+  assert.equal(m.mnViewsDelete(seed, 'nope').reason, 'missing');
+
+  // Drafts: a change is dirty, saving folds it in, and unknown keys never
+  // reach the saved shape.
+  assert.equal(m.mnViewsDraftDiffers(seed[0], { id: 'recent_notes', layout: 'table' }), true);
+  assert.equal(m.mnViewsDraftDiffers(seed[0], { id: 'recent_notes', title: 'Recent notes' }), false);
+  const saved = m.mnViewsApplyDraft(seed, { id: 'recent_notes', layout: 'table', bogus: 1 });
+  assert.equal(saved.definitions[0].layout, 'table');
+  assert.equal('bogus' in saved.definitions[0], false);
+  assert.equal(m.mnViewsCheckSavable(saved.definitions).ok, true);
 });
 
 test('a view row resolves to the exact block it was parsed from', async () => {
