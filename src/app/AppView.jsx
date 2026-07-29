@@ -458,6 +458,7 @@ function AppView({ model }) {
             {featureState.showViews && view === 'views' && (
               <MnViewsPanel
                 notes={notesWithBody}
+                tags={tags}
                 definitions={smartViewDefinitions}
                 activeDefinitionId={activeSmartViewId}
                 onActiveDefinitionChange={setActiveSmartViewId}

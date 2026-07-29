@@ -26,21 +26,14 @@ import {
   mnViewsNextSort, mnViewsSortIsStorable, mnViewsSortField, mnViewsSortFromDefinition,
   mnViewsColumns, mnViewsCatalogue, mnViewsToggleColumn, mnViewsMoveColumn,
 } from './viewsColumns.js';
-import { ViewsColumnsMenu } from './ViewsColumnsPanel.jsx';
+import { ViewsControlStrip } from './ViewsControlStrip.jsx';
+import { mnViewsToggleScope, mnViewsClearScope } from './viewsScope.js';
 import { mnViewsActionItem } from './viewsWrite.js';
 import { ViewTabs, ViewMenu, ViewsRowSearch, ViewsSaveState, mnViewChipStyle } from './ViewsChrome.jsx';
 import {
   mnViewsCreate, mnViewsDuplicate, mnViewsRename, mnViewsDelete,
   mnViewsApplyDraft, mnViewsDraftDiffers,
 } from './viewsManage.js';
-
-// mnSentenceCase only rewrites ALL-CAPS strings, so it leaves a lowercase
-// layout id alone. These are labels, not machine values, so they get a
-// capital.
-function mnViewLayoutLabel(mode) {
-  const value = String(mode || '');
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
 
 function mnViewsPrimaryButton(T) {
   return {
@@ -85,6 +78,7 @@ const MN_VIEWS_FALLBACK = {
 
 function MnViewsPanel({
   notes = [],
+  tags = [],
   definitions = [],
   activeDefinitionId = '',
   onActiveDefinitionChange,
@@ -117,6 +111,7 @@ function MnViewsPanel({
   const [rowQuery, setRowQuery] = useStateV('');
   const [menuOpen, setMenuOpen] = useStateV(false);
   const [columnsOpen, setColumnsOpen] = useStateV(false);
+  const [scopeOpen, setScopeOpen] = useStateV(false);
   const [confirmDelete, setConfirmDelete] = useStateV(false);
   const [renamingId, setRenamingId] = useStateV('');
   const [renameValue, setRenameValue] = useStateV('');
@@ -127,13 +122,16 @@ function MnViewsPanel({
   const [tableSort, setTableSort] = useStateV(null);
   const activeDraft = draft && draft.id === activeDefinition?.id ? draft : null;
   const dirty = mnViewsDraftDiffers(activeDefinition, activeDraft);
+  // Everything downstream reads the draft-merged definition, so a scope or a
+  // column you change shows its effect before you decide whether to keep it.
+  const queryDefinition = activeDraft ? { ...activeDefinition, ...activeDraft } : activeDefinition;
   const layout = activeDraft?.layout || mnViewLayout(activeDefinition);
 
   const results = useMemoV(() => (
     helpers.smartViewQuery
-      ? helpers.smartViewQuery(notes, activeDefinition, { parser: MN_REMIND, walk, allNotes: notes })
+      ? helpers.smartViewQuery(notes, queryDefinition, { parser: MN_REMIND, walk, allNotes: notes })
       : []
-  ), [helpers, notes, activeDefinition, walk]);
+  ), [helpers, notes, queryDefinition, walk]);
 
   const needle = rowQuery.trim().toLowerCase();
   const visibleResults = useMemoV(
@@ -148,10 +146,10 @@ function MnViewsPanel({
     if (!helpers.smartViewGroup) return null;
     // A board is columns, so it always groups; every other layout groups only
     // when the definition asks for it.
-    const group = layout === 'board' ? mnViewsBoardGroup(activeDefinition) : activeDefinition?.group;
+    const group = layout === 'board' ? mnViewsBoardGroup(queryDefinition) : queryDefinition?.group;
     if (!group?.by) return null;
     return helpers.smartViewGroup(visibleResults, group, {});
-  }, [helpers, visibleResults, activeDefinition, layout]);
+  }, [helpers, visibleResults, queryDefinition, layout]);
 
   // Ticking a task from a view writes to the note it came from. The row
   // remembers the block it was parsed out of, so the edit lands exactly
@@ -198,6 +196,7 @@ function MnViewsPanel({
     setTableSort(null);
     setMenuOpen(false);
     setColumnsOpen(false);
+    setScopeOpen(false);
     setConfirmDelete(false);
     setRenamingId('');
     onActiveDefinitionChange?.(id);
@@ -228,14 +227,29 @@ function MnViewsPanel({
 
   const sort = tableSort || mnViewsSortFromDefinition(activeDefinition);
 
-  // The definition the table draws is the draft when there is one, so a column
-  // you toggle shows up before you decide whether to keep it.
-  const shownDefinition = activeDraft ? { ...activeDefinition, ...activeDraft } : activeDefinition;
   const catalogue = useMemoV(
-    () => mnViewsCatalogue(shownDefinition, visibleResults),
-    [shownDefinition, visibleResults]
+    () => mnViewsCatalogue(queryDefinition, visibleResults),
+    [queryDefinition, visibleResults]
   );
-  const visibleColumnKeys = mnViewsColumns(shownDefinition).map(column => column.key);
+  const visibleColumnKeys = mnViewsColumns(queryDefinition).map(column => column.key);
+
+  const editScope = (result) => {
+    if (!result.ok) {
+      onNotice?.(
+        'That scope could not be set',
+        result.reason === 'cap'
+          ? 'A view can be scoped by up to 40 tags or links. Remove one before adding another.'
+          : 'That tag or note name is too long to store.',
+        'warn'
+      );
+      return;
+    }
+    setDraft(current => ({
+      ...(current && current.id === activeDefinition?.id ? current : {}),
+      id: activeDefinition?.id || '',
+      filters: result.filters,
+    }));
+  };
 
   const editColumns = (result) => {
     if (!result.ok) {
@@ -348,76 +362,32 @@ function MnViewsPanel({
         />
       </div>
 
-      {/* Control strip: what a row is, and how it is drawn. */}
-      <div style={{
-        height: 48, flexShrink: 0, boxSizing: 'border-box',
-        display: 'flex', alignItems: 'center', gap: 7, padding: '0 20px',
-        borderBottom: `1px solid ${T.lineSub}`, background: T.bgSub,
-        position: 'relative', zIndex: 1,
-      }}>
-        <span style={mnViewChipStyle(false, T)} title="What one row in this view is">
-          Rows
-          <span style={{ fontWeight: 600, color: T.ink }}>{String(activeDefinition?.type || 'notes')}</span>
-        </span>
-        <span style={{ position: 'relative', display: 'inline-flex' }}>
-          <button
-            type="button"
-            aria-label="Columns"
-            aria-expanded={columnsOpen}
-            title="Which columns the table shows, and where each one comes from"
-            onClick={() => setColumnsOpen(open => !open)}
-            style={mnViewChipStyle(columnsOpen, T)}>
-            Columns
-            <span style={{ ...dsMachineStyle(T, T.ink), fontSize: 11 }}>{visibleColumnKeys.length}</span>
-            <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-              <path d="M3 4.5L6 7.5L9 4.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-          {columnsOpen && (
-            <ViewsColumnsMenu
-              catalogue={catalogue}
-              visible={visibleColumnKeys}
-              total={visibleResults.length}
-              onToggle={key => editColumns(mnViewsToggleColumn(shownDefinition, key))}
-              onMove={(key, delta) => editColumns(mnViewsMoveColumn(shownDefinition, key, delta))}
-              T={T}
-            />
-          )}
-        </span>
-        <span aria-hidden="true" style={{ width: 1, height: 20, background: T.lineSub, margin: '0 3px' }} />
-        <span style={{ ...dsMachineStyle(T), fontSize: 11 }}>
-          {visibleResults.length}{rowQuery ? ` of ${results.length}` : ''}
-        </span>
-        <span style={{ flex: 1 }} />
-        <div role="tablist" aria-label="Layout" style={{
-          display: 'flex', padding: 2, gap: 2,
-          borderRadius: DS_RADIUS.control,
-          background: T.bg, border: `1px solid ${T.lineSub}`,
-        }}>
-          {MN_VIEW_LAYOUTS.map(mode => (
-            <button
-              key={mode}
-              type="button"
-              role="tab"
-              aria-selected={layout === mode}
-              onClick={() => setDraft(current => ({
-                ...(current && current.id === activeDefinition?.id ? current : {}),
-                id: activeDefinition?.id || '',
-                layout: mode,
-              }))}
-              style={{
-                height: 24, padding: '0 11px',
-                borderRadius: DS_RADIUS.icon,
-                border: `1px solid ${layout === mode ? T.selLine : 'transparent'}`,
-                background: layout === mode ? T.selBg : 'transparent',
-                color: layout === mode ? T.ink : T.inkMed,
-                fontFamily: 'var(--mn-ui)', fontSize: 12,
-                fontWeight: layout === mode ? 600 : 400,
-                cursor: 'pointer',
-              }}>{mnViewLayoutLabel(mode)}</button>
-          ))}
-        </div>
-      </div>
+      <ViewsControlStrip
+        definition={queryDefinition}
+        tags={tags}
+        notes={notes}
+        catalogue={catalogue}
+        visibleColumns={visibleColumnKeys}
+        rowCount={visibleResults.length}
+        totalCount={results.length}
+        filtered={Boolean(rowQuery)}
+        layout={layout}
+        scopeOpen={scopeOpen}
+        columnsOpen={columnsOpen}
+        onToggleScopeMenu={() => setScopeOpen(open => !open)}
+        onToggleColumnsMenu={() => setColumnsOpen(open => !open)}
+        onToggleTag={tag => editScope(mnViewsToggleScope(queryDefinition, 'tags', tag))}
+        onToggleLink={title => editScope(mnViewsToggleScope(queryDefinition, 'linkedNotes', title))}
+        onClearScope={() => editScope(mnViewsClearScope(queryDefinition))}
+        onToggleColumn={key => editColumns(mnViewsToggleColumn(queryDefinition, key))}
+        onMoveColumn={(key, delta) => editColumns(mnViewsMoveColumn(queryDefinition, key, delta))}
+        onLayout={mode => setDraft(current => ({
+          ...(current && current.id === activeDefinition?.id ? current : {}),
+          id: activeDefinition?.id || '',
+          layout: mode,
+        }))}
+        T={T}
+      />
 
       <div
         data-mn-views-body="true"
@@ -433,7 +403,7 @@ function MnViewsPanel({
             ? mnViewsRenderBoard({ groups: groups || [], helpers, onOpen, onToggleCheck: toggleCheck, T })
             : layout === 'table'
             ? mnViewsRenderTable({
-              results: visibleResults, definition: shownDefinition, sort,
+              results: visibleResults, definition: queryDefinition, sort,
               onSort: sortByColumn, onOpen, onToggleCheck: toggleCheck, helpers, T,
             })
             : groups

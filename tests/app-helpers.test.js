@@ -1418,6 +1418,61 @@ test('view table columns read real fields and only save a sort the vault accepts
   assert.deepEqual(c.mnViewsSortResults(rows, cols, { key: 'owner', direction: 'desc' }).map(r => r.id), ['a', 'c', 'b']);
 });
 
+test('scope narrows a view without losing the filters it already had', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const sc = loadRendererModule('src/features/views/viewsScope.js');
+  const manage = loadRendererModule('src/features/views/viewsManage.js');
+
+  // Scope is stored in the filters the query engine already understands, so
+  // the filters a view came with have to survive being scoped.
+  const base = { id: 'open_tasks', title: 'Open tasks', type: 'tasks', filters: { actionStatus: 'open' } };
+  const tagged = sc.mnViewsToggleScope(base, 'tags', 'Work');
+  assert.equal(tagged.ok, true);
+  assert.deepEqual(tagged.filters, { actionStatus: 'open', tags: ['Work'] });
+
+  // Toggling is case-insensitive, so the same tag cannot be added twice under
+  // a different case and then fail to come off.
+  const twice = sc.mnViewsToggleScope({ ...base, filters: tagged.filters }, 'tags', 'work');
+  assert.deepEqual(twice.filters, { actionStatus: 'open' });
+
+  // An emptied scope removes the key rather than storing an empty array.
+  assert.equal('tags' in twice.filters, false);
+
+  // The sanitizer caps a filter array at 40 items and a string at 500 chars.
+  const many = { filters: { tags: Array.from({ length: 40 }, (_, n) => `t${n}`) } };
+  assert.equal(sc.mnViewsToggleScope(many, 'tags', 'one-more').reason, 'cap');
+  assert.equal(sc.mnViewsToggleScope(base, 'tags', 'x'.repeat(501)).reason, 'long');
+  assert.equal(sc.mnViewsToggleScope(base, 'tags', '   ').reason, 'empty');
+
+  // Clearing scope leaves everything that was not scope alone.
+  const linked = sc.mnViewsToggleScope({ ...base, filters: tagged.filters }, 'linkedNotes', 'Project Atlas');
+  assert.deepEqual(linked.filters, { actionStatus: 'open', tags: ['Work'], linkedNotes: ['Project Atlas'] });
+  assert.deepEqual(sc.mnViewsClearScope({ ...base, filters: linked.filters }).filters, { actionStatus: 'open' });
+
+  // The chip has to say why you are not seeing everything.
+  assert.equal(sc.mnViewsScopeSummary(base), 'Whole vault');
+  assert.equal(sc.mnViewsScopeSummary({ filters: tagged.filters }), '#Work');
+  assert.equal(sc.mnViewsScopeSummary({ filters: { tags: ['a', 'b'] } }), '2 tags');
+  assert.equal(sc.mnViewsScopeSummary({ filters: linked.filters }), '#Work + links to Project Atlas');
+  assert.equal(sc.mnViewsScopeIsSet({ filters: linked.filters }), true);
+  assert.equal(sc.mnViewsScopeIsSet(base), false);
+
+  // The pickable tags are what the notes carry, not only what the vault has
+  // registered — a tag typed into a note is real to the query, so refusing to
+  // offer it would make a view filterable by something the menu cannot show.
+  const choices = sc.mnViewsScopeTagChoices(
+    [{ name: 'welcome', hue: 20 }],
+    [{ tags: ['qe-regression', 'Welcome'] }, { tags: ['work'] }, {}],
+    ['gone-from-the-vault']
+  );
+  assert.deepEqual(choices, ['gone-from-the-vault', 'qe-regression', 'welcome', 'work']);
+
+  // Whatever the menu produces has to survive the preference sanitizer.
+  const saved = manage.mnViewsApplyDraft([base], { id: 'open_tasks', filters: linked.filters });
+  assert.equal(manage.mnViewsCheckSavable(saved.definitions).ok, true);
+  assert.deepEqual(saved.definitions[0].filters, linked.filters);
+});
+
 test('columns are discovered from what notes actually carry, and reorder safely', async () => {
   const { loadRendererModule } = require('./helpers/rendererModule.js');
   const c = loadRendererModule('src/features/views/viewsColumns.js');

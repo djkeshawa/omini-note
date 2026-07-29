@@ -661,6 +661,46 @@ async function runViewsPanelScenario(win) {
       return { ok: Array.isArray(current.columns) && current.columns.includes('owner'), current };
     });
 
+    // Scope narrows which notes the view looks at, and the chip has to say so
+    // — an unexplained short list is indistinguishable from a broken query.
+    await clickButton(win, { aria: 'Scope' });
+    await waitFor(win, 'the scope menu offers the vault tags', async () => {
+      const current = await evaluate(win, `(() => {
+        const menu = document.querySelector('[data-mn-views-scope]');
+        if (!menu) return { menu: false };
+        const rows = [...menu.querySelectorAll('[role="menuitemcheckbox"]')].map(el => (el.textContent || '').trim());
+        return { menu: true, rows, every: /every tag you pick/.test(menu.textContent || '') };
+      })()`);
+      return { ok: current.menu && current.rows.includes('#qe-regression') && current.every, current };
+    });
+
+    const scopedFrom = await viewsRowCount(win);
+    await clickVisibleText(win, '#qe-regression');
+    await waitFor(win, 'choosing a tag scopes the view and the chip says so', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('button[aria-label="Scope"]');
+        const table = document.querySelector('[data-mn-views-table]');
+        return {
+          chip: strip ? (strip.textContent || '').trim() : '',
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : -1,
+        };
+      })()`);
+      return { ok: /qe-regression/.test(current.chip) && current.rows === 1 && current.rows < scopedFrom, current, scopedFrom };
+    });
+    await clickVisibleText(win, 'Whole vault');
+    await waitFor(win, 'clearing scope brings the rest back', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('button[aria-label="Scope"]');
+        const table = document.querySelector('[data-mn-views-table]');
+        return {
+          chip: strip ? (strip.textContent || '').trim() : '',
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : -1,
+        };
+      })()`);
+      return { ok: /Whole vault/.test(current.chip) && current.rows === scopedFrom, current, scopedFrom };
+    });
+    await clickButton(win, { aria: 'Scope' });
+
     // View management: a view you make, name, shape and save has to be there
     // afterwards. Each step is checked by what the tab bar actually shows.
     const before = await viewsTabTitles(win);
