@@ -1353,9 +1353,10 @@ test('view table columns read real fields and only save a sort the vault accepts
   // appended, deduped against the built-ins, and marked as property-sourced.
   assert.deepEqual(c.mnViewsColumns({ type: 'notes' }).map(col => col.key),
     ['title', 'tags', 'modified', 'created', 'words']);
-  const withProps = c.mnViewsColumns({ type: 'notes', columns: ['priority', 'tags', 'owner', '  '] });
-  assert.deepEqual(withProps.map(col => col.key),
-    ['title', 'tags', 'modified', 'created', 'words', 'priority', 'owner']);
+  // An explicit list is the whole list, in order, and the row's own column is
+  // put back at the front if it was left out.
+  const withProps = c.mnViewsColumns({ type: 'notes', columns: ['priority', 'tags', 'owner', '  ', 'tags'] });
+  assert.deepEqual(withProps.map(col => col.key), ['title', 'priority', 'tags', 'owner']);
   assert.equal(withProps.find(col => col.key === 'priority').origin, 'property');
   assert.equal(withProps.find(col => col.key === 'tags').origin, 'file');
 
@@ -1364,8 +1365,9 @@ test('view table columns read real fields and only save a sort the vault accepts
     type: 'note', title: 'Ship it', tags: ['work'], modifiedDate: '2026-07-20',
     createdDate: '2026-07-01', note: { body: 'one two three\npriority:: high\n' },
   };
-  const cell = (row, key, def = { type: 'notes', columns: ['priority', 'owner'] }) =>
-    c.mnViewsCellValue(row, c.mnViewsColumns(def).find(col => col.key === key), helpers);
+  // Resolve against everything the row type offers, not just what is showing.
+  const cell = (row, key, type = 'notes') =>
+    c.mnViewsCellValue(row, c.mnViewsBaseColumns(type).find(col => col.key === key) || c.mnViewsPropertyColumn(key), helpers);
   assert.equal(cell(noteRow, 'title'), 'Ship it');
   assert.deepEqual(cell(noteRow, 'tags'), ['work']);
   assert.equal(cell(noteRow, 'modified'), '2026-07-20');
@@ -1378,11 +1380,10 @@ test('view table columns read real fields and only save a sort the vault accepts
     reminderDate: '2026-08-02', noteTags: ['calls'],
     sourceNote: { body: 'owner:: sam\n' },
   };
-  const taskDef = { type: 'tasks', columns: ['owner'] };
-  assert.equal(cell(taskRow, 'note', taskDef), 'Inbox');
-  assert.equal(cell(taskRow, 'due', taskDef), '2026-08-02');
-  assert.deepEqual(cell(taskRow, 'tags', taskDef), ['calls']);
-  assert.equal(cell(taskRow, 'owner', taskDef), 'sam');
+  assert.equal(cell(taskRow, 'note', 'tasks'), 'Inbox');
+  assert.equal(cell(taskRow, 'due', 'tasks'), '2026-08-02');
+  assert.deepEqual(cell(taskRow, 'tags', 'tasks'), ['calls']);
+  assert.equal(cell(taskRow, 'owner', 'tasks'), 'sam');
 
   // Only title / created / modified / due map to a storable sort field. The
   // preference sanitizer throws on anything else, so the rest must report as
@@ -1415,6 +1416,73 @@ test('view table columns read real fields and only save a sort the vault accepts
   const cols = c.mnViewsColumns({ type: 'notes', columns: ['owner'] });
   assert.deepEqual(c.mnViewsSortResults(rows, cols, { key: 'owner', direction: 'asc' }).map(r => r.id), ['c', 'a', 'b']);
   assert.deepEqual(c.mnViewsSortResults(rows, cols, { key: 'owner', direction: 'desc' }).map(r => r.id), ['a', 'c', 'b']);
+});
+
+test('columns are discovered from what notes actually carry, and reorder safely', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const c = loadRendererModule('src/features/views/viewsColumns.js');
+
+  const rows = [
+    { type: 'note', title: 'A', tags: ['x'], note: { body: 'priority:: high\nowner:: sam\n' } },
+    { type: 'note', title: 'B', note: { body: '- owner:: ana\nPRIORITY:: low\n' } },
+    { type: 'note', title: 'C', note: { body: 'notakey::\nSome:: thing\n' } },
+  ];
+
+  // A key exists because it was written. Coverage counts rows, keys sort by
+  // how many rows carry them, and a key with no value on the line is not one.
+  const found = c.mnViewsDiscoverProperties(rows, ['title', 'tags', 'modified', 'created', 'words']);
+  const byKey = Object.fromEntries(found.map(col => [col.key, col.count]));
+  assert.equal(byKey.owner, 2);
+  assert.equal(byKey.priority, 1);
+  assert.equal(byKey.PRIORITY, 1);
+  assert.equal(byKey.Some, 1);
+  assert.equal('notakey' in byKey, false);
+  assert.deepEqual(found.map(col => col.key)[0], 'owner');
+  assert.equal(found[0].origin, 'property');
+
+  // A property key that collides with a built-in column would shadow it, so
+  // it is not offered twice.
+  const shadowed = c.mnViewsDiscoverProperties(
+    [{ type: 'note', note: { body: 'tags:: one\nowner:: sam\n' } }],
+    ['title', 'tags']
+  );
+  assert.deepEqual(shadowed.map(col => col.key), ['owner']);
+
+  // The catalogue is the built-ins with their own coverage, then the found keys.
+  const cat = c.mnViewsCatalogue({ type: 'notes' }, rows);
+  assert.deepEqual(cat.slice(0, 5).map(col => col.key), ['title', 'tags', 'modified', 'created', 'words']);
+  assert.equal(cat.find(col => col.key === 'title').count, 3);
+  assert.equal(cat.find(col => col.key === 'tags').count, 1);
+  assert.equal(cat.find(col => col.key === 'owner').count, 2);
+
+  // The first toggle starts from what is showing, so turning one key on does
+  // not silently drop the columns the row type came with.
+  const on = c.mnViewsToggleColumn({ type: 'notes' }, 'owner');
+  assert.deepEqual(on.columns, ['title', 'tags', 'modified', 'created', 'words', 'owner']);
+  const off = c.mnViewsToggleColumn({ type: 'notes', columns: on.columns }, 'modified');
+  assert.deepEqual(off.columns, ['title', 'tags', 'created', 'words', 'owner']);
+
+  // The row's own column cannot be turned off, and the list cannot be emptied.
+  assert.equal(c.mnViewsToggleColumn({ type: 'notes' }, 'title').reason, 'fixed');
+  assert.equal(c.mnViewsToggleColumn({ type: 'notes', columns: ['title'] }, 'title').reason, 'fixed');
+
+  // Reorder never moves anything into the first slot and never runs off an end.
+  const start = { type: 'notes', columns: ['title', 'tags', 'modified', 'owner'] };
+  assert.deepEqual(c.mnViewsMoveColumn(start, 'modified', -1).columns, ['title', 'modified', 'tags', 'owner']);
+  assert.deepEqual(c.mnViewsMoveColumn(start, 'modified', 1).columns, ['title', 'tags', 'owner', 'modified']);
+  assert.equal(c.mnViewsMoveColumn(start, 'tags', -1).reason, 'edge');
+  assert.equal(c.mnViewsMoveColumn(start, 'owner', 1).reason, 'edge');
+  assert.equal(c.mnViewsMoveColumn(start, 'title', -1).reason, 'edge');
+  assert.equal(c.mnViewsMoveColumn(start, 'title', 1).reason, 'edge');
+
+  // Whatever the panel produces has to survive the preference sanitizer.
+  const manage = loadRendererModule('src/features/views/viewsManage.js');
+  const saved = manage.mnViewsApplyDraft(
+    [{ id: 'recent_notes', title: 'Recent notes', type: 'notes' }],
+    { id: 'recent_notes', columns: on.columns }
+  );
+  assert.equal(manage.mnViewsCheckSavable(saved.definitions).ok, true);
+  assert.deepEqual(saved.definitions[0].columns, on.columns);
 });
 
 test('managing saved views refuses what the preference layer would throw on', async () => {

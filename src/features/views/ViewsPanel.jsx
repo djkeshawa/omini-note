@@ -22,7 +22,11 @@ import { mnViewsRenderResults } from './ViewsLayouts.jsx';
 import { mnViewsRenderBoard, mnViewsBoardGroup } from './ViewsBoard.jsx';
 import { mnViewsRenderCalendar } from './ViewsCalendar.jsx';
 import { mnViewsRenderTable } from './ViewsTable.jsx';
-import { mnViewsNextSort, mnViewsSortIsStorable, mnViewsSortField, mnViewsSortFromDefinition } from './viewsColumns.js';
+import {
+  mnViewsNextSort, mnViewsSortIsStorable, mnViewsSortField, mnViewsSortFromDefinition,
+  mnViewsColumns, mnViewsCatalogue, mnViewsToggleColumn, mnViewsMoveColumn,
+} from './viewsColumns.js';
+import { ViewsColumnsMenu } from './ViewsColumnsPanel.jsx';
 import { mnViewsActionItem } from './viewsWrite.js';
 import { ViewTabs, ViewMenu, ViewsRowSearch, ViewsSaveState, mnViewChipStyle } from './ViewsChrome.jsx';
 import {
@@ -112,6 +116,7 @@ function MnViewsPanel({
   const [calendarAnchor, setCalendarAnchor] = useStateV(() => new Date());
   const [rowQuery, setRowQuery] = useStateV('');
   const [menuOpen, setMenuOpen] = useStateV(false);
+  const [columnsOpen, setColumnsOpen] = useStateV(false);
   const [confirmDelete, setConfirmDelete] = useStateV(false);
   const [renamingId, setRenamingId] = useStateV('');
   const [renameValue, setRenameValue] = useStateV('');
@@ -192,6 +197,7 @@ function MnViewsPanel({
     setRowQuery('');
     setTableSort(null);
     setMenuOpen(false);
+    setColumnsOpen(false);
     setConfirmDelete(false);
     setRenamingId('');
     onActiveDefinitionChange?.(id);
@@ -221,6 +227,33 @@ function MnViewsPanel({
   };
 
   const sort = tableSort || mnViewsSortFromDefinition(activeDefinition);
+
+  // The definition the table draws is the draft when there is one, so a column
+  // you toggle shows up before you decide whether to keep it.
+  const shownDefinition = activeDraft ? { ...activeDefinition, ...activeDraft } : activeDefinition;
+  const catalogue = useMemoV(
+    () => mnViewsCatalogue(shownDefinition, visibleResults),
+    [shownDefinition, visibleResults]
+  );
+  const visibleColumnKeys = mnViewsColumns(shownDefinition).map(column => column.key);
+
+  const editColumns = (result) => {
+    if (!result.ok) {
+      onNotice?.(
+        result.reason === 'fixed' ? 'That column always shows' : 'That column is already at the end',
+        result.reason === 'fixed'
+          ? 'The first column is the row itself, so there is always something to click.'
+          : 'There is nothing on that side to swap it with.',
+        'info'
+      );
+      return;
+    }
+    setDraft(current => ({
+      ...(current && current.id === activeDefinition?.id ? current : {}),
+      id: activeDefinition?.id || '',
+      columns: result.columns,
+    }));
+  };
 
   const sortByColumn = (key) => {
     const next = mnViewsNextSort(sort, key);
@@ -326,6 +359,31 @@ function MnViewsPanel({
           Rows
           <span style={{ fontWeight: 600, color: T.ink }}>{String(activeDefinition?.type || 'notes')}</span>
         </span>
+        <span style={{ position: 'relative', display: 'inline-flex' }}>
+          <button
+            type="button"
+            aria-label="Columns"
+            aria-expanded={columnsOpen}
+            title="Which columns the table shows, and where each one comes from"
+            onClick={() => setColumnsOpen(open => !open)}
+            style={mnViewChipStyle(columnsOpen, T)}>
+            Columns
+            <span style={{ ...dsMachineStyle(T, T.ink), fontSize: 11 }}>{visibleColumnKeys.length}</span>
+            <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path d="M3 4.5L6 7.5L9 4.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          {columnsOpen && (
+            <ViewsColumnsMenu
+              catalogue={catalogue}
+              visible={visibleColumnKeys}
+              total={visibleResults.length}
+              onToggle={key => editColumns(mnViewsToggleColumn(shownDefinition, key))}
+              onMove={(key, delta) => editColumns(mnViewsMoveColumn(shownDefinition, key, delta))}
+              T={T}
+            />
+          )}
+        </span>
         <span aria-hidden="true" style={{ width: 1, height: 20, background: T.lineSub, margin: '0 3px' }} />
         <span style={{ ...dsMachineStyle(T), fontSize: 11 }}>
           {visibleResults.length}{rowQuery ? ` of ${results.length}` : ''}
@@ -375,7 +433,7 @@ function MnViewsPanel({
             ? mnViewsRenderBoard({ groups: groups || [], helpers, onOpen, onToggleCheck: toggleCheck, T })
             : layout === 'table'
             ? mnViewsRenderTable({
-              results: visibleResults, definition: activeDefinition, sort,
+              results: visibleResults, definition: shownDefinition, sort,
               onSort: sortByColumn, onOpen, onToggleCheck: toggleCheck, helpers, T,
             })
             : groups

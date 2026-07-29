@@ -610,6 +610,57 @@ async function runViewsPanelScenario(win) {
       return { ok: titles.join('|') === expected.join('|'), titles };
     });
 
+    // Columns are discovered, not configured: a key exists in this menu only
+    // because it was written into a note. Seed one and check it turns up.
+    await seedEditorNote(win, {
+      id: 'qe_views_prop',
+      title: 'QE Views Property Note',
+      body: 'A note that carries a property line.\n\nowner:: sam\n',
+      expect: 'A note that carries a property line',
+    });
+    await clickVisibleText(win, 'Views');
+    await clickVisibleText(win, 'Recent notes');
+    await clickVisibleText(win, 'Table');
+    await clickButton(win, { aria: 'Columns' });
+    await waitFor(win, 'the columns menu finds a key that was written', async () => {
+      const current = await evaluate(win, `(() => {
+        const menu = document.querySelector('[data-mn-views-columns]');
+        if (!menu) return { menu: false };
+        return {
+          menu: true,
+          text: (menu.textContent || '').slice(0, 400),
+          owner: Boolean(menu.querySelector('button[aria-label="Show the owner column"]')),
+          declared: /Nothing here was declared/.test(menu.textContent || ''),
+          coverage: /1 of \\d+/.test(menu.textContent || ''),
+        };
+      })()`);
+      return { ok: current.menu && current.owner && current.declared && current.coverage, current };
+    });
+
+    // Turning it on has to add a real column to the table, headed with the
+    // key and its colons, and mark the view as changed.
+    await clickButton(win, { aria: 'Show the owner column' });
+    await waitFor(win, 'turning a property on adds its column', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        const bar = document.querySelector('[role="tablist"][aria-label="Saved views"]');
+        const heads = table ? [...table.querySelectorAll('button[aria-sort]')].map(el => (el.textContent || '').trim()) : [];
+        const cells = table ? [...table.querySelectorAll('[data-mn-view-row]')].map(row => (row.textContent || '')) : [];
+        return { heads, dirty: /Unsaved changes/.test(bar ? bar.textContent : ''), sam: cells.filter(text => text.includes('sam')).length };
+      })()`);
+      return { ok: current.heads.includes('owner::') && current.dirty && current.sam === 1, current };
+    });
+    await clickVisibleText(win, 'Save view');
+    await waitFor(win, 'a chosen column is stored with the view', async () => {
+      const current = await evaluate(win, `(async () => {
+        const prefs = await window.mn?.preferences?.getPrefs?.();
+        const views = prefs?.value?.smartViews || [];
+        const recent = views.find(view => view && view.title === 'Recent notes');
+        return { columns: recent ? recent.columns : null };
+      })()`);
+      return { ok: Array.isArray(current.columns) && current.columns.includes('owner'), current };
+    });
+
     // View management: a view you make, name, shape and save has to be there
     // afterwards. Each step is checked by what the tab bar actually shows.
     const before = await viewsTabTitles(win);
@@ -1448,7 +1499,7 @@ async function runScenario(win, area, name, fn) {
   }
 }
 
-async function seedEditorNote(win, { id, title, body }) {
+async function seedEditorNote(win, { id, title, body, expect = 'Parent' }) {
   await evaluate(win, `
     (async () => {
       const unwrap = (result, label) => {
@@ -1481,7 +1532,7 @@ async function seedEditorNote(win, { id, title, body }) {
     return {
       ok: current.selectedTitle === title
         && rows.length >= 1
-        && rows[0].text.includes('Parent'),
+        && rows[0].text.includes(expect),
       current,
       rows,
     };

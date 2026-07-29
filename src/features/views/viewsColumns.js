@@ -36,27 +36,97 @@ function mnViewsBaseColumns(type) {
   return String(type || 'notes') === 'notes' ? MN_VIEW_NOTE_COLUMNS : MN_VIEW_ACTION_COLUMNS;
 }
 
-// The saved `columns` list is property keys someone pinned. They are appended
-// to the columns the row type always has, in the order they were pinned.
+function mnViewsPropertyColumn(key) {
+  return {
+    key,
+    label: key,
+    origin: 'property',
+    type: 'text',
+    width: '128px',
+    source: `${key}:: written in the note`,
+  };
+}
+
+// Property keys are found by reading, not declared anywhere: a key exists
+// because someone typed `key::` in a note. Coverage is counted in rows rather
+// than notes, because that is what the table will actually show.
+const MN_VIEW_PROPERTY_LINE_RE = /^[ \t]*(?:-[ \t]*)?([A-Za-z][A-Za-z0-9_-]{0,39})::[ \t]*(.*)$/gm;
+
+function mnViewsDiscoverProperties(results = [], baseKeys = []) {
+  const skip = new Set(baseKeys);
+  const counts = new Map();
+  (results || []).forEach(result => {
+    const body = mnViewsNoteFor(result)?.body;
+    if (!body) return;
+    const seen = new Set();
+    MN_VIEW_PROPERTY_LINE_RE.lastIndex = 0;
+    let match = MN_VIEW_PROPERTY_LINE_RE.exec(body);
+    while (match) {
+      const key = match[1];
+      // A key with no value on the line is a heading-ish false positive, and
+      // a key that is already a built-in column would shadow it.
+      if (match[2].trim() && !skip.has(key) && !seen.has(key)) {
+        seen.add(key);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      match = MN_VIEW_PROPERTY_LINE_RE.exec(body);
+    }
+  });
+  return [...counts.entries()]
+    .map(([key, count]) => ({ ...mnViewsPropertyColumn(key), count }))
+    .sort((a, b) => (b.count - a.count) || a.key.localeCompare(b.key));
+}
+
+// Everything this view could show: the fields the row type always has, then
+// every property key the rows in front of you actually carry.
+function mnViewsCatalogue(definition = {}, results = []) {
+  const base = mnViewsBaseColumns(definition.type);
+  const covered = base.map(column => ({
+    ...column,
+    count: (results || []).filter(result => !mnViewsCellIsEmpty(mnViewsCellValue(result, column))).length,
+  }));
+  return covered.concat(mnViewsDiscoverProperties(results, base.map(column => column.key)));
+}
+
+// The columns a view shows, in order. An absent list means "the ones this row
+// type comes with"; once anything is toggled the list is explicit. The first
+// column is the row itself, so it is always present and cannot be removed.
 function mnViewsColumns(definition = {}) {
   const base = mnViewsBaseColumns(definition.type);
-  const pinned = Array.isArray(definition.columns) ? definition.columns : [];
-  const taken = new Set(base.map(column => column.key));
-  const extra = [];
-  pinned.forEach(raw => {
-    const key = String(raw || '').trim();
-    if (!key || taken.has(key)) return;
-    taken.add(key);
-    extra.push({
-      key,
-      label: key,
-      origin: 'property',
-      type: 'text',
-      width: '128px',
-      source: `${key}:: written in the note`,
-    });
-  });
-  return base.concat(extra);
+  const saved = Array.isArray(definition.columns) ? definition.columns : null;
+  if (!saved?.length) return base;
+  const byKey = new Map(base.map(column => [column.key, column]));
+  const fixed = base.find(column => column.fixed);
+  const keys = saved.map(raw => String(raw || '').trim()).filter(Boolean);
+  const ordered = fixed && !keys.includes(fixed.key) ? [fixed.key, ...keys] : keys;
+  const seen = new Set();
+  return ordered
+    .filter(key => (seen.has(key) ? false : seen.add(key)))
+    .map(key => byKey.get(key) || mnViewsPropertyColumn(key));
+}
+
+// Toggling and reordering produce the explicit list that gets saved. Both
+// start from what is showing now, so the first toggle does not silently drop
+// the columns the row type came with.
+function mnViewsToggleColumn(definition = {}, key) {
+  const current = mnViewsColumns(definition).map(column => column.key);
+  const fixed = mnViewsBaseColumns(definition.type).find(column => column.fixed);
+  if (fixed && key === fixed.key) return { ok: false, reason: 'fixed' };
+  const next = current.includes(key) ? current.filter(item => item !== key) : current.concat([key]);
+  if (!next.length) return { ok: false, reason: 'fixed' };
+  return { ok: true, columns: next };
+}
+
+function mnViewsMoveColumn(definition = {}, key, delta) {
+  const current = mnViewsColumns(definition).map(column => column.key);
+  const at = current.indexOf(key);
+  const to = at + delta;
+  // The row's own column stays first, so nothing may move into slot zero.
+  if (at < 1 || to < 1 || to >= current.length) return { ok: false, reason: 'edge' };
+  const next = [...current];
+  next.splice(at, 1);
+  next.splice(to, 0, key);
+  return { ok: true, columns: next };
 }
 
 function mnViewsNoteFor(result = {}) {
@@ -144,7 +214,9 @@ function mnViewsSortFromDefinition(definition = {}) {
 
 export {
   MN_VIEW_NOTE_COLUMNS, MN_VIEW_ACTION_COLUMNS, MN_VIEW_SORTABLE_FIELDS,
-  mnViewsBaseColumns, mnViewsColumns, mnViewsCellValue, mnViewsWordCount,
+  mnViewsBaseColumns, mnViewsColumns, mnViewsCatalogue, mnViewsDiscoverProperties,
+  mnViewsToggleColumn, mnViewsMoveColumn, mnViewsPropertyColumn,
+  mnViewsCellValue, mnViewsWordCount,
   mnViewsCompareValues, mnViewsCellIsEmpty, mnViewsSortResults, mnViewsNextSort,
   mnViewsSortIsStorable, mnViewsSortField, mnViewsSortFromDefinition,
 };
