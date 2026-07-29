@@ -435,6 +435,29 @@ async function setPackEnabledForRegression(win, packId, enabled) {
   });
 }
 
+async function runViewsPanelScenario(win) {
+  await setPackEnabledForRegression(win, 'views', true);
+  try {
+    await clickVisibleText(win, 'Views');
+    await waitFor(win, 'views panel renders a saved view', async () => {
+      const current = await evaluate(win, `(() => {
+        const panel = document.querySelector('[data-mn-views-panel]');
+        return {
+          view: document.querySelector('[data-mn-view]')?.getAttribute('data-mn-view') || '',
+          panel: Boolean(panel),
+          views: panel ? panel.querySelectorAll('[role="option"]').length : 0,
+          layouts: panel ? panel.querySelectorAll('[role="tab"]').length : 0,
+        };
+      })()`);
+      // A seeded definition and the four layout tabs must both be there — an
+      // empty shell would pass a bare "does the panel exist" probe.
+      return { ok: current.panel && current.views > 0 && current.layouts === 4, current };
+    });
+  } finally {
+    await setPackEnabledForRegression(win, 'views', false);
+  }
+}
+
 async function runPackIsolationScenario(win) {
   const cases = [
     { id: 'planning', commands: ['calendar', 'set-workflow-status', 'template-project'], labels: ['Agenda', 'Workflow'] },
@@ -442,6 +465,10 @@ async function runPackIsolationScenario(win) {
     { id: 'research', commands: ['template-reading'], labels: [] },
     { id: 'writer', commands: ['template-novel-scene'], labels: [] },
     { id: 'agents', commands: [], labels: [] },
+    // No label here on purpose: the check is a substring match on body text
+    // and 'Views' is contained in 'Smart Views'. The command id isolates it,
+    // and the dedicated Views scenario probes the panel by attribute.
+    { id: 'views', commands: ['views'], labels: [] },
     { id: 'labs', commands: ['graph', 'smart-views'], labels: ['Smart Views', 'Graph'], expand: 'More' },
   ];
   const specialistCommands = new Set(cases.flatMap(item => item.commands));
@@ -2260,6 +2287,9 @@ async function runRegression() {
 
   await runScenario(win, 'Focus', 'each optional pack stays isolated when enabled alone', async () => {
     await runPackIsolationScenario(win);
+  });
+  await runScenario(win, 'Views', 'the views pack adds one saved-view surface', async () => {
+    await runViewsPanelScenario(win);
   });
 
   await runScenario(win, 'Editor', 'blank notes prioritize writing and disclose secondary actions', async () => {

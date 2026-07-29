@@ -58,6 +58,7 @@ function MnSidebar({
   tags, notes, selectedTag, onSelectTag, onOpenAgenda, onOpenGraph,
   onOpenToday, onOpenPinned, todayActive, pinnedActive = false, agendaActive, graphActive,
   onOpenSmartViews, smartViewsActive = false, smartViewCount = 0,
+  onOpenViews, viewsActive = false, viewsCount = 0,
   selectedWorkflow, workflowStates, workflowCounts, workflowTotal,
   onSelectWorkflow, onOpenWorkflowPanel, workflowActive,
   onOpenNovelist, novelistActive, novelistEnabled, novelistCount = 0,
@@ -238,12 +239,16 @@ function MnSidebar({
       {(
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <SidebarNavRow T={T} height={navRowHeight} icon={iconInbox} label="All notes" count={notes.length}
-               active={!selectedTag && !selectedWorkflow && !todayActive && !pinnedActive && !agendaActive && !graphActive && !smartViewsActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
+               active={!selectedTag && !selectedWorkflow && !todayActive && !pinnedActive && !agendaActive && !graphActive && !smartViewsActive && !viewsActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
                onClick={() => onSelectTag(null)} />
           <SidebarNavRow T={T} height={navRowHeight} icon={iconToday} label="Today" count={rollupCount}
                active={todayActive} onClick={onOpenToday} />
           <SidebarNavRow T={T} height={navRowHeight} icon={iconInbox} label="Pinned" count={pinnedCount}
                active={pinnedActive} onClick={onOpenPinned} />
+          {featureState.showViews && (
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconSmartViews} label="Views" count={viewsCount}
+                 active={viewsActive} onClick={onOpenViews} accent={T.accent} />
+          )}
           {featureState.showAgenda && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconAgenda} label="Agenda" count={agendaCount}
                  active={agendaActive || calendarActive}
