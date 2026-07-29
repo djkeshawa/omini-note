@@ -1,5 +1,6 @@
 const js = require('@eslint/js');
 const globals = require('globals');
+const reactHooks = require('eslint-plugin-react-hooks');
 
 module.exports = [
   {
@@ -70,8 +71,13 @@ module.exports = [
     languageOptions: {
       sourceType: 'module',
     },
+    plugins: {
+      'react-hooks': reactHooks,
+    },
     rules: {
       'no-undef': 'error',
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
     },
   },
   {

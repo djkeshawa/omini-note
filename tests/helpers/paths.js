@@ -22,7 +22,6 @@ const projectPaths = {
     editor: path.join(SRC, 'editor', 'editor.jsx'),
     outliner: path.join(SRC, 'editor', 'outliner.jsx'),
     ai: path.join(SRC, 'ai', 'ai.jsx'),
-    panels: path.join(SRC, 'panels', 'panels.jsx'),
     canvas: path.join(SRC, 'canvas', 'canvas.jsx'),
     settings: path.join(SRC, 'settings', 'settings.jsx'),
   },

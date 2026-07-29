@@ -311,8 +311,9 @@ function MnSidebar({
             const active = selectedWorkflow === state.id;
             const count = workflowCounts?.[state.id] || 0;
             return (
-              <div key={state.id} onClick={() => onSelectWorkflow(state.id)} style={{
+              <button type="button" key={state.id} onClick={() => onSelectWorkflow(state.id)} style={{
                 ...dsSelectedRow(T, active, { height: subRowHeight }), fontSize: 13,
+                width: '100%', border: 'none', fontFamily: 'var(--mn-ui)', textAlign: 'left',
               }}
               onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
               onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
@@ -327,7 +328,7 @@ function MnSidebar({
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>{mnSentenceCase(state.id)}</span>
                 <span style={dsMachineStyle(T, active ? T.inkMed : T.inkDim)}>{count}</span>
-              </div>
+              </button>
             );
           })}
         </div>

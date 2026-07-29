@@ -16,4 +16,4 @@ function remove(key, root = globalThis) {
 }
 
 const storage = Object.freeze({ getJson, setJson, remove });
-export { getJson, remove, setJson, storage };
+module.exports = { getJson, remove, setJson, storage };

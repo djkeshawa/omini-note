@@ -140,6 +140,45 @@ test('rescanVault preserves embeddings for notes that have not changed', async (
   });
 });
 
+test('stale embedding work cannot overwrite vectors for newer note content', async () => {
+  await withIsolatedIndex(async (idx) => {
+    idx.init();
+    const first = {
+      id: 'n1',
+      title: 'Embedding race',
+      date: '2026-01-01',
+      tags: [],
+      body: 'The first body.',
+    };
+    idx.rescanVault('vault_a', [first]);
+    const firstHash = idx.noteContentHash(first);
+    const firstVectors = idx.chunkNote(first).map((_chunk, index) => vec(index, 1));
+
+    const latest = { ...first, body: 'The latest body wins.' };
+    idx.rescanVault('vault_a', [latest]);
+
+    assert.deepEqual(
+      idx.setNoteEmbeddings('vault_a', first, firstVectors, 'nomic-embed-text', firstHash),
+      { committed: false, currentContentHash: idx.noteContentHash(latest) }
+    );
+    assert.deepEqual(idx.notesNeedingEmbeddings('vault_a', 'nomic-embed-text'), ['n1']);
+    assert.deepEqual(idx.vectorSearch('vault_a', vec(0), 5), []);
+
+    const latestVectors = idx.chunkNote(latest).map((_chunk, index) => vec(index, 1));
+    assert.deepEqual(
+      idx.setNoteEmbeddings(
+        'vault_a',
+        latest,
+        latestVectors,
+        'nomic-embed-text',
+        idx.noteContentHash(latest)
+      ),
+      { committed: true, contentHash: idx.noteContentHash(latest) }
+    );
+    assert.deepEqual(idx.notesNeedingEmbeddings('vault_a', 'nomic-embed-text'), []);
+  });
+});
+
 test('rescanVault keeps tags, links and full text in step with the notes it syncs', async () => {
   await withIsolatedIndex(async (idx) => {
     idx.init();
@@ -191,6 +230,47 @@ test('an index written before the fts rowid map migrates without losing search',
     const check = new Database(dbPath);
     assert.equal(check.prepare('SELECT COUNT(*) AS n FROM notes_fts').get().n, 0, 'no orphan fts row left behind');
     check.close();
+  });
+});
+
+test('version 2 indexes migrate embedding source hashes and mark old vectors stale', async () => {
+  await withIsolatedIndex(async (idx) => {
+    idx.init();
+    const note = {
+      id: 'n1',
+      title: 'Pre-hash embedding',
+      date: '2026-01-01',
+      tags: [],
+      body: 'Existing vector content.',
+    };
+    idx.rescanVault('vault_a', [note]);
+    idx.setNoteEmbeddings(
+      'vault_a',
+      note,
+      idx.chunkNote(note).map((_chunk, index) => vec(index, 1)),
+      'nomic-embed-text'
+    );
+    const dbPath = idx.DB_PATH;
+    idx.close();
+
+    const Database = require('better-sqlite3');
+    const raw = new Database(dbPath);
+    raw.exec('ALTER TABLE embedding_chunks DROP COLUMN content_hash');
+    raw.prepare("INSERT INTO meta (key, value) VALUES ('schemaVersion', '2') ON CONFLICT(key) DO UPDATE SET value = '2'").run();
+    raw.close();
+
+    delete require.cache[require.resolve('../lib/index')];
+    const reopened = require('../lib/index');
+    reopened.init();
+    const check = new Database(dbPath);
+    assert.ok(
+      check.prepare('PRAGMA table_info(embedding_chunks)').all()
+        .some(column => column.name === 'content_hash')
+    );
+    check.close();
+    assert.deepEqual(reopened.notesNeedingEmbeddings('vault_a', 'nomic-embed-text'), ['n1']);
+    assert.deepEqual(reopened.vectorSearch('vault_a', vec(0), 5), []);
+    reopened.close();
   });
 });
 

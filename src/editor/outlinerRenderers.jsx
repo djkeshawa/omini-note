@@ -119,10 +119,10 @@ function MnMathBlock({ source, T }) {
 // Mermaid block renderer. Mermaid is async — renderToString creates a fresh
 // SVG keyed by id. We dedupe on (source, T.bg) so the diagram only
 // re-renders when content or theme changes, not on every keystroke elsewhere.
-let _mnMermaidInited = false;
+let _mnMermaidTheme = '';
 function mnMermaidInit(theme) {
   if (!window.mermaid) return false;
-  if (_mnMermaidInited) return true;
+  if (_mnMermaidTheme === theme) return true;
   try {
     window.mermaid.initialize({
       startOnLoad: false,
@@ -130,11 +130,12 @@ function mnMermaidInit(theme) {
       theme: theme === 'dark' ? 'dark' : 'default',
       fontFamily: 'inherit',
     });
-    _mnMermaidInited = true;
+    _mnMermaidTheme = theme;
   } catch (e) {
+    _mnMermaidTheme = '';
     console.warn('mermaid init failed', e);
   }
-  return _mnMermaidInited;
+  return _mnMermaidTheme === theme;
 }
 
 function mnDetectThemeFromT(T) {

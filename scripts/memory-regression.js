@@ -222,7 +222,11 @@ async function run() {
   assert(note && note.body.includes(`memoryId:: ${created.id}`), 'imported note carries provenance properties');
   assert(note.tags.includes('memory') && note.tags.includes('vispnote-regression'), 'imported note carries memory tags', note.tags);
 
-  await store.saveNote(vaultId, { ...note, body: `${note.body}\n\nHuman edit.` });
+  await store.saveNote(
+    vaultId,
+    { ...note, body: `${note.body}\n\nHuman edit.` },
+    { expectedRevision: note.diskRevision }
+  );
   const secondImport = await llmMemory.importMemoriesToVault({ store }, config, vaultId, {});
   assert(secondImport.imported === 0, 're-import never creates duplicates', secondImport);
   const preserved = await store.getNote(vaultId, noteId);

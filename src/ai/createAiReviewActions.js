@@ -22,6 +22,7 @@ function createAiReviewActions({ updateSession, aiRuntime, runConfirmedVirtualWr
               args: step.args || {},
               reviewedBody: step.reviewedBody,
               previousBody: step.previousBody,
+              owner: step.owner,
               q: review.query || '',
               jobId,
               run,

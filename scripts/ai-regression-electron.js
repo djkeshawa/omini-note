@@ -329,7 +329,7 @@ async function seedFixtureNotes(win) {
           ...note,
           date: now,
           modifiedAt: now,
-        }, {});
+        }, { expectedRevision: null });
         unwrap(saved, 'saveNote ' + note.id);
       }
       unwrap(await window.mn.vaults.saveVaultMeta(vaultId, {
@@ -490,9 +490,10 @@ async function runAiRegression() {
   await waitFor(win, 'assistance preview contains keyboard focus', async () => {
     const result = await evaluate(win, `({
       dialog: Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')),
+      focusInside: Boolean(document.querySelector('[aria-labelledby="mn-assistance-preview-title"]')?.contains(document.activeElement)),
       focusedText: (document.activeElement?.textContent || '').trim(),
     })`);
-    return { ok: result.dialog && result.focusedText === 'Cancel', result };
+    return { ok: result.dialog && result.focusInside, result };
   });
   await pressAccelerator(win, 'Escape');
   await waitFor(win, 'assistance preview returns focus to its compact trigger', async () => {

@@ -28,8 +28,24 @@ function block(content, annotations = []) {
   return { id: Math.random().toString(36).slice(2), content, annotations, children: [] };
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(turns = 2) {
+  for (let index = 0; index < turns; index++) await Promise.resolve();
+}
+
 module.exports = {
   block,
+  deferred,
+  flushMicrotasks,
   loadOutlineForTest,
   withIsolatedStore,
 };

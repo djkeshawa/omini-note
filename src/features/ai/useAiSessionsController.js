@@ -1,5 +1,15 @@
 const { useCallback, useEffect, useMemo, useRef, useState } = React;
 
+export function updateAiSessionById(sessions, sessionId, updater, sessionTitle, now = () => new Date().toISOString()) {
+  if (!sessionId) return sessions;
+  return sessions.map(session => {
+    if (session.id !== sessionId) return session;
+    const next = typeof updater === 'function' ? updater(session) : updater;
+    const merged = { ...session, ...(next || {}) };
+    return { ...merged, title: sessionTitle(merged), updatedAt: now() };
+  });
+}
+
 export function useAiSessionsController({
   view,
   navigateView,
@@ -23,6 +33,12 @@ export function useAiSessionsController({
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
+  const selectSession = useCallback((sessionId) => {
+    const nextId = String(sessionId || '');
+    activeSessionIdRef.current = nextId;
+    setActiveSessionId(nextId);
+  }, []);
+
   const open = useCallback((initialQuery = '') => {
     setNotice(null);
     setSeed(typeof initialQuery === 'string' ? initialQuery : '');
@@ -35,25 +51,25 @@ export function useAiSessionsController({
   );
 
   useEffect(() => {
-    if (!activeSession && sessions[0]) setActiveSessionId(sessions[0].id);
-  }, [activeSession, sessions]);
+    if (!activeSession && sessions[0]) selectSession(sessions[0].id);
+  }, [activeSession, selectSession, sessions]);
 
-  const updateActiveSession = useCallback((updater) => {
-    setSessions(previous => previous.map(session => {
-      if (session.id !== (activeSessionIdRef.current || previous[0]?.id)) return session;
-      const next = typeof updater === 'function' ? updater(session) : updater;
-      const title = sessionTitle({ ...session, ...(next || {}) });
-      return { ...session, ...(next || {}), title, updatedAt: new Date().toISOString() };
-    }));
+  const updateSessionById = useCallback((sessionId, updater) => {
+    setSessions(previous => updateAiSessionById(previous, sessionId, updater, sessionTitle));
   }, [sessionTitle]);
+
+  const updateActiveSession = useCallback((updater, sessionIdOverride = '') => {
+    const sessionId = sessionIdOverride || activeSessionIdRef.current || sessions[0]?.id;
+    if (sessionId) updateSessionById(sessionId, updater);
+  }, [sessions, updateSessionById]);
 
   const createChat = useCallback(() => {
     const session = newSession();
     setSessions(previous => [session, ...previous]);
-    setActiveSessionId(session.id);
+    selectSession(session.id);
     setSeed('');
     navigateView('ai');
-  }, [navigateView, newSession]);
+  }, [navigateView, newSession, selectSession]);
 
   const deleteChat = useCallback((id) => {
     const target = sessions.find(session => session.id === id);
@@ -61,15 +77,15 @@ export function useAiSessionsController({
     const next = sessions.filter(session => session.id !== id);
     if (!next.length) {
       setSessions([]);
-      setActiveSessionId('');
+      selectSession('');
       return;
     }
     const nextActive = pickActiveSession(next, activeSessionId);
     setSessions(next);
     if (id === activeSessionId || !nextActive || nextActive.id !== activeSessionId) {
-      setActiveSessionId(nextActive?.id || '');
+      selectSession(nextActive?.id || '');
     }
-  }, [activeSessionId, pickActiveSession, sessions]);
+  }, [activeSessionId, pickActiveSession, selectSession, sessions]);
 
   const renameChat = useCallback((id, title) => {
     const next = String(title || 'New chat').slice(0, 80) || 'New chat';
@@ -88,16 +104,16 @@ export function useAiSessionsController({
       const nextActive = pickActiveSession(next, activeSessionId, { allowArchivedPreferred: false });
       if (nextActive && !nextActive.archived) {
         setSessions(next);
-        setActiveSessionId(nextActive.id);
+        selectSession(nextActive.id);
       } else {
         const session = newSession();
         setSessions([session, ...next]);
-        setActiveSessionId(session.id);
+        selectSession(session.id);
       }
       return;
     }
     setSessions(next);
-  }, [activeSessionId, newSession, pickActiveSession, sessions]);
+  }, [activeSessionId, newSession, pickActiveSession, selectSession, sessions]);
 
   const notifyComplete = useCallback((nextNotice) => {
     if (openRef.current) return;
@@ -114,9 +130,10 @@ export function useAiSessionsController({
     activeSession,
     notice,
     setNotice,
-    setActiveSessionId,
+    setActiveSessionId: selectSession,
     open,
     updateActiveSession,
+    updateSessionById,
     createChat,
     deleteChat,
     renameChat,

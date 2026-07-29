@@ -55,6 +55,10 @@ export function useSearchController({ query, activeVaultId, notes, dirtyNotes, h
           console.error('search failed', response.error);
         }
       } catch (error) {
+        if (requestId === sequence.current) {
+          setHits({ vaultId: activeVaultId || '', query: cleanQuery, ids: [] });
+          setDetails(new Map());
+        }
         console.error('search failed', error);
       }
     }, 150);

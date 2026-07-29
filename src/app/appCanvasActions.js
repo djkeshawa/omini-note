@@ -50,7 +50,7 @@
       canvas = (ctx.canvases || []).find(item => item.id === canvasId) || null;
     }
 
-    if (!canvas) return null;
+    if (!canvas || ctx.isOperationCurrent?.() === false) return null;
     ctx.setActiveCanvas(canvas);
     clearCanvasFilters(ctx);
     ctx.navigateView('canvas');
@@ -76,7 +76,7 @@
 
     if (ctx.hasDisk && ctx.activeVaultId) {
       try {
-        const res = await ctx.mn.canvas.saveCanvas(ctx.activeVaultId, initial);
+        const res = await ctx.mn.canvas.saveCanvas(ctx.activeVaultId, initial, { expectedRevision: null });
         if (!res.ok) throw new Error(res.error);
         saved = res.value;
       } catch (e) {
@@ -101,7 +101,9 @@
 
     if (ctx.hasDisk && ctx.activeVaultId) {
       try {
-        const res = await ctx.mn.canvas.saveCanvas(ctx.activeVaultId, canvas);
+        const res = await ctx.mn.canvas.saveCanvas(ctx.activeVaultId, canvas, {
+          expectedRevision: ctx.expectedRevision ?? canvas.diskRevision ?? null,
+        });
         if (!res.ok) throw new Error(res.error);
         saved = res.value;
       } catch (e) {
@@ -111,8 +113,10 @@
       }
     }
 
-    ctx.setActiveCanvas(current => current?.id === saved.id ? saved : current);
-    upsertCanvasSummary(saved, ctx);
+    if (ctx.shouldCommitResult?.() !== false) {
+      ctx.setActiveCanvas(current => current?.id === saved.id ? saved : current);
+      upsertCanvasSummary(saved, ctx);
+    }
     return saved;
   }
 
@@ -121,7 +125,9 @@
 
     if (ctx.hasDisk && ctx.activeVaultId) {
       try {
-        const res = await ctx.mn.canvas.deleteCanvas(ctx.activeVaultId, canvasId);
+        const res = await ctx.mn.canvas.deleteCanvas(ctx.activeVaultId, canvasId, {
+          expectedRevision: ctx.expectedRevision ?? null,
+        });
         if (!res.ok) throw new Error(res.error);
       } catch (e) {
         ctx.logError?.('deleteCanvas failed', canvasId, e);

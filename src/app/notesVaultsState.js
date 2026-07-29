@@ -24,6 +24,24 @@
     return (notes || []).map(note => note.id === noteId ? { ...note, diskModifiedAt } : note);
   }
 
+  function updateNoteDiskState(notes = [], noteId, diskState = {}) {
+    return (notes || []).map(note => note.id === noteId
+      ? {
+          ...note,
+          ...(diskState.diskModifiedAt ? { diskModifiedAt: diskState.diskModifiedAt } : {}),
+          ...(diskState.diskRevision ? { diskRevision: diskState.diskRevision } : {}),
+        }
+      : note);
+  }
+
+  function restoreNoteAtIndex(notes = [], note, index = 0) {
+    if (!note?.id || (notes || []).some(current => current.id === note.id)) return notes || [];
+    const next = [...(notes || [])];
+    const safeIndex = Math.max(0, Math.min(Number.isInteger(index) ? index : 0, next.length));
+    next.splice(safeIndex, 0, note);
+    return next;
+  }
+
   function removeNote(notes = [], noteId) {
     return (notes || []).filter(note => note.id !== noteId);
   }
@@ -38,6 +56,8 @@
     nextSelectedNoteId,
     removeNote,
     removeVault,
+    restoreNoteAtIndex,
+    updateNoteDiskState,
     updateNoteDiskStamp,
     upsertVault,
   };

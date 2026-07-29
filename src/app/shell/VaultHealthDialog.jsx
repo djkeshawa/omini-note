@@ -1,10 +1,12 @@
 import { platformApi } from '../../platform/index.js';
 import { DS_RADIUS, DS_TYPE, dsGroupLabelStyle } from '../../shared/designSystem.js';
+import { useDialogFocus } from '../../shared/useDialogFocus.js';
 
 function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
   const [health, setHealth] = useStateA(null);
   const [error, setError] = useStateA(null);
   const closeRef = useRefA(null);
+  const dialogRef = useDialogFocus({ initialFocusRef: closeRef, onEscape: onClose });
   useEffectA(() => {
     let alive = true;
     setHealth(null);
@@ -17,16 +19,6 @@ function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
     }).catch(e => alive && setError(e.message || String(e)));
     return () => { alive = false; };
   }, [vaultId]);
-  useEffectA(() => {
-    closeRef.current?.focus?.();
-    const closeOnEscape = event => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      onClose();
-    };
-    document.addEventListener('keydown', closeOnEscape, true);
-    return () => document.removeEventListener('keydown', closeOnEscape, true);
-  }, [onClose]);
   const stat = (label, value) => (
     <div style={{ border: `1px solid ${T.lineSub}`, borderRadius: DS_RADIUS.row, padding: 10, background: T.bgSub }}>
       <div style={dsGroupLabelStyle(T)}>{label}</div>
@@ -35,7 +27,7 @@ function MnVaultHealthDialog({ vaultId, onClose, onRebuildIndex, T }) {
   );
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 250, background: 'color-mix(in oklab, oklch(0.2 0.02 240) 32%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="mn-vault-health-title" onClick={e => e.stopPropagation()} style={{ width: 'min(760px, 100%)', maxHeight: '86vh', overflow: 'auto', background: T.bg, color: T.ink, border: `1px solid ${T.line}`, borderRadius: DS_RADIUS.panel, boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 28%, transparent)` }}>
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="mn-vault-health-title" onClick={e => e.stopPropagation()} style={{ width: 'min(760px, 100%)', maxHeight: '86vh', overflow: 'auto', background: T.bg, color: T.ink, border: `1px solid ${T.line}`, borderRadius: DS_RADIUS.panel, boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 28%, transparent)` }}>
         <div style={{ padding: 16, borderBottom: `1px solid ${T.lineSub}`, display: 'flex', alignItems: 'center', gap: 12 }}>
           <div id="mn-vault-health-title" style={{ flex: 1, fontSize: 15, fontWeight: 650 }}>Vault health</div>
           <button onClick={onRebuildIndex} style={mnSmallActionButton(T)}>Rebuild index</button>

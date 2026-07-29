@@ -137,10 +137,14 @@ function ArchivedWorkflowNotes({ archivedNotes, onOpen, archiveNote, T }) {
             borderRadius: 6,
             background: T.bg,
           }}>
-            <div onClick={() => onOpen(note.id)} style={{
+            <button type="button" onClick={() => onOpen(note.id)} style={{
               flex: 1,
               minWidth: 0,
               cursor: 'pointer',
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              textAlign: 'left',
             }}>
               <div style={{
                 fontFamily: 'var(--mn-ui)',
@@ -157,7 +161,7 @@ function ArchivedWorkflowNotes({ archivedNotes, onOpen, archiveNote, T }) {
                 fontSize: 10,
                 color: T.inkDim,
               }}>{note.workflow || 'workflow'} note status</div>
-            </div>
+            </button>
             <button
               type="button"
               onClick={() => archiveNote(note.id, false)}

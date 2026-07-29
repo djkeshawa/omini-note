@@ -358,6 +358,8 @@ test('Code blocks preserve language metadata and expose syntax UI', () => {
   assert.match(outliner, /<select[\s\S]+Code language/);
   assert.match(outliner, /mnRenderCode\(content, block\.language, T\)/);
   assert.match(renderers, /mnMermaidSvgHeight\(svg\)/);
+  assert.match(renderers, /_mnMermaidTheme === theme/);
+  assert.match(renderers, /_mnMermaidTheme = theme/);
   assert.match(renderers, /height: doc \? Math\.max\(160, height\) : 0/);
 });
 

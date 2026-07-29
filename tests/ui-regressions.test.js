@@ -150,6 +150,9 @@ test('Note delete confirmation uses themed in-app dialog', () => {
   assert.match(appShell, /className="mn-delete-note-dialog"/);
   assert.match(appShell, /role="dialog"/);
   assert.match(appShell, /aria-modal="true"/);
+  const dialogFocus = fs.readFileSync(path.join(__dirname, '../src/shared/useDialogFocus.js'), 'utf8');
+  assert.match(dialogFocus, /event\.key !== 'Tab'/);
+  assert.match(dialogFocus, /previousFocus\?\.isConnected/);
   // The consequence line states both where the note goes and how long it can
   // be recovered, which is stronger than the old reassurance-only copy.
   assert.match(appShell, /It moves to Recently deleted and is removed from disk after 30 days\./);

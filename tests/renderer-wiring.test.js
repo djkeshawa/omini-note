@@ -57,7 +57,6 @@ function canvasSource() {
 
 function specialistPanelsSource() {
   const files = [
-    '../src/panels/panels.jsx',
     '../src/features/writer/NovelistPanel.jsx',
     '../src/features/writer/NovelistPanelView.jsx',
     '../src/features/writer/NovelistSections.jsx',
@@ -221,7 +220,7 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(store, /const LEGACY_APP_DIR_NAMES = \['OminiNote', 'MyNote'\]/);
   assert.match(store, /const OVERRIDE_ROOT = process\.env\.VISPNOTE_HOME/);
   assert.match(store, /const ROOT = OVERRIDE_ROOT \|\| \(!fs\.existsSync\(PRIMARY_ROOT\) && LEGACY_ROOT \? LEGACY_ROOT : PRIMARY_ROOT\)/);
-  assert.match(store, /async function repairConfigVaults\(cfg\)/);
+  assert.match(store, /async function repairConfigVaults\(cfg, options = \{\}\)/);
   assert.match(store, /async function vaultDirectoryExists\(slug\)/);
   assert.match(store, /cfg\.vaults = validVaults/);
   assert.match(store, /Create another vault before deleting this one/);
@@ -234,7 +233,7 @@ test('Vaults can be created and deleted from settings with backend cleanup', () 
   assert.match(app, /const refreshVaultRegistry = useCallbackA/);
   // Focus still refreshes the registry, but the full note-body reload is now
   // gated on the vault fingerprint having moved while the window was away.
-  assert.match(app, /refreshVaultRegistry\(\{ reloadActive: !unchanged, reason: 'focus' \}\)/);
+  assert.match(app, /refreshVaultRegistry\(\{[\s\S]*reloadActive: !unchanged,[\s\S]*reason: 'focus',[\s\S]*isCurrent/);
   assert.match(app, /vaultStamp/);
   assert.match(app, /now\.maxMtimeMs === away\.maxMtimeMs/);
   assert.match(app, /onRefreshVaults=\{refreshVaultRegistry\}/);
@@ -326,14 +325,14 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(sessionsController, /setSessions\(\[\]\)/);
   assert.match(app, /No AI chats/);
   assert.doesNotMatch(app, /!next\.some\(session => !session\.archived\)/);
-  const deleteChatMatch = sessionsController.match(/const deleteChat = useCallback\([\s\S]*?\n  \}, \[activeSessionId, pickActiveSession, sessions\]\);/);
+  const deleteChatMatch = sessionsController.match(/const deleteChat = useCallback\([\s\S]*?(?=\n\n  const renameChat)/);
   assert.ok(deleteChatMatch);
   assert.doesNotMatch(deleteChatMatch[0], /newAiSession/);
   assert.match(appShell, /function MnAiNotice/);
   assert.match(appShell, /AI response ready/);
   assert.match(app, /onOpen=\{openAskAi\}/);
   assert.match(app, /session=\{activeAskAiSession\}/);
-  assert.match(app, /setSession=\{setActiveAskAiSession\}/);
+  assert.match(app, /setSession=\{\(updater\) => setActiveAskAiSession\(updater, activeAskAiSession\.id\)\}/);
   assert.match(app, /onBackgroundComplete=\{notifyAskAiComplete\}/);
   assert.match(app, /onCreateNote=\{\(\{ title, body, tags: noteTags \}\) => createNote\(\{ title, body, tags: noteTags \|\| \[\] \}, \{ open: false \}\)\}/);
   assert.match(app, /onTagCurrentNote=\{tagCurrentNoteFromAi\}/);
@@ -414,7 +413,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(main, /smoke\|regression\|ai-regression/);
   assert.match(ai, /bodyFrom === 'previous-answer'/);
   assert.match(ai, /tag-created-note/);
-  assert.match(ai, /if \(stoppedJobRef\.current === jobId\) return/);
+  assert.match(ai, /if \(stoppedJobsRef\.current\.has\(jobId\)\) return/);
   assert.match(aiUi, /function MnAiChatHistory/);
   assert.match(aiUi, /provider !== 'ollama'/);
   assert.match(aiUi, /AI chats/);
@@ -465,7 +464,8 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(app, /const applyAiCurrentPageBody = useCallbackA/);
   assert.match(app, /const restoreAiCurrentPageBody = useCallbackA/);
   assert.match(app, /onApplyCurrentPageBody=\{\(body, options\) =>/);
-  assert.match(app, /return applyAiCurrentPageBody\(selectedNote\.id, body, options\)/);
+  assert.match(app, /const targetNoteId = options\?\.targetNoteId \|\| selectedNote\?\.id/);
+  assert.match(app, /return applyAiCurrentPageBody\(targetNoteId, body, options\)/);
   assert.match(app, /onRestoreCurrentPageBody=\{restoreAiCurrentPageBody\}/);
   assert.match(app, /onOpenCurrentNoteVersions=\{\(noteId\) => setVersionTargetId/);
   assert.match(app, /onApplyNoteBodies=\{updateNoteBodies\}/);
@@ -504,7 +504,7 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(aiReporting, /platformApi\.app\.openExternal\(info\.url\)/);
   assert.match(ai, /Semantic search ready/);
   assert.match(ai, /Ask about the vault or ask for a page action/);
-  assert.match(ai, /backgroundRef\.current = true/);
+  assert.match(ai, /backgroundJobsRef\.current\.add\(aiSession\.jobId\)/);
   assert.match(ai, /Run in background/);
   assert.match(ai, /Stop/);
   assert.match(ai, /const stopRun = async/);
@@ -597,19 +597,20 @@ test('Canvas workspace is wired through storage, navigation, and note embeds', (
   assert.match(app, /from '\.\.\/features\/canvas\/index\.js'/);
   assert.match(store, /function canvasDir\(slug\)/);
   assert.match(store, /async function listCanvases\(vaultId\)/);
-  assert.match(store, /async function saveCanvas\(vaultId, canvas\)/);
-  assert.match(store, /async function deleteCanvas\(vaultId, canvasId\)/);
+  assert.match(store, /async function saveCanvas\(vaultId, canvas, options = \{\}\)/);
+  assert.match(store, /async function deleteCanvas\(vaultId, canvasId, options = \{\}\)/);
   assert.match(main, /ipcMain\.handle\('mn:listCanvases'/);
   assert.match(main, /ipcMain\.handle\('mn:getCanvas'/);
   assert.match(preload, /listCanvases: \(vaultId\) => ipcRenderer\.invoke\('mn:listCanvases', vaultId\)/);
-  assert.match(preload, /saveCanvas: \(vaultId, canvas\) => ipcRenderer\.invoke\('mn:saveCanvas', vaultId, canvas\)/);
+  assert.match(preload, /saveCanvas: \(vaultId, canvas, options\) => ipcRenderer\.invoke\('mn:saveCanvas', vaultId, canvas, options\)/);
   assert.match(sidebar, /label="Thinking Board"/);
   assert.match(sidebar, /canvasActive/);
   assert.match(app, /const \[canvases, setCanvases\]/);
   assert.match(app, /const \[activeCanvas, setActiveCanvas\]/);
   assert.match(app, /desktopBridge\.canvas\.listCanvases\(vaultId\)/);
   assert.match(appRuntime, /const MN_APP_CANVAS_ACTIONS = require\('\.\/appCanvasActions\.js'\)/);
-  assert.match(canvasController, /canvasActions\.openCanvas\(canvasId, actionContext\(\)\)/);
+  assert.match(canvasController, /requestId === openSequenceRef\.current/);
+  assert.match(canvasController, /writeQueueRef\.current\.enqueue\(key, canvas/);
   assert.match(canvasController, /canvasActions\.createCanvas\(title, options, actionContext\(\)\)/);
   assert.match(canvasActions, /async function openCanvas\(canvasId, ctx = \{\}\)/);
   assert.match(canvasActions, /ctx\.mn\.canvas\.getCanvas\(ctx\.activeVaultId, canvasId\)/);
@@ -1015,7 +1016,7 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(utilityPanels, /aria-label="Quick capture text"/);
   assert.match(utilityPanels, /createsNewNote && \(/);
   assert.match(utilityPanels, /placeholder="Optional title"/);
-  assert.match(utilityPanels, /bodyRef\.current\?\.focus\(\)/);
+  assert.match(utilityPanels, /useDialogFocus\(\{ initialFocusRef: bodyRef, onEscape: onClose \}\)/);
   assert.match(utilityPanels, /aria-controls="mn-capture-options"/);
   assert.match(utilityPanels, /No template/);
   assert.match(utilityPanels, /destinationId: activeDestination\?\.id \|\| 'new'/);
@@ -1147,7 +1148,7 @@ test('Smart Views panel renders shared result presentations', () => {
   const main = mainProcessSource();
   const store = storeProcessSource();
 
-  assert.match(panels, /import '\.\/smartViewsPanel\.jsx';/);
+  assert.match(app, /import \{ MnSmartViewsPanel \} from '\.\.\/panels\/smartViewsPanel\.jsx';/);
   assert.match(smartViewsPanel, /function MnSmartViewsPanel/);
   assert.match(smartViewsPanel, /useEffect: useEffectSV/);
   // The panel keeps its own supported set: it cannot draw a board, so a
@@ -1346,6 +1347,8 @@ test('Reference pane and bounded note list stay optional and keyboard accessible
   const entry = fs.readFileSync(projectPaths.src.main, 'utf8');
   assert.match(app, /from '\.\.\/features\/reference\/index\.js'/);
   assert.match(reference, /function ReferencePane/);
+  assert.match(reference, /rightTime - leftTime/);
+  assert.match(reference, /sorted\.slice\(0, 500\)/);
   assert.match(app, /id: 'reference-pane'/);
   assert.match(app, /args\.noteId \|\| args\.noteTitle \? currentOrArgNote\(args\) : null/);
   assert.match(referenceController, /recordUsage\('reference_pane', 'opened'\)/);
@@ -1361,6 +1364,7 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   const main = mainProcessSource();
   const html = fs.readFileSync(path.join(__dirname, '../vispnote.html'), 'utf8');
   const builder = fs.readFileSync(path.join(__dirname, '../electron-builder.yml'), 'utf8');
+  const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const linuxAfterInstall = fs.readFileSync(path.join(__dirname, '../scripts/linux-after-install.sh'), 'utf8');
   const icon = fs.statSync(path.join(__dirname, '../assets/vispnote-icon.png'));
   const linuxIconSizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
@@ -1402,6 +1406,8 @@ test('Electron installs native edit context menu for right-click copy paste cut'
   assert.match(html, /type="image\/png" href="assets\/vispnote-icon\.png"/);
   assert.match(builder, /appId: com\.vispnote\.app/);
   assert.match(builder, /productName: VispNote/);
+  assert.equal(packageJson.desktopName, 'vispnote.desktop');
+  assert.match(builder, /syncDesktopName: true/);
   assert.match(builder, /- assets\/\*\*\/*/);
   assert.match(builder, /!VispNote\/\*\*\/*/);
   assert.match(builder, /!OminiNote\/\*\*\/*/);

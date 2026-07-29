@@ -1,4 +1,5 @@
 import { platformApi } from '../../platform/index.js';
+import { useDialogFocus } from '../../shared/useDialogFocus.js';
 import assistanceModel from './contextualAssistanceModel.js';
 
 const { useCallback, useEffect, useRef, useState } = React;
@@ -231,34 +232,7 @@ function ContextualAssistance({ enabled, note, sourceMarkdown, vaultId, onCreate
 
 function AssistancePreviewDialog({ output, onApply, onClose, T }) {
   const applyRef = useRef(null);
-  const dialogRef = useRef(null);
-  useEffect(() => {
-    applyRef.current?.focus?.();
-    const onKeyDown = event => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const focusable = [...(dialogRef.current?.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') || [])];
-      if (!focusable.length) {
-        event.preventDefault();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [onClose]);
+  const dialogRef = useDialogFocus({ initialFocusRef: applyRef, onEscape: onClose });
 
   return (
     <div onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} style={{
@@ -268,6 +242,7 @@ function AssistancePreviewDialog({ output, onApply, onClose, T }) {
     }}>
       <section
         ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="mn-assistance-preview-title"

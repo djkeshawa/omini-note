@@ -43,7 +43,12 @@
       };
     }
     if (response?.ok === false && response?.error) {
-      return { ok: false, error: contractError(response), code: response.error?.code };
+      return {
+        ok: false,
+        error: contractError(response),
+        code: response.error?.code,
+        ...(response.error?.details || {}),
+      };
     }
     const legacy = response;
     if (legacy?.ok && legacy.value && Array.isArray(legacy.value.linkedNoteUpdates)) {
@@ -53,11 +58,26 @@
     return legacy;
   }
 
-  async function deleteNote(mn, vaultId, noteId, noteSnapshot = null) {
+  async function deleteNote(mn, vaultId, noteId, noteSnapshot = null, options = {}) {
     const api = bridge(mn);
-    const response = await api.notes.deleteNote(vaultId, noteId, noteSnapshot);
+    const deleteOptions = { ...options };
+    if (
+      !Object.prototype.hasOwnProperty.call(deleteOptions, 'expectedRevision') &&
+      noteSnapshot &&
+      Object.prototype.hasOwnProperty.call(noteSnapshot, 'diskRevision')
+    ) {
+      deleteOptions.expectedRevision = noteSnapshot.diskRevision;
+    }
+    const response = await api.notes.deleteNote(vaultId, noteId, noteSnapshot, deleteOptions);
     if (response?.data) return { ok: true, value: response.data.deleted || response.data };
-    if (response?.ok === false && response?.error) return { ok: false, error: contractError(response), code: response.error?.code };
+    if (response?.ok === false && response?.error) {
+      return {
+        ok: false,
+        error: contractError(response),
+        code: response.error?.code,
+        ...(response.error?.details || {}),
+      };
+    }
     return response;
   }
 

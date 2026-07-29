@@ -30,12 +30,15 @@ test('Quick Capture is body-first and keeps advanced fields disclosed on demand'
   const capture = source('src/features/capture/components/QuickCapture.jsx');
   const noteActions = source('src/app/controllers/useAppNoteActions.js');
 
-  assert.match(capture, /bodyRef\.current\?\.focus\(\)/);
+  assert.match(capture, /useDialogFocus\(\{ initialFocusRef: bodyRef, onEscape: onClose \}\)/);
   assert.match(capture, /createsNewNote && \(/);
   assert.match(capture, /aria-label="New note title"/);
   assert.match(capture, /aria-label="Quick capture text"/);
   assert.match(capture, /aria-controls="mn-capture-options"/);
   assert.match(capture, /const \[destinationId, setDestinationId\] = useStateP\('today'\)/);
+  assert.match(capture, /Creates a new note/);
+  assert.match(capture, /`Adds to \$\{destinationLabel\}`/);
+  assert.doesNotMatch(capture, /Lands in the inbox tag/);
   assert.match(noteActions, /destinationId = 'today'/);
   assert.match(noteActions, /quickCaptureRawMarkdown\(\{ title: requestedTitle, body \}\)/);
 });

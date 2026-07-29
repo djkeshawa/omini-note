@@ -198,10 +198,11 @@ server so your notes and your agents share one memory:
 llm-memory server (for example the Docker container): create → recall →
 import-as-note → remember → cleanup, all inside an isolated
 `vispnote_regression` repo id. If no server is reachable the run is skipped,
-so `npm run test:all` works with or without the container; set
-`VISPNOTE_MEMORY_REQUIRED=1` to make an unreachable server a failure and
-`VISPNOTE_MEMORY_URL` / `VISPNOTE_MEMORY_API_KEY` to point at a non-default
-server.
+so it remains an optional local integration check. `npm run test:all` runs the
+self-contained release gates; `npm run test:all:with-memory` adds the optional
+live regression. Set `VISPNOTE_MEMORY_REQUIRED=1` to make an unreachable server
+a failure and use `VISPNOTE_MEMORY_URL` / `VISPNOTE_MEMORY_API_KEY` for a
+loopback service with non-default settings.
 
 ## AI Setup
 
@@ -237,9 +238,28 @@ If Ollama is not available, the core note app still works.
 Before publishing a release:
 
 - Run `npm run test:all`
+- Run `VISPNOTE_MEMORY_REQUIRED=1 npm run regression:memory` against a
+  provisioned local llm-memory service
+- Run `npm run benchmark:10k`
 - Build each desktop installer on its matching OS; the app ships native SQLite modules
+- Pass the target architecture on the command line (`--x64` or `--arm64`);
+  the builder configuration intentionally has no fallback architecture list
+- Run `npm run verify:package-renderer -- --platform <platform> --arch <arch>`
+  and stage/verify final installers under `dist/release-output` before uploading
+- Tag the release with the exact package version, for example package `0.2.2`
+  must use tag `v0.2.2`
 - Confirm `.gitignore` is not allowing local vault data or database files
 - Review `git status --ignored` if local tool or generated files are present
+
+The release workflow uploads a fixed, per-matrix inventory into separate
+artifact directories and refuses missing, extra, empty, duplicate, corrupt, or
+wrong-CPU packages. macOS publishing additionally requires `MAC_CSC_LINK`,
+`MAC_CSC_KEY_PASSWORD`, `APPLE_API_KEY_BASE64`, `APPLE_API_KEY_ID`, and
+`APPLE_API_ISSUER`; signing, Gatekeeper assessment, and notarization ticket
+validation all fail closed. Set the `VISPNOTE_MEMORY_IMAGE` repository variable
+to a pinned llm-memory service image before publishing; an optional
+`VISPNOTE_MEMORY_API_KEY` secret is passed to secured images. macOS updates
+remain manual, so macOS updater metadata is intentionally not published.
 
 ## License
 

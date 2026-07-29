@@ -1,6 +1,7 @@
 import { H, SettingsCard, Row, Segmented, Toggle, Select, FontSizeStepper } from '../settingsControls.jsx';
 import { mnSettingsInput, BtnOutline, StaticValue } from '../settingsPrimitives.jsx';
 import { SectionUsagePrivacy } from './UsagePrivacySection.jsx';
+import { useDialogFocus } from '../../shared/useDialogFocus.js';
 const { useState: useStateS, useEffect: useEffectS, useRef: useRefS } = React;
 
 function SectionData({
@@ -23,6 +24,16 @@ function SectionData({
   const currentVault = activeVault || vaults.find(v => v.id === activeVaultId) || null;
   const canDeleteVault = !!currentVault && vaults.length > 1;
   const deleteReady = canDeleteVault && confirmText.trim() === currentVault.name;
+  const closeDeleteDialog = () => {
+    if (busy) return;
+    setConfirmingDelete(false);
+    setConfirmText('');
+    setError('');
+  };
+  const deleteDialogRef = useDialogFocus({
+    active: confirmingDelete && !!currentVault,
+    onEscape: closeDeleteDialog,
+  });
   const loadDeletedNotes = async () => {
     if (!onListDeletedNotes) return;
     const seq = ++deletedLoadSeq.current;
@@ -40,18 +51,6 @@ function SectionData({
   useEffectS(() => {
     loadDeletedNotes();
   }, [activeVaultId]);
-  useEffectS(() => {
-    if (!confirmingDelete) return;
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        setConfirmingDelete(false);
-        setConfirmText('');
-        setError('');
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [confirmingDelete]);
   const submitCreateVault = async () => {
     const name = newVaultName.trim();
     if (!name || !onCreateVault) return;
@@ -256,12 +255,7 @@ function SectionData({
       }}>{error}</div>}
       {confirmingDelete && currentVault && (
         <div
-          onClick={() => {
-            if (busy) return;
-            setConfirmingDelete(false);
-            setConfirmText('');
-            setError('');
-          }}
+          onClick={closeDeleteDialog}
           style={{
             position: 'fixed',
             inset: 0,
@@ -275,6 +269,8 @@ function SectionData({
             animation: 'mnFadeIn 120ms ease',
           }}>
           <div
+            ref={deleteDialogRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-labelledby="mn-delete-vault-title"

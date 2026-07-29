@@ -120,7 +120,7 @@ function WorkflowTable({
           <div style={{ minWidth: 0, paddingTop: 3, overflow: 'hidden' }}>
             <StatePill state={state} T={T} />
           </div>
-          <span onClick={() => onOpen(item.noteId)} style={{
+          <button type="button" onClick={() => onOpen(item.noteId)} style={{
             color: T.ink, cursor: 'pointer',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -128,8 +128,9 @@ function WorkflowTable({
             lineHeight: 1.35,
             paddingTop: 3,
             minWidth: 0,
-          }}>{item.text || 'No preview'}</span>
-          <span onClick={() => onOpen(item.noteId)} style={{
+            border: 'none', background: 'transparent', textAlign: 'left', font: 'inherit', paddingLeft: 0, paddingRight: 0,
+          }}>{item.text || 'No preview'}</button>
+          <button type="button" onClick={() => onOpen(item.noteId)} style={{
             color: T.inkMed,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -137,7 +138,8 @@ function WorkflowTable({
             cursor: 'pointer',
             paddingTop: 3,
             minWidth: 0,
-          }}>{item.noteTitle}</span>
+            border: 'none', background: 'transparent', textAlign: 'left', font: 'inherit', paddingLeft: 0, paddingRight: 0,
+          }}>{item.noteTitle}</button>
           <TagEditorCell item={item} tags={tags} onSetNoteTags={onSetNoteTags} tagHue={tagHue} theme={theme} T={T} />
           {/* Discovered property cells. Read-only for now: writing a
               cell is a markdown edit and wants its own single writer. */}

@@ -1,9 +1,10 @@
 function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVaultId, bootState, canvases, desktopBridge, dirtyNotes, loadVaultBundle, mnNormalizeCustomThemesForApp, navigateView, notes, recordPhase5Metric, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setCustomThemes, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setTags, setTweaks, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, useEffectA, useRefA, vaultActivationSeq }) {
-  const refreshVaultRegistry = useCallbackA(async ({ reloadActive = false, reason = '' } = {}) => {
+  const refreshVaultRegistry = useCallbackA(async ({ reloadActive = false, reason = '', isCurrent = null } = {}) => {
       if (!HAS_DISK) return { ok: true };
       try {
         const res = await MN_NOTES_VAULTS_SERVICE.listVaults(desktopBridge);
         if (!res.ok) throw new Error(res.error);
+        if (isCurrent?.() === false) return { ok: false, stale: true };
         const metas = res.value || res.data?.vaults || [];
         if (!metas.length) throw new Error('No vaults found');
         const validIds = new Set(metas.map(v => v.id));
@@ -16,7 +17,9 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
         if (activeChanged || (reloadActive && nextActiveId && !activeHasUnsavedChanges)) {
           const activationSeq = ++vaultActivationSeq.current;
           activeBundle = await loadVaultBundle(nextActiveId);
-          if (activationSeq !== vaultActivationSeq.current) return { ok: false, stale: true };
+          if (activationSeq !== vaultActivationSeq.current || isCurrent?.() === false) {
+            return { ok: false, stale: true };
+          }
         }
   
         updateDirtyNotes(cur => {
@@ -105,10 +108,15 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
     // returning compares against it. Nothing moved, nothing reloads. Our own
     // saves happen while focused, so they never trip the comparison.
     const awayStampRef = useRefA(null);
-    const stampCheckBusyRef = useRefA(false);
+    const stampCheckBusyRef = useRefA(null);
+    const stampEffectGenerationRef = useRefA(0);
+    const stampRequestSequenceRef = useRefA(0);
 
     useEffectA(() => {
       if (!HAS_DISK || bootState !== 'ready') return;
+      const effectGeneration = ++stampEffectGenerationRef.current;
+      awayStampRef.current = null;
+      let disposed = false;
       const takeStamp = async () => {
         try {
           const response = await desktopBridge.notes.vaultStamp?.(activeVaultId);
@@ -117,31 +125,51 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
       };
       const captureAway = () => {
         if (!activeVaultId) return;
-        takeStamp().then(stamp => { awayStampRef.current = stamp; });
+        takeStamp().then(stamp => {
+          if (!disposed) awayStampRef.current = stamp;
+        });
       };
       const refreshVisible = async () => {
         if (document.visibilityState && document.visibilityState !== 'visible') return;
         if (stampCheckBusyRef.current) return;
-        stampCheckBusyRef.current = true;
+        const request = {
+          effectGeneration,
+          id: ++stampRequestSequenceRef.current,
+        };
+        stampCheckBusyRef.current = request;
         try {
           const away = awayStampRef.current;
           awayStampRef.current = null;
           const now = away ? await takeStamp() : null;
+          const isCurrent = () => (
+            !disposed &&
+            stampCheckBusyRef.current === request
+          );
+          if (!isCurrent()) return;
           const unchanged = away && now
             && now.count === away.count
             && now.maxMtimeMs === away.maxMtimeMs;
           // The vault list itself (names, counts) stays cheap to refresh; the
           // full reload of note bodies only happens when the stamp moved or
           // when there is no stamp to compare against.
-          refreshVaultRegistry({ reloadActive: !unchanged, reason: 'focus' });
+          await refreshVaultRegistry({
+            reloadActive: !unchanged,
+            reason: 'focus',
+            isCurrent,
+          });
         } finally {
-          stampCheckBusyRef.current = false;
+          if (stampCheckBusyRef.current === request) stampCheckBusyRef.current = null;
         }
       };
       window.addEventListener('focus', refreshVisible);
       window.addEventListener('blur', captureAway);
       document.addEventListener('visibilitychange', refreshVisible);
       return () => {
+        disposed = true;
+        if (stampCheckBusyRef.current?.effectGeneration === effectGeneration) {
+          stampCheckBusyRef.current = null;
+        }
+        awayStampRef.current = null;
         window.removeEventListener('focus', refreshVisible);
         window.removeEventListener('blur', captureAway);
         document.removeEventListener('visibilitychange', refreshVisible);

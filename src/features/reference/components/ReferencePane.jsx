@@ -11,8 +11,13 @@ function ReferencePane({ note, notes = [], onSelect, onOpenAsMain, onOpenLink, o
   }, [note]);
   const wordCount = body.trim() ? body.trim().split(/\s+/).length : 0;
   const referenceOptions = useMemo(() => {
-    if ((notes || []).length <= 500) return notes || [];
-    const limited = (notes || []).slice(-500).reverse();
+    const sorted = [...(notes || [])].sort((left, right) => {
+      const leftTime = Date.parse(left?.diskModifiedAt || left?.modifiedAt || left?.date || '') || 0;
+      const rightTime = Date.parse(right?.diskModifiedAt || right?.modifiedAt || right?.date || '') || 0;
+      return rightTime - leftTime || String(left?.title || '').localeCompare(String(right?.title || ''));
+    });
+    if (sorted.length <= 500) return sorted;
+    const limited = sorted.slice(0, 500);
     if (note && !limited.some(item => item.id === note.id)) limited.unshift(note);
     return limited.slice(0, 500);
   }, [note, notes]);

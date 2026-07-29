@@ -375,14 +375,15 @@ function AppView({ model }) {
                 onCreateNote={({ title, body, tags: noteTags }) => createNote({ title, body, tags: noteTags || [] }, { open: false })}
                 onTagCurrentNote={tagCurrentNoteFromAi}
                 onApplyCurrentPageBody={(body, options) => {
-                  if (!selectedNote) return { ok: false, error: 'No selected note.' };
-                  return applyAiCurrentPageBody(selectedNote.id, body, options);
+                  const targetNoteId = options?.targetNoteId || selectedNote?.id;
+                  if (!targetNoteId) return { ok: false, error: 'No target note.' };
+                  return applyAiCurrentPageBody(targetNoteId, body, options);
                 }}
                 onRestoreCurrentPageBody={restoreAiCurrentPageBody}
                 onOpenCurrentNoteVersions={(noteId) => setVersionTargetId(noteId || selectedNote?.id || null)}
                 onApplyNoteBodies={updateNoteBodies}
                 session={activeAskAiSession}
-                setSession={setActiveAskAiSession}
+                setSession={(updater) => setActiveAskAiSession(updater, activeAskAiSession.id)}
                 onBackgroundComplete={notifyAskAiComplete}
                 embedded
                 T={T} />

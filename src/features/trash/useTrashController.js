@@ -22,6 +22,8 @@ export function useTrashController({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const loadSequence = useRef(0);
+  const activeVaultIdRef = useRef(activeVaultId);
+  activeVaultIdRef.current = activeVaultId;
 
   const list = useCallback(async () => {
     if (!hasDisk || !activeVaultId) return [];
@@ -36,56 +38,64 @@ export function useTrashController({
   }, [activeVaultId, hasDisk, platform]);
 
   const refresh = useCallback(async () => {
+    const requestVaultId = activeVaultId;
     const requestId = ++loadSequence.current;
     setLoading(true);
     setError('');
     try {
       const next = await list();
-      if (requestId === loadSequence.current) setItems(next);
+      if (requestId === loadSequence.current && requestVaultId === activeVaultIdRef.current) setItems(next);
       return next;
     } catch (loadError) {
-      if (requestId === loadSequence.current) setError(loadError.message || String(loadError));
+      if (requestId === loadSequence.current && requestVaultId === activeVaultIdRef.current) setError(loadError.message || String(loadError));
       return [];
     } finally {
-      if (requestId === loadSequence.current) setLoading(false);
+      if (requestId === loadSequence.current && requestVaultId === activeVaultIdRef.current) setLoading(false);
     }
-  }, [list]);
+  }, [activeVaultId, list]);
 
   const restore = useCallback(async (itemOrTrashId) => {
     const trashId = typeof itemOrTrashId === 'string' ? itemOrTrashId : itemOrTrashId?.trashId;
     const sourceType = typeof itemOrTrashId === 'object' ? itemOrTrashId?.sourceType : 'note';
     if (!hasDisk || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
+    const requestVaultId = activeVaultId;
     try {
       if (sourceType === 'canvas') {
-        const response = await platform.canvas.restoreDeletedCanvas(activeVaultId, trashId);
+        const response = await platform.canvas.restoreDeletedCanvas(requestVaultId, trashId);
         if (!response.ok) throw new Error(response.error || 'Could not restore canvas');
         const restored = summarizeCanvas(response.value);
-        setCanvases(current => upsertCanvasList(current, restored));
-        setVaults(current => current.map(vault => vault.id === activeVaultId
+        setVaults(current => current.map(vault => vault.id === requestVaultId
           ? { ...vault, canvases: upsertCanvasList(vault.canvases || [], restored) }
           : vault));
-        setActiveCanvas(response.value);
-        navigateView('canvas');
-        setItems(current => current.filter(item => item.trashId !== trashId));
+        if (requestVaultId === activeVaultIdRef.current) {
+          setCanvases(current => upsertCanvasList(current, restored));
+          setActiveCanvas(response.value);
+          navigateView('canvas');
+          setItems(current => current.filter(item => item.trashId !== trashId));
+        }
         return { ok: true, canvas: response.value };
       }
-      const response = await platform.notes.restoreDeletedNote(activeVaultId, trashId);
+      const response = await platform.notes.restoreDeletedNote(requestVaultId, trashId);
       if (!response.ok) throw new Error(response.error || 'Could not restore note');
       const restored = normalizeNote(response.value);
       if (!restored) throw new Error('Restored note could not be loaded');
-      setNotes(current => [restored, ...current.filter(note => note.id !== restored.id)]);
-      setVaults(current => current.map(vault => vault.id === activeVaultId && Array.isArray(vault.notes)
+      setVaults(current => current.map(vault => vault.id === requestVaultId && Array.isArray(vault.notes)
         ? { ...vault, notes: [restored, ...vault.notes.filter(note => note.id !== restored.id)] }
         : vault));
-      setSelectedId(restored.id);
-      setSelectedTag(null);
-      setSelectedWorkflow(null);
-      navigateView('notes');
-      setItems(current => current.filter(item => item.trashId !== trashId));
+      if (requestVaultId === activeVaultIdRef.current) {
+        setNotes(current => [restored, ...current.filter(note => note.id !== restored.id)]);
+        setSelectedId(restored.id);
+        setSelectedTag(null);
+        setSelectedWorkflow(null);
+        navigateView('notes');
+        setItems(current => current.filter(item => item.trashId !== trashId));
+      }
       return { ok: true, note: restored };
     } catch (restoreError) {
       console.error('restoreDeletedNote failed', restoreError);
-      showNotice('Could not restore note', restoreError.message || String(restoreError));
+      if (requestVaultId === activeVaultIdRef.current) {
+        showNotice('Could not restore note', restoreError.message || String(restoreError));
+      }
       return { ok: false, error: restoreError.message || String(restoreError) };
     }
   }, [activeVaultId, hasDisk, navigateView, normalizeNote, platform, setActiveCanvas, setCanvases, setNotes, setSelectedId, setSelectedTag, setSelectedWorkflow, setVaults, showNotice, summarizeCanvas, upsertCanvasList]);
@@ -94,16 +104,21 @@ export function useTrashController({
     const trashId = typeof itemOrTrashId === 'string' ? itemOrTrashId : itemOrTrashId?.trashId;
     const sourceType = typeof itemOrTrashId === 'object' ? itemOrTrashId?.sourceType : 'note';
     if (!hasDisk || !activeVaultId || !trashId) return { ok: false, error: 'No active vault.' };
+    const requestVaultId = activeVaultId;
     try {
       const response = sourceType === 'canvas' && platform.canvas.purgeDeletedCanvas
-        ? await platform.canvas.purgeDeletedCanvas(activeVaultId, trashId)
-        : await platform.notes.purgeDeletedNote(activeVaultId, trashId);
+        ? await platform.canvas.purgeDeletedCanvas(requestVaultId, trashId)
+        : await platform.notes.purgeDeletedNote(requestVaultId, trashId);
       if (!response.ok) throw new Error(response.error || `Could not permanently delete ${sourceType === 'canvas' ? 'canvas' : 'note'}`);
-      setItems(current => current.filter(item => item.trashId !== trashId));
+      if (requestVaultId === activeVaultIdRef.current) {
+        setItems(current => current.filter(item => item.trashId !== trashId));
+      }
       return { ok: true };
     } catch (purgeError) {
       console.error('purgeDeletedNote failed', purgeError);
-      showNotice('Could not permanently delete note', purgeError.message || String(purgeError));
+      if (requestVaultId === activeVaultIdRef.current) {
+        showNotice('Could not permanently delete note', purgeError.message || String(purgeError));
+      }
       return { ok: false, error: purgeError.message || String(purgeError) };
     }
   }, [activeVaultId, hasDisk, platform, showNotice]);
@@ -114,9 +129,11 @@ export function useTrashController({
   }, []);
 
   useEffect(() => {
+    loadSequence.current++;
+    setItems([]);
+    setLoading(false);
+    setError('');
     if (!activeVaultId) {
-      setItems([]);
-      setError('');
       return;
     }
     if (view === 'trash') refresh();

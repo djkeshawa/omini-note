@@ -1,6 +1,7 @@
 import MN_PALETTE_MODEL from '../paletteModel.js';
 import { getAppActionRegistry } from '../actions/actionRegistryRuntime.js';
 import { DS_HEIGHT, DS_RADIUS, dsGroupLabelStyle, dsMachineStyle } from '../../shared/designSystem.js';
+import { useDialogFocus } from '../../shared/useDialogFocus.js';
 
 const { useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useState: useStateA } = React;
 
@@ -85,6 +86,7 @@ function MnCommandPalette({
   const [active, setActive] = useStateA(0);
   const inputRef = useRefA(null);
   const mountedRef = useRefA(false);
+  const dialogRef = useDialogFocus({ active: open, initialFocusRef: inputRef, onEscape: onClose });
 
   useEffectA(() => {
     if (!open) return;
@@ -155,6 +157,8 @@ function MnCommandPalette({
       padding: '9vh 18px 18px',
     }}>
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"

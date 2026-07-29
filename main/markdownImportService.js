@@ -350,7 +350,7 @@ function createMarkdownImportService(deps) {
           workflowArchived: item.meta.workflowArchived === true,
           frontMatter: item.frontMatter,
           body,
-        });
+        }, { expectedRevision: null });
         createdNoteIds.push(item.id);
         savedNotes.push(saved);
       }

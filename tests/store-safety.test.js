@@ -1,7 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
+const { Readable } = require('node:stream');
 const { appSource, backendAiSource, outlinerSource } = require('./helpers/source.js');
 const vm = require('node:vm');
 const { loadRendererModule } = require('./helpers/rendererModule.js');
@@ -262,7 +264,7 @@ test('New novelist vaults stay isolated and persist novelist AI config', async (
   });
 });
 
-test('Global config is private and cached between writes', async () => {
+test('Global config is private and returns isolated cached snapshots', async () => {
   await withIsolatedStore(async (store) => {
     await store.setPrefs({ tweaks: { density: 'compact' } });
     const configPath = store.__test.CONFIG_FILE;
@@ -271,12 +273,38 @@ test('Global config is private and cached between writes', async () => {
 
     const first = await store.loadConfig();
     const second = await store.loadConfig();
-    assert.equal(first, second);
+    assert.notEqual(first, second);
+    assert.deepEqual(first, second);
+    first.tweaks.density = 'caller-mutation';
+    assert.equal((await store.loadConfig()).tweaks.density, 'compact');
 
     await store.setPrefs({ tweaks: { density: 'comfortable' } });
     const third = await store.loadConfig();
     assert.equal(third.tweaks.density, 'comfortable');
     if (process.platform !== 'win32') assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+  });
+});
+
+test('Config and vault metadata mutations preserve concurrent updates', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    await Promise.all([
+      ...Array.from({ length: 20 }, () => store.recordFeatureUsage('canvas', 'opened')),
+      store.setPrefs({ tweaks: { density: 'compact' } }),
+      store.recordBackupExport('2026-07-29T10:00:00.000Z'),
+    ]);
+    const prefs = await store.getPrefs();
+    assert.equal(prefs.tweaks.density, 'compact');
+    assert.equal(prefs.lastBackupAt, '2026-07-29T10:00:00.000Z');
+    assert.equal((await store.featureUsageStatus()).report.counters.canvas.opened, 20);
+
+    await Promise.all([
+      store.saveVaultMeta(vault.id, { tags: ['serialized-tag'] }),
+      store.saveVaultMeta(vault.id, { novelistMode: true }),
+    ]);
+    const loaded = await store.loadVault(vault.id);
+    assert.equal(loaded.tags.some(tag => tag.name === 'serialized-tag'), true);
+    assert.equal(loaded.novelistMode, true);
   });
 });
 
@@ -484,23 +512,21 @@ test('Feature packs and private usage controls persist without arbitrary event d
   });
 });
 
-test('Note saves create restorable versions and reject stale disk writes', async () => {
+test('Note saves create restorable versions and reject stale disk revisions', async () => {
   await withIsolatedStore(async (store) => {
     const [vault] = await store.listVaults();
     const loaded = await store.loadVault(vault.id);
     const note = loaded.notes[0];
 
-    await new Promise(resolve => setTimeout(resolve, 12));
     const first = await store.saveNote(vault.id, {
       ...note,
       body: 'first saved body',
-    }, { expectedModifiedAt: note.diskModifiedAt });
+    }, { expectedRevision: note.diskRevision });
 
-    await new Promise(resolve => setTimeout(resolve, 12));
     await store.saveNote(vault.id, {
       ...first,
       body: 'second saved body',
-    }, { expectedModifiedAt: first.diskModifiedAt });
+    }, { expectedRevision: first.diskRevision });
 
     const versions = await store.listNoteVersions(vault.id, note.id);
     // Two saves 12ms apart snapshot once, not twice: autosave fires every
@@ -516,13 +542,129 @@ test('Note saves create restorable versions and reject stale disk writes', async
       () => store.saveNote(vault.id, {
         ...first,
         body: 'stale overwrite',
-      }, { expectedModifiedAt: first.diskModifiedAt }),
+      }, { expectedRevision: first.diskRevision }),
       err => err.code === 'NOTE_CONFLICT'
     );
 
     const restored = await store.restoreNoteVersion(vault.id, note.id, versions[0].versionId);
     assert.equal(restored.id, note.id);
     assert.match(restored.body, /first saved body|Welcome/i);
+  });
+});
+
+test('Note revisions use exact bytes and serialize save/delete races', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    const note = (await store.loadVault(vault.id)).notes[0];
+    const notePath = path.join(store.ROOT, vault.slug, `${note.id}.md`);
+    const originalStat = fs.statSync(notePath);
+    const externallyEdited = `${fs.readFileSync(notePath, 'utf8')}\nexternal edit`;
+    fs.writeFileSync(notePath, externallyEdited, 'utf8');
+    fs.utimesSync(notePath, originalStat.atime, originalStat.mtime);
+
+    await assert.rejects(
+      () => store.saveNote(vault.id, { ...note, body: 'must not overwrite' }, {
+        expectedRevision: note.diskRevision,
+      }),
+      error => error.code === 'NOTE_CONFLICT'
+        && error.currentRevision === store.__test.calculateDiskRevision(externallyEdited)
+    );
+
+    const current = await store.getNote(vault.id, note.id);
+    const competing = await Promise.allSettled([
+      store.saveNote(vault.id, { ...current, body: 'winner A' }, { expectedRevision: current.diskRevision }),
+      store.saveNote(vault.id, { ...current, body: 'winner B' }, { expectedRevision: current.diskRevision }),
+    ]);
+    assert.equal(competing.filter(result => result.status === 'fulfilled').length, 1);
+    assert.equal(competing.filter(result => result.reason?.code === 'NOTE_CONFLICT').length, 1);
+
+    const beforeRace = await store.getNote(vault.id, note.id);
+    const [saveResult, deleteResult] = await Promise.allSettled([
+      store.saveNote(vault.id, { ...beforeRace, body: 'saved before delete' }, {
+        expectedRevision: beforeRace.diskRevision,
+      }),
+      store.deleteNote(vault.id, note.id, beforeRace, {
+        expectedRevision: beforeRace.diskRevision,
+      }),
+    ]);
+    assert.equal(saveResult.status, 'fulfilled');
+    assert.equal(deleteResult.status, 'rejected');
+    assert.equal(deleteResult.reason.code, 'NOTE_CONFLICT');
+    assert.equal((await store.getNote(vault.id, note.id)).body, 'saved before delete');
+
+    const beforeDelete = await store.getNote(vault.id, note.id);
+    const exactText = fs.readFileSync(notePath, 'utf8');
+    const deleted = await store.deleteNote(vault.id, note.id, beforeDelete, {
+      expectedRevision: beforeDelete.diskRevision,
+    });
+    const trashPath = path.join(store.ROOT, vault.slug, '.trash', 'notes', `${deleted.trashId}.md`);
+    assert.equal(fs.readFileSync(trashPath, 'utf8'), exactText);
+    const restored = await store.restoreDeletedNote(vault.id, deleted.trashId);
+    assert.equal(restored.diskRevision, store.__test.calculateDiskRevision(exactText));
+
+    const deletedAgain = await store.deleteNote(vault.id, restored.id, restored, {
+      expectedRevision: restored.diskRevision,
+    });
+    await store.saveNote(vault.id, {
+      id: restored.id,
+      title: 'Replacement note',
+      body: 'replacement body',
+      tags: [],
+    }, { expectedRevision: null });
+    const collisionRestore = await store.restoreDeletedNote(vault.id, deletedAgain.trashId);
+    assert.notEqual(collisionRestore.id, restored.id);
+    assert.equal((await store.getNote(vault.id, restored.id)).body, 'replacement body');
+    assert.equal(collisionRestore.body, restored.body);
+
+    const reserved = await store.saveNote(vault.id, {
+      id: 'n_reserved_fields',
+      title: 'Reserved-looking fields',
+      body: 'keep exact metadata',
+      tags: [],
+      frontMatter: [
+        'id: n_reserved_fields',
+        'title: Reserved-looking fields',
+        'originalId: n_not_the_file_id',
+        'trashId: user_authored_value',
+        'deletedAt: 2025-01-01T00:00:00.000Z',
+      ].join('\n'),
+    }, { expectedRevision: null });
+    const reservedPath = path.join(store.ROOT, vault.slug, `${reserved.id}.md`);
+    const reservedText = fs.readFileSync(reservedPath, 'utf8');
+    const reservedDeleted = await store.deleteNote(vault.id, reserved.id, reserved, {
+      expectedRevision: reserved.diskRevision,
+    });
+    const reservedRestored = await store.restoreDeletedNote(vault.id, reservedDeleted.trashId);
+    assert.equal(reservedRestored.id, reserved.id);
+    assert.equal(fs.readFileSync(reservedPath, 'utf8'), reservedText);
+  });
+});
+
+test('Create-only note writes and never-saved snapshot deletion are explicit', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    const note = { id: 'n_create_only', title: 'Create only', body: 'first', tags: [] };
+    const saved = await store.saveNote(vault.id, note, { expectedRevision: null });
+    assert.match(saved.diskRevision, /^[a-f0-9]{64}$/);
+    await assert.rejects(
+      () => store.saveNote(vault.id, { ...note, body: 'overwrite' }, { expectedRevision: null }),
+      error => error.code === 'NOTE_CONFLICT' && error.expectedRevision === null
+    );
+
+    const snapshot = { id: 'n_never_saved', title: 'Unsaved', body: 'recover me', tags: [] };
+    const deleted = await store.deleteNote(vault.id, snapshot.id, snapshot, { expectedRevision: null });
+    const restored = await store.restoreDeletedNote(vault.id, deleted.trashId);
+    assert.equal(restored.body, 'recover me');
+
+    await assert.rejects(
+      () => store.deleteNote(vault.id, 'n_oversized_snapshot', {
+        id: 'n_oversized_snapshot',
+        title: 'Oversized',
+        body: 'x'.repeat(store.__test.MAX_NOTE_BODY_BYTES + store.__test.MAX_JSON_WRITE_BYTES + 1),
+        tags: [],
+      }, { expectedRevision: null }),
+      /Deleted note is too large/
+    );
   });
 });
 
@@ -568,6 +710,70 @@ test('Canvas deletes are soft-deleted into the vault trash folder', async () => 
     const restored = await store.restoreDeletedCanvas(vault.id, deleted.trashId);
     assert.equal(restored.id, 'c_safety');
     assert.equal((await store.listCanvases(vault.id)).some(canvas => canvas.id === 'c_safety'), true);
+  });
+});
+
+test('Canvas saves and deletes use exact revisions under one entity lock', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    const created = await store.saveCanvas(vault.id, {
+      id: 'c_revision',
+      title: 'Revision canvas',
+      elements: [],
+    }, { expectedRevision: null });
+    assert.match(created.diskRevision, /^[a-f0-9]{64}$/);
+
+    const competing = await Promise.allSettled([
+      store.saveCanvas(vault.id, { ...created, title: 'Winner A' }, { expectedRevision: created.diskRevision }),
+      store.saveCanvas(vault.id, { ...created, title: 'Winner B' }, { expectedRevision: created.diskRevision }),
+    ]);
+    assert.equal(competing.filter(result => result.status === 'fulfilled').length, 1);
+    assert.equal(competing.filter(result => result.reason?.code === 'NOTE_CONFLICT').length, 1);
+
+    const current = await store.getCanvas(vault.id, created.id);
+    const canvasPath = path.join(store.ROOT, vault.slug, '.canvases', `${created.id}.json`);
+    const exactText = fs.readFileSync(canvasPath, 'utf8');
+    const deleted = await store.deleteCanvas(vault.id, created.id, {
+      expectedRevision: current.diskRevision,
+    });
+    const trashPath = path.join(store.ROOT, vault.slug, '.trash', 'canvases', `${deleted.trashId}.json`);
+    assert.equal(fs.readFileSync(trashPath, 'utf8'), exactText);
+    const restored = await store.restoreDeletedCanvas(vault.id, deleted.trashId);
+    assert.equal(restored.diskRevision, store.__test.calculateDiskRevision(exactText));
+
+    const deletedAgain = await store.deleteCanvas(vault.id, restored.id, {
+      expectedRevision: restored.diskRevision,
+    });
+    await store.saveCanvas(vault.id, {
+      id: restored.id,
+      title: 'Replacement canvas',
+      elements: [],
+    }, { expectedRevision: null });
+    const collisionRestore = await store.restoreDeletedCanvas(vault.id, deletedAgain.trashId);
+    assert.notEqual(collisionRestore.id, restored.id);
+    assert.equal((await store.getCanvas(vault.id, restored.id)).title, 'Replacement canvas');
+    assert.equal(collisionRestore.title, restored.title);
+
+    const reservedCanvas = await store.saveCanvas(vault.id, {
+      id: 'c_reserved_fields',
+      title: 'Reserved-looking fields',
+      elements: [],
+    }, { expectedRevision: null });
+    const reservedPath = path.join(store.ROOT, vault.slug, '.canvases', `${reservedCanvas.id}.json`);
+    const reservedRaw = JSON.stringify({
+      ...JSON.parse(fs.readFileSync(reservedPath, 'utf8')),
+      originalId: 'c_not_the_file_id',
+      trashId: 'user_authored_value',
+      deletedAt: '2025-01-01T00:00:00.000Z',
+    }, null, 2);
+    fs.writeFileSync(reservedPath, reservedRaw, 'utf8');
+    const reservedCurrent = await store.getCanvas(vault.id, reservedCanvas.id);
+    const reservedDeleted = await store.deleteCanvas(vault.id, reservedCanvas.id, {
+      expectedRevision: reservedCurrent.diskRevision,
+    });
+    const reservedRestored = await store.restoreDeletedCanvas(vault.id, reservedDeleted.trashId);
+    assert.equal(reservedRestored.id, reservedCanvas.id);
+    assert.equal(fs.readFileSync(reservedPath, 'utf8'), reservedRaw);
   });
 });
 
@@ -989,6 +1195,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(html, /react-dom\.production\.min\.js/);
   assert.match(html, /build\/renderer\/app\.js/);
   assert.match(html, /object-src 'none'/);
+  assert.doesNotMatch(html, /fonts\.googleapis\.com|fonts\.gstatic\.com/);
   assert.doesNotMatch(html, /frame-ancestors/);
 
   assert.doesNotMatch(markdown, /dangerouslySetInnerHTML/);
@@ -998,6 +1205,8 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(outlinerRenderers, /function mnMermaidSvgHeight/);
   assert.match(outlinerRenderers, /pointerEvents: 'none'/);
   assert.match(markdownInlineRenderers, /platformApi\.app\.openExternal\(segment\.url\)/);
+  assert.match(markdownInlineRenderers, /Load remote image from/);
+  assert.match(markdownInlineRenderers, /referrerPolicy="no-referrer"/);
   assert.doesNotMatch(markdownInputRules, /mnMdToBlocks|mnBlocksToMd|dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
   assert.doesNotMatch(markdownInlineRenderers, /dangerouslySetInnerHTML|ipcRenderer|shell\.openExternal|require\('electron'\)/);
   assert.doesNotMatch(aiSource, /env:\s*\{\s*\.\.\.process\.env/);
@@ -1006,7 +1215,7 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
   assert.match(storeSource, /CONFIG_FILE_MODE = 0o600/);
   assert.match(storeSource, /let configCache = null/);
   assert.match(storeSource, /secureConfigFile/);
-  assert.match(storeSource, /writeJson\(CONFIG_FILE, cfg, \{ mode: CONFIG_FILE_MODE \}\)/);
+  assert.match(storeSource, /writeJson\(CONFIG_FILE, next, \{ mode: CONFIG_FILE_MODE \}\)/);
   assert.match(storeSource, /Unsupported vault metadata field/);
   assert.match(storeSource, /if \(states === null \|\| states === undefined\) return null/);
   assert.match(storeSource, /Unsupported patch field/);
@@ -1073,8 +1282,8 @@ test('Security hardening blocks navigation, unsafe metadata, and unsafe AI endpo
 
 test('AI PII reduction masks hosted provider requests and restores local placeholders', async () => {
   const ai = require('../lib/ai');
+  const providerTransport = require('../lib/integrations/ai/providerTransport');
   const originalConfig = ai.getConfig();
-  const originalFetch = global.fetch;
   const sensitive = [
     'Email jane.doe@example.com',
     'phone +1 (415) 555-0134',
@@ -1107,15 +1316,26 @@ test('AI PII reduction masks hosted provider requests and restores local placeho
   );
 
   let capturedBody = null;
-  global.fetch = async (_url, init) => {
-    capturedBody = JSON.parse(init.body);
-    return {
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: 'Use [EMAIL_1] and [PHONE_1].' } }],
-      }),
-    };
-  };
+  const resetTransport = providerTransport.setTransportDependenciesForTests({
+    lookup: async () => [{ address: '8.8.8.8', family: 4 }],
+    request: (_options, callback) => {
+      const request = new EventEmitter();
+      let body = '';
+      request.write = chunk => { body += String(chunk); };
+      request.destroy = () => {};
+      request.end = () => {
+        capturedBody = JSON.parse(body);
+        const response = Readable.from([
+          Buffer.from(JSON.stringify({ choices: [{ message: { content: 'Use [EMAIL_1] and [PHONE_1].' } }] })),
+        ]);
+        response.statusCode = 200;
+        response.statusMessage = 'OK';
+        response.headers = {};
+        queueMicrotask(() => callback(response));
+      };
+      return request;
+    },
+  });
 
   try {
     ai.setConfig({
@@ -1137,7 +1357,7 @@ test('AI PII reduction masks hosted provider requests and restores local placeho
     await ai.__test.providerChat([{ role: 'user', content: 'Email jane.doe@example.com' }]);
     assert.match(JSON.stringify(capturedBody.messages), /jane\.doe@example\.com/);
   } finally {
-    global.fetch = originalFetch;
+    resetTransport();
     ai.setConfig(originalConfig, { rejectUnknown: false });
   }
 });
@@ -1283,6 +1503,32 @@ test('Backup import preserves duplicate note and canvas ids without overwriting'
     assert.equal(canvases.length, 3);
     assert.equal(new Set(canvases.map(canvas => canvas.id)).size, 3);
     assert.deepEqual(canvases.map(canvas => canvas.title).sort(), ['First canvas', 'Missing canvas id', 'Second canvas']);
+  });
+});
+
+test('Backup commit merges with a concurrent vault creation from fresh config', async () => {
+  await withIsolatedStore(async (store) => {
+    const backup = {
+      format: 'vispnote.backup.v1',
+      app: 'VispNote',
+      exportedAt: new Date().toISOString(),
+      vaults: [{
+        name: 'Concurrent vault',
+        meta: { tags: [] },
+        notes: [{ id: 'n_imported', title: 'Imported', tags: [], body: 'imported' }],
+        canvases: [],
+      }],
+    };
+
+    const [created, imported] = await Promise.all([
+      store.createVault('Concurrent vault'),
+      store.importBackup(JSON.stringify(backup)),
+    ]);
+    const vaults = await store.listVaults();
+    const importedVault = imported.importedVaults[0];
+    assert.equal(vaults.some(vault => vault.id === created.id), true);
+    assert.equal(vaults.some(vault => vault.id === importedVault.id), true);
+    assert.notEqual(created.slug, importedVault.slug);
   });
 });
 

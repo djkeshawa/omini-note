@@ -8,15 +8,13 @@ const {
 } = MN_CANVAS_MODEL;
 import { mnCanvasDialogButton, mnCanvasIconToolButton } from './CanvasStyles.js';
 import { DS_RADIUS } from '../../../shared/designSystem.js';
+import { useDialogFocus } from '../../../shared/useDialogFocus.js';
 
 function MnCanvasNotePicker({ notes = [], onPick, onClose, T }) {
   const [query, setQuery] = useStateC('');
   const [active, setActive] = useStateC(0);
   const inputRef = useRefC(null);
-  useEffectC(() => {
-    const handle = setTimeout(() => inputRef.current?.focus(), 0);
-    return () => clearTimeout(handle);
-  }, []);
+  const dialogRef = useDialogFocus({ initialFocusRef: inputRef, onEscape: onClose });
   const items = useMemoC(() => {
     const q = query.trim().toLowerCase();
     return (notes || [])
@@ -31,7 +29,7 @@ function MnCanvasNotePicker({ notes = [], onPick, onClose, T }) {
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
       padding: '12vh 18px 18px',
     }}>
-      <div role="dialog" aria-modal="true" aria-label="Add note to canvas" onClick={e => e.stopPropagation()} style={{
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Add note to canvas" onClick={e => e.stopPropagation()} style={{
         width: 'min(520px, 100%)', background: T.bg, color: T.ink,
         border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden',
         boxShadow: `0 24px 70px color-mix(in oklab, ${T.ink} 30%, transparent)`,
@@ -275,18 +273,7 @@ function MnCanvasContextMenu({ menu, canPaste, onCopy, onCut, onPaste, onDelete,
 
 function MnCanvasDeleteDialog({ canvas, T, onCancel, onConfirm }) {
   const cancelRef = useRefC(null);
-
-  useEffectC(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') onCancel && onCancel();
-    };
-    window.addEventListener('keydown', onKey);
-    const handle = setTimeout(() => cancelRef.current?.focus(), 0);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      clearTimeout(handle);
-    };
-  }, [onCancel]);
+  const dialogRef = useDialogFocus({ initialFocusRef: cancelRef, onEscape: onCancel });
 
   return (
     <div
@@ -303,6 +290,8 @@ function MnCanvasDeleteDialog({ canvas, T, onCancel, onConfirm }) {
         backdropFilter: 'blur(2px)',
       }}>
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="mn-delete-canvas-title"

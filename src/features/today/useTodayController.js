@@ -1,7 +1,8 @@
 import TODAY_MODEL from './todayModel.js';
 import { storage } from '../../shared/storageUtils.js';
+import { mnAiContentFingerprint } from '../../ai/aiOwnership.js';
 
-const { useCallback, useEffect, useMemo, useState } = React;
+const { useCallback, useEffect, useMemo, useRef, useState } = React;
 
 const EMPTY_DIGEST = Object.freeze({ staleTodos: [], unlinkedNotes: [], resurfacedNotes: [] });
 const EMPTY_REVIEW_STATE = Object.freeze({ version: TODAY_MODEL.REVIEW_STATE_VERSION, items: {} });
@@ -20,6 +21,7 @@ export function useTodayController({
   const [recap, setRecap] = useState(null);
   const [recapBusy, setRecapBusy] = useState(false);
   const [recapError, setRecapError] = useState('');
+  const recapSequence = useRef(0);
   const stateKey = reviewStateKey(vaultId);
   const [reviewStore, setReviewStore] = useState(() => ({ key: stateKey, value: readReviewState(stateKey) }));
 
@@ -53,6 +55,16 @@ export function useTodayController({
       ? helpers.contextualAiBuildTodayRecapContext({ notes, tasks, reminders, agendaItems, links, weekStart: weekStart || 'monday' })
       : null
   ), [agendaItems, assistanceEnabled, helpers, links, notes, reminders, tasks, view, weekStart]);
+  const recapOwner = `${vaultId || ''}:${helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10)}:${mnAiContentFingerprint(JSON.stringify(aiContext || null))}`;
+  const recapOwnerRef = useRef(recapOwner);
+  recapOwnerRef.current = recapOwner;
+
+  useEffect(() => {
+    recapSequence.current++;
+    setRecap(null);
+    setRecapBusy(false);
+    setRecapError('');
+  }, [recapOwner]);
 
   const digest = useMemo(() => {
     if (view !== 'today' || !helpers.digestStaleTodoItems) return EMPTY_DIGEST;
@@ -112,6 +124,12 @@ export function useTodayController({
       setRecapError('AI chat is unavailable in this build.');
       return null;
     }
+    const requestId = ++recapSequence.current;
+    const requestOwner = recapOwner;
+    const ownsRequest = () => (
+      requestId === recapSequence.current &&
+      requestOwner === recapOwnerRef.current
+    );
     setRecapBusy(true);
     setRecapError('');
     try {
@@ -130,6 +148,7 @@ export function useTodayController({
       });
       if (!response?.ok) throw new Error(response?.error || 'AI recap failed.');
       if (response.value && response.value.ok === false) throw new Error(response.value.error || 'AI recap failed.');
+      if (!ownsRequest()) return null;
       const result = helpers.contextualAiBuildTodayRecapResult({
         aiText: String(response.value?.answer || response.answer || '').trim(),
         context: aiContext,
@@ -139,12 +158,13 @@ export function useTodayController({
       setRecap(result);
       return result;
     } catch (error) {
+      if (!ownsRequest()) return null;
       setRecapError(error?.message || String(error) || 'AI recap failed.');
       return null;
     } finally {
-      setRecapBusy(false);
+      if (ownsRequest()) setRecapBusy(false);
     }
-  }, [ai, aiContext, helpers]);
+  }, [ai, aiContext, helpers, recapOwner]);
 
   return {
     dailyNote,

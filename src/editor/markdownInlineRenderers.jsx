@@ -30,7 +30,7 @@ function mnRenderSpecialInlineText(text, T, onOpen, onTagClick, allNotes) {
     } else if (whole.startsWith('[[')) {
       const label = whole.slice(2, -2);
       out.push(
-        <a key={key++} onClick={(e) => { e.preventDefault(); onOpen && onOpen(label); }}
+        <a key={key++} href="#" onClick={(e) => { e.preventDefault(); onOpen && onOpen(label); }}
            style={{
              color: T.accent, cursor: 'pointer', borderBottom: `1px dotted ${T.accent}`,
              padding: '0 1px', textDecoration: 'none', fontFamily: 'inherit',
@@ -39,7 +39,7 @@ function mnRenderSpecialInlineText(text, T, onOpen, onTagClick, allNotes) {
     } else if (whole.startsWith('#')) {
       const tag = whole.slice(1);
       out.push(
-        <a key={key++} onClick={(e) => { e.preventDefault(); onTagClick && onTagClick(tag); }}
+        <a key={key++} href="#" onClick={(e) => { e.preventDefault(); onTagClick && onTagClick(tag); }}
            style={{
              color: T.inkMed, cursor: 'pointer', fontFamily: 'var(--mn-mono)',
              fontSize: '0.88em', background: T.bgSub,
@@ -110,6 +110,65 @@ function mnResolveInlineImageSrc(url, vaultId = '') {
   return null;
 }
 
+function MnInlineImage({ src, alt, T }) {
+  const remote = /^https:\/\//.test(src);
+  const [remoteAllowed, setRemoteAllowed] = React.useState(!remote);
+  React.useEffect(() => setRemoteAllowed(!remote), [remote, src]);
+  if (!remoteAllowed) {
+    let host = 'remote host';
+    try { host = new URL(src).hostname; } catch {}
+    return (
+      <button
+        type="button"
+        onMouseDown={event => event.stopPropagation()}
+        onClick={event => {
+          event.preventDefault();
+          event.stopPropagation();
+          setRemoteAllowed(true);
+        }}
+        aria-label={`Load remote image${alt ? `: ${alt}` : ''} from ${host}`}
+        style={{
+          display: 'inline-flex',
+          maxWidth: '100%',
+          minHeight: 38,
+          alignItems: 'center',
+          gap: 8,
+          margin: '4px 0',
+          padding: '8px 10px',
+          borderRadius: 8,
+          border: `1px solid ${T.lineSub}`,
+          background: T.bgSub,
+          color: T.inkMed,
+          cursor: 'pointer',
+          fontFamily: 'var(--mn-ui)',
+          fontSize: 12,
+          textAlign: 'left',
+        }}>
+        <span aria-hidden="true">▧</span>
+        <span>Load remote image from {host}</span>
+      </button>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      draggable={false}
+      style={{
+        display: 'inline-block',
+        maxWidth: '100%',
+        maxHeight: 480,
+        borderRadius: 8,
+        border: `1px solid ${T.lineSub}`,
+        verticalAlign: 'middle',
+        margin: '4px 0',
+      }}
+    />
+  );
+}
+
 function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, renderPlainText, baseOffset = 0, vaultId = '') {
   const value = String(text || '');
   const parseInlineMarkdown = MN_MARKDOWN_INPUT_RULES.parseInlineMarkdown;
@@ -154,21 +213,11 @@ function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, rende
             );
           }
           return (
-            <img
+            <MnInlineImage
               key={index}
               src={src}
               alt={segment.label || ''}
-              loading="lazy"
-              draggable={false}
-              style={{
-                display: 'inline-block',
-                maxWidth: '100%',
-                maxHeight: 480,
-                borderRadius: 8,
-                border: `1px solid ${T.lineSub}`,
-                verticalAlign: 'middle',
-                margin: '4px 0',
-              }}
+              T={T}
             />
           );
         }
@@ -179,6 +228,7 @@ function mnRenderMarkdownInlineText(text, T, onOpen, onTagClick, allNotes, rende
           return (
             <a
               key={index}
+              href={segment.url}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();

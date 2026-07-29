@@ -1,4 +1,5 @@
 import { mnPanelMiniButton, mnPanelMenuItem } from '../../shared/panels/panelStyles.js';
+import { useDialogFocus } from '../../shared/useDialogFocus.js';
 
 function NovelistPanelView({ model }) {
   const {
@@ -51,6 +52,11 @@ function NovelistPanelView({ model }) {
     uniqueTitle,
     onCreateNote,
   } = model;
+  const editDialogRef = useDialogFocus({
+    active: !!editDialog,
+    initialFocusRef: editInputRef,
+    onEscape: () => setEditDialog(null),
+  });
   return (
       <div style={{
         flex: 1,
@@ -300,6 +306,8 @@ function NovelistPanelView({ model }) {
               backdropFilter: 'blur(2px)',
             }}>
             <div
+              ref={editDialogRef}
+              tabIndex={-1}
               role="dialog"
               aria-modal="true"
               aria-label={editDialog.type === 'rename' ? 'Rename note' : 'Set order'}

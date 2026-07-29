@@ -1,6 +1,7 @@
 {
   "name": "vispnote",
-  "version": "0.2.1",
+  "version": "0.2.2",
+  "desktopName": "vispnote.desktop",
   "description": "VispNote — a local-first, block-based note-taking desktop app",
   "license": "Apache-2.0",
   "author": {
@@ -35,6 +36,9 @@
   "scripts": {
     "build:renderer": "node scripts/build-renderer.js",
     "verify:package-renderer": "node scripts/verify-packaged-renderer.js",
+    "verify:release-artifacts": "node scripts/release-tools/verify-release-artifacts.js",
+    "prepare:release-artifacts": "node scripts/release-tools/prepare-artifacts.js",
+    "check:release-tag": "node scripts/release-tools/validate-release-tag.js",
     "check:architecture": "node scripts/check-architecture.js",
     "check:main": "npm run lint -- --quiet=false && npm run check:architecture && node --check main.js && node --check preload.js && node --check lib/store.js && node --check lib/index.js && node --check lib/ai.js && node --check lib/ai/embeddings.js && node --check lib/ai/operations.js && node --check lib/ai/providers.js && node --check lib/ai/research.js && node --check lib/ai/sse.js && node --check lib/ai/summaries.js && node --check lib/ollama.js && node --check lib/integrations/zotero/client.js && node --check lib/integrations/memory/client.js && node --check lib/integrations/telemetry/featureUsage.js && node --check lib/integrations/ai/providerTransport.js && node --check lib/integrations/ai/toolSchemas.js && node --check lib/memoryLinks.js && node --check lib/memoryIndexCache.js && node --check lib/vaultWatcher.js && node --check lib/quitPersistence.js && node --check lib/mcp/server.js && node --check lib/mcp/tools.js && node --check bin/vispnote-mcp.js",
     "test:editor": "node scripts/run-node-tests.js",
@@ -44,7 +48,8 @@
     "smoke:electron": "npm run build:renderer && electron --no-sandbox scripts/smoke-electron.js",
     "regression:memory": "node scripts/memory-regression.js",
     "benchmark:10k": "node scripts/run-10000-note-benchmark.js",
-    "test:all": "npm run check:main && npm run test:editor && npm run smoke:electron && npm run regression:renderer && npm run regression:ai && npm run regression:memory",
+    "test:all": "npm run check:main && npm run test:editor && npm run smoke:electron && npm run regression:renderer && npm run regression:ai",
+    "test:all:with-memory": "npm run test:all && npm run regression:memory",
     "prebuild": "npm run build:renderer",
     "build": "electron-builder --publish never",
     "prebuild:mac": "npm run build:renderer",
@@ -65,6 +70,7 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "eslint": "^10.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.7.0"
   },
   "dependencies": {
