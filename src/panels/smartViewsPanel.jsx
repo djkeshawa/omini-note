@@ -8,6 +8,17 @@ const { useEffect: useEffectSV, useMemo: useMemoSV, useState: useStateSV } = Rea
 
 const MN_SMART_VIEW_PRESENTATIONS = ['list', 'table', 'cards', 'timeline'];
 
+// A saved definition carries the layout it wants, and that has been validated
+// and persisted end to end for a while — it just was not being read, so a view
+// saved as a table always reopened as a list.
+//
+// `board` and `calendar` are valid saved layouts this panel cannot draw; they
+// fall back to the list rather than showing nothing.
+function mnSmartViewPresentation(definition) {
+  const layout = String(definition?.layout || '').toLowerCase();
+  return MN_SMART_VIEW_PRESENTATIONS.includes(layout) ? layout : 'list';
+}
+
 function mnSmartViewResultDate(result = {}, helpers = {}) {
   return result.reminderDate
     || result.modifiedDate
@@ -256,8 +267,15 @@ function MnSmartViewsPanel({
     limit: 50,
   }];
   const [activeId, setActiveId] = useStateSV(() => safeDefinitions[0]?.id || '');
-  const [viewMode, setViewMode] = useStateSV('list');
   const activeDefinition = safeDefinitions.find(item => item.id === activeId) || safeDefinitions[0];
+  // The switcher overrides the saved layout for as long as you stay on this
+  // definition. Tying the override to a definition id means switching views
+  // drops it, so each view opens the way it was saved.
+  const [presentationOverride, setPresentationOverride] = useStateSV(null);
+  const viewMode = presentationOverride && presentationOverride.id === activeDefinition?.id
+    ? presentationOverride.mode
+    : mnSmartViewPresentation(activeDefinition);
+  const setViewMode = (mode) => setPresentationOverride({ id: activeDefinition?.id || '', mode });
   useEffectSV(() => {
     if (!activeDefinitionId) return;
     if (!safeDefinitions.some(item => item.id === activeDefinitionId)) return;
@@ -383,4 +401,4 @@ function MnSmartViewsPanel({
   );
 }
 
-export { MnSmartViewsPanel };
+export { MnSmartViewsPanel, mnSmartViewPresentation };

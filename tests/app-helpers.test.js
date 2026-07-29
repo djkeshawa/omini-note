@@ -1315,3 +1315,26 @@ test('smart view grouping is a pure post-pass with a terminal unfiled bucket', (
   // No group means one bucket holding everything, not an error.
   assert.equal(appHelpers.smartViewGroup(results, null).length, 1);
 });
+
+test('a saved view opens in the layout it was saved with', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const panel = loadRendererModule('src/panels/smartViewsPanel.jsx');
+  const presentation = panel.mnSmartViewPresentation;
+
+  // layout has been validated and persisted end to end for a while; the panel
+  // just never read it, so a view saved as a table always reopened as a list.
+  assert.equal(presentation({ layout: 'table' }), 'table');
+  assert.equal(presentation({ layout: 'cards' }), 'cards');
+  assert.equal(presentation({ layout: 'timeline' }), 'timeline');
+  assert.equal(presentation({ layout: 'list' }), 'list');
+
+  // board and calendar are valid saved layouts this panel cannot draw yet —
+  // they fall back rather than rendering nothing.
+  assert.equal(presentation({ layout: 'board' }), 'list');
+  assert.equal(presentation({ layout: 'calendar' }), 'list');
+
+  assert.equal(presentation({}), 'list');
+  assert.equal(presentation(null), 'list');
+  assert.equal(presentation({ layout: 'TABLE' }), 'table', 'layout match is case-insensitive');
+  assert.equal(presentation({ layout: 'nonsense' }), 'list');
+});
