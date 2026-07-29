@@ -14,7 +14,7 @@
 
 import { MN_REMIND } from '../../shared/markdown.jsx';
 import { DS_HEIGHT, DS_RADIUS, dsMachineStyle, mnSentenceCase } from '../../shared/designSystem.js';
-import { DsEmptyState } from '../../shared/components/DesignPrimitives.jsx';
+import { DsEmptyState, DsGroupLabel } from '../../shared/components/DesignPrimitives.jsx';
 import { MN_VIEW_LAYOUTS, mnViewLayout } from '../../shared/viewLayout.js';
 import { mnViewsRenderResults } from './ViewsLayouts.jsx';
 
@@ -86,6 +86,16 @@ function MnViewsPanel({
       ? helpers.smartViewQuery(notes, activeDefinition, { parser: MN_REMIND, walk, allNotes: notes })
       : []
   ), [helpers, notes, activeDefinition, walk]);
+
+  // A definition can say how to group its rows — by tag, or by any property
+  // the notes carry. This is the first thing to actually read that field;
+  // ungrouped views come back as a single unlabelled bucket.
+  const groups = useMemoV(() => {
+    if (!helpers.smartViewGroup) return null;
+    const group = activeDefinition?.group;
+    if (!group?.by) return null;
+    return helpers.smartViewGroup(results, group, {});
+  }, [helpers, results, activeDefinition]);
 
   const selectDefinition = (id) => {
     setActiveId(id);
@@ -168,7 +178,24 @@ function MnViewsPanel({
 
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 20px 24px' }}>
           {results.length
-            ? mnViewsRenderResults({ layout, results, helpers, onOpen, T })
+            ? (groups
+              ? groups
+                // An empty unfiled bucket is noise; a populated one is a
+                // finding, so it stays.
+                .filter(bucket => bucket.items.length)
+                .map(bucket => (
+                  <div key={bucket.key || '__unfiled'} style={{ marginBottom: 18 }}>
+                    <DsGroupLabel
+                      label={bucket.label || 'Ungrouped'}
+                      count={bucket.items.length}
+                      rule
+                      T={T}
+                      style={{ marginBottom: 8 }}
+                    />
+                    {mnViewsRenderResults({ layout, results: bucket.items, helpers, onOpen, T })}
+                  </div>
+                ))
+              : mnViewsRenderResults({ layout, results, helpers, onOpen, T }))
             : (
               <DsEmptyState
                 headline="Nothing matches this view yet"

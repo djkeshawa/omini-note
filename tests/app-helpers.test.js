@@ -1316,6 +1316,31 @@ test('smart view grouping is a pure post-pass with a terminal unfiled bucket', (
   assert.equal(appHelpers.smartViewGroup(results, null).length, 1);
 });
 
+test('grouping reads the source note of a task, not just a note result', () => {
+  // A note result carries its note on `.note`; an action result carries the
+  // note it came from on `.sourceNote`. Reading only `.note` meant grouping
+  // tasks by any body property saw an empty body and swept every row into
+  // the unfiled bucket — silently, with the right total.
+  const actions = [
+    { type: 'task', noteId: 'a', label: 'ship it', noteTags: ['work'], sourceNote: { id: 'a', tags: ['work'], body: 'status:: DOING\n' } },
+    { type: 'task', noteId: 'b', label: 'write up', noteTags: ['admin'], sourceNote: { id: 'b', tags: ['admin'], body: 'status:: TODO\n' } },
+    { type: 'reminder', noteId: 'c', label: 'call back', noteTags: [], sourceNote: { id: 'c', tags: [], body: 'no property\n' } },
+  ];
+
+  const byStatus = appHelpers.smartViewGroup(actions, { by: 'status' });
+  assert.deepEqual(byStatus.map(g => g.label), ['DOING', 'TODO', 'No status']);
+  assert.equal(byStatus[0].items.length, 1, 'DOING holds its task, not zero');
+  assert.equal(byStatus[byStatus.length - 1].items.length, 1, 'only the propertyless row is unfiled');
+
+  // Tags live on noteTags for an action result, not tags.
+  const byTag = appHelpers.smartViewGroup(actions, { by: 'tag' });
+  assert.deepEqual(byTag.map(g => g.label), ['admin', 'work', 'No tag']);
+
+  // Note results keep working unchanged.
+  const notes = [{ noteId: 'n', note: { id: 'n', tags: ['x'], body: 'status:: DONE\n' } }];
+  assert.deepEqual(appHelpers.smartViewGroup(notes, { by: 'status' }).map(g => g.label), ['DONE', 'No status']);
+});
+
 test('a saved view opens in the layout it was saved with', async () => {
   const { loadRendererModule } = require('./helpers/rendererModule.js');
   const panel = loadRendererModule('src/panels/smartViewsPanel.jsx');
