@@ -242,6 +242,8 @@ test('the views pack has a regression scenario that drives it', () => {
   // empty frame would pass a bare "the panel exists" probe.
   assert.match(harness, /views board renders columns/);
   assert.match(harness, /current\.panel && current\.columns > 0/);
+  assert.match(harness, /views calendar renders a month grid/);
+  assert.match(harness, /current\.nextMonth && current\.dayCells >= 28/);
 });
 
 test('smart view embeds do not re-query the vault on every render', () => {

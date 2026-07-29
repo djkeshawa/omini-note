@@ -7,7 +7,7 @@
 //
 // `board` and `calendar` are valid saved layouts that not every surface can
 // draw; callers pass the set they support and get a safe fallback.
-const MN_VIEW_LAYOUTS = ['list', 'table', 'cards', 'timeline', 'board'];
+const MN_VIEW_LAYOUTS = ['list', 'table', 'cards', 'timeline', 'board', 'calendar'];
 
 function mnViewLayout(definition, supported = MN_VIEW_LAYOUTS, fallback = 'list') {
   const layout = String(definition?.layout || '').toLowerCase();
