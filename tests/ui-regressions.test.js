@@ -231,6 +231,15 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
   assert.ok(appIcon.size > 0);
 });
 
+test('smart view embeds do not re-query the vault on every render', () => {
+  const embeds = fs.readFileSync(path.join(__dirname, '../src/editor/outliner/EmbeddedBlocks.jsx'), 'utf8');
+  // The embed renders inside the editor, so an unmemoized query here ran a
+  // whole-vault scan on every keystroke in any note containing one.
+  assert.match(embeds, /const query = useMemoOE\(\(\) => \{/);
+  assert.match(embeds, /\}, \[ready, helpers, allNotes, embed\?\.definition\]\)/);
+  assert.doesNotMatch(embeds, /\n\s*results = helpers\.smartViewQuery\(/);
+});
+
 test('list rows and graph controls are declared at module scope', () => {
   const notelist = fs.readFileSync(path.join(__dirname, '../src/panels/notelist.jsx'), 'utf8');
   const graph = fs.readFileSync(path.join(__dirname, '../src/panels/graph.jsx'), 'utf8');

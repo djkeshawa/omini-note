@@ -1169,8 +1169,9 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(smartViewsPanel, /Open Notes/);
   assert.match(smartViewsPanel, /function MnSmartViewActionButton/);
   assert.match(smartViewsPanel, /source\?\.noteId/);
-  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel \}/);
-  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel \}/);
+  // The presentation resolver is exported alongside the panel so a saved
+  // layout can be tested behaviourally rather than by matching source text.
+  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel, mnSmartViewPresentation \}/);
   assert.match(app, /import \{ MnSmartViewsPanel \} from '\.\.\/panels\/smartViewsPanel\.jsx'/);
   assert.match(app, /MnSmartViewsPanel/);
   assert.match(preferenceModels, /function buildDefaultSmartViewDefinitions/);

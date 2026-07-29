@@ -388,15 +388,30 @@ function MnSmartViewEmbedFallback({ raw, error, T }) {
 
 function MnSmartViewEmbed({ embed, allNotes = [], T, onOpen }) {
   const helpers = MN_APP_HELPERS;
-  if (!embed?.ok || !embed.definition || !helpers.smartViewQuery) {
+  const ready = Boolean(embed?.ok && embed.definition && helpers.smartViewQuery);
+  // This runs inside the editor's render path, so without a memo every render
+  // of a note containing an embed re-queried the whole vault — once per
+  // keystroke. The query is computed unconditionally and the fallbacks branch
+  // afterwards, because an early return above a hook is a conditional hook.
+  const query = useMemoOE(() => {
+    if (!ready) return { results: [], error: null };
+    try {
+      return {
+        results: helpers.smartViewQuery(allNotes, embed.definition, { parser: MN_REMIND, walk: mnWalk, allNotes }),
+        error: null,
+      };
+    } catch (error) {
+      return { results: [], error: error?.message || 'Smart View query failed.' };
+    }
+  }, [ready, helpers, allNotes, embed?.definition]);
+
+  if (!ready) {
     return <MnSmartViewEmbedFallback raw={embed?.raw || ''} error={embed?.error || 'Smart Views are unavailable.'} T={T} />;
   }
-  let results = [];
-  try {
-    results = helpers.smartViewQuery(allNotes, embed.definition, { parser: MN_REMIND, walk: mnWalk, allNotes });
-  } catch (error) {
-    return <MnSmartViewEmbedFallback raw={embed.raw} error={error?.message || 'Smart View query failed.'} T={T} />;
+  if (query.error) {
+    return <MnSmartViewEmbedFallback raw={embed.raw} error={query.error} T={T} />;
   }
+  const results = query.results;
   const visible = results.slice(0, 6);
   return (
     <div
