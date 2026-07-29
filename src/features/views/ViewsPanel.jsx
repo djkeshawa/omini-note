@@ -25,9 +25,14 @@ import { mnViewsRenderTable } from './ViewsTable.jsx';
 import {
   mnViewsNextSort, mnViewsSortIsStorable, mnViewsSortField, mnViewsSortFromDefinition,
   mnViewsColumns, mnViewsCatalogue, mnViewsToggleColumn, mnViewsMoveColumn,
+  mnViewsDiscoverProperties,
 } from './viewsColumns.js';
 import { ViewsControlStrip } from './ViewsControlStrip.jsx';
 import { mnViewsToggleScope, mnViewsClearScope } from './viewsScope.js';
+import {
+  mnViewsAddCondition, mnViewsUpdateCondition, mnViewsRemoveCondition,
+  mnViewsSetConditionsMatch, mnViewsClearConditions,
+} from './viewsConditions.js';
 import { mnViewsActionItem } from './viewsWrite.js';
 import { ViewTabs, ViewMenu, ViewsRowSearch, ViewsSaveState, mnViewChipStyle } from './ViewsChrome.jsx';
 import {
@@ -112,6 +117,7 @@ function MnViewsPanel({
   const [menuOpen, setMenuOpen] = useStateV(false);
   const [columnsOpen, setColumnsOpen] = useStateV(false);
   const [scopeOpen, setScopeOpen] = useStateV(false);
+  const [conditionsOpen, setConditionsOpen] = useStateV(false);
   const [confirmDelete, setConfirmDelete] = useStateV(false);
   const [renamingId, setRenamingId] = useStateV('');
   const [renameValue, setRenameValue] = useStateV('');
@@ -197,6 +203,7 @@ function MnViewsPanel({
     setMenuOpen(false);
     setColumnsOpen(false);
     setScopeOpen(false);
+    setConditionsOpen(false);
     setConfirmDelete(false);
     setRenamingId('');
     onActiveDefinitionChange?.(id);
@@ -233,6 +240,21 @@ function MnViewsPanel({
   );
   const visibleColumnKeys = mnViewsColumns(queryDefinition).map(column => column.key);
 
+  // Conditions are tested against keys discovered from the whole vault, not
+  // from the rows currently showing: a condition that matches nothing would
+  // otherwise empty the very list you need in order to correct it.
+  const conditionKeys = useMemoV(
+    () => mnViewsDiscoverProperties((notes || []).map(note => ({ note })), []).map(column => column.key),
+    [notes]
+  );
+
+  const MN_VIEWS_FILTER_REFUSALS = {
+    cap: ['That is as many as a view holds', 'A view can carry up to 40 scope entries and 20 conditions. Remove one before adding another.'],
+    long: ['That value is too long', 'A single condition value can be up to 500 characters.'],
+    key: ['That condition needs a property', 'Pick the key this condition should test.'],
+    missing: ['That condition is no longer there', 'It may have been removed already. Close the menu and open it again.'],
+  };
+
   const editScope = (result) => {
     if (!result.ok) {
       onNotice?.(
@@ -242,6 +264,19 @@ function MnViewsPanel({
           : 'That tag or note name is too long to store.',
         'warn'
       );
+      return;
+    }
+    setDraft(current => ({
+      ...(current && current.id === activeDefinition?.id ? current : {}),
+      id: activeDefinition?.id || '',
+      filters: result.filters,
+    }));
+  };
+
+  const editConditions = (result) => {
+    if (!result.ok) {
+      const [headline, body] = MN_VIEWS_FILTER_REFUSALS[result.reason] || MN_VIEWS_FILTER_REFUSALS.missing;
+      onNotice?.(headline, body, 'warn');
       return;
     }
     setDraft(current => ({
@@ -372,10 +407,18 @@ function MnViewsPanel({
         totalCount={results.length}
         filtered={Boolean(rowQuery)}
         layout={layout}
+        conditionKeys={conditionKeys}
         scopeOpen={scopeOpen}
         columnsOpen={columnsOpen}
+        conditionsOpen={conditionsOpen}
         onToggleScopeMenu={() => setScopeOpen(open => !open)}
         onToggleColumnsMenu={() => setColumnsOpen(open => !open)}
+        onToggleConditionsMenu={() => setConditionsOpen(open => !open)}
+        onAddCondition={key => editConditions(mnViewsAddCondition(queryDefinition, key))}
+        onUpdateCondition={(index, patch) => editConditions(mnViewsUpdateCondition(queryDefinition, index, patch))}
+        onRemoveCondition={index => editConditions(mnViewsRemoveCondition(queryDefinition, index))}
+        onConditionsMatch={value => editConditions(mnViewsSetConditionsMatch(queryDefinition, value))}
+        onClearConditions={() => editConditions(mnViewsClearConditions(queryDefinition))}
         onToggleTag={tag => editScope(mnViewsToggleScope(queryDefinition, 'tags', tag))}
         onToggleLink={title => editScope(mnViewsToggleScope(queryDefinition, 'linkedNotes', title))}
         onClearScope={() => editScope(mnViewsClearScope(queryDefinition))}

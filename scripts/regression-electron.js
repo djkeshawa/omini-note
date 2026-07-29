@@ -435,6 +435,22 @@ async function setPackEnabledForRegression(win, packId, enabled) {
   });
 }
 
+async function setInputByAria(win, ariaLabel, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const value = ${JSON.stringify(value)};
+      const el = document.querySelector('input[aria-label=' + ${JSON.stringify(JSON.stringify(ariaLabel))} + ']');
+      if (!el) return { ok: false };
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error('Input not found for aria-label: ' + ariaLabel);
+}
+
 async function renameActiveView(win, value) {
   const result = await evaluate(win, `
     (() => {
@@ -659,6 +675,87 @@ async function runViewsPanelScenario(win) {
         return { columns: recent ? recent.columns : null };
       })()`);
       return { ok: Array.isArray(current.columns) && current.columns.includes('owner'), current };
+    });
+
+    // Conditions keep or drop rows once scope has picked the notes. The
+    // seeded note carries owner:: sam, so a condition on it must leave one row
+    // and its opposite must leave none.
+    await clickButton(win, { aria: 'Conditions' });
+    await waitFor(win, 'the conditions menu offers a written key', async () => {
+      const current = await evaluate(win, `(() => {
+        const menu = document.querySelector('[data-mn-views-conditions]');
+        if (!menu) return { menu: false };
+        return {
+          menu: true,
+          add: Boolean(menu.querySelector('button[aria-label="Add condition"]')),
+          match: Boolean(menu.querySelector('[role="tablist"][aria-label="Match"]')),
+          empty: /every row that scope let through/.test(menu.textContent || ''),
+        };
+      })()`);
+      return { ok: current.menu && current.add && current.match && current.empty, current };
+    });
+
+    await clickButton(win, { aria: 'Add condition' });
+    await waitFor(win, 'a condition row appears on a key someone wrote', async () => {
+      const current = await evaluate(win, `(() => {
+        const menu = document.querySelector('[data-mn-views-conditions]');
+        const key = menu?.querySelector('select[aria-label="Condition 1 property"]');
+        return {
+          key: key ? key.value : '',
+          value: Boolean(menu?.querySelector('input[aria-label="Condition 1 value"]')),
+          test: Boolean(menu?.querySelector('select[aria-label="Condition 1 test"]')),
+        };
+      })()`);
+      return { ok: current.key === 'owner' && current.value && current.test, current };
+    });
+
+    await setInputByAria(win, 'Condition 1 value', 'sam');
+    await waitFor(win, 'a condition narrows the rows to the ones that match', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        const chip = document.querySelector('button[aria-label="Conditions"]');
+        return {
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : -1,
+          chip: chip ? (chip.textContent || '').trim() : '',
+        };
+      })()`);
+      return { ok: current.rows === 1 && /owner is sam/.test(current.chip), current };
+    });
+
+    // "is not" has to be the opposite, not a no-op — an operator that silently
+    // falls back to "is" would still look like it worked.
+    await setSelectByAria(win, 'Condition 1 test', 'not');
+    await waitFor(win, 'is-not excludes what is matched', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        const body = document.querySelector('[data-mn-views-body]');
+        return {
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : 0,
+          empty: /Nothing matches this view yet/.test(body ? body.textContent : ''),
+        };
+      })()`);
+      return { ok: current.rows === 0 && current.empty, current };
+    });
+
+    // Asking whether a key is missing must not require it to be present.
+    await setSelectByAria(win, 'Condition 1 test', 'empty');
+    await waitFor(win, 'is-empty finds the notes without the key', async () => {
+      const rows = await evaluate(win, `document.querySelector('[data-mn-views-table]')?.querySelectorAll('[data-mn-view-row]').length ?? -1`);
+      return { ok: rows === 2, rows };
+    });
+
+    await clickVisibleText(win, 'Clear all');
+    await clickButton(win, { aria: 'Conditions' });
+    await waitFor(win, 'clearing conditions brings every row back', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        const chip = document.querySelector('button[aria-label="Conditions"]');
+        return {
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : -1,
+          chip: chip ? (chip.textContent || '').trim() : '',
+        };
+      })()`);
+      return { ok: current.rows === 3 && /None/.test(current.chip), current };
     });
 
     // Scope narrows which notes the view looks at, and the chip has to say so

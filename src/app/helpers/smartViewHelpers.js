@@ -3,6 +3,7 @@ function createSmartViewHelpers(scope = {}) {
   const SMART_VIEW_FORMATS = scope.SMART_VIEW_FORMATS || [scope.SMART_VIEW_FORMAT];
   const SMART_VIEW_LAYOUTS = scope.SMART_VIEW_LAYOUTS || ['list'];
   const SMART_VIEW_SORT_FIELDS = scope.SMART_VIEW_SORT_FIELDS;
+  const SMART_VIEW_PROPERTY_OPS = scope.SMART_VIEW_PROPERTY_OPS || ['is'];
   const SMART_VIEW_TYPES = scope.SMART_VIEW_TYPES;
   const agendaCleanActionText = (...args) => scope.agendaCleanActionText(...args);
   const agendaIsDeferred = (...args) => scope.agendaIsDeferred(...args);
@@ -62,21 +63,35 @@ function createSmartViewHelpers(scope = {}) {
     return '';
   }
   
+  // A property condition is a key, an operator and the values it compares
+  // against. Everything written before operators existed carried no `op`, so
+  // the default is `is` and those definitions keep meaning what they meant.
+  function smartViewNormalizePropertyOp(value) {
+    const op = smartViewCleanText(value).toLowerCase();
+    return SMART_VIEW_PROPERTY_OPS.includes(op) ? op : 'is';
+  }
+
   function smartViewNormalizePropertyFilters(filters = {}) {
     const out = [];
-    const add = (key, value) => {
+    const add = (key, value, op) => {
       const cleanKey = smartViewCleanText(key);
       if (!cleanKey) return;
       const values = smartViewCleanList(value);
-      out.push({ key: cleanKey, values });
+      out.push({ key: cleanKey, values, op: smartViewNormalizePropertyOp(op) });
     };
   
     if (filters.property && typeof filters.property === 'object' && !Array.isArray(filters.property)) {
-      add(filters.property.key, filters.property.value);
+      add(filters.property.key, filters.property.value, filters.property.op);
     }
     if (Array.isArray(filters.properties)) {
       filters.properties.forEach(item => {
-        if (item && typeof item === 'object') add(item.key, item.value);
+        // `value` is what a saved definition carries and `values` is what a
+        // normalized one carries. Both are read because smartViewQuery
+        // normalizes and then hands the result to smartViewQueryNotes, which
+        // normalizes again — reading only `value` silently emptied every
+        // property condition on the second pass, so a filter with a value
+        // behaved like "just has this key".
+        if (item && typeof item === 'object') add(item.key, item.values ?? item.value, item.op);
       });
     } else if (filters.properties && typeof filters.properties === 'object') {
       Object.entries(filters.properties).forEach(([key, value]) => add(key, value));
@@ -96,6 +111,7 @@ function createSmartViewHelpers(scope = {}) {
       modifiedFrom: smartViewDateKey(source.modifiedFrom || source.modifiedAfter),
       modifiedTo: smartViewDateKey(source.modifiedTo || source.modifiedBefore),
       properties: smartViewNormalizePropertyFilters(source),
+      propertiesMatch: smartViewCleanText(source.propertiesMatch).toLowerCase() === 'any' ? 'any' : 'all',
       workflowStatuses: smartViewCleanList(source.workflowStatuses || source.workflowStatus)
         .map(smartViewWorkflowKey)
         .filter(Boolean),
@@ -171,13 +187,43 @@ function createSmartViewHelpers(scope = {}) {
     return bodyPropertyLineRe(key).test(String(body || ''));
   }
   
-  function smartViewMatchesProperties(note, propertyFilters = []) {
-    return (propertyFilters || []).every(filter => {
-      if (!smartViewBodyHasProperty(note?.body || '', filter.key)) return false;
-      if (!filter.values.length) return true;
-      const actual = bodyPropertyValue(note?.body || '', filter.key).toLowerCase();
-      return filter.values.some(value => value.toLowerCase() === actual);
-    });
+  // Ordering compares numerically when both sides are numbers and lexically
+  // otherwise, which is what ISO dates want: 2026-08-02 < 2026-08-10 as text.
+  function smartViewCompareProperty(actual, expected) {
+    const left = Number(actual);
+    const right = Number(expected);
+    if (Number.isFinite(left) && Number.isFinite(right)) return left - right;
+    return String(actual).localeCompare(String(expected));
+  }
+
+  function smartViewMatchesPropertyFilter(note, filter) {
+    const body = note?.body || '';
+    const present = smartViewBodyHasProperty(body, filter.key);
+    const actual = present ? bodyPropertyValue(body, filter.key) : '';
+    const op = filter.op || 'is';
+
+    // Asking whether something is missing must not first require it to exist.
+    if (op === 'empty') return !present || !actual;
+    if (op === 'filled') return present && Boolean(actual);
+    if (!present) return false;
+    if (!filter.values.length) return true;
+
+    const lower = String(actual).toLowerCase();
+    switch (op) {
+      case 'not': return !filter.values.some(value => value.toLowerCase() === lower);
+      case 'has': return filter.values.some(value => lower.includes(value.toLowerCase()));
+      case 'lt': return filter.values.some(value => smartViewCompareProperty(actual, value) < 0);
+      case 'gt': return filter.values.some(value => smartViewCompareProperty(actual, value) > 0);
+      default: return filter.values.some(value => value.toLowerCase() === lower);
+    }
+  }
+
+  function smartViewMatchesProperties(note, propertyFilters = [], match = 'all') {
+    const list = propertyFilters || [];
+    if (!list.length) return true;
+    return match === 'any'
+      ? list.some(filter => smartViewMatchesPropertyFilter(note, filter))
+      : list.every(filter => smartViewMatchesPropertyFilter(note, filter));
   }
   
   function smartViewNoteWorkflowStatus(note, options = {}) {
@@ -250,7 +296,7 @@ function createSmartViewHelpers(scope = {}) {
   
     if (!smartViewNoteDateInRange(note, 'created', filters.createdFrom, filters.createdTo)) return false;
     if (!smartViewNoteDateInRange(note, 'modified', filters.modifiedFrom, filters.modifiedTo)) return false;
-    if (!smartViewMatchesProperties(note, filters.properties)) return false;
+    if (!smartViewMatchesProperties(note, filters.properties, filters.propertiesMatch)) return false;
   
     if (filters.workflowStatuses.length) {
       const workflow = smartViewNoteWorkflowStatus(note, options);
@@ -564,6 +610,7 @@ function createSmartViewHelpers(scope = {}) {
       'modifiedBefore',
       'property',
       'properties',
+      'propertiesMatch',
       'propertyKey',
       'propertyValue',
       'workflowStatus',

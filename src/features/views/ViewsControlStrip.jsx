@@ -10,7 +10,9 @@ import { MN_VIEW_LAYOUTS } from '../../shared/viewLayout.js';
 import { mnViewChipStyle } from './ViewsChrome.jsx';
 import { ViewsColumnsMenu } from './ViewsColumnsPanel.jsx';
 import { ViewsScopeMenu } from './ViewsScopePanel.jsx';
+import { ViewsConditionsMenu } from './ViewsConditionsPanel.jsx';
 import { mnViewsScopeSummary, mnViewsScopeIsSet } from './viewsScope.js';
+import { mnViewsConditionsSummary, mnViewsConditions } from './viewsConditions.js';
 
 // mnSentenceCase only rewrites ALL-CAPS strings, so it leaves a lowercase
 // layout id alone. These are labels, not machine values, so they get a capital.
@@ -22,8 +24,11 @@ function mnViewLayoutLabel(mode) {
 function ViewsControlStrip({
   definition = {}, tags = [], notes = [], catalogue = [], visibleColumns = [],
   rowCount = 0, totalCount = 0, filtered = false, layout = 'list',
-  scopeOpen, columnsOpen, onToggleScopeMenu, onToggleColumnsMenu,
+  conditionKeys = [],
+  scopeOpen, columnsOpen, conditionsOpen,
+  onToggleScopeMenu, onToggleColumnsMenu, onToggleConditionsMenu,
   onToggleTag, onToggleLink, onClearScope, onToggleColumn, onMoveColumn,
+  onAddCondition, onUpdateCondition, onRemoveCondition, onConditionsMatch, onClearConditions,
   onLayout, T,
 }) {
   return (
@@ -59,6 +64,33 @@ function ViewsControlStrip({
             onToggleTag={tag => onToggleTag?.(tag)}
             onToggleLink={title => onToggleLink?.(title)}
             onClear={() => onClearScope?.()}
+            T={T}
+          />
+        )}
+      </span>
+      <span style={{ position: 'relative', display: 'inline-flex' }}>
+        <button
+          type="button"
+          aria-label="Conditions"
+          aria-expanded={conditionsOpen}
+          title="Which rows survive, once scope has picked the notes"
+          onClick={() => onToggleConditionsMenu?.()}
+          style={mnViewChipStyle(conditionsOpen || mnViewsConditions(definition).length > 0, T)}>
+          Conditions
+          <span style={{ fontWeight: 600, color: T.ink }}>{mnViewsConditionsSummary(definition)}</span>
+          <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+            <path d="M3 4.5L6 7.5L9 4.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        {conditionsOpen && (
+          <ViewsConditionsMenu
+            definition={definition}
+            keys={conditionKeys}
+            onAdd={key => onAddCondition?.(key)}
+            onUpdate={(index, patch) => onUpdateCondition?.(index, patch)}
+            onRemove={index => onRemoveCondition?.(index)}
+            onMatch={value => onConditionsMatch?.(value)}
+            onClear={() => onClearConditions?.()}
             T={T}
           />
         )}

@@ -347,7 +347,10 @@ test('Smart View helpers normalize definitions and query notes without mutation'
       createdTo: '2026-06-06',
       modifiedFrom: '',
       modifiedTo: '',
-      properties: [{ key: 'priority', values: ['high'] }],
+      // A definition written before operators existed normalizes to "is",
+      // matched all-of, so it keeps meaning exactly what it meant.
+      properties: [{ key: 'priority', values: ['high'], op: 'is' }],
+      propertiesMatch: 'all',
       workflowStatuses: ['DOING'],
       linkedNotes: ['Research AI'],
       actionStatuses: [],
@@ -1416,6 +1419,168 @@ test('view table columns read real fields and only save a sort the vault accepts
   const cols = c.mnViewsColumns({ type: 'notes', columns: ['owner'] });
   assert.deepEqual(c.mnViewsSortResults(rows, cols, { key: 'owner', direction: 'asc' }).map(r => r.id), ['c', 'a', 'b']);
   assert.deepEqual(c.mnViewsSortResults(rows, cols, { key: 'owner', direction: 'desc' }).map(r => r.id), ['a', 'c', 'b']);
+});
+
+test('property conditions support operators and keep meaning what they meant', () => {
+  const note = (body) => ({ id: 'n', title: 'n', body });
+  const match = (body, properties, propertiesMatch) =>
+    appHelpers.smartViewMatchesNote(note(body), { filters: { properties, propertiesMatch } });
+
+  // Written before operators existed: a bare key/value still means "is".
+  assert.equal(match('priority:: high\n', [{ key: 'priority', value: 'high' }]), true);
+  assert.equal(match('priority:: low\n', [{ key: 'priority', value: 'high' }]), false);
+
+  assert.equal(match('priority:: high\n', [{ key: 'priority', op: 'not', value: 'low' }]), true);
+  assert.equal(match('priority:: low\n', [{ key: 'priority', op: 'not', value: 'low' }]), false);
+  assert.equal(match('owner:: Sam Ray\n', [{ key: 'owner', op: 'has', value: 'sam' }]), true);
+  assert.equal(match('owner:: Ana\n', [{ key: 'owner', op: 'has', value: 'sam' }]), false);
+
+  // Dates compare as text, which is what ISO dates want; numbers compare as
+  // numbers, so 9 is not "more than" 10.
+  assert.equal(match('due:: 2026-08-02\n', [{ key: 'due', op: 'lt', value: '2026-08-10' }]), true);
+  assert.equal(match('due:: 2026-08-20\n', [{ key: 'due', op: 'lt', value: '2026-08-10' }]), false);
+  assert.equal(match('effort:: 9\n', [{ key: 'effort', op: 'gt', value: '10' }]), false);
+  assert.equal(match('effort:: 12\n', [{ key: 'effort', op: 'gt', value: '10' }]), true);
+
+  // Asking whether a key is missing must not first require it to exist —
+  // the old matcher rejected any note without the key before reading the op.
+  assert.equal(match('title only\n', [{ key: 'owner', op: 'empty' }]), true);
+  assert.equal(match('owner:: sam\n', [{ key: 'owner', op: 'empty' }]), false);
+  assert.equal(match('owner:: sam\n', [{ key: 'owner', op: 'filled' }]), true);
+  assert.equal(match('title only\n', [{ key: 'owner', op: 'filled' }]), false);
+
+  // An unknown operator falls back to "is" rather than matching everything.
+  assert.equal(match('priority:: high\n', [{ key: 'priority', op: 'sql-injection', value: 'high' }]), true);
+  assert.equal(match('priority:: low\n', [{ key: 'priority', op: 'sql-injection', value: 'high' }]), false);
+
+  // all vs any across several conditions.
+  const two = [{ key: 'priority', op: 'is', value: 'high' }, { key: 'owner', op: 'is', value: 'sam' }];
+  assert.equal(match('priority:: high\nowner:: sam\n', two), true);
+  assert.equal(match('priority:: high\nowner:: ana\n', two), false);
+  assert.equal(match('priority:: high\nowner:: ana\n', two, 'any'), true);
+  assert.equal(match('priority:: low\nowner:: ana\n', two, 'any'), false);
+});
+
+test('the conditions builder writes filters the query engine already understands', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const c = loadRendererModule('src/features/views/viewsConditions.js');
+
+  // The labels the menu shows must cover exactly the operators the engine
+  // accepts — a new operator with no label renders a blank dropdown entry.
+  assert.deepEqual(
+    c.MN_VIEW_CONDITION_OPS.map(item => item.op).sort(),
+    [...appHelpers.SMART_VIEW_PROPERTY_OPS].sort()
+  );
+
+  const base = { id: 'work_view', title: 'Work view', type: 'notes', filters: { tags: ['work'] } };
+  const added = c.mnViewsAddCondition(base, 'priority');
+  assert.deepEqual(added.filters.properties, [{ key: 'priority', op: 'is' }]);
+  // Scope is not a condition and has to survive one being added.
+  assert.deepEqual(added.filters.tags, ['work']);
+
+  // Several values on one condition are comma separated in the UI and a list
+  // in the file, which is the shape the engine reads.
+  const valued = c.mnViewsUpdateCondition({ filters: added.filters }, 0, { value: 'high, urgent ,' });
+  assert.deepEqual(valued.filters.properties, [{ key: 'priority', op: 'is', value: ['high', 'urgent'] }]);
+
+  // An operator that asks whether a value exists stores no value, so a stale
+  // one cannot sit in the file looking like it means something.
+  const emptied = c.mnViewsUpdateCondition({ filters: valued.filters }, 0, { op: 'empty' });
+  assert.deepEqual(emptied.filters.properties, [{ key: 'priority', op: 'empty' }]);
+
+  // Match mode is only written when it can matter, and never as the default.
+  const second = c.mnViewsAddCondition({ filters: valued.filters }, 'owner');
+  assert.equal('propertiesMatch' in second.filters, false);
+  const any = c.mnViewsSetConditionsMatch({ filters: second.filters }, 'any');
+  assert.equal(any.filters.propertiesMatch, 'any');
+  assert.equal('propertiesMatch' in c.mnViewsSetConditionsMatch({ filters: any.filters }, 'all').filters, false);
+  // One condition cannot be "any of them", so the field is dropped again.
+  const back = c.mnViewsRemoveCondition({ filters: any.filters }, 1);
+  assert.equal('propertiesMatch' in back.filters, false);
+
+  // Clearing removes the key rather than storing an empty list.
+  const cleared = c.mnViewsClearConditions({ filters: any.filters });
+  assert.equal('properties' in cleared.filters, false);
+  assert.equal('propertiesMatch' in cleared.filters, false);
+  // Clearing conditions must not clear the scope; they are separate controls.
+  assert.deepEqual(cleared.filters.tags, ['work']);
+
+  // Refusals rather than throws, and the caps the sanitizer enforces.
+  assert.equal(c.mnViewsAddCondition(base, '   ').reason, 'key');
+  assert.equal(c.mnViewsRemoveCondition(base, 3).reason, 'missing');
+  assert.equal(c.mnViewsUpdateCondition({ filters: added.filters }, 0, { value: 'x'.repeat(501) }).reason, 'long');
+  const full = { filters: { properties: Array.from({ length: 20 }, (_, n) => ({ key: `k${n}`, op: 'is' })) } };
+  assert.equal(c.mnViewsAddCondition(full, 'one-more').reason, 'cap');
+
+  // Reading tolerates a definition written before operators existed.
+  assert.deepEqual(
+    c.mnViewsConditions({ filters: { properties: [{ key: 'priority', value: ['high'] }] } }),
+    [{ key: 'priority', op: 'is', value: 'high' }]
+  );
+
+  // The chip has to say whether rows are being held back.
+  assert.equal(c.mnViewsConditionsSummary(base), 'None');
+  assert.equal(c.mnViewsConditionsSummary({ filters: valued.filters }), 'priority is high, urgent');
+  assert.equal(c.mnViewsConditionsSummary({ filters: emptied.filters }), 'priority is empty');
+  assert.equal(c.mnViewsConditionsSummary({ filters: any.filters }), '2 any');
+
+  // End to end: what the builder writes is what the engine matches on, and it
+  // survives the sanitizer that would otherwise reject the whole save.
+  const manage = loadRendererModule('src/features/views/viewsManage.js');
+  const saved = manage.mnViewsApplyDraft([base], { id: 'work_view', filters: any.filters });
+  assert.equal(manage.mnViewsCheckSavable(saved.definitions).ok, true);
+  const note = { id: 'n', title: 'n', body: 'priority:: high\nowner:: ana\n', tags: ['work'] };
+  assert.equal(appHelpers.smartViewMatchesNote(note, saved.definitions[0]), true);
+});
+
+test('normalizing a definition twice does not change what it matches', () => {
+  // smartViewQuery normalizes and passes the result to smartViewQueryNotes,
+  // which normalizes again. Any field that changes name between the raw and
+  // normalized shapes is silently lost on that second pass.
+  const definition = {
+    id: 'checks', title: 'Checks', type: 'notes',
+    filters: {
+      properties: [{ key: 'owner', op: 'not', value: ['sam'] }],
+      propertiesMatch: 'any',
+      tags: ['work'],
+      linkedNotes: ['Atlas'],
+      actionStatuses: ['open'],
+    },
+    sort: { field: 'title', direction: 'asc' },
+  };
+  const once = appHelpers.smartViewNormalizeDefinition(definition);
+  const twice = appHelpers.smartViewNormalizeDefinition(once);
+  assert.deepEqual(twice, once);
+
+  // And the whole way through the query, which is where it actually bit.
+  const notes = [
+    { id: 'a', title: 'A', tags: ['work'], body: 'owner:: sam\n' },
+    { id: 'b', title: 'B', tags: ['work'], body: 'owner:: ana\n' },
+  ];
+  const query = { id: 'q', title: 'Q', type: 'notes', filters: { properties: [{ key: 'owner', op: 'is', value: ['sam'] }] } };
+  assert.deepEqual(appHelpers.smartViewQuery(notes, query, { allNotes: notes }).map(r => r.noteId), ['a']);
+  const negated = { ...query, filters: { properties: [{ key: 'owner', op: 'not', value: ['sam'] }] } };
+  assert.deepEqual(appHelpers.smartViewQuery(notes, negated, { allNotes: notes }).map(r => r.noteId), ['b']);
+});
+
+test('the renderer and the main process allow exactly the same filter keys', () => {
+  // These two lists are mirrored by hand. When they disagree, a view saves in
+  // the renderer and is rejected at the IPC boundary, which surfaces as a
+  // failed save rather than as anything pointing at the mismatch.
+  const fs = require('fs');
+  const path = require('path');
+  const readList = (file, marker, end) => {
+    const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    const start = source.indexOf(marker);
+    assert.ok(start > 0, `marker not found in ${file}: ${marker}`);
+    const block = source.slice(start, source.indexOf(end, start));
+    return [...block.matchAll(/'([a-zA-Z]+)'/g)].map(hit => hit[1]).sort();
+  };
+  const ipc = readList('lib/connectors/ipc/preferenceValidation.js', 'const SMART_VIEW_FILTER_KEYS = new Set([', ']);');
+  const renderer = readList('src/app/helpers/smartViewHelpers.js', "smartViewAssertAllowedKeys(filters, [", "], 'Smart View filters');");
+  assert.ok(ipc.length > 20, `expected a real filter allowlist, got ${ipc.length}`);
+  assert.deepEqual(renderer, ipc);
+  assert.ok(ipc.includes('propertiesMatch'));
 });
 
 test('scope narrows a view without losing the filters it already had', async () => {
