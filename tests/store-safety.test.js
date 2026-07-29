@@ -481,13 +481,26 @@ test('Feature packs and private usage controls persist without arbitrary event d
     const loaded = await store.loadVault(vault.id);
     const notePath = path.join(store.ROOT, vault.slug, `${loaded.notes[0].id}.md`);
     const noteBeforePreferences = fs.readFileSync(notePath, 'utf8');
+    assert.deepEqual((await store.getPrefs()).enabledPacks, ['views']);
+    await store.setPrefs({ enabledPacks: [] });
+    assert.deepEqual((await store.getPrefs()).enabledPacks, []);
     await store.setPrefs({
       enabledPacks: ['canvas', 'writer', 'canvas', 'unknown'],
+      tweaks: {
+        showTodayInSidebar: true,
+        showThinkingBoardInSidebar: true,
+        showWorkflowInSidebar: true,
+        showQuickCaptureInSidebar: true,
+      },
       localUsageMetrics: true,
       anonymousUsageSharing: false,
     });
     let prefs = await store.getPrefs();
     assert.deepEqual(prefs.enabledPacks, ['canvas', 'writer']);
+    assert.equal(prefs.tweaks.showTodayInSidebar, true);
+    assert.equal(prefs.tweaks.showThinkingBoardInSidebar, true);
+    assert.equal(prefs.tweaks.showWorkflowInSidebar, true);
+    assert.equal(prefs.tweaks.showQuickCaptureInSidebar, true);
     assert.equal(prefs.localUsageMetrics, true);
     assert.equal(prefs.anonymousUsageSharing, false);
     assert.equal(fs.readFileSync(notePath, 'utf8'), noteBeforePreferences);

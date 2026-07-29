@@ -42,9 +42,10 @@ function ViewsControlStrip({
         Rows
         <span style={{ fontWeight: 600, color: T.ink }}>{String(definition?.type || 'notes')}</span>
       </span>
-      <span style={{ position: 'relative', display: 'inline-flex' }}>
+      <span data-mn-views-dropdown-root="true" style={{ position: 'relative', display: 'inline-flex' }}>
         <button
           type="button"
+          data-mn-views-dropdown-trigger="scope"
           aria-label="Scope"
           aria-expanded={scopeOpen}
           title="Which notes this view looks at before anything else"
@@ -68,9 +69,10 @@ function ViewsControlStrip({
           />
         )}
       </span>
-      <span style={{ position: 'relative', display: 'inline-flex' }}>
+      <span data-mn-views-dropdown-root="true" style={{ position: 'relative', display: 'inline-flex' }}>
         <button
           type="button"
+          data-mn-views-dropdown-trigger="conditions"
           aria-label="Conditions"
           aria-expanded={conditionsOpen}
           title="Which rows survive, once scope has picked the notes"
@@ -95,9 +97,10 @@ function ViewsControlStrip({
           />
         )}
       </span>
-      <span style={{ position: 'relative', display: 'inline-flex' }}>
+      <span data-mn-views-dropdown-root="true" style={{ position: 'relative', display: 'inline-flex' }}>
         <button
           type="button"
+          data-mn-views-dropdown-trigger="columns"
           aria-label="Columns"
           aria-expanded={columnsOpen}
           title="Which columns the table shows, and where each one comes from"

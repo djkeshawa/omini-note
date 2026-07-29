@@ -4,8 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const features = require('../src/app/featureRegistry');
 
-test('feature registry keeps the default surface minimal', () => {
+test('feature registry keeps an explicitly empty pack surface minimal', () => {
   const state = features.deriveFeatureState({ enabledPacks: [], assistanceEnabled: false });
+  assert.equal(state.showViews, false);
   assert.equal(state.showAgenda, false);
   assert.equal(state.showWorkflow, false);
   assert.equal(state.showCanvas, false);
@@ -19,6 +20,17 @@ test('feature registry keeps the default surface minimal', () => {
   }
   assert.equal(features.isActionAvailable('new-note', state), true);
   assert.equal(features.isViewAvailable('todos', state), false);
+});
+
+test('the fresh-install Views pack does not enable planning or Labs', () => {
+  const state = features.deriveFeatureState({ enabledPacks: ['views'], assistanceEnabled: false });
+  assert.equal(state.showViews, true);
+  assert.equal(state.showAgenda, false);
+  assert.equal(state.showWorkflow, false);
+  assert.equal(state.showLabs, false);
+  assert.equal(state.showAskAi, false);
+  assert.equal(features.isActionAvailable('views', state), true);
+  assert.equal(features.isActionAvailable('smart-views', state), false);
 });
 
 test('feature registry infers packs from existing specialist data', () => {

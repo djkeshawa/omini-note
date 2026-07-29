@@ -137,6 +137,12 @@ function AppView({ model }) {
                 onRenameVault={renameVault}
                 onDeleteVault={deleteVault}
                 featureState={featureState}
+                sidebarVisibility={{
+                  today: tweaks.showTodayInSidebar === true,
+                  thinkingBoard: tweaks.showThinkingBoardInSidebar === true,
+                  workflow: tweaks.showWorkflowInSidebar === true,
+                  quickCapture: tweaks.showQuickCaptureInSidebar === true,
+                }}
                 contextualTip={model.contextualTip?.placement === 'sidebar' ? model.contextualTip : null}
                 onDismissContextualTip={model.dismissContextualTip}
                 todayCount={model.todayActionableCount ?? 0}

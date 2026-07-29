@@ -5,6 +5,29 @@ import { MN_PLUGINS as MN_SETTINGS_PLUGINS } from '../../shared/plugins.js';
 import MN_FEATURES from '../../app/featureRegistry.js';
 import { mnSettingsInput } from '../settingsPrimitives.jsx';
 
+const SIDEBAR_MORE_DESTINATIONS = [
+  {
+    key: 'showTodayInSidebar',
+    label: 'Today',
+    sub: 'Show the Today dashboard shortcut inside More.',
+  },
+  {
+    key: 'showThinkingBoardInSidebar',
+    label: 'Thinking Board',
+    sub: 'Show this shortcut inside More whenever Thinking Board is available.',
+  },
+  {
+    key: 'showWorkflowInSidebar',
+    label: 'Workflow',
+    sub: 'Show the Workflow board and status shortcuts inside More whenever Workflow is available.',
+  },
+  {
+    key: 'showQuickCaptureInSidebar',
+    label: 'Quick Capture',
+    sub: 'Show a second Quick Capture shortcut inside More; the app-bar action stays available.',
+  },
+];
+
 function SectionAppearance({ tweaks, setTweak, T, themeOptions = [] }) {
   const builtIns = [
     { value: 'light', label: 'Light' },
@@ -181,34 +204,50 @@ function SectionAdvanced({ tweaks, setTweak, T, enabledPacks = [], featureState 
   const plugins = MN_SETTINGS_PLUGINS.normalizeAll ? MN_SETTINGS_PLUGINS.normalizeAll(tweaks.plugins) : [];
   return (
     <div>
-      <H T={T} label="Optional packs" sub="Enable specialist tools only when they support your work." />
+      <H T={T} label="More menu items" sub="Choose which optional destinations appear when More is expanded." />
       <SettingsCard T={T}>
-        {packs.map((pack, index) => {
-          // The toggle reports whether you turned the pack on, not whether its
-          // views happen to be showing. Those are different things: a pack is
-          // also revealed by matching notes, and reading that back as "on" left
-          // the control checked and disabled with nothing the user could do —
-          // which is how a vault with workflow notes but no dated ones ended up
-          // unable to reach Agenda at all.
-          const checked = enabledPacks.includes(pack.id);
-          const detected = inferred.has(pack.id);
-          const note = detected
-            ? (checked
-              ? ' Also found in your notes, so its views stay even if you turn this off.'
-              : ' Already showing where your notes support it. Turn on for the rest.')
-            : '';
-          return (
-            <Row key={pack.id} T={T} label={pack.label}
-              sub={`${pack.description}${note}`}
-              last={index === packs.length - 1}>
-              <Toggle T={T} checked={checked}
-                label={`${checked ? 'Disable' : 'Enable'} ${pack.label} pack`}
-                dataId={pack.id}
-                onChange={value => onSetPack?.(pack.id, value)} />
-            </Row>
-          );
-        })}
+        {SIDEBAR_MORE_DESTINATIONS.map((item, index) => (
+          <Row key={item.key} T={T} label={item.label} sub={item.sub}
+            last={index === SIDEBAR_MORE_DESTINATIONS.length - 1}>
+            <Toggle
+              T={T}
+              checked={tweaks[item.key] === true}
+              label={`Toggle ${item.label} in More`}
+              onChange={value => setTweak(item.key, value)}
+            />
+          </Row>
+        ))}
       </SettingsCard>
+      <div style={{ marginTop: 28 }}>
+        <H T={T} label="Optional packs" sub="Enable specialist tools only when they support your work." />
+        <SettingsCard T={T}>
+          {packs.map((pack, index) => {
+            // The toggle reports whether you turned the pack on, not whether its
+            // views happen to be showing. Those are different things: a pack is
+            // also revealed by matching notes, and reading that back as "on" left
+            // the control checked and disabled with nothing the user could do —
+            // which is how a vault with workflow notes but no dated ones ended up
+            // unable to reach Agenda at all.
+            const checked = enabledPacks.includes(pack.id);
+            const detected = inferred.has(pack.id);
+            const note = detected
+              ? (checked
+                ? ' Also found in your notes, so its views stay even if you turn this off.'
+                : ' Already showing where your notes support it. Turn on for the rest.')
+              : '';
+            return (
+              <Row key={pack.id} T={T} label={pack.label}
+                sub={`${pack.description}${note}`}
+                last={index === packs.length - 1}>
+                <Toggle T={T} checked={checked}
+                  label={`${checked ? 'Disable' : 'Enable'} ${pack.label} pack`}
+                  dataId={pack.id}
+                  onChange={value => onSetPack?.(pack.id, value)} />
+              </Row>
+            );
+          })}
+        </SettingsCard>
+      </div>
       {plugins.length > 0 && <SectionPlugins tweaks={tweaks} setTweak={setTweak} T={T} />}
       {plugins.length === 0 && (
         <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 7, border: `1px solid ${T.lineSub}`, background: T.bgSub, color: T.inkMed, fontSize: 12.5, lineHeight: 1.5 }}>
