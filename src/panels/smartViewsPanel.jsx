@@ -7,7 +7,7 @@ import { MN_VIEW_LAYOUTS, mnViewLayout } from '../shared/viewLayout.js';
 
 const { useEffect: useEffectSV, useMemo: useMemoSV, useState: useStateSV } = React;
 
-const MN_SMART_VIEW_PRESENTATIONS = MN_VIEW_LAYOUTS;
+const MN_SMART_VIEW_PRESENTATIONS = ['list', 'table', 'cards', 'timeline'];
 
 // Delegates to the shared resolver so the Views feature and this panel agree
 // on what a saved layout means.
@@ -397,4 +397,10 @@ function MnSmartViewsPanel({
   );
 }
 
-export { MnSmartViewsPanel, mnSmartViewPresentation, mnSmartViewList, mnSmartViewTable, mnSmartViewCards, mnSmartViewTimeline };
+export {
+  MnSmartViewsPanel, mnSmartViewPresentation,
+  mnSmartViewList, mnSmartViewTable, mnSmartViewCards, mnSmartViewTimeline,
+  // The per-result readers, so every layout describes a row the same way.
+  mnSmartViewResultDate, mnSmartViewResultSource, mnSmartViewResultKind,
+  mnSmartViewResultTags, mnSmartViewResultPreview,
+};

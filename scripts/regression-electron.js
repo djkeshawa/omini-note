@@ -449,9 +449,21 @@ async function runViewsPanelScenario(win) {
           layouts: panel ? panel.querySelectorAll('[role="tab"]').length : 0,
         };
       })()`);
-      // A seeded definition and the four layout tabs must both be there — an
+      // A seeded definition and the five layout tabs must both be there — an
       // empty shell would pass a bare "does the panel exist" probe.
-      return { ok: current.panel && current.views > 0 && current.layouts === 4, current };
+      return { ok: current.panel && current.views > 0 && current.layouts === 5, current };
+    });
+    // Switching to the board must produce real columns, not an empty frame.
+    await clickVisibleText(win, 'Board');
+    await waitFor(win, 'views board renders columns', async () => {
+      const current = await evaluate(win, `(() => {
+        const panel = document.querySelector('[data-mn-views-panel]');
+        if (!panel) return { panel: false };
+        const headers = [...panel.querySelectorAll('div')]
+          .filter(el => el.children.length === 2 && /^\\D+\\d+$/.test((el.textContent || '').trim()));
+        return { panel: true, columns: headers.length, text: panel.textContent.slice(0, 160) };
+      })()`);
+      return { ok: current.panel && current.columns > 0, current };
     });
   } finally {
     await setPackEnabledForRegression(win, 'views', false);

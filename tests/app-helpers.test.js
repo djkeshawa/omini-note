@@ -1341,6 +1341,22 @@ test('grouping reads the source note of a task, not just a note result', () => {
   assert.deepEqual(appHelpers.smartViewGroup(notes, { by: 'status' }).map(g => g.label), ['DONE', 'No status']);
 });
 
+test('a board view always has columns to draw', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const board = loadRendererModule('src/features/views/ViewsBoard.jsx');
+
+  // A board is columns. A definition asking for the board layout without
+  // saying how to split it would otherwise render one undifferentiated
+  // column, which is just a worse list.
+  assert.deepEqual(board.mnViewsBoardGroup({ layout: 'board' }), { by: 'status', direction: 'asc' });
+  assert.deepEqual(board.mnViewsBoardGroup({}), { by: 'status', direction: 'asc' });
+  // An explicit group always wins.
+  assert.deepEqual(
+    board.mnViewsBoardGroup({ layout: 'board', group: { by: 'priority', direction: 'desc' } }),
+    { by: 'priority', direction: 'desc' }
+  );
+});
+
 test('a saved view opens in the layout it was saved with', async () => {
   const { loadRendererModule } = require('./helpers/rendererModule.js');
   const panel = loadRendererModule('src/panels/smartViewsPanel.jsx');
@@ -1353,8 +1369,8 @@ test('a saved view opens in the layout it was saved with', async () => {
   assert.equal(presentation({ layout: 'timeline' }), 'timeline');
   assert.equal(presentation({ layout: 'list' }), 'list');
 
-  // board and calendar are valid saved layouts this panel cannot draw yet —
-  // they fall back rather than rendering nothing.
+  // The Views feature draws boards; this panel does not, so a board
+  // definition still falls back here.
   assert.equal(presentation({ layout: 'board' }), 'list');
   assert.equal(presentation({ layout: 'calendar' }), 'list');
 

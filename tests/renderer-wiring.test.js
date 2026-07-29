@@ -1150,9 +1150,11 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(panels, /import '\.\/smartViewsPanel\.jsx';/);
   assert.match(smartViewsPanel, /function MnSmartViewsPanel/);
   assert.match(smartViewsPanel, /useEffect: useEffectSV/);
-  // The layout list moved to shared/viewLayout.js so the Views feature and
-  // this panel resolve a saved layout the same way.
-  assert.match(smartViewsPanel, /MN_SMART_VIEW_PRESENTATIONS = MN_VIEW_LAYOUTS/);
+  // The panel keeps its own supported set: it cannot draw a board, so a
+  // board definition falls back to the list here while the Views feature
+  // renders it properly.
+  assert.match(smartViewsPanel, /MN_SMART_VIEW_PRESENTATIONS = \['list', 'table', 'cards', 'timeline'\]/);
+  assert.match(smartViewsPanel, /mnViewLayout\(definition, MN_SMART_VIEW_PRESENTATIONS\)/);
   assert.match(smartViewsPanel, /helpers\.smartViewQuery/);
   assert.match(smartViewsPanel, /helpers\.smartViewQuery\(notes, activeDefinition/);
   assert.match(smartViewsPanel, /activeDefinitionId = ''/);
@@ -1173,9 +1175,17 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(smartViewsPanel, /source\?\.noteId/);
   // The presentation resolver is exported alongside the panel so a saved
   // layout can be tested behaviourally rather than by matching source text.
-  // The four presentation renderers are exported so the Views feature can
-  // reuse them while both surfaces coexist.
-  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel, mnSmartViewPresentation, mnSmartViewList, mnSmartViewTable, mnSmartViewCards, mnSmartViewTimeline \}/);
+  // Asserted by name rather than by the exact export line: this pins the
+  // API the Views feature depends on without breaking every time the list
+  // is reformatted.
+  for (const name of [
+    'MnSmartViewsPanel', 'mnSmartViewPresentation',
+    'mnSmartViewList', 'mnSmartViewTable', 'mnSmartViewCards', 'mnSmartViewTimeline',
+    'mnSmartViewResultDate', 'mnSmartViewResultSource', 'mnSmartViewResultKind',
+    'mnSmartViewResultTags', 'mnSmartViewResultPreview',
+  ]) {
+    assert.match(smartViewsPanel, new RegExp(`export \\{[^}]*\\b${name}\\b`, 's'), `${name} must stay exported`);
+  }
   assert.match(app, /import \{ MnSmartViewsPanel \} from '\.\.\/panels\/smartViewsPanel\.jsx'/);
   assert.match(app, /MnSmartViewsPanel/);
   assert.match(preferenceModels, /function buildDefaultSmartViewDefinitions/);
