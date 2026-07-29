@@ -1150,7 +1150,9 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(panels, /import '\.\/smartViewsPanel\.jsx';/);
   assert.match(smartViewsPanel, /function MnSmartViewsPanel/);
   assert.match(smartViewsPanel, /useEffect: useEffectSV/);
-  assert.match(smartViewsPanel, /MN_SMART_VIEW_PRESENTATIONS = \['list', 'table', 'cards', 'timeline'\]/);
+  // The layout list moved to shared/viewLayout.js so the Views feature and
+  // this panel resolve a saved layout the same way.
+  assert.match(smartViewsPanel, /MN_SMART_VIEW_PRESENTATIONS = MN_VIEW_LAYOUTS/);
   assert.match(smartViewsPanel, /helpers\.smartViewQuery/);
   assert.match(smartViewsPanel, /helpers\.smartViewQuery\(notes, activeDefinition/);
   assert.match(smartViewsPanel, /activeDefinitionId = ''/);
@@ -1171,7 +1173,9 @@ test('Smart Views panel renders shared result presentations', () => {
   assert.match(smartViewsPanel, /source\?\.noteId/);
   // The presentation resolver is exported alongside the panel so a saved
   // layout can be tested behaviourally rather than by matching source text.
-  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel, mnSmartViewPresentation \}/);
+  // The four presentation renderers are exported so the Views feature can
+  // reuse them while both surfaces coexist.
+  assert.match(smartViewsPanel, /export \{ MnSmartViewsPanel, mnSmartViewPresentation, mnSmartViewList, mnSmartViewTable, mnSmartViewCards, mnSmartViewTimeline \}/);
   assert.match(app, /import \{ MnSmartViewsPanel \} from '\.\.\/panels\/smartViewsPanel\.jsx'/);
   assert.match(app, /MnSmartViewsPanel/);
   assert.match(preferenceModels, /function buildDefaultSmartViewDefinitions/);

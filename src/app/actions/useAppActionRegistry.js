@@ -1,4 +1,5 @@
 import { buildDynamicActions } from './buildDynamicActions.js';
+import { buildMemoryActions } from './buildMemoryActions.js';
 import { createActionResolvers } from './actionResolvers.js';
 import { shortcutLabel, useShortcutPlatform } from '../../platform/shortcuts.js';
 
@@ -10,7 +11,7 @@ export function useAppActionRegistry(ctx) {
     activeCanvas, activeVault, activeVaultId, addNoteToCanvas, canvases, closeReferencePane,
     createCanvas, createDailyNote, createNote, createNoteFromTemplate, deleteCanvas, deleteNote,
     duplicateNote, exportBackup, importBackup, markDirty, notesWithBody, openAskAi, openCanvas,
-    openCanvasDashboard, openReferencePane, openSmartView, plugins, rebuildIndex, recordPhase5Metric,
+    openCanvasDashboard, openReferencePane, openSmartView, openViews, plugins, rebuildIndex, recordPhase5Metric,
     referencePaneOpen, restoreDeletedNote, runPlugin, selectVault, selectedNote, smartViewDefinitions,
     uniqueNoteTitle, updateNote, updateNoteBody, updateWorkflowArchived, updateWorkflowNoteStatus,
     vaultsForSidebar, workflowStates, navigateView, showAppNotice, appActionsFactory, appHelpers,
@@ -234,6 +235,7 @@ export function useAppActionRegistry(ctx) {
       { id: 'calendar', label: 'Open agenda', description: 'Show scheduled todos and reminders.', section: 'Navigate', keywords: 'calendar schedule agenda reminder date', inputSchema: objectSchema(), run: () => openView('calendar') },
       { id: 'today', label: 'Open today', description: 'Show the Today dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => openView('today') },
       { id: 'smart-views', label: 'Open smart views', description: 'Show saved Smart View dashboards.', section: 'Navigate', keywords: 'saved smart views dashboard query tasks reminders', inputSchema: objectSchema(), run: () => openSmartView() },
+      { id: 'views', label: 'Open views', description: 'Show saved views of your notes, tasks and dates.', section: 'Navigate', keywords: 'views saved table board calendar list query', inputSchema: objectSchema(), run: () => openViews() },
       { id: 'todos', label: 'Open agenda', description: 'Open the calendar planner for tasks and reminders.', section: 'Navigate', keywords: 'tasks checklist todos agenda calendar', hidden: true, aiHidden: true, inputSchema: objectSchema(), run: () => openView('calendar') },
       { id: 'canvas', label: 'Open canvas dashboard', description: 'Open the canvas dashboard.', section: 'Navigate', inputSchema: objectSchema(), run: () => { openCanvasDashboard(); return { message: 'Opened canvas dashboard.' }; } },
       ...smartViewDefinitions.map(definition => ({
@@ -286,92 +288,11 @@ export function useAppActionRegistry(ctx) {
           return { message: res?.value?.canceled ? 'Export cancelled.' : `Note exported to ${res?.value?.filePath || 'file'}.` };
         },
       })),
-      {
-        id: 'memory-import',
-        label: 'Import memories as notes',
-        description: 'Pull memories from the local llm-memory server into this vault as editable notes with provenance.',
-        section: 'Memory',
-        enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
-        inputSchema: objectSchema(),
-        preview: () => ({
-          title: 'Import memories as notes',
-          message: 'VispNote will fetch memories from the local llm-memory server and create a note per memory. Existing memory notes are never overwritten.',
-          steps: ['Fetch memories from 127.0.0.1', 'Create missing memory notes', 'Index new notes'],
-          affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
-        }),
-        run: async () => {
-          const res = await desktopBridge.integrations.memory.import(activeVaultId);
-          if (res?.ok === false) throw new Error(res.error || 'Memory import failed');
-          const value = res?.value || {};
-          const created = Array.isArray(value.notes) ? normalizeNotes(value.notes, mnMdToBlocks) : [];
-          if (created.length) setNotes(ns => [...created, ...ns]);
-          return { message: `Imported ${value.imported || 0} memor${(value.imported || 0) === 1 ? 'y' : 'ies'} (${value.skipped || 0} already present).` };
-        },
-      },
-      {
-        id: 'memory-remember',
-        label: 'Remember this note',
-        description: 'Distill the current note into the local llm-memory server so agents can recall it.',
-        section: 'Memory',
-        risk: 'confirm',
-        enabled: HAS_DISK && !!selectedNote && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
-        inputSchema: objectSchema(),
-        preview: () => ({
-          title: 'Remember this note',
-          message: 'VispNote will send this note\'s title and body to the local llm-memory server as a new memory.',
-          steps: ['Send note content to 127.0.0.1', 'Store as an episodic memory'],
-          affected: noteAffected(selectedNote),
-        }),
-        run: async () => {
-          if (!selectedNote) return { message: 'No note is selected.' };
-          const res = await desktopBridge.integrations.memory.remember(activeVaultId, selectedNote.id);
-          if (res?.ok === false) throw new Error(res.error || 'Could not store the memory');
-          setConnectionsRefreshToken(token => token + 1);
-          return { message: `Stored “${selectedNote.title || 'Untitled'}” as memory ${res?.value?.id ? res.value.id.slice(0, 8) : ''}.` };
-        },
-      },
-      {
-        id: 'memory-sync-links',
-        label: 'Sync note links to memory graph',
-        description: 'Add or refresh this vault\'s current [[wiki-links]] in the llm-memory graph without overwriting unrelated relationships.',
-        section: 'Memory',
-        enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
-        inputSchema: objectSchema(),
-        preview: () => ({
-          title: 'Sync note links to memory graph',
-          message: 'VispNote adds new relationships and refreshes weights on relationships it previously managed. Unrelated relationships are preserved. Removed wiki-links are reported as stale because the current memory server cannot delete relationships.',
-          steps: ['Map remembered notes within this vault', 'Resolve and weight current [[wiki-links]]', 'Create or refresh VispNote-managed relationships on 127.0.0.1'],
-          affected: [{ type: 'vault', id: activeVaultId, title: activeVault?.name || activeVaultId }],
-        }),
-        run: async () => {
-          const res = await desktopBridge.integrations.memory.syncLinks(activeVaultId);
-          if (res?.ok === false) throw new Error(res.error || 'Link sync failed');
-          const value = res?.value || {};
-          setConnectionsRefreshToken(token => token + 1);
-          return { message: MN_MEMORY_ACTIONS.syncResultMessage(value) };
-        },
-      },
-      {
-        id: 'memory-insights',
-        label: 'Memory graph insights',
-        description: 'Show a health summary of the local llm-memory knowledge graph: memories, relationships, and duplicate candidates.',
-        section: 'Memory',
-        enabled: HAS_DISK && plugins.some(plugin => plugin.enabled !== false && plugin.type === 'llm-memory'),
-        inputSchema: objectSchema(),
-        preview: () => ({
-          title: 'Memory graph insights',
-          message: 'VispNote will fetch a summary report from the local llm-memory server: total memories and relationships, active intents, and duplicate candidates.',
-          steps: ['Fetch memory-intelligence report from 127.0.0.1', 'Fetch duplicate candidates', 'Summarize'],
-          affected: [],
-        }),
-        run: async () => {
-          const [reportRes, dupRes] = await Promise.all([
-            desktopBridge.integrations.memory.intelligence({ limit: 5 }),
-            desktopBridge.integrations.memory.duplicates({ limit: 20 }),
-          ]);
-          return { message: MN_MEMORY_ACTIONS.insightsResultMessage(reportRes, dupRes) };
-        },
-      },
+      ...buildMemoryActions({
+        HAS_DISK, memoryActions: MN_MEMORY_ACTIONS, platform: desktopBridge, plugins,
+        activeVaultId, activeVault, mnMdToBlocks, objectSchema, normalizeNotes, setNotes,
+        selectedNote, noteAffected, setConnectionsRefreshToken,
+      }),
       {
         id: 'import-backup',
         label: 'Import backup',

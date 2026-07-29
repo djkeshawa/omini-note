@@ -8,12 +8,14 @@
     { id: 'research', label: 'Research', description: 'Zotero-assisted source reading and synthesis.' },
     { id: 'writer', label: 'Writer', description: 'Novel structure, scenes, and long-form planning.' },
     { id: 'agents', label: 'Agents', description: 'MCP and local memory integrations.' },
+    { id: 'views', label: 'Views', description: 'One saved surface for tables, boards, calendars and lists over your notes.' },
     { id: 'labs', label: 'Labs', description: 'Advanced graph, saved views, and experimental tools.' },
   ]);
   const PACK_IDS = new Set(PACKS.map(pack => pack.id));
   const ACTION_REQUIREMENTS = Object.freeze({
     graph: 'labs',
     'smart-views': 'labs',
+    views: 'views',
     calendar: 'agenda',
     todos: 'agenda',
     'set-workflow-status': 'workflow',
@@ -118,6 +120,7 @@
       showResearch: has('research'),
       showAgents: has('agents'),
       showLabs: has('labs'),
+      showViews: has('views'),
       showAskAi: input.assistanceEnabled === true,
     };
   }
@@ -138,6 +141,7 @@
     if (requirement === 'workflow') return featureState.showWorkflow === true;
     if (requirement === 'canvas') return featureState.showCanvas === true;
     if (requirement === 'labs') return featureState.showLabs === true;
+    if (requirement === 'views') return featureState.showViews === true;
     if (requirement === 'assistance') return featureState.showAskAi === true;
     return enabled.has(requirement);
   }
@@ -153,6 +157,7 @@
       ai: 'assistance',
       graph: 'labs',
       'smart-views': 'labs',
+      views: 'views',
       calendar: 'agenda',
       todos: 'agenda',
       workflow: 'workflow',

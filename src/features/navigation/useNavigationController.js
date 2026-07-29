@@ -26,6 +26,18 @@ export function useNavigationController({ defaultSmartViews }) {
     return { message: 'Opened Smart Views.' };
   }, [navigateView]);
 
+  // Views shares the saved-definition store with Smart Views — they read the
+  // same records — so it reuses activeSmartViewId rather than keeping a second
+  // pointer that could drift out of step while both surfaces exist.
+  const openViews = useCallback((definitionId = '') => {
+    setSelectedTag(null);
+    setSelectedWorkflow(null);
+    setQuery('');
+    setActiveSmartViewId(String(definitionId || ''));
+    navigateView('views');
+    return { message: 'Opened Views.' };
+  }, [navigateView]);
+
   const goBackView = useCallback(() => {
     const target = lastViewRef.current || 'notes';
     setView(current => {
@@ -51,6 +63,7 @@ export function useNavigationController({ defaultSmartViews }) {
     setQuery,
     navigateView,
     openSmartView,
+    openViews,
     goBackView,
   };
 }

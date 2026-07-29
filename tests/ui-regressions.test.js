@@ -231,6 +231,15 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
   assert.ok(appIcon.size > 0);
 });
 
+test('the views pack has a regression scenario that drives it', () => {
+  const harness = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
+  assert.match(harness, /runScenario\(win, 'Views', 'the views pack adds one saved-view surface'/);
+  assert.match(harness, /setPackEnabledForRegression\(win, 'views', true\)/);
+  // The pack-isolation table must carry views without a label: its check is a
+  // substring match on body text and 'Views' is inside 'Smart Views'.
+  assert.match(harness, /\{ id: 'views', commands: \['views'\], labels: \[\] \}/);
+});
+
 test('smart view embeds do not re-query the vault on every render', () => {
   const embeds = fs.readFileSync(path.join(__dirname, '../src/editor/outliner/EmbeddedBlocks.jsx'), 'utf8');
   // The embed renders inside the editor, so an unmemoized query here ran a

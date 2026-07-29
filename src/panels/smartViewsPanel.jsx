@@ -3,20 +3,16 @@
 import MN_APP_HELPERS from '../app/appHelpers.js';
 import { mnWalk } from '../editor/outline.jsx';
 import { MN_REMIND } from '../shared/markdown.jsx';
+import { MN_VIEW_LAYOUTS, mnViewLayout } from '../shared/viewLayout.js';
 
 const { useEffect: useEffectSV, useMemo: useMemoSV, useState: useStateSV } = React;
 
-const MN_SMART_VIEW_PRESENTATIONS = ['list', 'table', 'cards', 'timeline'];
+const MN_SMART_VIEW_PRESENTATIONS = MN_VIEW_LAYOUTS;
 
-// A saved definition carries the layout it wants, and that has been validated
-// and persisted end to end for a while — it just was not being read, so a view
-// saved as a table always reopened as a list.
-//
-// `board` and `calendar` are valid saved layouts this panel cannot draw; they
-// fall back to the list rather than showing nothing.
+// Delegates to the shared resolver so the Views feature and this panel agree
+// on what a saved layout means.
 function mnSmartViewPresentation(definition) {
-  const layout = String(definition?.layout || '').toLowerCase();
-  return MN_SMART_VIEW_PRESENTATIONS.includes(layout) ? layout : 'list';
+  return mnViewLayout(definition, MN_SMART_VIEW_PRESENTATIONS);
 }
 
 function mnSmartViewResultDate(result = {}, helpers = {}) {
@@ -401,4 +397,4 @@ function MnSmartViewsPanel({
   );
 }
 
-export { MnSmartViewsPanel, mnSmartViewPresentation };
+export { MnSmartViewsPanel, mnSmartViewPresentation, mnSmartViewList, mnSmartViewTable, mnSmartViewCards, mnSmartViewTimeline };

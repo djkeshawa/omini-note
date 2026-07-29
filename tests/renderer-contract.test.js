@@ -71,7 +71,7 @@ test('modularization target feature folders exist', () => {
 
 test('application composition delegates focused state to feature controllers', () => {
   const app = appSource(__dirname);
-  const features = ['ai', 'boot', 'canvas', 'navigation', 'overlays', 'planning', 'preferences', 'reference', 'search', 'today', 'trash', 'writer'];
+  const features = ['ai', 'boot', 'canvas', 'navigation', 'overlays', 'planning', 'preferences', 'reference', 'search', 'today', 'trash', 'views', 'writer'];
   for (const feature of features) {
     const entry = path.join(paths.srcRoot, `features/${feature}/index.js`);
     assert.ok(fs.existsSync(entry), `${feature} is missing its public entry point`);

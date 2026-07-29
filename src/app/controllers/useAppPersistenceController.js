@@ -77,6 +77,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
         canvas: 'canvas',
         graph: 'graph',
         'smart-views': 'smart_views',
+      views: 'views',
         workflow: 'planning',
         calendar: 'planning',
         novelist: 'writer',
