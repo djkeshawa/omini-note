@@ -1341,6 +1341,82 @@ test('grouping reads the source note of a task, not just a note result', () => {
   assert.deepEqual(appHelpers.smartViewGroup(notes, { by: 'status' }).map(g => g.label), ['DONE', 'No status']);
 });
 
+test('view table columns read real fields and only save a sort the vault accepts', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const c = loadRendererModule('src/features/views/viewsColumns.js');
+  const helpers = { bodyPropertyValue: (body, key) => {
+    const found = String(body || '').match(new RegExp('^' + key + ':: *(.*)$', 'm'));
+    return found ? found[1].trim() : '';
+  } };
+
+  // Notes and actions get different catalogues; pinned property keys are
+  // appended, deduped against the built-ins, and marked as property-sourced.
+  assert.deepEqual(c.mnViewsColumns({ type: 'notes' }).map(col => col.key),
+    ['title', 'tags', 'modified', 'created', 'words']);
+  const withProps = c.mnViewsColumns({ type: 'notes', columns: ['priority', 'tags', 'owner', '  '] });
+  assert.deepEqual(withProps.map(col => col.key),
+    ['title', 'tags', 'modified', 'created', 'words', 'priority', 'owner']);
+  assert.equal(withProps.find(col => col.key === 'priority').origin, 'property');
+  assert.equal(withProps.find(col => col.key === 'tags').origin, 'file');
+
+  // Every column reads a field the query actually puts on the row.
+  const noteRow = {
+    type: 'note', title: 'Ship it', tags: ['work'], modifiedDate: '2026-07-20',
+    createdDate: '2026-07-01', note: { body: 'one two three\npriority:: high\n' },
+  };
+  const cell = (row, key, def = { type: 'notes', columns: ['priority', 'owner'] }) =>
+    c.mnViewsCellValue(row, c.mnViewsColumns(def).find(col => col.key === key), helpers);
+  assert.equal(cell(noteRow, 'title'), 'Ship it');
+  assert.deepEqual(cell(noteRow, 'tags'), ['work']);
+  assert.equal(cell(noteRow, 'modified'), '2026-07-20');
+  assert.equal(cell(noteRow, 'words'), 5);
+  assert.equal(cell(noteRow, 'priority'), 'high');
+  assert.equal(cell(noteRow, 'owner'), '');
+
+  const taskRow = {
+    type: 'task', title: 'call back', status: 'open', noteTitle: 'Inbox',
+    reminderDate: '2026-08-02', noteTags: ['calls'],
+    sourceNote: { body: 'owner:: sam\n' },
+  };
+  const taskDef = { type: 'tasks', columns: ['owner'] };
+  assert.equal(cell(taskRow, 'note', taskDef), 'Inbox');
+  assert.equal(cell(taskRow, 'due', taskDef), '2026-08-02');
+  assert.deepEqual(cell(taskRow, 'tags', taskDef), ['calls']);
+  assert.equal(cell(taskRow, 'owner', taskDef), 'sam');
+
+  // Only title / created / modified / due map to a storable sort field. The
+  // preference sanitizer throws on anything else, so the rest must report as
+  // not storable rather than being written into a definition.
+  assert.equal(c.mnViewsSortIsStorable('title'), true);
+  assert.equal(c.mnViewsSortIsStorable('due'), true);
+  assert.equal(c.mnViewsSortField('due'), 'reminder');
+  assert.equal(c.mnViewsSortIsStorable('tags'), false);
+  assert.equal(c.mnViewsSortIsStorable('words'), false);
+  assert.equal(c.mnViewsSortIsStorable('priority'), false);
+  assert.equal(c.mnViewsSortField('priority'), '');
+
+  // A saved definition round-trips into the table's own sort shape.
+  assert.deepEqual(c.mnViewsSortFromDefinition({ sort: { field: 'reminder', direction: 'desc' } }), { key: 'due', direction: 'desc' });
+  assert.equal(c.mnViewsSortFromDefinition({ sort: { field: 'nonsense' } }), null);
+
+  // Clicking a header cycles asc, desc, then back to the saved order.
+  assert.deepEqual(c.mnViewsNextSort(null, 'title'), { key: 'title', direction: 'asc' });
+  assert.deepEqual(c.mnViewsNextSort({ key: 'title', direction: 'asc' }, 'title'), { key: 'title', direction: 'desc' });
+  assert.equal(c.mnViewsNextSort({ key: 'title', direction: 'desc' }, 'title'), null);
+  assert.deepEqual(c.mnViewsNextSort({ key: 'title', direction: 'desc' }, 'tags'), { key: 'tags', direction: 'asc' });
+
+  // Rows with no value sort last either way, so the table never opens on a
+  // block of blanks.
+  const rows = [
+    { id: 'a', __cells: { owner: 'zoe' } },
+    { id: 'b', __cells: { owner: '' } },
+    { id: 'c', __cells: { owner: 'ana' } },
+  ];
+  const cols = c.mnViewsColumns({ type: 'notes', columns: ['owner'] });
+  assert.deepEqual(c.mnViewsSortResults(rows, cols, { key: 'owner', direction: 'asc' }).map(r => r.id), ['c', 'a', 'b']);
+  assert.deepEqual(c.mnViewsSortResults(rows, cols, { key: 'owner', direction: 'desc' }).map(r => r.id), ['a', 'c', 'b']);
+});
+
 test('managing saved views refuses what the preference layer would throw on', async () => {
   const { loadRendererModule } = require('./helpers/rendererModule.js');
   const m = loadRendererModule('src/features/views/viewsManage.js');

@@ -452,6 +452,14 @@ async function renameActiveView(win, value) {
   if (!result.ok) throw new Error('Views rename input not found');
 }
 
+async function viewsTableTitles(win) {
+  return evaluate(win, `(() => {
+    const table = document.querySelector('[data-mn-views-table]');
+    if (!table) return [];
+    return [...table.querySelectorAll('[data-mn-view-row]')].map(row => (row.children[1]?.textContent || '').trim());
+  })()`);
+}
+
 async function viewsTabTitles(win) {
   return evaluate(win, `(() => {
     const bar = document.querySelector('[role="tablist"][aria-label="Saved views"]');
@@ -563,6 +571,43 @@ async function runViewsPanelScenario(win) {
         };
       })()`);
       return { ok: current.panel && current.nextMonth && current.dayCells >= 28, current };
+    });
+
+    // The table is the prototype's, not the one inherited from Smart Views:
+    // a sortable header per column, with property-sourced keys shown as key::.
+    await clickVisibleText(win, 'Table');
+    await waitFor(win, 'views table renders sortable headers', async () => {
+      const current = await evaluate(win, `(() => {
+        const table = document.querySelector('[data-mn-views-table]');
+        if (!table) return { table: false };
+        const heads = [...table.querySelectorAll('button[aria-sort]')];
+        return {
+          table: true,
+          heads: heads.map(el => (el.textContent || '').trim()),
+          titled: heads.filter(el => /Read from the note|property line/.test(el.getAttribute('title') || '')).length,
+          rows: table.querySelectorAll('[data-mn-view-row]').length,
+        };
+      })()`);
+      return {
+        ok: current.table && current.heads.length >= 4 && current.rows > 0
+          && current.titled === current.heads.length,
+        current,
+      };
+    });
+
+    // Sorting has to actually reorder the rows, not just paint an arrow.
+    const titlesBefore = await viewsTableTitles(win);
+    await clickButton(win, { aria: 'Sort by Title' });
+    await waitFor(win, 'sorting the table reorders its rows', async () => {
+      const titles = await viewsTableTitles(win);
+      const expected = [...titlesBefore].sort((a, b) => a.localeCompare(b));
+      return { ok: titles.length === titlesBefore.length && titles.join('|') === expected.join('|'), titles, titlesBefore };
+    });
+    await clickButton(win, { aria: 'Sort by Title' });
+    await waitFor(win, 'sorting again reverses the rows', async () => {
+      const titles = await viewsTableTitles(win);
+      const expected = [...titlesBefore].sort((a, b) => b.localeCompare(a));
+      return { ok: titles.join('|') === expected.join('|'), titles };
     });
 
     // View management: a view you make, name, shape and save has to be there

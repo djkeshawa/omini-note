@@ -21,6 +21,8 @@ import { MN_VIEW_LAYOUTS, mnViewLayout } from '../../shared/viewLayout.js';
 import { mnViewsRenderResults } from './ViewsLayouts.jsx';
 import { mnViewsRenderBoard, mnViewsBoardGroup } from './ViewsBoard.jsx';
 import { mnViewsRenderCalendar } from './ViewsCalendar.jsx';
+import { mnViewsRenderTable } from './ViewsTable.jsx';
+import { mnViewsNextSort, mnViewsSortIsStorable, mnViewsSortField, mnViewsSortFromDefinition } from './viewsColumns.js';
 import { mnViewsActionItem } from './viewsWrite.js';
 import { ViewTabs, ViewMenu, ViewsRowSearch, ViewsSaveState, mnViewChipStyle } from './ViewsChrome.jsx';
 import {
@@ -114,6 +116,10 @@ function MnViewsPanel({
   const [renamingId, setRenamingId] = useStateV('');
   const [renameValue, setRenameValue] = useStateV('');
 
+  // The table's sort starts as whatever the view was saved with. Only four
+  // fields survive a save, so a sort on anything else lives here and nowhere
+  // else; the header says which kind you are looking at.
+  const [tableSort, setTableSort] = useStateV(null);
   const activeDraft = draft && draft.id === activeDefinition?.id ? draft : null;
   const dirty = mnViewsDraftDiffers(activeDefinition, activeDraft);
   const layout = activeDraft?.layout || mnViewLayout(activeDefinition);
@@ -184,6 +190,7 @@ function MnViewsPanel({
     setActiveId(id);
     setDraft(null);
     setRowQuery('');
+    setTableSort(null);
     setMenuOpen(false);
     setConfirmDelete(false);
     setRenamingId('');
@@ -211,6 +218,23 @@ function MnViewsPanel({
     setRenamingId('');
     if (result.activeId && result.activeId !== activeId) selectDefinition(result.activeId);
     return true;
+  };
+
+  const sort = tableSort || mnViewsSortFromDefinition(activeDefinition);
+
+  const sortByColumn = (key) => {
+    const next = mnViewsNextSort(sort, key);
+    setTableSort(next);
+    // A sort the vault can store becomes part of the draft, so Save view keeps
+    // it. One it cannot store is left out of the draft rather than saved as a
+    // value the preference layer would reject.
+    if (next && mnViewsSortIsStorable(next.key)) {
+      setDraft(current => ({
+        ...(current && current.id === activeDefinition?.id ? current : {}),
+        id: activeDefinition?.id || '',
+        sort: { field: mnViewsSortField(next.key), direction: next.direction },
+      }));
+    }
   };
 
   const startRename = () => {
@@ -349,6 +373,11 @@ function MnViewsPanel({
             })
             : layout === 'board'
             ? mnViewsRenderBoard({ groups: groups || [], helpers, onOpen, onToggleCheck: toggleCheck, T })
+            : layout === 'table'
+            ? mnViewsRenderTable({
+              results: visibleResults, definition: activeDefinition, sort,
+              onSort: sortByColumn, onOpen, onToggleCheck: toggleCheck, helpers, T,
+            })
             : groups
             ? groups
               .filter(bucket => bucket.items.length)
