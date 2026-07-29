@@ -453,9 +453,17 @@ function createSmartViewHelpers(scope = {}) {
     if (!normalized) return [{ key: '', label: '', items: [...results] }];
     const by = normalized.by;
     const readKey = (result) => {
-      const note = result?.note || result || {};
+      // A note result carries its note on `.note`; an action result carries
+      // the note it came from on `.sourceNote`. Without the second, grouping
+      // tasks or reminders by any body property read an empty body and put
+      // every row in the unfiled bucket.
+      const note = result?.note || result?.sourceNote || result || {};
       if (by === 'tag') {
-        const tags = Array.isArray(note.tags) ? note.tags.filter(Boolean) : [];
+        // Action results expose the note's tags as noteTags, not tags.
+        const source = Array.isArray(note.tags) && note.tags.length ? note.tags
+          : Array.isArray(result?.tags) && result.tags.length ? result.tags
+          : Array.isArray(result?.noteTags) ? result.noteTags : [];
+        const tags = source.filter(Boolean);
         return tags.length ? tags : [''];
       }
       if (typeof options.valueFor === 'function') return [options.valueFor(note, by) ?? ''];
