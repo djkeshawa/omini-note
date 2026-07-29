@@ -13,10 +13,11 @@
 // Board and calendar layouts land in later steps.
 
 import { MN_REMIND } from '../../shared/markdown.jsx';
-import { DS_HEIGHT, DS_RADIUS, dsMachineStyle, mnSentenceCase } from '../../shared/designSystem.js';
+import { DS_HEIGHT, DS_RADIUS, dsMachineStyle } from '../../shared/designSystem.js';
 import { DsEmptyState, DsGroupLabel } from '../../shared/components/DesignPrimitives.jsx';
 import { MN_VIEW_LAYOUTS, mnViewLayout } from '../../shared/viewLayout.js';
 import { mnViewsRenderResults } from './ViewsLayouts.jsx';
+import { mnViewsRenderBoard, mnViewsBoardGroup } from './ViewsBoard.jsx';
 
 function ViewRow({ definition, active, onSelect, T }) {
   return (
@@ -41,6 +42,14 @@ function ViewRow({ definition, active, onSelect, T }) {
       }}>{definition.title || 'Untitled view'}</span>
     </button>
   );
+}
+
+// mnSentenceCase only rewrites ALL-CAPS strings, so it leaves a lowercase
+// layout id alone. These are labels, not machine values, so they get a
+// capital.
+function mnViewLayoutLabel(mode) {
+  const value = String(mode || '');
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 const MN_VIEWS_FALLBACK = {
@@ -92,10 +101,12 @@ function MnViewsPanel({
   // ungrouped views come back as a single unlabelled bucket.
   const groups = useMemoV(() => {
     if (!helpers.smartViewGroup) return null;
-    const group = activeDefinition?.group;
+    // A board is columns, so it always groups; every other layout groups only
+    // when the definition asks for it.
+    const group = layout === 'board' ? mnViewsBoardGroup(activeDefinition) : activeDefinition?.group;
     if (!group?.by) return null;
     return helpers.smartViewGroup(results, group, {});
-  }, [helpers, results, activeDefinition]);
+  }, [helpers, results, activeDefinition, layout]);
 
   const selectDefinition = (id) => {
     setActiveId(id);
@@ -171,14 +182,16 @@ function MnViewsPanel({
                   fontFamily: 'var(--mn-ui)', fontSize: 12,
                   fontWeight: layout === mode ? 600 : 400,
                   cursor: 'pointer',
-                }}>{mnSentenceCase(mode)}</button>
+                }}>{mnViewLayoutLabel(mode)}</button>
             ))}
           </div>
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 20px 24px' }}>
           {results.length
-            ? (groups
+            ? (layout === 'board'
+              ? mnViewsRenderBoard({ groups: groups || [], helpers, onOpen, T })
+              : groups
               ? groups
                 // An empty unfiled bucket is noise; a populated one is a
                 // finding, so it stays.

@@ -238,6 +238,10 @@ test('the views pack has a regression scenario that drives it', () => {
   // The pack-isolation table must carry views without a label: its check is a
   // substring match on body text and 'Views' is inside 'Smart Views'.
   assert.match(harness, /\{ id: 'views', commands: \['views'\], labels: \[\] \}/);
+  // The scenario switches to the board and asserts real columns render — an
+  // empty frame would pass a bare "the panel exists" probe.
+  assert.match(harness, /views board renders columns/);
+  assert.match(harness, /current\.panel && current\.columns > 0/);
 });
 
 test('smart view embeds do not re-query the vault on every render', () => {
