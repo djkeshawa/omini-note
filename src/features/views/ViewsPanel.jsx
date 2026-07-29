@@ -19,6 +19,7 @@ import { MN_VIEW_LAYOUTS, mnViewLayout } from '../../shared/viewLayout.js';
 import { mnViewsRenderResults } from './ViewsLayouts.jsx';
 import { mnViewsRenderBoard, mnViewsBoardGroup } from './ViewsBoard.jsx';
 import { mnViewsRenderCalendar } from './ViewsCalendar.jsx';
+import { mnViewsActionItem } from './viewsWrite.js';
 
 function ViewRow({ definition, active, onSelect, T }) {
   return (
@@ -70,6 +71,8 @@ function MnViewsPanel({
   onActiveDefinitionChange,
   onOpen,
   onOpenAllNotes,
+  onUpdateTaskItem,
+  onNotice,
   weekStart = 'monday',
   helpers = {},
   walk,
@@ -110,6 +113,30 @@ function MnViewsPanel({
     if (!group?.by) return null;
     return helpers.smartViewGroup(results, group, {});
   }, [helpers, results, activeDefinition, layout]);
+
+  // Ticking a task from a view writes to the note it came from. The row
+  // remembers the block it was parsed out of, so the edit lands exactly
+  // there; when that anchor is gone and the text is ambiguous we say so
+  // rather than editing a line that might be the wrong one.
+  const toggleCheck = (result) => {
+    if (!onUpdateTaskItem) return;
+    const note = (notes || []).find(candidate => candidate.id === result.noteId) || null;
+    const resolved = mnViewsActionItem(result, { note, walk });
+    if (!resolved.ok) {
+      onNotice?.(
+        'That task could not be updated',
+        resolved.reason === 'ambiguous'
+          ? 'The same line appears more than once in that note, so there is no way to tell which one you meant. Open the note and tick it there.'
+          : 'The line this row came from is no longer in that note. Open the note to check it.',
+        'warn'
+      );
+      return;
+    }
+    const ok = onUpdateTaskItem(resolved.item, { checked: !result.checked });
+    if (ok === false) {
+      onNotice?.('That task could not be updated', 'The note it came from did not change. Open the note to edit it directly.', 'warn');
+    }
+  };
 
   const selectDefinition = (id) => {
     setActiveId(id);
@@ -199,7 +226,7 @@ function MnViewsPanel({
                 onAnchorChange: setCalendarAnchor,
               })
               : layout === 'board'
-              ? mnViewsRenderBoard({ groups: groups || [], helpers, onOpen, T })
+              ? mnViewsRenderBoard({ groups: groups || [], helpers, onOpen, onToggleCheck: toggleCheck, T })
               : groups
               ? groups
                 // An empty unfiled bucket is noise; a populated one is a

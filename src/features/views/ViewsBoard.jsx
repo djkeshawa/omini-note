@@ -28,7 +28,8 @@ function mnViewsBoardGroup(definition) {
   return { by: 'status', direction: 'asc' };
 }
 
-function BoardCard({ result, helpers, onOpen, T }) {
+function BoardCard({ result, helpers, onOpen, onToggleCheck, T }) {
+  const isTask = result.type === 'task';
   const noteId = result.noteId || result.source?.noteId || '';
   const tags = mnSmartViewResultTags(result);
   const preview = mnSmartViewResultPreview(result);
@@ -52,10 +53,34 @@ function BoardCard({ result, helpers, onOpen, T }) {
         display: 'flex', flexDirection: 'column', gap: 6,
         minWidth: 0,
       }}>
-      <div style={{
-        fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 600, color: T.ink,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}>{result.title || result.label || 'Untitled'}</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+        {isTask && onToggleCheck && (
+          <button
+            type="button"
+            aria-label={result.checked ? 'Reopen task' : 'Complete task'}
+            title={result.checked ? 'Reopen task' : 'Complete task'}
+            onClick={(e) => { e.stopPropagation(); onToggleCheck(result); }}
+            style={{
+              width: 15, height: 15, marginTop: 2, padding: 0, flexShrink: 0,
+              border: `1.5px solid ${result.checked ? T.accent : T.line}`,
+              background: result.checked ? T.accent : 'transparent',
+              borderRadius: 3, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+            {result.checked && (
+              <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+        )}
+        <div style={{
+          fontFamily: 'var(--mn-ui)', fontSize: 13, fontWeight: 600,
+          color: result.checked ? T.inkDim : T.ink,
+          textDecoration: result.checked ? 'line-through' : 'none',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0,
+        }}>{result.title || result.label || 'Untitled'}</div>
+      </div>
       {preview && (
         <div style={{
           fontFamily: 'var(--mn-body)', fontSize: 12.5, lineHeight: 1.4, color: T.inkMed,
@@ -82,7 +107,7 @@ function BoardCard({ result, helpers, onOpen, T }) {
   );
 }
 
-function mnViewsRenderBoard({ groups, helpers, onOpen, T }) {
+function mnViewsRenderBoard({ groups, helpers, onOpen, onToggleCheck, T }) {
   // Every column stays on screen, including empty ones — a board whose
   // columns appear and vanish as work moves is hard to read.
   const columns = (groups || []).filter(bucket => bucket.key !== '' || bucket.items.length);
@@ -110,7 +135,7 @@ function mnViewsRenderBoard({ groups, helpers, onOpen, T }) {
             <span style={dsMachineStyle(T)}>{bucket.items.length}</span>
           </div>
           {bucket.items.map(result => (
-            <BoardCard key={result.key || result.id} result={result} helpers={helpers} onOpen={onOpen} T={T} />
+            <BoardCard key={result.key || result.id} result={result} helpers={helpers} onOpen={onOpen} onToggleCheck={onToggleCheck} T={T} />
           ))}
           {!bucket.items.length && (
             <div style={{

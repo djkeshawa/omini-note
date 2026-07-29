@@ -231,6 +231,17 @@ test('Launch screen uses VispNote logo with pastel blooming light design', () =>
   assert.ok(appIcon.size > 0);
 });
 
+test('the last-resort text write reports whether it actually changed anything', () => {
+  const planning = fs.readFileSync(path.join(__dirname, '../src/app/controllers/useAppPlanningActions.js'), 'utf8');
+  // agendaReplaceUniqueSourceText returns the body unchanged when the text
+  // appears twice. This rung used to return true regardless, so a caller was
+  // told the edit landed while the note was untouched — invisible until a
+  // view put a checkbox on it.
+  assert.match(planning, /replaced = next !== body/);
+  assert.match(planning, /return replaced;/);
+  assert.doesNotMatch(planning, /agendaReplaceUniqueSourceText\(body, source, nextText\);\n\s*\}\);\n\s*return true;/);
+});
+
 test('the views pack has a regression scenario that drives it', () => {
   const harness = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
   assert.match(harness, /runScenario\(win, 'Views', 'the views pack adds one saved-view surface'/);
@@ -244,6 +255,9 @@ test('the views pack has a regression scenario that drives it', () => {
   assert.match(harness, /current\.panel && current\.columns > 0/);
   assert.match(harness, /views calendar renders a month grid/);
   assert.match(harness, /current\.nextMonth && current\.dayCells >= 28/);
+  // Ticking from the board is asserted against the note on disk, not the DOM.
+  assert.match(harness, /waitForPersistedNote\(win, 'QE Views Task Note'/);
+  assert.match(harness, /- \\\[x\\\]\\s\+ship the views board/);
 });
 
 test('smart view embeds do not re-query the vault on every render', () => {

@@ -463,6 +463,8 @@ function AppView({ model }) {
                 onActiveDefinitionChange={setActiveSmartViewId}
                 onOpen={(id) => { setSelectedId(id); navigateView('notes'); }}
                 onOpenAllNotes={() => { setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); navigateView('notes'); }}
+                onUpdateTaskItem={updateTaskItemSource}
+                onNotice={showAppNotice}
                 helpers={MN_APP_HELPERS}
                 walk={mnWalk}
                 weekStart={tweaks.weekStart || 'monday'}
