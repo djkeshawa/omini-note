@@ -161,9 +161,10 @@ function ViewTabs({
               </span>
             </button>
             {active && (
-              <span style={{ position: 'relative', display: 'inline-flex' }}>
+              <span data-mn-views-dropdown-root="true" style={{ position: 'relative', display: 'inline-flex' }}>
               <button
                 type="button"
+                data-mn-views-dropdown-trigger="view"
                 title="Rename, duplicate or delete"
                 aria-label="View options"
                 aria-expanded={Boolean(menu)}

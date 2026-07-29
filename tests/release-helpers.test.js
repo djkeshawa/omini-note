@@ -216,4 +216,6 @@ test('Release configuration has one architecture authority and collision-free ar
   assert.match(workflow, /APPLE_API_KEY_BASE64/);
   assert.match(workflow, /CSC_LINK: \$\{\{ secrets\[matrix\.csc_link_secret\] \}\}/);
   assert.match(workflow, /VISPNOTE_MEMORY_IMAGE/);
+  assert.match(workflow, /VISP_MEMORY_SERVER_AUTH_ENABLED: "false"/);
+  assert.match(workflow, /VISP_MEMORY_EMBEDDING_PROVIDER: "noop"/);
 });

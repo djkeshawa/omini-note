@@ -31,14 +31,14 @@ function SectionHeader({ label, sectionKey, count, action, onContextMenu, ctx })
       height: 22, padding: '0 8px',
       display: 'flex', alignItems: 'center', gap: 4,
     }}>
-      <button onClick={() => toggleSection(sectionKey)} style={{
+      <button type="button" aria-expanded={open} onClick={() => toggleSection(sectionKey)} style={{
         display: 'flex', alignItems: 'center', gap: 5,
         flex: 1, minWidth: 0, padding: 0,
         background: 'transparent', border: 'none', cursor: 'pointer',
         textAlign: 'left', ...dsGroupLabelStyle(T),
       }}>
         <svg width="9" height="9" viewBox="0 0 12 12" fill="none" style={{
-          transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+          transform: open ? (sectionKey === 'more' ? 'rotate(-180deg)' : 'rotate(0deg)') : 'rotate(-90deg)',
           transition: 'transform 120ms cubic-bezier(.4,0,.2,1)',
           flexShrink: 0,
         }}>
@@ -69,7 +69,7 @@ function MnSidebar({
   onOpenAskAI,
   onNewTag, onDeleteTag, onNew, onOpenQuickCapture, onOpenSettings, onCollapse,
   vaults, activeVaultId, onSelectVault, onCreateVault, onRefreshVaults, onRenameVault, onDeleteVault,
-  featureState = {}, contextualTip = null, onDismissContextualTip, todayCount,
+  featureState = {}, sidebarVisibility = {}, contextualTip = null, onDismissContextualTip, todayCount,
   saveStatus = 'Saved', lastBackupAt = null, onOpenVaultHealth, onExportBackup,
   newNoteShortcut = shortcutLabel('newNote', undefined, { compact: true }),
   quickCaptureShortcut = shortcutLabel('quickCapture', undefined, { compact: true }), T, density, theme
@@ -215,7 +215,7 @@ function MnSidebar({
   const iconCapture = (<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 3.5H13V12.5H3V3.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M5.5 6H10.5M5.5 8.5H9M11.5 10.5V14M9.75 12.25H13.25" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
 
   return (
-    <div style={{
+    <div data-mn-sidebar="true" style={{
       width: dsPaneWidth('sidebar', density), height: '100%',
       background: `color-mix(in oklab, ${T.bgSub} 94%, ${T.bgElevated || T.bg})`,
       borderRight: `1px solid ${T.line}`,
@@ -237,24 +237,34 @@ function MnSidebar({
       {/* The primary destinations carry no group label — the design keeps the
           top of the sidebar quiet, and labels start at "More". */}
       {(
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <div data-mn-sidebar-primary style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <SidebarNavRow T={T} height={navRowHeight} icon={iconInbox} label="All notes" count={notes.length}
                active={!selectedTag && !selectedWorkflow && !todayActive && !pinnedActive && !agendaActive && !graphActive && !smartViewsActive && !viewsActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
                onClick={() => onSelectTag(null)} />
-          <SidebarNavRow T={T} height={navRowHeight} icon={iconToday} label="Today" count={rollupCount}
-               active={todayActive} onClick={onOpenToday} />
           <SidebarNavRow T={T} height={navRowHeight} icon={iconInbox} label="Pinned" count={pinnedCount}
                active={pinnedActive} onClick={onOpenPinned} />
           {featureState.showViews && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconSmartViews} label="Views" count={viewsCount}
                  active={viewsActive} onClick={onOpenViews} accent={T.accent} />
           )}
+          {featureState.showAskAi && onOpenAskAI && (
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
+          )}
+        </div>
+      )}
+
+      {openSections.more && (
+        <div data-mn-sidebar-more style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {sidebarVisibility.today && (
+            <SidebarNavRow T={T} height={navRowHeight} icon={iconToday} label="Today" count={rollupCount}
+                 active={todayActive} onClick={onOpenToday} />
+          )}
           {featureState.showAgenda && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconAgenda} label="Agenda" count={agendaCount}
                  active={agendaActive || calendarActive}
                  onClick={onOpenAgenda} accent={T.warn} />
           )}
-          {featureState.showWorkflow && (
+          {featureState.showWorkflow && sidebarVisibility.workflow && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconWorkflow} label="Workflow" count={workflowTotal || 0}
                  active={workflowActive}
                  onClick={onOpenWorkflowPanel} accent={T.accent} />
@@ -264,23 +274,12 @@ function MnSidebar({
                  active={novelistActive}
                  onClick={onOpenNovelist} accent={T.accent} />
           )}
-          {featureState.showCanvas && (
+          {featureState.showCanvas && sidebarVisibility.thinkingBoard && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconCanvas} label="Thinking Board" count={canvasCount}
                  active={canvasActive}
                  onClick={onOpenCanvas} accent={T.accent} />
           )}
-          {featureState.showAskAi && onOpenAskAI && (
-            <SidebarNavRow T={T} height={navRowHeight} icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
-          )}
-        </div>
-      )}
-
-      <div>
-        <SectionHeader ctx={sectionCtx} label="More" sectionKey="more" />
-      </div>
-      {openSections.more && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {onOpenQuickCapture && (
+          {sidebarVisibility.quickCapture && onOpenQuickCapture && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconCapture} label="Quick capture" hint={quickCaptureShortcut} onClick={onOpenQuickCapture} />
           )}
           {featureState.showLabs && <>
@@ -288,51 +287,52 @@ function MnSidebar({
                  active={smartViewsActive} onClick={onOpenSmartViews} accent={T.focus || T.accent} />
             <SidebarNavRow T={T} height={navRowHeight} icon={iconGraph} label="Graph" active={graphActive} onClick={onOpenGraph} />
           </>}
+          {featureState.showWorkflow && sidebarVisibility.workflow && (
+            <div style={{ marginTop: 8 }}>
+              <SectionHeader ctx={sectionCtx} label="Workflow" sectionKey="workflow" count={workflowTotal || 0} />
+            </div>
+          )}
+          {featureState.showWorkflow && sidebarVisibility.workflow && openSections.workflow && (
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 1,
+              marginTop: 4, marginBottom: 12,
+            }}>
+              {(workflowStates || []).map(state => {
+                const active = selectedWorkflow === state.id;
+                const count = workflowCounts?.[state.id] || 0;
+                return (
+                  <button type="button" key={state.id} onClick={() => onSelectWorkflow(state.id)} style={{
+                    ...dsSelectedRow(T, active, { height: subRowHeight }), fontSize: 13,
+                    width: '100%', border: 'none', fontFamily: 'var(--mn-ui)', textAlign: 'left',
+                  }}
+                  onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
+                  onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
+                    {active && <span style={dsSelectedBarStyle(T, 6)} />}
+                    <span style={{ width: 16, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%', background: state.color,
+                      }} />
+                    </span>
+                    <span style={{
+                      flex: 1, minWidth: 0, color: 'inherit',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{mnSentenceCase(state.id)}</span>
+                    <span style={dsMachineStyle(T, active ? T.inkMed : T.inkDim)}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {onOpenTrash && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconTrash} label="Recently deleted" count={trashCount}
                  active={trashActive} onClick={onOpenTrash} accent={T.warn || T.danger} />
           )}
         </div>
       )}
+      <div>
+        <SectionHeader ctx={sectionCtx} label="More" sectionKey="more" />
+      </div>
       <div style={{ borderTop: `1px solid ${T.lineSub}`, margin: '14px 14px 0' }} />
-
-      {featureState.showWorkflow && (
-        <div>
-          <SectionHeader ctx={sectionCtx} label="Workflow" sectionKey="workflow" count={workflowTotal || 0} />
-        </div>
-      )}
-
-      {featureState.showWorkflow && openSections.workflow && (
-        <div style={{
-          display: 'flex', flexDirection: 'column', gap: 1,
-          marginTop: 4, marginBottom: 12,
-        }}>
-          {(workflowStates || []).map(state => {
-            const active = selectedWorkflow === state.id;
-            const count = workflowCounts?.[state.id] || 0;
-            return (
-              <button type="button" key={state.id} onClick={() => onSelectWorkflow(state.id)} style={{
-                ...dsSelectedRow(T, active, { height: subRowHeight }), fontSize: 13,
-                width: '100%', border: 'none', fontFamily: 'var(--mn-ui)', textAlign: 'left',
-              }}
-              onMouseEnter={e => !active && (e.currentTarget.style.background = T.bgHover)}
-              onMouseLeave={e => !active && (e.currentTarget.style.background = 'transparent')}>
-                {active && <span style={dsSelectedBarStyle(T, 6)} />}
-                <span style={{ width: 16, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-                  <span style={{
-                    width: 7, height: 7, borderRadius: '50%', background: state.color,
-                  }} />
-                </span>
-                <span style={{
-                  flex: 1, minWidth: 0, color: 'inherit',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>{mnSentenceCase(state.id)}</span>
-                <span style={dsMachineStyle(T, active ? T.inkMed : T.inkDim)}>{count}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       <div>
         <SectionHeader

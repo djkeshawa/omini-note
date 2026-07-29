@@ -101,6 +101,9 @@ jobs:
     services:
       memory:
         image: ${{ vars.VISPNOTE_MEMORY_IMAGE }}
+        env:
+          VISP_MEMORY_SERVER_AUTH_ENABLED: "false"
+          VISP_MEMORY_EMBEDDING_PROVIDER: "noop"
         ports:
           - 8000:8000
     env:

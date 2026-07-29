@@ -169,7 +169,7 @@ function MnApp() {
   const { overlayNoteList } = useResponsiveLayout();
   const [tweaks, setTweaks] = useStateA(MN_TWEAK_DEFAULTS);
   const [compactNoteListOpen, setCompactNoteListOpen] = useStateA(null);
-  const [enabledPacks, setEnabledPacks] = useStateA([]);
+  const [enabledPacks, setEnabledPacks] = useStateA(['views']);
   const [assistanceEnabled, setAssistanceEnabled] = useStateA(false);
   const [lastBackupAt, setLastBackupAt] = useStateA(null);
   const [customThemes, setCustomThemes] = useStateA([]);

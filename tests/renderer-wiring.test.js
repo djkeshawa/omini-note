@@ -1125,6 +1125,16 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(appHelpers, /Review notes from \$\{today\} for decisions to keep\./);
   assert.match(appRuntime, /"startupView": "notes"/);
   assert.match(appRuntime, /"rollupDefaultRange": "today"/);
+  for (const key of [
+    'showTodayInSidebar',
+    'showThinkingBoardInSidebar',
+    'showWorkflowInSidebar',
+    'showQuickCaptureInSidebar',
+  ]) {
+    assert.match(appRuntime, new RegExp(`"${key}": false`));
+    assert.match(store, new RegExp(`'${key}'`));
+    assert.match(main, new RegExp(`${key}: false`));
+  }
   assert.match(store, /'startupView'/);
   assert.match(store, /'rollupDefaultRange'/);
   assert.match(store, /'rollupShowReminders'/);
@@ -1316,13 +1326,43 @@ test('Focused product shell and private usage controls are wired end to end', ()
   assert.match(sidebar, /label="All notes"/);
   assert.match(sidebar, /label="Today"/);
   assert.match(sidebar, /label="Pinned"/);
+  assert.match(sidebar, /data-mn-sidebar-primary/);
+  assert.match(sidebar, /data-mn-sidebar-more/);
+  assert.match(app, /const \[enabledPacks, setEnabledPacks\] = useStateA\(\['views'\]\)/);
   assert.match(sidebar, /label="Tags"/);
   assert.match(sidebar, /featureState\.showAgenda/);
   assert.match(sidebar, /featureState\.showWorkflow/);
   assert.match(sidebar, /featureState\.showCanvas/);
   assert.match(sidebar, /featureState\.showAskAi/);
   assert.match(sidebar, /featureState\.showLabs/);
+  assert.match(sidebar, /sidebarVisibility = \{\}/);
+  assert.match(sidebar, /sidebarVisibility\.today/);
+  assert.match(sidebar, /featureState\.showCanvas && sidebarVisibility\.thinkingBoard/);
+  assert.match(sidebar, /featureState\.showWorkflow && sidebarVisibility\.workflow/);
+  assert.match(sidebar, /sidebarVisibility\.quickCapture && onOpenQuickCapture/);
   assert.match(sidebar, /label="More"/);
+  const primaryStart = sidebar.indexOf('data-mn-sidebar-primary');
+  const moreStart = sidebar.indexOf('data-mn-sidebar-more');
+  const primaryLabels = ['label="All notes"', 'label="Pinned"', 'label="Views"', 'label="Ask AI"'];
+  let previousPrimary = primaryStart;
+  for (const label of primaryLabels) {
+    const index = sidebar.indexOf(label);
+    assert.ok(index > previousPrimary && index < moreStart, `${label} must remain in primary sidebar order`);
+    previousPrimary = index;
+  }
+  for (const label of ['label="Today"', 'label="Agenda"', 'label="Workflow"', 'label="Thinking Board"', 'label="Smart Views"', 'label="Recently deleted"']) {
+    assert.ok(sidebar.indexOf(label) > moreStart, `${label} must remain inside More`);
+  }
+  assert.match(app, /today: tweaks\.showTodayInSidebar === true/);
+  assert.match(app, /thinkingBoard: tweaks\.showThinkingBoardInSidebar === true/);
+  assert.match(app, /workflow: tweaks\.showWorkflowInSidebar === true/);
+  assert.match(app, /quickCapture: tweaks\.showQuickCaptureInSidebar === true/);
+  assert.match(settings, /label="More menu items"/);
+  assert.match(settings, /key: 'showTodayInSidebar'/);
+  assert.match(settings, /key: 'showThinkingBoardInSidebar'/);
+  assert.match(settings, /key: 'showWorkflowInSidebar'/);
+  assert.match(settings, /key: 'showQuickCaptureInSidebar'/);
+  assert.match(settings, /setTweak\(item\.key, value\)/);
   assert.match(app, /MN_FEATURES\.deriveFeatureState/);
   assert.match(app, /featureState\.showAgenda && view === 'todos'/);
   assert.match(settings, /label: 'Data & Privacy'/);

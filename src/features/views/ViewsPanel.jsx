@@ -39,6 +39,7 @@ import {
   mnViewsCreate, mnViewsDuplicate, mnViewsRename, mnViewsDelete,
   mnViewsApplyDraft, mnViewsDraftDiffers,
 } from './viewsManage.js';
+import { useViewsDropdownMenu } from './useViewsDropdownMenu.js';
 
 function mnViewsPrimaryButton(T) {
   return {
@@ -114,13 +115,14 @@ function MnViewsPanel({
   const [draft, setDraft] = useStateV(null);
   const [calendarAnchor, setCalendarAnchor] = useStateV(() => new Date());
   const [rowQuery, setRowQuery] = useStateV('');
-  const [menuOpen, setMenuOpen] = useStateV(false);
-  const [columnsOpen, setColumnsOpen] = useStateV(false);
-  const [scopeOpen, setScopeOpen] = useStateV(false);
-  const [conditionsOpen, setConditionsOpen] = useStateV(false);
   const [confirmDelete, setConfirmDelete] = useStateV(false);
   const [renamingId, setRenamingId] = useStateV('');
   const [renameValue, setRenameValue] = useStateV('');
+  const { openMenu, closeMenu, toggleMenu } = useViewsDropdownMenu(() => setConfirmDelete(false));
+  const menuOpen = openMenu === 'view';
+  const columnsOpen = openMenu === 'columns';
+  const scopeOpen = openMenu === 'scope';
+  const conditionsOpen = openMenu === 'conditions';
 
   // The table's sort starts as whatever the view was saved with. Only four
   // fields survive a save, so a sort on anything else lives here and nowhere
@@ -200,11 +202,7 @@ function MnViewsPanel({
     setDraft(null);
     setRowQuery('');
     setTableSort(null);
-    setMenuOpen(false);
-    setColumnsOpen(false);
-    setScopeOpen(false);
-    setConditionsOpen(false);
-    setConfirmDelete(false);
+    closeMenu();
     setRenamingId('');
     onActiveDefinitionChange?.(id);
   };
@@ -225,8 +223,7 @@ function MnViewsPanel({
     // in place keeps the change on screen rather than silently dropping it.
     if (onDefinitionsChange(result.definitions) === false) return false;
     setDraft(null);
-    setMenuOpen(false);
-    setConfirmDelete(false);
+    closeMenu();
     setRenamingId('');
     if (result.activeId && result.activeId !== activeId) selectDefinition(result.activeId);
     return true;
@@ -320,7 +317,7 @@ function MnViewsPanel({
   };
 
   const startRename = () => {
-    setMenuOpen(false);
+    closeMenu();
     setRenameValue(activeDefinition?.title || '');
     setRenamingId(activeDefinition?.id || '');
   };
@@ -373,12 +370,12 @@ function MnViewsPanel({
               onDuplicate={() => commit(mnViewsDuplicate(safeDefinitions, activeDefinition?.id, { format: viewFormat }))}
               onDelete={() => setConfirmDelete(true)}
               onConfirmDelete={() => commit(mnViewsDelete(safeDefinitions, activeDefinition?.id))}
-              onCancelDelete={() => { setConfirmDelete(false); setMenuOpen(false); }}
+              onCancelDelete={closeMenu}
               T={T}
             />
           ) : null}
           onPick={selectDefinition}
-          onOpenMenu={() => { setConfirmDelete(false); setMenuOpen(open => !open); }}
+          onOpenMenu={() => toggleMenu('view')}
           onNewView={() => commit(mnViewsCreate(safeDefinitions, { title: 'New view', format: viewFormat }))}
           T={T}
         />
@@ -411,9 +408,9 @@ function MnViewsPanel({
         scopeOpen={scopeOpen}
         columnsOpen={columnsOpen}
         conditionsOpen={conditionsOpen}
-        onToggleScopeMenu={() => setScopeOpen(open => !open)}
-        onToggleColumnsMenu={() => setColumnsOpen(open => !open)}
-        onToggleConditionsMenu={() => setConditionsOpen(open => !open)}
+        onToggleScopeMenu={() => toggleMenu('scope')}
+        onToggleColumnsMenu={() => toggleMenu('columns')}
+        onToggleConditionsMenu={() => toggleMenu('conditions')}
         onAddCondition={key => editConditions(mnViewsAddCondition(queryDefinition, key))}
         onUpdateCondition={(index, patch) => editConditions(mnViewsUpdateCondition(queryDefinition, index, patch))}
         onRemoveCondition={index => editConditions(mnViewsRemoveCondition(queryDefinition, index))}

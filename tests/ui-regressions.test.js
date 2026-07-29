@@ -258,9 +258,33 @@ test('the views pack has a regression scenario that drives it', () => {
   assert.match(harness, /current\.panel && current\.columns > 0/);
   assert.match(harness, /views calendar renders a month grid/);
   assert.match(harness, /current\.nextMonth && current\.dayCells >= 28/);
+  assert.match(harness, /opening another views dropdown replaces the first/);
+  assert.match(harness, /clicking outside closes the views dropdown/);
   // Ticking from the board is asserted against the note on disk, not the DOM.
   assert.match(harness, /waitForPersistedNote\(win, 'QE Views Task Note'/);
   assert.match(harness, /- \\\[x\\\]\\s\+ship the views board/);
+});
+
+test('the sidebar More disclosure expands above its control', () => {
+  const harness = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
+  assert.match(harness, /sidebar More expands its list above the control/);
+  assert.match(harness, /current\.itemBottom <= current\.toggleTop/);
+  assert.match(harness, /aria-label\^="Recently deleted,"/);
+  assert.match(harness, /current\.items\.at\(-1\) === 'Recently deleted'/);
+  assert.match(harness, /left \$\{label\} visible outside More/);
+  assert.match(harness, /sidebar More returns to its collapsed separator position/);
+});
+
+test('optional sidebar destinations have visibility-toggle regression coverage', () => {
+  const harness = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
+  assert.match(harness, /optional More destinations follow visibility toggles/);
+  assert.match(harness, /runSidebarDestinationVisibilityScenario/);
+  assert.match(harness, /setSidebarDestinationsForRegression/);
+  assert.match(harness, /available sidebar destinations stay hidden until enabled/);
+  assert.match(harness, /enabled optional sidebar destinations appear inside More/);
+  assert.match(harness, /disabled optional sidebar destinations leave More/);
+  assert.match(harness, /runCommandPaletteCommand\(win, 'open today', 'Open today'\)/);
+  assert.match(harness, /openQuickCaptureFromAppBar\(win\)/);
 });
 
 test('smart view embeds do not re-query the vault on every render', () => {

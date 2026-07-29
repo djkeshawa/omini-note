@@ -435,6 +435,71 @@ async function setPackEnabledForRegression(win, packId, enabled) {
   });
 }
 
+async function setSidebarDestinationsForRegression(win, updates) {
+  const requested = Object.entries(updates);
+  const description = requested.map(([label, enabled]) => `${label}:${enabled}`).join(', ');
+  await clickButton(win, { titleIncludes: 'Open settings' });
+  await waitFor(win, `settings open for sidebar destinations ${description}`, async () => {
+    const current = await state(win);
+    return { ok: current.settingsOpen, current };
+  });
+  await clickVisibleText(win, 'Advanced');
+  await waitFor(win, 'sidebar destination toggles visible', async () => {
+    const current = await evaluate(win, `
+      (() => {
+        const requested = ${JSON.stringify(requested)};
+        const buttons = [...document.querySelectorAll('button[aria-label]')];
+        const toggles = requested.map(([label, enabled]) => {
+          const toggle = buttons.find(button => button.getAttribute('aria-label') === 'Toggle ' + label + ' in More');
+          return {
+            label,
+            enabled,
+            found: Boolean(toggle),
+            pressed: toggle?.getAttribute('aria-pressed') === 'true',
+            disabled: Boolean(toggle?.disabled),
+          };
+        });
+        return { toggles };
+      })()
+    `);
+    return {
+      ok: current.toggles.every(toggle => toggle.found && !toggle.disabled),
+      current,
+    };
+  });
+  await evaluate(win, `
+    (() => {
+      const requested = ${JSON.stringify(requested)};
+      const buttons = [...document.querySelectorAll('button[aria-label]')];
+      for (const [label, enabled] of requested) {
+        const toggle = buttons.find(button => button.getAttribute('aria-label') === 'Toggle ' + label + ' in More');
+        if (toggle && (toggle.getAttribute('aria-pressed') === 'true') !== enabled) toggle.click();
+      }
+    })()
+  `);
+  await waitFor(win, `sidebar destinations updated: ${description}`, async () => {
+    const current = await evaluate(win, `
+      (() => {
+        const requested = ${JSON.stringify(requested)};
+        const buttons = [...document.querySelectorAll('button[aria-label]')];
+        return requested.map(([label, enabled]) => {
+          const toggle = buttons.find(button => button.getAttribute('aria-label') === 'Toggle ' + label + ' in More');
+          return { label, enabled, pressed: toggle?.getAttribute('aria-pressed') === 'true' };
+        });
+      })()
+    `);
+    return {
+      ok: current.every(toggle => toggle.pressed === toggle.enabled),
+      current,
+    };
+  });
+  await clickButton(win, { aria: 'Close settings' });
+  await waitFor(win, 'settings closed after sidebar destination update', async () => {
+    const current = await state(win);
+    return { ok: !current.settingsOpen, current };
+  });
+}
+
 async function setInputByAria(win, ariaLabel, value) {
   const result = await evaluate(win, `
     (() => {
@@ -540,6 +605,52 @@ async function runViewsPanelScenario(win) {
       return {
         ok: current.panel && current.views > 0 && current.counted > 0 && current.layouts === 6
           && current.search && current.newView && current.saveState && current.rowsChip,
+        current,
+      };
+    });
+
+    // Views dropdowns share one owner: opening another replaces the current
+    // menu, and clicking the page outside the menu closes it.
+    await clickButton(win, { aria: 'Scope' });
+    await waitFor(win, 'views scope dropdown opens', async () => {
+      const current = await evaluate(win, `(() => ({
+        scope: Boolean(document.querySelector('[data-mn-views-scope]')),
+        scopeExpanded: document.querySelector('button[aria-label="Scope"]')?.getAttribute('aria-expanded'),
+      }))()`);
+      return { ok: current.scope && current.scopeExpanded === 'true', current };
+    });
+    await clickButton(win, { aria: 'Conditions' });
+    await waitFor(win, 'opening another views dropdown replaces the first', async () => {
+      const current = await evaluate(win, `(() => ({
+        scope: Boolean(document.querySelector('[data-mn-views-scope]')),
+        conditions: Boolean(document.querySelector('[data-mn-views-conditions]')),
+        scopeExpanded: document.querySelector('button[aria-label="Scope"]')?.getAttribute('aria-expanded'),
+        conditionsExpanded: document.querySelector('button[aria-label="Conditions"]')?.getAttribute('aria-expanded'),
+      }))()`);
+      return {
+        ok: !current.scope && current.conditions
+          && current.scopeExpanded === 'false' && current.conditionsExpanded === 'true',
+        current,
+      };
+    });
+    await evaluate(win, `(() => {
+      const target = document.querySelector('[data-mn-views-body]');
+      if (!target) return false;
+      target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      return true;
+    })()`);
+    await waitFor(win, 'clicking outside closes the views dropdown', async () => {
+      const current = await evaluate(win, `(() => ({
+        scope: Boolean(document.querySelector('[data-mn-views-scope]')),
+        conditions: Boolean(document.querySelector('[data-mn-views-conditions]')),
+        columns: Boolean(document.querySelector('[data-mn-views-columns]')),
+        expanded: [...document.querySelectorAll('button[aria-label="Scope"], button[aria-label="Conditions"], button[aria-label="Columns"]')]
+          .map(button => button.getAttribute('aria-expanded')),
+      }))()`);
+      return {
+        ok: !current.scope && !current.conditions && !current.columns
+          && current.expanded.every(value => value === 'false'),
         current,
       };
     });
@@ -896,8 +1007,8 @@ async function runViewsPanelScenario(win) {
 
 async function runPackIsolationScenario(win) {
   const cases = [
-    { id: 'planning', commands: ['calendar', 'set-workflow-status', 'template-project'], labels: ['Agenda', 'Workflow'] },
-    { id: 'canvas', commands: ['canvas', 'create-canvas'], labels: ['Thinking Board'] },
+    { id: 'planning', commands: ['calendar', 'set-workflow-status', 'template-project'], labels: ['Agenda'] },
+    { id: 'canvas', commands: ['canvas', 'create-canvas'], labels: [] },
     { id: 'research', commands: ['template-reading'], labels: [] },
     { id: 'writer', commands: ['template-novel-scene'], labels: [] },
     { id: 'agents', commands: [], labels: [] },
@@ -905,10 +1016,15 @@ async function runPackIsolationScenario(win) {
     // and 'Views' is contained in 'Smart Views'. The command id isolates it,
     // and the dedicated Views scenario probes the panel by attribute.
     { id: 'views', commands: ['views'], labels: [] },
-    { id: 'labs', commands: ['graph', 'smart-views'], labels: ['Smart Views', 'Graph'], expand: 'More' },
+    { id: 'labs', commands: ['graph', 'smart-views'], labels: ['Smart Views', 'Graph'] },
   ];
   const specialistCommands = new Set(cases.flatMap(item => item.commands));
   const specialistLabels = [...new Set(cases.flatMap(item => item.labels))];
+
+  // Views is the fresh-install default. Remove it before checking that each
+  // optional pack exposes only its own commands and destinations.
+  await setPackEnabledForRegression(win, 'views', false);
+  await setSidebarMoreExpanded(win, true);
 
   for (const item of cases) {
     await setPackEnabledForRegression(win, item.id, true);
@@ -921,7 +1037,6 @@ async function runPackIsolationScenario(win) {
         throw new Error(`${item.id} pack leaked ${commandId}`);
       }
     }
-    if (item.expand) await clickButton(win, { text: item.expand });
     const bodyText = await evaluate(win, `document.body?.textContent || ''`);
     for (const label of item.labels) {
       if (!bodyText.includes(label)) throw new Error(`${item.id} pack did not expose ${label}`);
@@ -931,6 +1046,14 @@ async function runPackIsolationScenario(win) {
         throw new Error(`${item.id} pack leaked ${label}`);
       }
     }
+    if (item.labels.length) {
+      await setSidebarMoreExpanded(win, false);
+      const collapsedSidebarText = await evaluate(win, `document.querySelector('[data-mn-sidebar="true"]')?.textContent || ''`);
+      for (const label of item.labels) {
+        if (collapsedSidebarText.includes(label)) throw new Error(`${item.id} left ${label} visible outside More`);
+      }
+      await setSidebarMoreExpanded(win, true);
+    }
     await setPackEnabledForRegression(win, item.id, false);
   }
 
@@ -938,6 +1061,134 @@ async function runPackIsolationScenario(win) {
   for (const commandId of specialistCommands) {
     if (finalIds.includes(commandId)) throw new Error(`disabled packs left ${commandId} available`);
   }
+}
+
+async function setSidebarMoreExpanded(win, expanded) {
+  const read = () => evaluate(win, `(() => {
+    const toggle = [...document.querySelectorAll('button')]
+      .find(button => (button.textContent || '').trim() === 'More');
+    return {
+      found: Boolean(toggle),
+      expanded: toggle?.getAttribute('aria-expanded') === 'true',
+      list: Boolean(document.querySelector('[data-mn-sidebar-more]')),
+    };
+  })()`);
+
+  let current = await read();
+  if (!current.found) throw new Error('Sidebar More disclosure was not found');
+  if (current.expanded !== expanded) await clickButton(win, { text: 'More' });
+  await waitFor(win, `sidebar More ${expanded ? 'expanded' : 'collapsed'}`, async () => {
+    current = await read();
+    return { ok: current.expanded === expanded && current.list === expanded, current };
+  });
+}
+
+async function runSidebarMoreDisclosureScenario(win) {
+  const layout = async () => evaluate(win, `(() => {
+    const visible = element => {
+      if (!element) return false;
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const toggle = [...document.querySelectorAll('button')]
+      .find(button => (button.textContent || '').trim() === 'More');
+    const more = document.querySelector('[data-mn-sidebar-more]');
+    const item = more?.querySelector('[role="button"][aria-label^="Recently deleted,"]');
+    const items = [...(more?.querySelectorAll('[role="button"]') || [])]
+      .filter(visible)
+      .map(row => (row.getAttribute('aria-label') || '').split(',')[0]);
+    const toggleRect = toggle?.getBoundingClientRect();
+    const itemRect = visible(item) ? item.getBoundingClientRect() : null;
+    return {
+      found: Boolean(toggle),
+      expanded: toggle?.getAttribute('aria-expanded') === 'true',
+      toggleTop: toggleRect?.top ?? -1,
+      itemVisible: Boolean(itemRect),
+      itemTop: itemRect?.top ?? -1,
+      itemBottom: itemRect?.bottom ?? -1,
+      items,
+    };
+  })()`);
+
+  let current = await layout();
+  if (!current.found) throw new Error('Sidebar More disclosure was not found');
+  await setSidebarMoreExpanded(win, false);
+  current = await layout();
+  const collapsedTop = current.toggleTop;
+
+  await clickButton(win, { text: 'More' });
+  await waitFor(win, 'sidebar More expands its list above the control', async () => {
+    current = await layout();
+    return {
+      ok: current.expanded && current.itemVisible
+        && current.itemTop < current.toggleTop
+        && current.itemBottom <= current.toggleTop
+        && current.items.at(-1) === 'Recently deleted'
+        && current.toggleTop > collapsedTop,
+      current,
+      collapsedTop,
+    };
+  });
+
+  await clickButton(win, { text: 'More' });
+  await waitFor(win, 'sidebar More returns to its collapsed separator position', async () => {
+    current = await layout();
+    return {
+      ok: !current.expanded && !current.itemVisible
+        && current.items.length === 0
+        && Math.abs(current.toggleTop - collapsedTop) < 1,
+      current,
+      collapsedTop,
+    };
+  });
+}
+
+async function runSidebarDestinationVisibilityScenario(win) {
+  const settingsLabels = ['Today', 'Thinking Board', 'Workflow', 'Quick Capture'];
+  const sidebarLabels = ['Today', 'Thinking Board', 'Workflow', 'Quick capture'];
+  const readRows = () => evaluate(win, `
+    [...(document.querySelector('[data-mn-sidebar-more]')?.querySelectorAll('[role="button"]') || [])]
+      .map(row => (row.getAttribute('aria-label') || '').split(',')[0])
+  `);
+  const assertHidden = async (label) => {
+    await setSidebarMoreExpanded(win, true);
+    await waitFor(win, label, async () => {
+      const rows = await readRows();
+      return {
+        ok: sidebarLabels.every(item => !rows.includes(item))
+          && rows.at(-1) === 'Recently deleted',
+        rows,
+      };
+    });
+  };
+
+  await assertHidden('optional sidebar destinations hidden by default');
+  await setPackEnabledForRegression(win, 'planning', true);
+  await setPackEnabledForRegression(win, 'canvas', true);
+  await assertHidden('available sidebar destinations stay hidden until enabled');
+
+  await setSidebarDestinationsForRegression(
+    win,
+    Object.fromEntries(settingsLabels.map(label => [label, true]))
+  );
+  await setSidebarMoreExpanded(win, true);
+  await waitFor(win, 'enabled optional sidebar destinations appear inside More', async () => {
+    const rows = await readRows();
+    return {
+      ok: sidebarLabels.every(label => rows.includes(label))
+        && rows.at(-1) === 'Recently deleted',
+      rows,
+    };
+  });
+
+  await setSidebarDestinationsForRegression(
+    win,
+    Object.fromEntries(settingsLabels.map(label => [label, false]))
+  );
+  await assertHidden('disabled optional sidebar destinations leave More');
+  await setPackEnabledForRegression(win, 'planning', false);
+  await setPackEnabledForRegression(win, 'canvas', false);
 }
 
 async function activeVaultId(win) {
@@ -1203,18 +1454,11 @@ async function runFirstRunGuidanceScenario(win) {
     throw new Error(`First-run welcome is not installation-time guidance: ${JSON.stringify(welcome)}`);
   }
 
-  await waitFor(win, 'new-note guidance and calm Today count', async () => {
-    const result = await evaluate(win, `
-      (() => {
-        const tip = document.querySelector('[data-mn-onboarding-tip]');
-        const todayLabel = [...document.querySelectorAll('span')]
-          .find(element => (element.textContent || '').trim() === 'Today');
-        const row = todayLabel?.parentElement;
-        const count = row ? [...row.querySelectorAll('span')].at(-1)?.textContent?.trim() : '';
-        return { tip: tip?.getAttribute('data-mn-onboarding-tip') || '', count };
-      })()
+  await waitFor(win, 'new-note guidance is ready', async () => {
+    const tip = await evaluate(win, `
+      document.querySelector('[data-mn-onboarding-tip]')?.getAttribute('data-mn-onboarding-tip') || ''
     `);
-    return { ok: result.tip === 'new-note' && result.count === '0', result };
+    return { ok: tip === 'new-note', tip };
   });
 
   await clickButton(win, { aria: 'Dismiss new-note tip' });
@@ -1257,15 +1501,7 @@ async function runFirstRunGuidanceScenario(win) {
 }
 
 async function runEmptyTodayScenario(win) {
-  const focused = await evaluate(win, `
-    (() => {
-      const row = document.querySelector('[role="button"][aria-label^="Today,"]');
-      row?.focus();
-      return document.activeElement === row;
-    })()
-  `);
-  if (!focused) throw new Error('Today navigation row could not receive keyboard focus');
-  await pressAccelerator(win, 'Enter');
+  await runCommandPaletteCommand(win, 'open today', 'Open today');
   await waitFor(win, 'calm empty Today surface', async () => {
     const result = await evaluate(win, `
       (() => {
@@ -1298,21 +1534,17 @@ async function runEmptyTodayScenario(win) {
 }
 
 async function runPopulatedTodayScenario(win) {
-  await clickVisibleText(win, 'Today');
+  await runCommandPaletteCommand(win, 'open today', 'Open today');
   await waitFor(win, 'populated Today adapts without duplicate daily actions', async () => {
     const result = await evaluate(win, `
       (() => {
         const root = document.querySelector('[data-mn-today-root="true"]');
         const buttons = root ? [...root.querySelectorAll('button')].map(button => (button.textContent || '').trim()) : [];
         const sections = root ? [...root.querySelectorAll('[data-mn-today-section]')].map(section => section.getAttribute('data-mn-today-section')) : [];
-        const todayLabel = [...document.querySelectorAll('span')].find(element => (element.textContent || '').trim() === 'Today');
-        const row = todayLabel?.parentElement;
-        const count = row ? [...row.querySelectorAll('span')].at(-1)?.textContent?.trim() : '';
         return {
           empty: root?.getAttribute('data-mn-today-empty') || '',
           dailyActions: buttons.filter(text => text === 'Create daily note' || text === 'Open daily note').length,
           sections,
-          count,
         };
       })()
     `);
@@ -1321,8 +1553,7 @@ async function runPopulatedTodayScenario(win) {
         && result.dailyActions === 1
         && result.sections.includes('agenda')
         && result.sections.includes('notes')
-        && result.sections.includes('open-loops')
-        && result.count === '1',
+        && result.sections.includes('open-loops'),
       result,
     };
   });
@@ -1855,7 +2086,7 @@ async function runNoteCreateEditPersistenceScenario(win) {
 
 async function runQuickCaptureSaveScenario(win) {
   const body = '- [ ] QE quick capture todo';
-  await openQuickCaptureFromSidebar(win);
+  await openQuickCaptureFromAppBar(win);
   await waitFor(win, 'body-first quick capture open for save scenario', async () => {
     const result = await evaluate(win, `
       (() => ({
@@ -1878,7 +2109,7 @@ async function runQuickCaptureSaveScenario(win) {
     throw new Error(`Today capture leaked a synthetic title: ${persisted.note.body}`);
   }
 
-  await openQuickCaptureFromSidebar(win);
+  await openQuickCaptureFromAppBar(win);
   await waitFor(win, 'second body-first capture ready', async () => {
     const focused = await evaluate(win, `document.activeElement?.getAttribute('aria-label') === 'Quick capture text'`);
     return { ok: focused, focused };
@@ -1901,29 +2132,8 @@ async function runQuickCaptureSaveScenario(win) {
   await waitForPersistedNote(win, 'Derived capture title', note => String(note.body || '').includes('Supporting detail.'));
 }
 
-async function openQuickCaptureFromSidebar(win) {
-  const clickQuickCapture = async () => await evaluate(win, `
-    (() => {
-      const visible = element => {
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
-      };
-      const row = [...document.querySelectorAll('[role="button"][aria-label^="Quick capture"]')].find(visible);
-      row?.click();
-      return Boolean(row);
-    })()
-  `);
-  if (await clickQuickCapture()) return;
-  await clickButton(win, { text: 'More' });
-  await waitFor(win, 'sidebar reveals Quick Capture on demand', async () => {
-    const available = await evaluate(win, `
-      [...document.querySelectorAll('[role="button"][aria-label^="Quick capture"]')]
-        .some(element => element.getClientRects().length > 0)
-    `);
-    return { ok: available, available };
-  });
-  if (!await clickQuickCapture()) throw new Error('Quick Capture was not available from the sidebar More section');
+async function openQuickCaptureFromAppBar(win) {
+  await clickButton(win, { aria: 'Quick capture' });
 }
 
 async function runSearchAndClearScenario(win) {
@@ -2533,10 +2743,7 @@ async function runDeleteRestoreScenario(win) {
   });
   await clickButton(win, { text: 'Move to trash' });
   await waitForDeletedNote(win, title);
-  const trashLinkVisible = await evaluate(win, `
-    [...document.querySelectorAll('div, span')].some(element => (element.textContent || '').trim() === 'Recently deleted')
-  `);
-  if (!trashLinkVisible) await clickButton(win, { text: 'More' });
+  await setSidebarMoreExpanded(win, true);
   await clickVisibleText(win, 'Recently deleted');
   await waitFor(win, 'recently deleted view shows deleted note', async () => {
     const current = await state(win);
@@ -2683,14 +2890,34 @@ async function runRegression() {
     };
   });
 
-  await runScenario(win, 'Focus', 'fresh vault exposes only the core navigation', async () => {
-    await waitFor(win, 'minimal default navigation', async () => {
-      const current = await state(win);
-      const text = current.text;
+  await runScenario(win, 'Focus', 'fresh vault exposes the requested core navigation', async () => {
+    await setSidebarMoreExpanded(win, false);
+    await waitFor(win, 'default sidebar order and collapsed destinations', async () => {
+      const current = await evaluate(win, `(() => {
+        const labels = [...document.querySelectorAll('[data-mn-sidebar-primary] [role="button"]')]
+          .map(row => (row.getAttribute('aria-label') || '').split(',')[0]);
+        const sidebarText = document.querySelector('[data-mn-sidebar="true"]')?.textContent || '';
+        const moreToggle = [...document.querySelectorAll('button')]
+          .find(button => (button.textContent || '').trim() === 'More');
+        return {
+          labels,
+          sidebarText,
+          moreExpanded: moreToggle?.getAttribute('aria-expanded') === 'true',
+          moreList: Boolean(document.querySelector('[data-mn-sidebar-more]')),
+        };
+      })()`);
       return {
-        ok: text.includes('All notes') && text.includes('Today') && text.includes('Pinned') && text.includes('Tags')
-          && !text.includes('Smart Views') && !text.includes('Thinking Board') && !text.includes('Ask AI')
-          && !text.includes('Workflow') && !text.includes('Graph') && !text.includes('Agenda'),
+        ok: JSON.stringify(current.labels) === JSON.stringify(['All notes', 'Pinned', 'Views'])
+          && current.sidebarText.includes('Tags')
+          && !current.sidebarText.includes('Today')
+          && !current.sidebarText.includes('Smart Views')
+          && !current.sidebarText.includes('Thinking Board')
+          && !current.sidebarText.includes('Ask AI')
+          && !current.sidebarText.includes('Workflow')
+          && !current.sidebarText.includes('Graph')
+          && !current.sidebarText.includes('Agenda')
+          && !current.moreExpanded
+          && !current.moreList,
         current,
       };
     });
@@ -2705,12 +2932,34 @@ async function runRegression() {
       }
     }
     const ids = await availableCommandIds(win);
+    if (!ids.includes('views')) throw new Error(`default command surface omitted views: ${JSON.stringify(ids)}`);
     for (const commandId of [
       'graph', 'smart-views', 'calendar', 'set-workflow-status', 'canvas',
       'create-canvas', 'template-reading', 'template-novel-scene', 'memory-import', 'ask-ai',
     ]) {
       if (ids.includes(commandId)) throw new Error(`default command surface exposed ${commandId}`);
     }
+
+    await setAssistanceEnabledForRegression(win, true);
+    await waitFor(win, 'Ask AI joins the primary destinations in order', async () => {
+      const labels = await evaluate(win, `
+        [...document.querySelectorAll('[data-mn-sidebar-primary] [role="button"]')]
+          .map(row => (row.getAttribute('aria-label') || '').split(',')[0])
+      `);
+      return {
+        ok: JSON.stringify(labels) === JSON.stringify(['All notes', 'Pinned', 'Views', 'Ask AI']),
+        labels,
+      };
+    });
+    await setAssistanceEnabledForRegression(win, false);
+  });
+
+  await runScenario(win, 'Navigation', 'sidebar More expands above its control', async () => {
+    await runSidebarMoreDisclosureScenario(win);
+  });
+
+  await runScenario(win, 'Navigation', 'optional More destinations follow visibility toggles', async () => {
+    await runSidebarDestinationVisibilityScenario(win);
   });
 
   await runScenario(win, 'Today', 'fresh vault shows only calm capture actions', async () => {

@@ -64,11 +64,26 @@ test('workspace attachment IPC describes and opens only through main-process ser
 test('preference connector accepts known fields and rejects unknown or unsafe patches', () => {
   const clean = preferences.sanitizePrefsPatchFromIpc({
     enabledPacks: ['canvas', 'agents', 'canvas'],
-    tweaks: { theme: 'dark', showSidebar: false },
+    tweaks: {
+      theme: 'dark',
+      showSidebar: false,
+      showTodayInSidebar: true,
+      showThinkingBoardInSidebar: true,
+      showWorkflowInSidebar: true,
+      showQuickCaptureInSidebar: true,
+    },
   });
   assert.deepEqual(clean.enabledPacks, ['canvas', 'agents']);
   assert.equal(clean.tweaks.theme, 'dark');
   assert.equal(clean.tweaks.showSidebar, false);
+  assert.equal(clean.tweaks.showTodayInSidebar, true);
+  assert.equal(clean.tweaks.showThinkingBoardInSidebar, true);
+  assert.equal(clean.tweaks.showWorkflowInSidebar, true);
+  assert.equal(clean.tweaks.showQuickCaptureInSidebar, true);
+  assert.throws(
+    () => preferences.sanitizePrefsPatchFromIpc({ tweaks: { showTodayInSidebar: 'yes' } }),
+    /Invalid tweak field/
+  );
   assert.throws(() => preferences.sanitizePrefsPatchFromIpc({ unexpected: true }), /Unsupported preferences field/);
   const unsafe = JSON.parse('{"tweaks":{"__proto__":{"polluted":true}}}');
   assert.throws(() => preferences.sanitizePrefsPatchFromIpc(unsafe), /Invalid|Unsupported/);
