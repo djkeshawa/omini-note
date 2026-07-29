@@ -4,6 +4,8 @@ function ipcErrorResponse(name, error) {
     ok: false,
     error: error.message || String(error),
     code: error.code || null,
+    currentRevision: error.currentRevision || null,
+    expectedRevision: error.expectedRevision ?? null,
     currentModifiedAt: error.currentModifiedAt || null,
     expectedModifiedAt: error.expectedModifiedAt || null,
   };

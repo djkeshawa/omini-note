@@ -142,7 +142,7 @@ function MnInline({ text, onOpen, onTagClick, T, allNotes, BlockRefComponent = n
       const label = pipeIdx >= 0 ? inner.slice(pipeIdx + 1) : inner;
       const openTarget = (pipeIdx >= 0 ? inner.slice(0, pipeIdx) : inner).split('#')[0];
       out.push(
-        <a key={key++} onClick={(e) => { e.preventDefault(); onOpen && onOpen(openTarget); }}
+        <a key={key++} href="#" onClick={(e) => { e.preventDefault(); onOpen && onOpen(openTarget); }}
            style={{
              color: T.accent, cursor: 'pointer', borderBottom: `1px dotted ${T.accent}`,
              padding: '0 1px', textDecoration: 'none', fontFamily: 'inherit',
@@ -163,7 +163,7 @@ function MnInline({ text, onOpen, onTagClick, T, allNotes, BlockRefComponent = n
     } else if (whole.startsWith('#')) {
       const tag = whole.slice(1);
       out.push(
-        <a key={key++} onClick={(e) => { e.preventDefault(); onTagClick && onTagClick(tag); }}
+        <a key={key++} href="#" onClick={(e) => { e.preventDefault(); onTagClick && onTagClick(tag); }}
            style={{
              color: T.inkMed, cursor: 'pointer', fontFamily: 'var(--mn-mono)',
              fontSize: '0.88em', background: T.bgSub,
@@ -240,11 +240,21 @@ function MnMarkdown({ md, onOpen, onTagClick, onToggleCheck, T }) {
                 userSelect: 'none',
               }}>
               {canCollapse && (
-                <span style={{
-                  fontSize: 10, color: T.inkDim, width: 12, display: 'inline-block',
+                <button
+                  type="button"
+                  aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${b.text || 'section'}`}
+                  aria-expanded={!isCollapsed}
+                  onClick={event => {
+                    event.stopPropagation();
+                    setCollapsed(c => ({ ...c, [i]: !c[i] }));
+                  }}
+                  style={{
+                  fontSize: 10, color: T.inkDim, width: 18, height: 22, display: 'inline-flex',
+                  alignItems: 'center', justifyContent: 'center', padding: 0,
+                  border: 0, background: 'transparent', cursor: 'pointer',
                   transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0)',
                   transition: 'transform 120ms ease',
-                }}>▾</span>
+                }}>▾</button>
               )}
               <span><MnInline text={b.text} onOpen={onOpen} onTagClick={onTagClick} T={T} /></span>
               {isCollapsed && (

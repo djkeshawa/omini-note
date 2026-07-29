@@ -1,3 +1,7 @@
+import LATEST_WRITE_QUEUE from '../../shared/latestWriteQueue.js';
+
+const { createLatestWriteQueue } = LATEST_WRITE_QUEUE;
+
 function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATIONS, MN_AUTOSAVE_DEBOUNCE_MS, MN_AUTOSAVE_MAX_WAIT_MS, MN_FEATURES, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVELIST_WORKFLOW_STATES, MN_TWEAK_DEFAULTS, SEED_NOTES, SEED_TAGS, SEED_VAULTS, activeVaultId, captureOpen, desktopBridge, mnAskAiSessionTitle, mnBlocksToMd, mnDirtyNoteKey, mnMdToBlocks, mnNewAskAiSession, mnNormalizeCustomThemesForApp, mnNormalizeNoteBody, mnNormalizeSmartViewsForApp, mnNormalizeStartupView, mnNormalizeWorkflowStatesForApp, mnPickActiveAskAiSession, mnReadLocalPhase5Metrics, mnReplaceWikiLinkTitle, mnWriteLocalPhase5Metrics, navigateView, normalizeNotes, noteForDisk, notes, query, selectedId, setActiveVaultId, setAssistanceEnabled, setCanvases, setConflictNotice, setConnectionsRefreshToken, setCustomThemes, setEnabledPacks, setLastBackupAt, setNotes, setSavedSmartViews, setSelectedId, setTags, setTweaks, setVaults, setView, showAppNotice, tags, tweaks, useAiSessionsController, useBootController, useCallbackA, useEffectA, useRefA, useStateA, vaults, view }) {
   const recordPhase5Metric = useCallbackA((key, details = {}) => {
       if (!MN_APP_HELPERS?.phase5RecordMetric) return null;
@@ -20,6 +24,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       setActiveSessionId: setActiveAskAiSessionId,
       open: openAskAi,
       updateActiveSession: setActiveAskAiSession,
+      updateSessionById: updateAskAiSessionById,
       createChat: createAskAiChat,
       deleteChat: deleteAskAiChat,
       renameChat: renameAskAiChat,
@@ -126,12 +131,19 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       searchUsageActiveRef.current = active;
     }, [query, recordFeatureUsage]);
     const noteDiskStampRef = useRefA(new Map());
+    const noteDiskRevisionRef = useRefA(new Map());
     const savingDirtyKeysRef = useRefA(new Set());
     const pendingDirtyKeysRef = useRefA(new Set());
     const notesRef = useRefA(notes);
     const vaultsRef = useRefA(vaults);
     const dirtyRevisionRef = useRefA(0);
     const dirtyMissingWarnedRef = useRefA(new Set());
+    const clearNoteDiskState = useCallbackA((vaultId, noteId) => {
+      if (!vaultId || !noteId) return;
+      const key = mnDirtyNoteKey(vaultId, noteId);
+      noteDiskStampRef.current.delete(key);
+      noteDiskRevisionRef.current.delete(key);
+    }, []);
     const vaultActivationSeq = useRefA(0);
     const noteMetadataHistoryRef = useRefA({ undo: [], redo: [], activeKey: null });
     const aiNoteBodyRestoreRef = useRefA(new Map());
@@ -169,7 +181,21 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       });
     }, [activeVaultId, updateDirtyNotes]);
     const tagsDirty = useRefA(false);
-    const markTagsDirty = useCallbackA(() => { tagsDirty.current = true; }, []);
+    const tagsDirtyByVaultRef = useRefA(new Map());
+    const tagsRevisionRef = useRefA(0);
+    const vaultMetaWriteQueueRef = useRefA(null);
+    const activeVaultIdRef = useRefA(activeVaultId);
+    if (!vaultMetaWriteQueueRef.current) vaultMetaWriteQueueRef.current = createLatestWriteQueue();
+    activeVaultIdRef.current = activeVaultId;
+    const markTagsDirty = useCallbackA(() => {
+      if (!activeVaultId) return;
+      tagsDirtyByVaultRef.current.set(activeVaultId, { revision: ++tagsRevisionRef.current });
+      tagsDirty.current = true;
+    }, [activeVaultId]);
+
+    useEffectA(() => {
+      tagsDirty.current = !!activeVaultId && tagsDirtyByVaultRef.current.has(activeVaultId);
+    }, [activeVaultId]);
   
     const saveVaultMetaNow = useCallbackA(async (
       vaultId = activeVaultId,
@@ -178,20 +204,43 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       forceTags = false
     ) => {
       if (!HAS_DISK || !vaultId) return { ok: true, skipped: true };
+      const dirtyEntry = tagsDirtyByVaultRef.current.get(vaultId);
+      const dirtyRevision = dirtyEntry?.revision || 0;
       const patch = {};
-      if (forceTags || tagsDirty.current) patch.tags = nextTags;
+      if (forceTags || dirtyEntry) patch.tags = nextTags;
       if (nextSelectedId) patch.lastSelectedId = nextSelectedId;
       if (!Object.keys(patch).length) return { ok: true, skipped: true };
-      try {
-        const res = await desktopBridge.vaults.saveVaultMeta(vaultId, patch);
-        if (res?.ok === false) throw new Error(res.error || 'Save failed');
-        if (patch.tags && vaultId === activeVaultId) tagsDirty.current = false;
-        return { ok: true };
-      } catch (e) {
-        console.error('saveVaultMeta failed', e);
-        showAppNotice('Could not save vault settings', e.message || String(e), 'warn');
-        return { ok: false, error: e.message || String(e) };
-      }
+      const queued = await vaultMetaWriteQueueRef.current.enqueue(vaultId, {
+        patch,
+        dirtyRevision,
+      }, async request => {
+        try {
+          const res = await desktopBridge.vaults.saveVaultMeta(vaultId, request.patch);
+          if (res?.ok === false) throw new Error(res.error || 'Save failed');
+          if (request.patch.tags) {
+            const currentDirty = tagsDirtyByVaultRef.current.get(vaultId);
+            if (!currentDirty || currentDirty.revision === request.dirtyRevision) {
+              tagsDirtyByVaultRef.current.delete(vaultId);
+            }
+            if (vaultId === activeVaultIdRef.current) {
+              tagsDirty.current = tagsDirtyByVaultRef.current.has(vaultId);
+            }
+          }
+          return { ok: true };
+        } catch (e) {
+          console.error('saveVaultMeta failed', e);
+          if (request.patch.tags && request.dirtyRevision) {
+            const currentDirty = tagsDirtyByVaultRef.current.get(vaultId);
+            if (!currentDirty || currentDirty.revision < request.dirtyRevision) {
+              tagsDirtyByVaultRef.current.set(vaultId, { revision: request.dirtyRevision });
+            }
+            if (vaultId === activeVaultIdRef.current) tagsDirty.current = true;
+          }
+          showAppNotice('Could not save vault settings', e.message || String(e), 'warn');
+          return { ok: false, error: e.message || String(e) };
+        }
+      });
+      return queued.value;
     }, [activeVaultId, tags, selectedId, showAppNotice]);
   
     const loadVaultBundle = useCallbackA(async (vaultId) => {
@@ -303,6 +352,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
         return incomingTime >= currentTime ? incoming : current;
       };
       const stamps = new Map();
+      const revisions = new Map(noteDiskRevisionRef.current);
       const remember = (vaultId, noteList) => {
         if (!vaultId || !Array.isArray(noteList)) return;
         noteList.forEach(note => {
@@ -310,11 +360,15 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
             const key = mnDirtyNoteKey(vaultId, note.id);
             stamps.set(key, pickNewerDiskStamp(noteDiskStampRef.current.get(key), note.diskModifiedAt));
           }
+          if (note?.id && note.diskRevision) {
+            revisions.set(mnDirtyNoteKey(vaultId, note.id), note.diskRevision);
+          }
         });
       };
       vaults.forEach(vault => remember(vault.id, vault.notes));
       remember(activeVaultId, notes);
       noteDiskStampRef.current = stamps;
+      noteDiskRevisionRef.current = revisions;
     }, [activeVaultId, notes, vaults]);
   
     useEffectA(() => {
@@ -344,6 +398,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       for (const n of incoming) {
         const stamp = n.diskModifiedAt || n.modifiedAt;
         if (stamp) noteDiskStampRef.current.set(mnDirtyNoteKey(vaultId, n.id), stamp);
+        if (n.diskRevision) noteDiskRevisionRef.current.set(mnDirtyNoteKey(vaultId, n.id), n.diskRevision);
       }
       const byId = new Map(incoming.map(n => [n.id, n]));
       const bodyCtx = {
@@ -355,12 +410,17 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
         const fresh = byId.get(n.id);
         if (!fresh) return n;
         if (!dirtyNotesRef.current.has(mnDirtyNoteKey(vaultId, n.id))) return fresh;
+        const localWithDiskState = {
+          ...n,
+          diskModifiedAt: fresh.diskModifiedAt || fresh.modifiedAt || n.diskModifiedAt,
+          diskRevision: fresh.diskRevision || n.diskRevision,
+        };
         // Dirty: keep local edits, but rewrite the renamed title in place.
-        if (!rename?.oldTitle || !rename?.newTitle) return n;
-        const currentBody = mnNormalizeNoteBody(mnBlocksToMd(n.blocks || []), n.title || 'Untitled');
+        if (!rename?.oldTitle || !rename?.newTitle) return localWithDiskState;
+        const currentBody = mnNormalizeNoteBody(mnBlocksToMd(localWithDiskState.blocks || []), localWithDiskState.title || 'Untitled');
         const rewritten = mnReplaceWikiLinkTitle(currentBody, rename.oldTitle, rename.newTitle);
-        if (rewritten === currentBody) return n;
-        return MN_APP_MUTATIONS.applyNoteBodyUpdate(n, rewritten, bodyCtx);
+        if (rewritten === currentBody) return localWithDiskState;
+        return MN_APP_MUTATIONS.applyNoteBodyUpdate(localWithDiskState, rewritten, bodyCtx);
       }) : list);
       if (vaultId === activeVaultId) setNotes(mergeList);
       setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
@@ -370,7 +430,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
     }, [activeVaultId, mnMdToBlocks]);
   
     const saveDirtyNotesNow = useCallbackA(async function saveDirtyNotesNowImpl(entries, currentNotes = notesRef.current, currentVaults = vaultsRef.current) {
-      const result = { attempted: 0, saved: 0, deferred: 0, failures: [] };
+      const result = { attempted: 0, saved: 0, savedEntries: [], deferred: 0, failures: [] };
       if (!HAS_DISK || !entries?.length) return result;
       for (const entry of entries) {
         const id = entry?.id;
@@ -401,9 +461,12 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
             continue;
           }
           dirtyMissingWarnedRef.current.delete(dirtyKey);
-          const saveOptions = { expectedModifiedAt: n.diskModifiedAt || null };
+          const saveOptions = {
+            expectedRevision: noteDiskRevisionRef.current.get(dirtyKey) ?? n.diskRevision ?? null,
+            expectedModifiedAt: n.diskModifiedAt || null,
+          };
           saveOptions.expectedModifiedAt = noteDiskStampRef.current.get(dirtyKey) || saveOptions.expectedModifiedAt;
-          const expectedModifiedAt = saveOptions.expectedModifiedAt;
+          const expectedRevision = saveOptions.expectedRevision;
           try {
             const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
               desktopBridge,
@@ -417,8 +480,10 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
                   vaultId,
                   noteId: id,
                   title: n.title || 'Untitled',
+                  currentRevision: res.currentRevision || null,
+                  expectedRevision: res.expectedRevision || expectedRevision,
                   currentModifiedAt: res.currentModifiedAt || null,
-                  expectedModifiedAt: res.expectedModifiedAt || expectedModifiedAt,
+                  expectedModifiedAt: res.expectedModifiedAt || saveOptions.expectedModifiedAt,
                 });
                 result.failures.push({ kind: 'note', id, code: 'NOTE_CONFLICT', message: res.error || 'The note changed on disk.' });
                 continue;
@@ -429,13 +494,17 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
             if (Array.isArray(res?.linkedNoteUpdates) && res.linkedNoteUpdates.length) {
               applyLinkedNoteUpdates(vaultId, res.linkedNoteUpdates, res.linkedNoteRename || null);
             }
-            if (saved?.diskModifiedAt || saved?.modifiedAt) {
+            if (saved?.diskModifiedAt || saved?.modifiedAt || saved?.diskRevision) {
               const diskModifiedAt = saved.diskModifiedAt || saved.modifiedAt;
-              noteDiskStampRef.current.set(dirtyKey, diskModifiedAt);
-              const updateDiskStamp = notesList => MN_NOTES_VAULTS_STATE.updateNoteDiskStamp(notesList, id, diskModifiedAt);
-              if (vaultId === activeVaultId) setNotes(updateDiskStamp);
+              if (diskModifiedAt) noteDiskStampRef.current.set(dirtyKey, diskModifiedAt);
+              if (saved.diskRevision) noteDiskRevisionRef.current.set(dirtyKey, saved.diskRevision);
+              const updateDiskState = notesList => MN_NOTES_VAULTS_STATE.updateNoteDiskState(notesList, id, {
+                diskModifiedAt,
+                diskRevision: saved.diskRevision || null,
+              });
+              if (vaultId === activeVaultId) setNotes(updateDiskState);
               setVaults(vs => vs.map(v => v.id === vaultId && Array.isArray(v.notes)
-                ? { ...v, notes: updateDiskStamp(v.notes) }
+                ? { ...v, notes: updateDiskState(v.notes) }
                 : v));
             }
             updateDirtyNotes(cur => {
@@ -447,6 +516,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
               return next;
             });
             result.saved++;
+            result.savedEntries.push({ vaultId, id, note: saved || null });
           } catch (e) {
             console.error('saveNote failed', id, e);
             showAppNotice('Could not save note', e.message || String(e));
@@ -518,7 +588,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       }, 1000);
       return () => clearTimeout(t);
     }, [selectedId, activeVaultId, tags, saveVaultMetaNow]);
-  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, saveSmartViewDefinitions, searchUsageActiveRef, noteDiskStampRef, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, retryBoot, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
+  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, updateAskAiSessionById, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, saveSmartViewDefinitions, searchUsageActiveRef, noteDiskStampRef, noteDiskRevisionRef, clearNoteDiskState, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, retryBoot, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
 }
 
 export { useAppPersistenceController };

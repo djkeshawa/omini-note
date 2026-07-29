@@ -33,6 +33,7 @@ import {
   useOutlinerKeyboardShortcuts,
 } from '../features/editor/outliner/index.js';
 import { platformApi } from '../platform/index.js';
+import { mnAiContentFingerprint } from '../ai/aiOwnership.js';
 import { mnReadNovelistAiConfig } from '../panels/panelHelpers.js';
 import { MnCanvasEmbed } from '../features/canvas/index.js';
 import {
@@ -453,7 +454,31 @@ function MnOutliner({
     !preview?.noteId || !currentNoteId || preview.noteId === currentNoteId
   );
   const previewForCurrentNote = isPreviewForCurrentNote(aiPreview) ? aiPreview : null;
-  const makeAiPreview = (requestNoteId, preview) => ({ ...preview, noteId: requestNoteId || noteIdRef.current || '' });
+  const makeAiPreview = (requestNoteId, preview, baseText = '') => ({
+    ...preview,
+    noteId: requestNoteId || noteIdRef.current || '',
+    vaultId: vaultId || '',
+    baseHash: mnAiContentFingerprint(baseText),
+  });
+
+  const currentAiPreviewSource = (preview) => {
+    const target = preview?.target;
+    if (!target) return '';
+    if (target.kind === 'text') {
+      const loc = mnLocate(blocks, target.blockId);
+      return loc ? String(loc.block.content || '').slice(target.start, target.end) : null;
+    }
+    if (target.kind === 'blocks') {
+      const selectedBlocks = (target.blockIds || []).map(id => mnLocate(blocks, id)?.block).filter(Boolean);
+      return selectedBlocks.length === (target.blockIds || []).length ? mnBlocksToMd(selectedBlocks) : null;
+    }
+    if (target.kind === 'section' || target.kind === 'insert-after') {
+      const loc = mnLocate(blocks, target.blockId);
+      return loc ? mnBlocksToMd([loc.block]) : null;
+    }
+    if (target.kind === 'page' || target.kind === 'append-page') return mnBlocksToMd(blocks);
+    return null;
+  };
 
   const cancelAiPreview = () => {
     const preview = previewForCurrentNote;
@@ -467,6 +492,16 @@ function MnOutliner({
     const preview = previewForCurrentNote;
     if (!preview) return;
     if (preview.streaming || preview.error || !String(preview.text || '').trim()) return;
+    const currentSource = currentAiPreviewSource(preview);
+    if (
+      preview.vaultId !== (vaultId || '') ||
+      currentSource == null ||
+      preview.baseHash !== mnAiContentFingerprint(currentSource)
+    ) {
+      onShowToast?.('This page changed after the AI preview was created. Generate a new preview.');
+      setAiPreview(null);
+      return;
+    }
     if (preview.target.kind === 'text') applyTextReplacement(preview.target, preview.text);
     else if (preview.target.kind === 'blocks') applyBlocksReplacement(preview.target, preview.text);
     else if (preview.target.kind === 'section') applySectionReplacement(preview.target, preview.text);
@@ -527,7 +562,7 @@ function MnOutliner({
             action.needsPrompt ? writeInstruction('selected blocks', userRequest, source) : null
           );
           if (action.preview) {
-            setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'blocks', blockIds: ids } }));
+            setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'blocks', blockIds: ids } }, source));
             return;
           }
           applyBlocksReplacement({ blockIds: ids }, edited);
@@ -545,7 +580,7 @@ function MnOutliner({
           action.needsPrompt ? writeInstruction('selected text', userRequest, source) : null
         );
         if (action.preview) {
-          setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'text', blockId: selection.blockId, start: selection.start, end: selection.end } }));
+          setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'text', blockId: selection.blockId, start: selection.start, end: selection.end } }, source));
           return;
         }
         applyTextReplacement({ blockId: selection.blockId, start: selection.start, end: selection.end }, edited);
@@ -559,6 +594,7 @@ function MnOutliner({
         const loc = mnLocate(blocks, blockId);
         if (!loc) return;
         const sourceBlock = mnCloneBlocks([loc.block])[0];
+        const baseSource = mnBlocksToMd([loc.block]);
         if (payload.cleanContent != null) sourceBlock.content = payload.cleanContent;
         const source = mnBlocksToMd([sourceBlock]);
         const isPlotPointsAi = sourceBlock.kind === 'plot-points' || payload.plotPointsAction;
@@ -570,6 +606,8 @@ function MnOutliner({
           dismissedAiPreviewRef.current = null;
           setAiPreview({
             noteId: requestNoteId,
+            vaultId: vaultId || '',
+            baseHash: mnAiContentFingerprint(appendPlotWrite ? pageSource : baseSource),
             actionId,
             text: '',
             streaming: true,
@@ -608,8 +646,10 @@ function MnOutliner({
             )
               ? { ...prev, text: edited, streaming: false }
               : {
-                  noteId: requestNoteId,
-                  actionId,
+	                  noteId: requestNoteId,
+	                  vaultId: vaultId || '',
+	                  baseHash: mnAiContentFingerprint(appendPlotWrite ? pageSource : baseSource),
+	                  actionId,
                   text: edited,
                   streaming: false,
                   target: appendPlotWrite ? { kind: 'append-page' } : { kind: 'insert-after', blockId },
@@ -618,7 +658,7 @@ function MnOutliner({
           return;
         }
         if (action.preview) {
-          setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'section', blockId } }));
+          setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'section', blockId } }, baseSource));
           return;
         }
         applySectionReplacement({ blockId }, edited);
@@ -639,6 +679,8 @@ function MnOutliner({
         dismissedAiPreviewRef.current = null;
         setAiPreview({
           noteId: requestNoteId,
+          vaultId: vaultId || '',
+          baseHash: mnAiContentFingerprint(source),
           actionId,
           text: '',
           streaming: true,
@@ -671,8 +713,10 @@ function MnOutliner({
           prev?.noteId === requestNoteId && prev?.target?.kind === 'append-page'
             ? { ...prev, text: edited, streaming: false }
             : {
-                noteId: requestNoteId,
-                actionId,
+	                noteId: requestNoteId,
+	                vaultId: vaultId || '',
+	                baseHash: mnAiContentFingerprint(source),
+	                actionId,
                 text: edited,
                 streaming: false,
                 target: { kind: 'append-page' },
@@ -681,7 +725,7 @@ function MnOutliner({
         return;
       }
       if (action.preview) {
-        setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'page' } }));
+        setAiPreview(makeAiPreview(requestNoteId, { actionId, text: edited, target: { kind: 'page' } }, source));
         return;
       }
       applyPageReplacement(edited);

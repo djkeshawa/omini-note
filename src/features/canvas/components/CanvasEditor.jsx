@@ -48,6 +48,9 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
   const toolbarMenuRef = useRefC(null);
   const selectedIdsRef = useRefC([]);
   const handlersRef = useRefC({});
+  const viewportSaveTimerRef = useRefC(null);
+  const onSaveRef = useRefC(onSave);
+  onSaveRef.current = onSave;
 
   const selectedElement = (draft.elements || []).find(el => el.id === selectedIds[0]) || null;
   const selectedElements = (draft.elements || []).filter(el => selectedIds.includes(el.id));
@@ -59,6 +62,14 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
   const setDraftLocal = (next) => {
     draftRef.current = next;
     setDraft(next);
+  };
+
+  const saveCanvasNow = (next) => {
+    if (viewportSaveTimerRef.current) {
+      clearTimeout(viewportSaveTimerRef.current);
+      viewportSaveTimerRef.current = null;
+    }
+    return onSaveRef.current?.(next);
   };
 
   useEffectC(() => {
@@ -96,6 +107,13 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     setHistoryVersion(v => v + 1);
   }, [canvas?.id]);
 
+  useEffectC(() => () => {
+    if (!viewportSaveTimerRef.current) return;
+    clearTimeout(viewportSaveTimerRef.current);
+    viewportSaveTimerRef.current = null;
+    onSaveRef.current?.(draftRef.current);
+  }, [canvas?.id]);
+
   const rememberCanvas = () => {
     undoRef.current.push(mnCloneCanvasState(draftRef.current));
     if (undoRef.current.length > 80) undoRef.current.shift();
@@ -107,7 +125,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     if (options.history !== false) rememberCanvas();
     const saved = { ...next, modifiedAt: new Date().toISOString() };
     setDraftLocal(saved);
-    onSave && onSave(saved);
+    saveCanvasNow(saved);
     return saved;
   };
 
@@ -156,7 +174,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     redoRef.current.push(mnCloneCanvasState(draftRef.current));
     const restored = { ...previous, modifiedAt: new Date().toISOString() };
     setDraftLocal(restored);
-    onSave && onSave(restored);
+    saveCanvasNow(restored);
     setSelectedIds([]);
     setContextMenu(null);
     setEditingTextId(null);
@@ -169,7 +187,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     undoRef.current.push(mnCloneCanvasState(draftRef.current));
     const restored = { ...next, modifiedAt: new Date().toISOString() };
     setDraftLocal(restored);
-    onSave && onSave(restored);
+    saveCanvasNow(restored);
     setSelectedIds([]);
     setContextMenu(null);
     setEditingTextId(null);
@@ -578,7 +596,11 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     const nextScale = Math.max(0.45, Math.min(2.2, current.scale + (e.deltaY > 0 ? -0.08 : 0.08)));
     const saved = { ...draftRef.current, viewport: { ...current, scale: nextScale }, modifiedAt: new Date().toISOString() };
     setDraftLocal(saved);
-    onSave && onSave(saved);
+    if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
+    viewportSaveTimerRef.current = setTimeout(() => {
+      viewportSaveTimerRef.current = null;
+      onSaveRef.current?.(draftRef.current);
+    }, 150);
   };
 
   // The delete-confirm dialog focuses a button, which the INPUT/TEXTAREA

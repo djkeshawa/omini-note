@@ -3,6 +3,9 @@ import { DS_TYPE, dsGroupLabelStyle, mnSentenceCase } from '../../../shared/desi
 
 const { useEffect, useMemo, useState } = React;
 
+const defaultNormalizeRange = value => value || 'today';
+const defaultNormalizeGroupBy = value => value || 'created';
+
 function sectionStyle(T) {
   return {
     border: `1px solid ${T.lineSub}`,
@@ -220,8 +223,8 @@ function MnTodayPanel({
   rollupCollapseOlder = true, todayAiRecap = null, todayAiRecapBusy = false, todayAiRecapError = '',
   onGenerateAiRecap, weekStart = 'monday', helpers = {},
 }) {
-  const normalizeRange = helpers.rollupNormalizeRange || (value => value || 'today');
-  const normalizeGroupBy = helpers.rollupNormalizeGroupBy || (value => value || 'created');
+  const normalizeRange = helpers.rollupNormalizeRange || defaultNormalizeRange;
+  const normalizeGroupBy = helpers.rollupNormalizeGroupBy || defaultNormalizeGroupBy;
   const initialRange = normalizeRange(rollupDefaultRange);
   const [pastRange, setPastRange] = useState(initialRange === 'today' ? 'week' : initialRange);
   const todayGroupBy = normalizeGroupBy(rollupGroupBy);
@@ -232,9 +235,9 @@ function MnTodayPanel({
   useEffect(() => {
     const next = normalizeRange(rollupDefaultRange);
     setPastRange(next === 'today' ? 'week' : next);
-  }, [rollupDefaultRange]);
+  }, [normalizeRange, rollupDefaultRange]);
 
-  useEffect(() => setPastGroupBy(normalizeGroupBy(rollupGroupBy)), [rollupGroupBy]);
+  useEffect(() => setPastGroupBy(normalizeGroupBy(rollupGroupBy)), [normalizeGroupBy, rollupGroupBy]);
 
   const todayKey = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
   const dailyNote = todayNote || notes.find(note => String(note.title || '').trim() === todayKey) || null;

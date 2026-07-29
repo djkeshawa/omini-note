@@ -153,7 +153,6 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
   }, [notes, visibleEdges, style, W, H, layoutSeed, opts.sizeByContent]);
 
   useEffect(() => {
-    if (!nodes) return;
     let ticks = 0;
     const maxTicks = 280;
     settledRef.current = false;

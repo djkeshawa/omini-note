@@ -1,5 +1,6 @@
 import { platformApi } from '../platform/index.js';
 import { MN_AI_NOTES_TIMEOUT_MS, mnSupportingNovelNotes, mnSupportingNotesEditInstruction, mnAiCurrentNoteMarkdown, mnAiCleanVirtualToolArgs, mnAskAiJobId, mnAiBuildMarkdownPreview } from './aiModels.js';
+import { mnAiNoteEditOwner, mnAiValidateNoteEditOwner } from './aiOwnership.js';
 
 function createVirtualWriteActions({ vaultId, currentNote, setActiveAction, allNotes, onApplyNoteBodies, onApplyCurrentPageBody, aiRuntime }) {
   const askEdit = async ({ text, instruction, scope, jobId }) => {
@@ -111,6 +112,12 @@ function createVirtualWriteActions({ vaultId, currentNote, setActiveAction, allN
         if (!onApplyCurrentPageBody) throw new Error('Current page editing is not available');
         setActiveAction('Drafting page preview...');
         const previousBody = mnAiCurrentNoteMarkdown(currentNote);
+        const owner = mnAiNoteEditOwner({
+          vaultId,
+          noteId: currentNote.id,
+          body: previousBody,
+          diskRevision: currentNote.diskRevision,
+        });
         const reviewedBody = String(await askEdit({
           scope: 'current page preview',
           instruction,
@@ -127,6 +134,7 @@ function createVirtualWriteActions({ vaultId, currentNote, setActiveAction, allN
           args: { instruction },
           reviewedBody,
           previousBody,
+          owner,
           virtual: true,
         };
         const preview = {
@@ -169,17 +177,26 @@ function createVirtualWriteActions({ vaultId, currentNote, setActiveAction, allN
       throw new Error(`Unsupported AI write tool: ${name}`);
     };
   
-    const runConfirmedVirtualWriteTool = async ({ name, args = {}, reviewedBody = null, previousBody = null, q = '', jobId, run } = {}) => {
+    const runConfirmedVirtualWriteTool = async ({ name, args = {}, reviewedBody = null, previousBody = null, owner = null, q = '', jobId, run } = {}) => {
       const inputArgs = { ...(args || {}) };
       if (!String(inputArgs.instruction || '').trim() && q) inputArgs.instruction = q;
       const cleanArgs = mnAiCleanVirtualToolArgs(name, inputArgs);
       const instruction = String(cleanArgs.instruction || q || '').trim();
       if (!instruction) throw new Error('Edit instruction is empty');
       if (name === 'edit-current-page') {
-        if (!currentNote || !onApplyCurrentPageBody) throw new Error('No current page is open to edit');
+        if (!onApplyCurrentPageBody) throw new Error('Current page editing is not available');
+        const targetNote = owner?.noteId
+          ? (allNotes || []).find(note => String(note?.id || '') === String(owner.noteId)) || null
+          : currentNote;
+        if (!targetNote) throw new Error('The target note is no longer available.');
         setActiveAction('Applying reviewed page edit...');
         aiRuntime.recordTrace?.(run, 'tool.run', { actionId: name, actionLabel: 'Apply reviewed page edit', args: { instruction } });
-        const bodyBeforeApply = typeof previousBody === 'string' ? previousBody : mnAiCurrentNoteMarkdown(currentNote);
+        const currentBody = mnAiCurrentNoteMarkdown(targetNote);
+        if (owner) {
+          const ownership = mnAiValidateNoteEditOwner(owner, { vaultId, note: targetNote, body: currentBody });
+          if (!ownership.ok) throw new Error(ownership.error);
+        }
+        const bodyBeforeApply = typeof previousBody === 'string' ? previousBody : currentBody;
         const bodyToApply = typeof reviewedBody === 'string' ? reviewedBody : await askEdit({
           scope: 'current page',
           instruction,
@@ -191,13 +208,17 @@ function createVirtualWriteActions({ vaultId, currentNote, setActiveAction, allN
           instruction,
           previousBody: bodyBeforeApply,
           reviewedBody: bodyToApply,
+          targetVaultId: owner?.vaultId || vaultId,
+          targetNoteId: owner?.noteId || targetNote.id,
+          expectedRevision: owner?.baseRevision || targetNote.diskRevision || null,
+          expectedBodyHash: owner?.bodyHash || null,
         });
         if (applied?.ok === false) throw new Error(applied.error || 'Could not apply reviewed AI edit.');
         aiRuntime.recordTrace?.(run, 'tool.done', { actionId: name, actionLabel: 'Edit current page', affected: 1 });
         return {
-          answer: `Updated "${currentNote.title || 'current page'}".`,
-          sources: [{ id: currentNote.id, title: currentNote.title || 'Current page', snippet: String(bodyToApply || '').slice(0, 200) }],
-          restore: applied?.restoreAvailable === false ? null : { noteId: currentNote.id, title: currentNote.title || 'Current page' },
+          answer: `Updated "${targetNote.title || 'current page'}".`,
+          sources: [{ id: targetNote.id, title: targetNote.title || 'Current page', snippet: String(bodyToApply || '').slice(0, 200) }],
+          restore: applied?.restoreAvailable === false ? null : { noteId: targetNote.id, title: targetNote.title || 'Current page' },
           action: true,
         };
       }

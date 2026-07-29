@@ -66,8 +66,21 @@ jobs:
         continue-on-error: true
 
   electron-regression:
-    name: Electron regression suite
-    runs-on: ubuntu-22.04
+    name: Electron ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux regression suite
+            os: ubuntu-22.04
+            full_regression: true
+          - name: macOS smoke
+            os: macos-15
+            full_regression: false
+          - name: Windows smoke
+            os: windows-2022
+            full_regression: false
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -82,10 +95,36 @@ jobs:
         run: npm ci
 
       - name: Electron smoke test
+        if: runner.os == 'Linux'
         run: xvfb-run -a npm run smoke:electron
 
+      - name: Electron smoke test
+        if: runner.os != 'Linux'
+        run: npm run smoke:electron
+
       - name: Renderer regression
+        if: matrix.full_regression
         run: xvfb-run -a npm run regression:renderer
 
       - name: AI regression
+        if: matrix.full_regression
         run: xvfb-run -a npm run regression:ai
+
+  memory-integration-optional:
+    name: Optional live memory integration
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run live memory regression when a local service is available
+        run: npm run regression:memory

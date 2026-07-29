@@ -295,7 +295,15 @@ function MnBlockEmbed({ refId, allNotes, T, onOpenBlock }) {
   );
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onOpenBlock && onOpenBlock(parentNote.id, targetBlock.id)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          if (onOpenBlock) onOpenBlock(parentNote.id, targetBlock.id);
+        }
+      }}
       style={{
         margin: '6px 0', padding: '8px 12px',
         background: T.bgSub, border: `1px solid ${T.line}`,
@@ -318,12 +326,14 @@ function MnBlockContextMenu({
   onDelete, onDuplicate, onAddLabel, onSetWorkflow, onChangeKind, workflowEnabled = false, T
 }) {
   const shortcutPlatform = useShortcutPlatform();
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
   React.useEffect(() => {
     const onDown = (e) => {
       // Close on click outside menu
-      if (!e.target.closest('.mn-block-ctx-menu')) onClose();
+      if (!e.target.closest('.mn-block-ctx-menu')) onCloseRef.current();
     };
-    const onEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    const onEsc = (e) => { if (e.key === 'Escape') onCloseRef.current(); };
     const timer = setTimeout(() => document.addEventListener('mousedown', onDown), 0);
     document.addEventListener('keydown', onEsc);
     return () => {

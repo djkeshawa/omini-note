@@ -34,6 +34,7 @@ test('notes/vault handlers preserve list, save, delete, and select behavior', as
       note: { id: 'n_contract', title: 'Contract note', body: 'contract body', tags: [] },
     });
     assert.equal(saved.ok, true);
+    assert.match(saved.data.note.diskRevision, /^[a-f0-9]{64}$/);
 
     const notes = await handlers.listNotes({ vaultId: firstVault.id });
     assert.equal(notes.ok, true);
@@ -41,11 +42,17 @@ test('notes/vault handlers preserve list, save, delete, and select behavior', as
 
     const opened = await handlers.openNote({ vaultId: firstVault.id, noteId: 'n_contract' });
     assert.equal(opened.data.note.raw, 'contract body');
+    assert.equal(opened.data.note.diskRevision, saved.data.note.diskRevision);
 
     const selected = await handlers.selectVault({ vaultId: firstVault.id });
     assert.equal(selected.data.activeVaultId, firstVault.id);
 
-    const deleted = await handlers.deleteNote({ vaultId: firstVault.id, noteId: 'n_contract', noteSnapshot: saved.data.note });
+    const deleted = await handlers.deleteNote({
+      vaultId: firstVault.id,
+      noteId: 'n_contract',
+      noteSnapshot: saved.data.note,
+      options: { expectedRevision: saved.data.note.diskRevision },
+    });
     assert.equal(deleted.ok, true);
     assert.equal(deleted.data.removed, true);
   });

@@ -79,6 +79,7 @@ function DsDialogShell({
   T, onDismiss, titleId = 'mn-dialog-title', width = 420, className,
   role = 'dialog', zIndex = 90,
 }) {
+  const dialogRef = useDialogFocus({ onEscape: onDismiss });
   return (
     <div
       className={className}
@@ -91,6 +92,8 @@ function DsDialogShell({
         animation: 'mnFadeIn 120ms ease',
       }}>
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
@@ -156,3 +159,4 @@ import {
   DS_RADIUS, DS_TYPE, dsGroupLabelStyle, dsMachineStyle,
   dsStatusDotStyle, dsStatusPillStyle, dsToneIconStyle,
 } from '../designSystem.js';
+import { useDialogFocus } from '../useDialogFocus.js';

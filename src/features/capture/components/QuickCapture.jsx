@@ -1,11 +1,10 @@
 import { DS_RADIUS } from '../../../shared/designSystem.js';
-import { shortcutLabel, useShortcutPlatform } from '../../../platform/shortcuts.js';
 import { mnGetTagBg, mnGetTagColor } from '../../../shared/theme.jsx';
+import { useDialogFocus } from '../../../shared/useDialogFocus.js';
 
-const { useState: useStateP, useEffect: useEffectP, useRef: useRefP } = React;
+const { useState: useStateP, useRef: useRefP } = React;
 
 function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = [], deriveTitle, T, theme }) {
-  const shortcutPlatform = useShortcutPlatform();
   const [title, setTitle] = useStateP('');
   const [body, setBody] = useStateP('');
   const [selected, setSelected] = useStateP([]);
@@ -13,6 +12,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
   const [templateId, setTemplateId] = useStateP('raw');
   const [moreOpen, setMoreOpen] = useStateP(false);
   const bodyRef = useRefP(null);
+  const dialogRef = useDialogFocus({ initialFocusRef: bodyRef, onEscape: onClose });
   const destinationChoices = destinations.length
     ? destinations
     : [{ id: 'new', label: 'New note', noteTitle: 'New note', disabled: false }];
@@ -25,16 +25,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
     || destinationChoices[0];
   const activeTemplate = templateChoices.find(item => item.id === templateId) || templateChoices[0];
   const createsNewNote = activeDestination?.id === 'new';
-
-  useEffectP(() => {
-    const focusHandle = setTimeout(() => bodyRef.current?.focus(), 60);
-    const esc = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', esc);
-    return () => {
-      clearTimeout(focusHandle);
-      window.removeEventListener('keydown', esc);
-    };
-  }, []);
+  const destinationLabel = activeDestination?.label || activeDestination?.noteTitle || 'New note';
 
   const submit = () => {
     if (!title.trim() && !body.trim()) return onClose();
@@ -56,7 +47,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
       paddingTop: 100, animation: 'mnFadeIn 120ms ease',
     }}>
-      <div role="dialog" aria-modal="true" aria-label="Quick capture" onClick={(e) => e.stopPropagation()} style={{
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Quick capture" onClick={(e) => e.stopPropagation()} style={{
         width: 560, maxWidth: '92%', background: T.bgElevated || T.bg, borderRadius: DS_RADIUS.panel,
         border: `1px solid ${T.line}`,
         boxShadow: `0 24px 60px color-mix(in oklab, ${T.ink} 25%, transparent)`,
@@ -71,9 +62,8 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
             Quick capture
           </span>
           <span style={{ flex: 1 }} />
-          {/* Say where it goes, rather than repeating the shortcut that opened it. */}
           <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkDim }}>
-            Lands in the inbox tag
+            {createsNewNote ? 'Creates a new note' : `Adds to ${destinationLabel}`}
           </span>
         </div>
         <div style={{ padding: 16 }}>
@@ -178,7 +168,7 @@ function MnQuickCapture({ onSave, onClose, tags, destinations = [], templates = 
         }}>
           <div style={{
             fontFamily: 'var(--mn-mono)', fontSize: 10, color: T.inkDim,
-          }}>{activeDestination?.label || 'New note'} · {activeTemplate?.title || 'No template'}</div>
+          }}>{destinationLabel} · {activeTemplate?.title || 'No template'}</div>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{
             minHeight: 36, padding: '6px 12px', borderRadius: 5,

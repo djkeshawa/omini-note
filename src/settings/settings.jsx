@@ -5,7 +5,8 @@ import { SectionAppearance, SectionEditor, SectionNotes, SectionAdvanced } from 
 import { SectionAI } from './sections/AssistanceSection.jsx';
 import { SectionData } from './sections/DataSection.jsx';
 import { SectionShortcuts, SectionAbout } from './sections/AboutSections.jsx';
-const { useState: useStateS, useEffect: useEffectS } = React;
+import { useDialogFocus } from '../shared/useDialogFocus.js';
+const { useState: useStateS, useEffect: useEffectS, useRef: useRefS } = React;
 
 function MnSettingsModal({
   tweaks, setTweak, T, onClose, stats, vaults, activeVaultId, activeVault,
@@ -18,6 +19,8 @@ function MnSettingsModal({
   const [section, setSection] = useStateS('general');
   const [updateState, setUpdateState] = useStateS(null);
   const [shortcutStatus, setShortcutStatus] = useStateS(null);
+  const closeRef = useRefS(null);
+  const dialogRef = useDialogFocus({ initialFocusRef: closeRef, onEscape: onClose });
 
   useEffectS(() => {
     let alive = true;
@@ -54,6 +57,8 @@ function MnSettingsModal({
       animation: 'mnFadeIn 140ms ease', backdropFilter: 'blur(2px)',
     }}>
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="mn-settings-title"
@@ -76,7 +81,7 @@ function MnSettingsModal({
         }}>
           <div id="mn-settings-title" style={{ fontFamily: 'var(--mn-ui)', fontSize: 14, fontWeight: 600, color: T.ink }}>Settings</div>
           <span style={{ flex: 1 }} />
-          <button onClick={onClose} style={{
+          <button ref={closeRef} onClick={onClose} style={{
             width: 28,
             height: 28,
             borderRadius: DS_RADIUS.control,

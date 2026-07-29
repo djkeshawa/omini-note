@@ -12,6 +12,7 @@ import { createAiOrchestrator } from './createAiOrchestrator.js';
 import { createVirtualWriteActions } from './createVirtualWriteActions.js';
 import { createZoteroAiActions } from './createZoteroAiActions.js';
 import { AskAiWorkspace } from './AskAiWorkspace.jsx';
+import { mnAiContentFingerprint } from './aiOwnership.js';
 import * as aiModels from './aiModels.js';
 import * as aiPresentation from './aiPresentation.jsx';
 const { MN_ASK_EDIT_ACTIONS, MN_NOVEL_STRUCTURE_TAGS, mnIsSupportingNovelNote, mnSupportingNovelNotes, mnSupportingNotesEditInstruction, MN_ASK_SUGGESTIONS, MN_AI_PLANNER_TIMEOUT_MS, MN_AI_CHAT_TIMEOUT_MS, MN_AI_NOTES_TIMEOUT_MS, MN_AI_VIRTUAL_WRITE_TOOLS, MN_AI_REPORT_TARGETS, MN_AI_VIRTUAL_TOOLS, mnReportAiOutput, mnAskAiJobId, mnAskMessageId, mnNormalizeAskMessages, mnAskMessageThreadText, mnBuildAskThreadMessages, mnBuildAskThreadPrompt, mnRecentAskThreadNote, mnLastAskMessage, mnLooksLikeNoteEditRequest, mnMentionsThreadNote, mnAssistantAskedForActionDetail, mnBuildContextualActionQuery, mnAiCurrentNoteMarkdown, mnAiMarkdownMarkers, mnAiMissingMarkdownMarkers, mnAiBuildMarkdownPreview, mnAiShouldShareCurrentContext, mnWantsZoteroAssistedNoteEdit, mnWantsZoteroSummaryNote, mnAiCurrentContextMessage, mnAiVirtualToolMeta, mnAiCleanVirtualToolArgs, mnAiToolCallsFromPlanResult } = aiModels;
@@ -38,8 +39,9 @@ function MnAskAI({
   const scrollRef = useRefAI(null);
   const scrollBottomRef = useRefAI(null);
   const shouldAutoScrollRef = useRefAI(true);
-  const backgroundRef = useRefAI(false);
-  const stoppedJobRef = useRefAI(null);
+  const backgroundJobsRef = useRefAI(new Set());
+  const stoppedJobsRef = useRefAI(new Set());
+  const suggestionRequestRef = useRefAI(0);
 
   const aiSession = session || localSession;
   const rawUpdateSession = setSession || setLocalSession;
@@ -51,6 +53,9 @@ function MnAskAI({
   };
   const messages = aiSession.messages || [];
   const noteIdSet = new Set((allNotes || []).map(note => String(note?.id || '')).filter(Boolean));
+  const suggestionOwner = `${vaultId || ''}:${currentNote?.id || ''}:${mnAiContentFingerprint(mnAiCurrentNoteMarkdown(currentNote))}`;
+  const suggestionOwnerRef = useRefAI(suggestionOwner);
+  suggestionOwnerRef.current = suggestionOwner;
 
   useEffectAI(() => {
     if ((aiSession.messages || []).some(m => !m?.id)) {
@@ -85,10 +90,11 @@ function MnAskAI({
   }, [initialQuery]);
 
   useEffectAI(() => {
+    suggestionRequestRef.current++;
     setNoteSuggestions(null);
     setNoteSuggestionsError('');
     setNoteSuggestionsBusy(false);
-  }, [currentNote?.id]);
+  }, [suggestionOwner]);
 
   useEffectAI(() => {
     const scrollNode = scrollRef.current;
@@ -115,7 +121,7 @@ function MnAskAI({
 
   const closeOrBackground = () => {
     if (pending) {
-      backgroundRef.current = true;
+      if (aiSession.jobId) backgroundJobsRef.current.add(aiSession.jobId);
       updateSession(prev => ({ ...(prev || {}), background: true }));
     }
     onClose && onClose();
@@ -356,8 +362,8 @@ function MnAskAI({
     const run = aiRuntime.makeRun ? aiRuntime.makeRun({ runId: jobId, query: q, mode: route.mode || route.type }) : null;
     aiRuntime.recordTrace?.(run, 'route.selected', { routeType: route.type, mode: route.mode || route.type, hasPlan: !!route.plan, contextual: actionQuery !== q });
     const userMsg = { role: 'user', text: q };
-    backgroundRef.current = false;
-    stoppedJobRef.current = null;
+    backgroundJobsRef.current.delete(jobId);
+    stoppedJobsRef.current.delete(jobId);
     updateSession(prev => ({
       ...(prev || {}),
       messages: [...(prev?.messages || []), userMsg],
@@ -394,7 +400,7 @@ function MnAskAI({
       });
     };
     const appendAssistantToken = (token) => {
-      if (stoppedJobRef.current === jobId) return;
+      if (stoppedJobsRef.current.has(jobId)) return;
       const chunk = String(token || '');
       if (!chunk) return;
       if (!streamingAssistantId) streamingAssistantId = `assistant-${jobId}`;
@@ -419,7 +425,7 @@ function MnAskAI({
         route.plan?.intent === 'zotero-document-search';
       const orchestrated = skipLlmFirst ? null : await runLlmOrchestrator({ q, actionQuery, priorMessages, jobId, run });
       if (orchestrated) {
-        if (stoppedJobRef.current === jobId) return;
+        if (stoppedJobsRef.current.has(jobId)) return;
         aiRuntime.recordTrace?.(run, orchestrated.review ? 'run.review_required' : orchestrated.clarify ? 'run.clarify' : 'run.completed', {
           action: !!orchestrated.action,
           sources: orchestrated.sources?.length || 0,
@@ -447,7 +453,7 @@ function MnAskAI({
         putAssistant({ text: '', streaming: true, action: true });
         if (route.plan?.intent === 'zotero-document-search' || aiRuntime.isLikelyDocumentQuestion?.(actionQuery)) {
           const actionResult = await runZoteroDocumentRequest({ q, actionQuery, jobId, run });
-          if (stoppedJobRef.current === jobId) return;
+          if (stoppedJobsRef.current.has(jobId)) return;
           aiRuntime.recordTrace?.(run, actionResult.clarify ? 'run.clarify' : 'run.completed', { action: true });
           putAssistant({ text: actionResult.answer, sources: actionResult.sources || [], action: true, clarify: !!actionResult.clarify, streaming: false, trace: run?.trace || [] });
           return;
@@ -478,12 +484,12 @@ function MnAskAI({
           return;
         }
         const actionResult = await runAppActionPlan(actionQuery, plan, jobId, run);
-        if (stoppedJobRef.current === jobId) return;
+        if (stoppedJobsRef.current.has(jobId)) return;
         aiRuntime.recordTrace?.(run, actionResult.review ? 'run.review_required' : 'run.completed', { action: true });
         putAssistant({ text: actionResult.answer, sources: actionResult.sources || [], action: true, review: actionResult.review || null, streaming: false, trace: run?.trace || [] });
       } else if (route.type === 'legacy_action' || route.type === 'action') {
         const actionResult = await runAction(actionQuery, route.action, jobId);
-        if (stoppedJobRef.current === jobId) return;
+        if (stoppedJobsRef.current.has(jobId)) return;
         aiRuntime.recordTrace?.(run, actionResult.review ? 'run.review_required' : 'run.completed', { legacyAction: route.action?.type || '' });
         updateSession(prev => ({
           ...(prev || {}),
@@ -497,7 +503,7 @@ function MnAskAI({
         const r = askStream
           ? await askStream(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null, timeoutMs: MN_AI_NOTES_TIMEOUT_MS, onToken: appendAssistantToken })
           : await platformApi.ai.ask(vaultId, qForAsk, { jobId, currentNoteId: currentNote?.id || null, timeoutMs: MN_AI_NOTES_TIMEOUT_MS });
-        if (stoppedJobRef.current === jobId) return;
+        if (stoppedJobsRef.current.has(jobId)) return;
         if (!r.ok) {
           throw new Error(r.error || 'Unknown error');
         } else if (r.value && !r.value.ok) {
@@ -514,7 +520,7 @@ function MnAskAI({
         const r = chatStream
           ? await chatStream({ messages: chatMessages, jobId, timeoutMs: MN_AI_CHAT_TIMEOUT_MS, maxTokens: 700, onToken: appendAssistantToken })
           : await platformApi.ai.chat({ messages: chatMessages, jobId, timeoutMs: MN_AI_CHAT_TIMEOUT_MS, maxTokens: 700 });
-        if (stoppedJobRef.current === jobId) return;
+        if (stoppedJobsRef.current.has(jobId)) return;
         if (!r.ok) throw new Error(r.error || 'Unknown error');
         if (r.value && !r.value.ok) throw new Error(r.value.error || 'Unknown error');
         aiRuntime.recordTrace?.(run, 'run.completed', { chat: true });
@@ -522,7 +528,7 @@ function MnAskAI({
       }
     } catch (e) {
       const msg = e.message || String(e);
-      stopped = stoppedJobRef.current === jobId || /abort|cancel/i.test(msg);
+      stopped = stoppedJobsRef.current.has(jobId) || /abort|cancel/i.test(msg);
       if (stopped) return;
       finalError = msg;
       aiRuntime.recordTrace?.(run, 'run.failed', { error: msg });
@@ -537,7 +543,7 @@ function MnAskAI({
         }));
       }
     } finally {
-      if (!stopped && stoppedJobRef.current !== jobId) {
+      if (!stopped && !stoppedJobsRef.current.has(jobId)) {
         updateSession(prev => ({
           ...(prev || {}),
           pending: false,
@@ -547,17 +553,18 @@ function MnAskAI({
           completedAt: new Date().toISOString(),
         }));
       }
-      if (!stopped && stoppedJobRef.current !== jobId && backgroundRef.current) {
+      if (!stopped && !stoppedJobsRef.current.has(jobId) && backgroundJobsRef.current.has(jobId)) {
         onBackgroundComplete && onBackgroundComplete({ query: q, error: finalError });
       }
+      backgroundJobsRef.current.delete(jobId);
     }
   };
 
   const stopRun = async () => {
     const jobId = aiSession.jobId;
     if (!pending || !jobId) return;
-    stoppedJobRef.current = jobId;
-    backgroundRef.current = false;
+    stoppedJobsRef.current.add(jobId);
+    backgroundJobsRef.current.delete(jobId);
     try { await platformApi.ai?.cancel?.(jobId); } catch (e) {}
     updateSession(prev => ({
       ...(prev || {}),
@@ -615,13 +622,19 @@ function MnAskAI({
       return null;
     }
     const jobId = mnAskAiJobId();
+    const requestId = ++suggestionRequestRef.current;
+    const requestOwner = suggestionOwner;
+    const ownsRequest = () => (
+      requestId === suggestionRequestRef.current &&
+      requestOwner === suggestionOwnerRef.current
+    );
     setNoteSuggestionsBusy(true);
     setNoteSuggestionsError('');
     try {
       let statusValue = status;
       try {
         const statusResult = await platformApi.ai.status?.();
-        if (statusResult?.ok) {
+        if (statusResult?.ok && ownsRequest()) {
           statusValue = statusResult.value;
           setStatus(statusResult.value);
         }
@@ -641,6 +654,7 @@ function MnAskAI({
       });
       if (!response?.ok) throw new Error(response?.error || 'Current note suggestions failed.');
       if (response.value && response.value.ok === false) throw new Error(response.value.error || 'Current note suggestions failed.');
+      if (!ownsRequest()) return null;
       const aiText = String(response.value?.answer || response.answer || '').trim();
       const result = aiRuntime.makeCurrentNoteSuggestionResult({
         aiText,
@@ -652,11 +666,12 @@ function MnAskAI({
       setNoteSuggestions(result);
       return result;
     } catch (e) {
+      if (!ownsRequest()) return null;
       const message = e?.message || String(e) || 'Current note suggestions failed.';
       setNoteSuggestionsError(message);
       return null;
     } finally {
-      setNoteSuggestionsBusy(false);
+      if (ownsRequest()) setNoteSuggestionsBusy(false);
     }
   };
 

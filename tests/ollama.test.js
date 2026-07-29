@@ -1,6 +1,66 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
+const providerTransport = require('../lib/integrations/ai/providerTransport');
+
+function streamFromText(text) {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(String(text || '')));
+      controller.close();
+    },
+  });
+}
+
+function installHostedFetchMock(handler) {
+  return providerTransport.setTransportDependenciesForTests({
+    lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+    request(options, onResponse) {
+      let requestBody = '';
+      let onError = () => {};
+      return {
+        once(event, listener) {
+          if (event === 'error') onError = listener;
+          return this;
+        },
+        write(chunk) {
+          requestBody += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+        },
+        end() {
+          const port = options.port && Number(options.port) !== 443 ? `:${options.port}` : '';
+          const url = `https://${options.hostname}${port}${options.path || '/'}`;
+          Promise.resolve(handler(url, {
+            method: options.method,
+            headers: options.headers,
+            body: requestBody,
+            signal: options.signal,
+          })).then(async mocked => {
+            let body = mocked?.body;
+            if (!body?.getReader) {
+              const text = typeof mocked?.text === 'function'
+                ? await mocked.text()
+                : typeof mocked?.json === 'function'
+                  ? JSON.stringify(await mocked.json())
+                  : '';
+              body = streamFromText(text);
+            }
+            onResponse({
+              body,
+              headers: mocked?.headers || {},
+              statusCode: mocked?.status ?? (mocked?.ok === false ? 500 : 200),
+              statusMessage: mocked?.statusText || '',
+              resume() {
+                body.cancel?.().catch?.(() => {});
+              },
+            });
+          }).catch(onError);
+        },
+        destroy() {},
+      };
+    },
+  });
+}
+
 test('AI runtime stays disabled until preferences explicitly enable it', () => {
   const ai = require('../lib/ai');
   assert.equal(ai.getConfig().enabled, false);
@@ -133,9 +193,8 @@ test('AI status explains cloud provider setup when API key is missing', async ()
 
 test('AI status verifies OpenRouter credentials before reporting ready', async () => {
   const ai = require('../lib/ai');
-  const originalFetch = global.fetch;
   const calls = [];
-  global.fetch = async (url, init = {}) => {
+  const restoreTransport = installHostedFetchMock(async (url, init = {}) => {
     calls.push({ url: String(url), init });
     return {
       ok: true,
@@ -148,7 +207,7 @@ test('AI status verifies OpenRouter credentials before reporting ready', async (
         return JSON.stringify({ data: { total_credits: 10, total_usage: 1 } });
       },
     };
-  };
+  });
   ai.setConfig({
     provider: 'openrouter',
     openrouterApiKey: 'sk-or-v1-test',
@@ -164,14 +223,13 @@ test('AI status verifies OpenRouter credentials before reporting ready', async (
     assert.equal(calls[0].url, 'https://openrouter.ai/api/v1/credits');
     assert.equal(calls[0].init.headers.authorization, 'Bearer sk-or-v1-test');
   } finally {
-    global.fetch = originalFetch;
+    restoreTransport();
   }
 });
 
 test('AI status rejects OpenRouter configuration when API returns 401', async () => {
   const ai = require('../lib/ai');
-  const originalFetch = global.fetch;
-  global.fetch = async () => ({
+  const restoreTransport = installHostedFetchMock(async () => ({
     ok: false,
     status: 401,
     statusText: 'Unauthorized',
@@ -181,7 +239,7 @@ test('AI status rejects OpenRouter configuration when API returns 401', async ()
     async text() {
       return JSON.stringify({ error: { message: 'User not found.', code: 401 } });
     },
-  });
+  }));
   ai.setConfig({
     provider: 'openrouter',
     openrouterApiKey: 'sk-or-v1-bad',
@@ -197,7 +255,7 @@ test('AI status rejects OpenRouter configuration when API returns 401', async ()
     assert.match(result.setupMessage, /Replace it in Settings > AI/);
     assert.equal(result.config.openrouterApiKey, 'configured');
   } finally {
-    global.fetch = originalFetch;
+    restoreTransport();
   }
 });
 
@@ -266,9 +324,8 @@ test('Latest-note questions use recent context instead of whole-vault summary co
 
 test('Vault summaries use bounded map-reduce model calls', async () => {
   const ai = require('../lib/ai');
-  const originalFetch = global.fetch;
   let calls = 0;
-  global.fetch = async (_url, init = {}) => {
+  const restoreTransport = installHostedFetchMock(async (_url, init = {}) => {
     calls++;
     const body = JSON.parse(init.body || '{}');
     const text = JSON.stringify(body).includes('Combine these batch summaries')
@@ -280,7 +337,7 @@ test('Vault summaries use bounded map-reduce model calls', async () => {
         return { choices: [{ message: { content: text } }] };
       },
     };
-  };
+  });
   ai.setConfig({
     provider: 'openai',
     openaiApiKey: 'test-key',
@@ -311,7 +368,7 @@ test('Vault summaries use bounded map-reduce model calls', async () => {
     assert.doesNotMatch(result.answer, /Summary of All Notes/);
     assert.equal(result.sources.length, 5);
   } finally {
-    global.fetch = originalFetch;
+    restoreTransport();
   }
 });
 
@@ -470,7 +527,6 @@ test('AI edit setup failures are not returned as replacement text', async () => 
 test('Hosted provider chat stream emits incremental restored tokens', async () => {
   const ai = require('../lib/ai');
   const originalConfig = ai.getConfig();
-  const originalFetch = global.fetch;
   let capturedBody = null;
   const stream = new ReadableStream({
     start(controller) {
@@ -481,10 +537,10 @@ test('Hosted provider chat stream emits incremental restored tokens', async () =
       controller.close();
     },
   });
-  global.fetch = async (_url, init = {}) => {
+  const restoreTransport = installHostedFetchMock(async (_url, init = {}) => {
     capturedBody = JSON.parse(init.body || '{}');
     return { ok: true, body: stream };
-  };
+  });
   ai.setConfig({
     provider: 'openai',
     openaiApiKey: 'test-key',
@@ -503,7 +559,7 @@ test('Hosted provider chat stream emits incremental restored tokens', async () =
     assert.equal(chunks.join(''), 'Send to jane.doe@example.com now');
     assert.equal(result.text, 'Send to jane.doe@example.com now');
   } finally {
-    global.fetch = originalFetch;
+    restoreTransport();
     ai.setConfig(originalConfig, { rejectUnknown: false });
   }
 });
@@ -511,7 +567,6 @@ test('Hosted provider chat stream emits incremental restored tokens', async () =
 test('Hosted provider chat stream cancels open response body after done marker', async () => {
   const ai = require('../lib/ai');
   const originalConfig = ai.getConfig();
-  const originalFetch = global.fetch;
   let cancelled = false;
   const stream = new ReadableStream({
     start(controller) {
@@ -522,7 +577,7 @@ test('Hosted provider chat stream cancels open response body after done marker',
       cancelled = true;
     },
   });
-  global.fetch = async () => ({ ok: true, body: stream });
+  const restoreTransport = installHostedFetchMock(async () => ({ ok: true, body: stream }));
   ai.setConfig({
     provider: 'openai',
     openaiApiKey: 'test-key',
@@ -538,7 +593,7 @@ test('Hosted provider chat stream cancels open response body after done marker',
     assert.equal(result.text, 'Done');
     assert.equal(cancelled, true);
   } finally {
-    global.fetch = originalFetch;
+    restoreTransport();
     ai.setConfig(originalConfig, { rejectUnknown: false });
   }
 });
@@ -546,7 +601,6 @@ test('Hosted provider chat stream cancels open response body after done marker',
 test('Hosted provider chat stream ignores malformed events between valid tokens', async () => {
   const ai = require('../lib/ai');
   const originalConfig = ai.getConfig();
-  const originalFetch = global.fetch;
   const stream = new ReadableStream({
     start(controller) {
       const enc = new TextEncoder();
@@ -557,7 +611,7 @@ test('Hosted provider chat stream ignores malformed events between valid tokens'
       controller.close();
     },
   });
-  global.fetch = async () => ({ ok: true, body: stream });
+  const restoreTransport = installHostedFetchMock(async () => ({ ok: true, body: stream }));
   ai.setConfig({ provider: 'openai', openaiApiKey: 'test-key', chatModel: 'test-model', enabled: true, piiReduction: false }, { rejectUnknown: false });
   try {
     const chunks = [];
@@ -565,7 +619,7 @@ test('Hosted provider chat stream ignores malformed events between valid tokens'
     assert.equal(chunks.join(''), 'Before after');
     assert.equal(result.text, 'Before after');
   } finally {
-    global.fetch = originalFetch;
+    restoreTransport();
     ai.setConfig(originalConfig, { rejectUnknown: false });
   }
 });
@@ -573,9 +627,8 @@ test('Hosted provider chat stream ignores malformed events between valid tokens'
 test('Hosted provider chat stream falls back when the stream has no usable text', async () => {
   const ai = require('../lib/ai');
   const originalConfig = ai.getConfig();
-  const originalFetch = global.fetch;
   let callCount = 0;
-  global.fetch = async () => {
+  const restoreTransport = installHostedFetchMock(async () => {
     callCount++;
     if (callCount === 1) {
       const stream = new ReadableStream({
@@ -592,7 +645,7 @@ test('Hosted provider chat stream falls back when the stream has no usable text'
         return { choices: [{ message: { content: 'Recovered answer' } }] };
       },
     };
-  };
+  });
   ai.setConfig({ provider: 'openai', openaiApiKey: 'test-key', chatModel: 'test-model', enabled: true, piiReduction: false }, { rejectUnknown: false });
   try {
     const chunks = [];
@@ -601,7 +654,7 @@ test('Hosted provider chat stream falls back when the stream has no usable text'
     assert.equal(chunks.join(''), 'Recovered answer');
     assert.equal(result.text, 'Recovered answer');
   } finally {
-    global.fetch = originalFetch;
+    restoreTransport();
     ai.setConfig(originalConfig, { rejectUnknown: false });
   }
 });
@@ -609,9 +662,8 @@ test('Hosted provider chat stream falls back when the stream has no usable text'
 test('Hosted provider tool planner sends native tool schemas and parses calls', async () => {
   const ai = require('../lib/ai');
   const originalConfig = ai.getConfig();
-  const originalFetch = global.fetch;
   let capturedBody = null;
-  global.fetch = async (_url, init = {}) => {
+  const restoreTransport = installHostedFetchMock(async (_url, init = {}) => {
     capturedBody = JSON.parse(init.body || '{}');
     return {
       ok: true,
@@ -633,7 +685,7 @@ test('Hosted provider tool planner sends native tool schemas and parses calls', 
         };
       },
     };
-  };
+  });
   ai.setConfig({
     provider: 'openai',
     openaiApiKey: 'test-key',
@@ -668,7 +720,7 @@ test('Hosted provider tool planner sends native tool schemas and parses calls', 
     assert.equal(capturedBody.tools[0].function.name, 'tag-note');
     assert.equal(capturedBody.tool_choice, 'auto');
   } finally {
-    global.fetch = originalFetch;
+    restoreTransport();
     ai.setConfig(originalConfig, { rejectUnknown: false });
   }
 });

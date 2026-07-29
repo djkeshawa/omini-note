@@ -47,4 +47,15 @@ The final July 13, 2026 Windows/Electron verification measured a 164.04 ms index
 - Preference and backup-status writes are tested byte-for-byte against an existing note file.
 - Unknown front matter, comments, portable list structure, relative links, and attachment paths retain their existing round-trip tests.
 - Renderer regression covers the minimum 900 px layout and the 1440 px three-pane layout, keyboard focus, dialogs, light/dark theme contracts, capture, search, Today, connections, and optional-pack isolation.
-- Release verification requires `npm run test:all`, `npm run benchmark:10k`, a platform package build, and `npm run verify:package-renderer`.
+- Release verification requires `npm run test:all`, a required live
+  `regression:memory` run, `npm run benchmark:10k`, and a native platform build.
+  The unpacked and final-installer verifiers compare renderer SHA-256 and
+  package version, parse the Electron/native-module CPU, test archive
+  integrity, and reject anything outside the fixed per-platform inventory.
+- A publish tag must be exactly `v${package.json.version}`. Matrix CLI
+  `--x64`/`--arm64` flags are the only package-architecture authority.
+- macOS release jobs require Developer ID and App Store Connect credentials,
+  then verify `codesign`, Gatekeeper, and the stapled notarization ticket.
+  macOS updates remain manual and `latest-mac.yml` is excluded.
+- CI keeps the production dependency audit blocking. Development-only build
+  tool advisories remain visible without weakening the shipped-dependency gate.

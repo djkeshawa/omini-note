@@ -72,6 +72,7 @@
         date: now,
         modifiedAt: now,
         diskModifiedAt: null,
+        diskRevision: null,
       },
       missingTags: missingTagNames(existingTags, cleanTags),
     };
@@ -92,6 +93,7 @@
       date: now,
       modifiedAt: now,
       diskModifiedAt: null,
+      diskRevision: null,
     };
   }
 

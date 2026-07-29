@@ -1,5 +1,6 @@
 import { hasDesktopBridge, platformApi } from '../../platform/index.js';
 import { mnBlocksToMd } from '../../editor/outline.jsx';
+import { useDialogFocus } from '../../shared/useDialogFocus.js';
 import versionDiff from '../versionDiff.js';
 const { useCallback: useCallbackA, useEffect: useEffectA, useState: useStateA } = React;
 const HAS_DISK = hasDesktopBridge();
@@ -9,6 +10,7 @@ function MnVersionHistoryDialog({ note, vaultId, T, onClose, onRestore }) {
   const [busy, setBusy] = useStateA(false);
   const [error, setError] = useStateA('');
   const [preview, setPreview] = useStateA(null);
+  const dialogRef = useDialogFocus({ active: !!note, onEscape: onClose });
 
   const load = useCallbackA(async () => {
     if (!HAS_DISK || !vaultId || !note?.id) return;
@@ -26,11 +28,6 @@ function MnVersionHistoryDialog({ note, vaultId, T, onClose, onRestore }) {
   }, [vaultId, note?.id]);
 
   useEffectA(() => { load(); }, [load]);
-  useEffectA(() => {
-    const onKeyDown = event => { if (event.key === 'Escape') onClose?.(); };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
 
   const previewVersion = useCallbackA(async (version) => {
     if (!HAS_DISK) return;
@@ -69,7 +66,7 @@ function MnVersionHistoryDialog({ note, vaultId, T, onClose, onRestore }) {
       background: `color-mix(in oklab, ${T.ink} 28%, transparent)`,
       backdropFilter: 'blur(2px)', animation: 'mnFadeIn 120ms ease',
     }}>
-      <div role="dialog" aria-modal="true" aria-label="Version history" onClick={e => e.stopPropagation()} style={{
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Version history" onClick={e => e.stopPropagation()} style={{
         width: 820, maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100vh - 56px)',
         background: T.bg, color: T.ink, border: `1px solid ${T.line}`,
         borderRadius: 10, overflow: 'hidden', fontFamily: 'var(--mn-ui)',

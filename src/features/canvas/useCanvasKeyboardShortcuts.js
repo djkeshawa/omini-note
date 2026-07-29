@@ -51,13 +51,17 @@ function useCanvasKeyboardShortcuts({ rootRef, handlersRef, selectedIdsRef, setS
       const onKeyUp = (e) => {
         if (e.code === 'Space') setSpaceDown(false);
       };
+      const onWindowBlur = () => setSpaceDown(false);
       window.addEventListener('keydown', onKeyDown);
       window.addEventListener('keyup', onKeyUp);
+      window.addEventListener('blur', onWindowBlur);
       return () => {
         window.removeEventListener('keydown', onKeyDown);
         window.removeEventListener('keyup', onKeyUp);
+        window.removeEventListener('blur', onWindowBlur);
+        setSpaceDown(false);
       };
-    }, []);
+    }, [handlersRef, modalOpenRef, rootRef, selectedIdsRef, setSpaceDown]);
 }
 
 export { useCanvasKeyboardShortcuts };

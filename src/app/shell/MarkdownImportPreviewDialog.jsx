@@ -1,38 +1,14 @@
-const { useEffect: useEffectM, useRef: useRefM } = React;
+import { useDialogFocus } from '../../shared/useDialogFocus.js';
+const { useRef: useRefM } = React;
 
 function MnMarkdownImportPreviewDialog({ state, onApply, onClose, T }) {
-  const dialogRef = useRefM(null);
   const cancelRef = useRefM(null);
   const busy = state?.phase === 'applying';
-  useEffectM(() => {
-    if (!state) return undefined;
-    const previousFocus = document.activeElement;
-    (cancelRef.current || dialogRef.current)?.focus();
-    return () => previousFocus?.focus?.();
-  }, [!!state]);
-  useEffectM(() => {
-    if (!state) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape' && !busy) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        onClose?.();
-      }
-      if (event.key !== 'Tab') return;
-      const controls = [...(dialogRef.current?.querySelectorAll('button:not(:disabled)') || [])];
-      if (!controls.length) {
-        event.preventDefault();
-        dialogRef.current?.focus();
-        return;
-      }
-      const first = controls[0];
-      const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [busy, onClose, !!state]);
+  const dialogRef = useDialogFocus({
+    active: !!state,
+    initialFocusRef: cancelRef,
+    onEscape: busy ? null : onClose,
+  });
   if (!state) return null;
   const preview = state.preview || {};
   const warnings = Array.isArray(preview.warnings) ? preview.warnings : [];

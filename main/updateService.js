@@ -37,7 +37,9 @@ function createUpdateService({ app, autoUpdater, getMainWindow }) {
       return emitState({
         status: mode === 'manual' || process.platform === 'darwin' ? 'manual' : 'not-available',
         lastCheckedAt: new Date().toISOString(),
-        error: process.platform === 'darwin' && app.isPackaged ? 'Automatic updates are disabled for unsigned macOS builds.' : null,
+        error: process.platform === 'darwin' && app.isPackaged
+          ? 'Automatic updates are not enabled for macOS; download updates from the releases page.'
+          : null,
         updateInfo: null,
       });
     }

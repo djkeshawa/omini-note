@@ -85,9 +85,22 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
       const nextNotes = [...starterNotes, ...normalizedSourceNotes];
       if (HAS_DISK && vaultId) {
         await desktopBridge.vaults.saveVaultMeta(vaultId, { tags: nextTags, novelistMode: true, workflowStates: nextWorkflowStates });
-        for (const note of nextNotes) {
-          const res = await MN_NOTES_VAULTS_SERVICE.saveNote(desktopBridge, vaultId, noteForDisk(note, mnBlocksToMd));
+        for (let index = 0; index < nextNotes.length; index++) {
+          const note = nextNotes[index];
+          const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
+            desktopBridge,
+            vaultId,
+            noteForDisk(note, mnBlocksToMd),
+            { expectedRevision: note.diskRevision ?? null }
+          );
           if (!res.ok) throw new Error(res.error);
+          if (res.value?.diskRevision || res.value?.diskModifiedAt) {
+            nextNotes[index] = {
+              ...note,
+              diskRevision: res.value.diskRevision || null,
+              diskModifiedAt: res.value.diskModifiedAt || res.value.modifiedAt || null,
+            };
+          }
         }
       }
       return { notes: nextNotes, tags: nextTags, workflowStates: nextWorkflowStates };

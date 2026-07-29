@@ -1,4 +1,7 @@
-function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVEL_IMPORT_TOOL, activeCanvas, activeVault, activeVaultId, addTag, buildNovelImportPlan, canvases, conflictNotice, createRuntimeNoteId, desktopBridge, dirtyNotes, markDirty, markTagsDirty, markdownImportDialog, mnBlocksToMd, mnDirtyNoteKey, mnEnsureNovelistTags, mnMdToBlocks, mnNormalizeNoteBody, mnNovelImportChunks, mnNovelImportConsolidationPrompt, mnNovelImportExistingSummary, mnNovelImportExtractionPrompt, mnNovelImportToolArgs, navigateView, normalizeNotes, normalizeNovelImportCandidates, noteForDisk, notes, notesWithBody, novelImportDialog, novelImportSeq, refreshVaultRegistry, saveDirtyNotesNow, selectedId, setActiveCanvas, setCanvases, setConflictNotice, setDeleteTargetId, setLastBackupAt, setMarkdownImportDialog, setNotes, setNovelImportDialog, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, uniqueNoteTitle, updateDirtyNotes, useCallbackA, useCanvasController, useTrashController, view }) {
+function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, MN_NOTES_VAULTS_SERVICE, MN_NOTES_VAULTS_STATE, MN_NOVEL_IMPORT_TOOL, activeCanvas, activeVault, activeVaultId, addTag, buildNovelImportPlan, canvases, clearNoteDiskState, conflictNotice, createRuntimeNoteId, desktopBridge, dirtyNotes, markDirty, markTagsDirty, markdownImportDialog, mnBlocksToMd, mnDirtyNoteKey, mnEnsureNovelistTags, mnMdToBlocks, mnNormalizeNoteBody, mnNovelImportChunks, mnNovelImportConsolidationPrompt, mnNovelImportExistingSummary, mnNovelImportExtractionPrompt, mnNovelImportToolArgs, navigateView, normalizeNotes, normalizeNovelImportCandidates, noteForDisk, notes, notesWithBody, novelImportDialog, novelImportSeq, refreshVaultRegistry, saveDirtyNotesNow, selectedId, setActiveCanvas, setCanvases, setConflictNotice, setDeleteTargetId, setLastBackupAt, setMarkdownImportDialog, setNotes, setNovelImportDialog, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, setVaults, showAppNotice, tags, uniqueNoteTitle, updateDirtyNotes, useCallbackA, useCanvasController, useRefA, useTrashController, view }) {
+  const activeVaultIdRef = useRefA(activeVaultId);
+  const versionRestoreSequence = useRefA(0);
+  activeVaultIdRef.current = activeVaultId;
   const promptNewTag = (name) => {
       if (typeof name === 'string') addTag(name);
     };
@@ -11,10 +14,25 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
     const deleteNote = async (id) => {
       const n = notes.find(x => x.id === id);
       if (!n) return;
-      const previousNotes = notes;
       const previousSelectedId = selectedId;
       const dirtyKey = mnDirtyNoteKey(activeVaultId, id);
       const previousDirtyEntry = dirtyNotes.get(dirtyKey);
+      let rollbackDirtyEntry = previousDirtyEntry;
+      let deleteRevision = n.diskRevision ?? null;
+      if (HAS_DISK && previousDirtyEntry) {
+        const flushResult = await saveDirtyNotesNow([previousDirtyEntry]);
+        const savedEntry = flushResult?.savedEntries?.find(entry => entry.vaultId === activeVaultId && entry.id === id);
+        if (flushResult?.deferred || flushResult?.failures?.length || !savedEntry) {
+          showAppNotice('Could not delete note', 'Save the note successfully before deleting it.');
+          return;
+        }
+        deleteRevision = savedEntry.note?.diskRevision ?? deleteRevision;
+        rollbackDirtyEntry = null;
+      }
+      const rollbackNote = deleteRevision ? { ...n, diskRevision: deleteRevision } : n;
+      const originalIndex = notes.findIndex(note => note.id === id);
+      const remainingNotes = MN_NOTES_VAULTS_STATE.removeNote(notes, id);
+      const optimisticSelectedId = previousSelectedId === id ? (remainingNotes[0]?.id || null) : previousSelectedId;
       setDeleteTargetId(null);
       updateDirtyNotes(cur => {
         if (!cur.has(dirtyKey)) return cur;
@@ -24,25 +42,36 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
       });
       setNotes(ns => {
         const next = MN_NOTES_VAULTS_STATE.removeNote(ns, id);
-        setSelectedId(current => current === id ? (next[0]?.id || null) : current);
+        setSelectedId(current => current === id ? optimisticSelectedId : current);
         return next;
       });
       if (HAS_DISK && activeVaultId) {
         try {
-          const res = await MN_NOTES_VAULTS_SERVICE.deleteNote(desktopBridge, activeVaultId, id, noteForDisk(n, mnBlocksToMd));
+          const noteSnapshot = { ...noteForDisk(n, mnBlocksToMd), diskRevision: deleteRevision };
+          const res = await MN_NOTES_VAULTS_SERVICE.deleteNote(
+            desktopBridge,
+            activeVaultId,
+            id,
+            noteSnapshot,
+            { expectedRevision: deleteRevision }
+          );
           if (res && res.ok === false) throw new Error(res.error);
           if (res?.value?.trashId) {
             prependDeletedItem(res.value);
           }
+          clearNoteDiskState?.(activeVaultId, id);
         }
         catch (e) {
           console.error('deleteNote failed', e);
-          setNotes(previousNotes);
-          setSelectedId(previousSelectedId);
-          if (previousDirtyEntry) {
+          setNotes(current => MN_NOTES_VAULTS_STATE.restoreNoteAtIndex(current, rollbackNote, originalIndex));
+          setSelectedId(current => (
+            previousSelectedId === id && current === optimisticSelectedId ? id : current
+          ));
+          if (rollbackDirtyEntry) {
             updateDirtyNotes(cur => {
+              if (cur.has(dirtyKey)) return cur;
               const next = new Map(cur);
-              next.set(dirtyKey, previousDirtyEntry);
+              next.set(dirtyKey, rollbackDirtyEntry);
               return next;
             });
           }
@@ -85,28 +114,40 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
   
     const restoreNoteVersion = useCallbackA(async (noteId, versionId) => {
       if (!HAS_DISK || !activeVaultId || !noteId || !versionId) return { ok: false, error: 'No active vault.' };
+      const requestVaultId = activeVaultId;
+      const requestId = ++versionRestoreSequence.current;
       try {
-        const res = await desktopBridge.notes.restoreNoteVersion(activeVaultId, noteId, versionId);
+        const res = await desktopBridge.notes.restoreNoteVersion(requestVaultId, noteId, versionId);
         if (!res.ok) throw new Error(res.error || 'Could not restore note version');
         const restored = normalizeRuntimeNote(res.value);
         if (!restored) throw new Error('Restored version could not be loaded');
-        setNotes(ns => ns.map(n => n.id === restored.id ? restored : n));
-        setVaults(vs => vs.map(v => v.id === activeVaultId && Array.isArray(v.notes)
+        if (requestId !== versionRestoreSequence.current) {
+          return { ok: true, note: restored, stale: true };
+        }
+        setVaults(vs => vs.map(v => v.id === requestVaultId && Array.isArray(v.notes)
           ? { ...v, notes: v.notes.map(n => n.id === restored.id ? restored : n) }
           : v));
         updateDirtyNotes(cur => {
-          const key = mnDirtyNoteKey(activeVaultId, restored.id);
+          const key = mnDirtyNoteKey(requestVaultId, restored.id);
           if (!cur.has(key)) return cur;
           const next = new Map(cur);
           next.delete(key);
           return next;
         });
-        setSelectedId(restored.id);
-        navigateView('notes');
+        if (requestVaultId === activeVaultIdRef.current && requestId === versionRestoreSequence.current) {
+          setNotes(ns => ns.map(n => n.id === restored.id ? restored : n));
+          setSelectedId(restored.id);
+          navigateView('notes');
+        }
         return { ok: true, note: restored };
       } catch (e) {
         console.error('restoreNoteVersion failed', e);
-        showAppNotice('Could not restore version', e.message || String(e));
+        if (
+          requestVaultId === activeVaultIdRef.current &&
+          requestId === versionRestoreSequence.current
+        ) {
+          showAppNotice('Could not restore version', e.message || String(e));
+        }
         return { ok: false, error: e.message || String(e) };
       }
     }, [activeVaultId, normalizeRuntimeNote, navigateView, showAppNotice]);
@@ -159,6 +200,7 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
         date: new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
         diskModifiedAt: null,
+        diskRevision: null,
       };
       setNotes(ns => [duplicate, ...ns]);
       setVaults(vs => vs.map(v => v.id === conflict.vaultId && Array.isArray(v.notes)

@@ -45,28 +45,24 @@ beforePack: scripts/before-pack.js
 
 mac:
   category: public.app-category.productivity
+  publish: null
+  notarize: true
   target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
-    - target: zip
-      arch:
-        - x64
-        - arm64
+    - dmg
+    - zip
   artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+dmg:
+  writeUpdateInfo: false
 
 linux:
   category: Office
   maintainer: djkeshawa
+  syncDesktopName: true
   icon: assets/linux-icons
   target:
-    - target: AppImage
-      arch:
-        - x64
-    - target: deb
-      arch:
-        - x64
+    - AppImage
+    - deb
   artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
 deb:
@@ -85,9 +81,7 @@ deb:
 win:
   icon: assets/vispnote-icon.ico
   target:
-    - target: nsis
-      arch:
-        - x64
+    - nsis
   artifactName: ${productName}-${version}-setup-${arch}.${ext}
   requestedExecutionLevel: asInvoker
   signAndEditExecutable: true

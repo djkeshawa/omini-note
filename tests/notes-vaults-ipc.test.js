@@ -31,17 +31,36 @@ test('notes/vault IPC validation accepts note save payloads', () => {
     vaultId: 'v1',
     noteId: 'n1',
     content: 'hello',
-    options: { expectedModifiedAt: null },
+    options: { expectedRevision: null },
   });
   assert.equal(clean.vaultId, 'v1');
   assert.equal(clean.note.id, 'n1');
   assert.equal(clean.note.body, 'hello');
+  assert.equal(clean.options.expectedRevision, null);
 });
 
 test('notes/vault IPC responses are normalized', () => {
   assert.equal(validateContractResponse({ ok: true, data: {} }).ok, true);
   assert.equal(normalizeIpcError(new Error('/tmp/private/path failed'), { channel: NOTES_VAULTS_CHANNELS.noteSave }).ok, false);
   assert.doesNotMatch(normalizeIpcError(new Error('/tmp/private/path failed')).error.message, /tmp\/private/);
+});
+
+test('note conflicts retain only safe revision details over IPC', () => {
+  const conflict = Object.assign(new Error('Note changed on disk'), {
+    code: 'NOTE_CONFLICT',
+    currentRevision: 'a'.repeat(64),
+    expectedRevision: 'b'.repeat(64),
+    currentModifiedAt: '2026-07-29T10:00:00.000Z',
+    privatePath: '/tmp/private-note.md',
+  });
+  const response = normalizeIpcError(conflict, {
+    channel: NOTES_VAULTS_CHANNELS.noteSave,
+    privatePath: '/tmp/private-note.md',
+  });
+  assert.equal(response.error.code, 'NOTE_CONFLICT');
+  assert.equal(response.error.details.currentRevision, 'a'.repeat(64));
+  assert.equal(response.error.details.expectedRevision, 'b'.repeat(64));
+  assert.equal(Object.prototype.hasOwnProperty.call(response.error.details, 'privatePath'), false);
 });
 
 // These validators guard the note delete, open, list and vault rename
@@ -61,7 +80,24 @@ test('remaining note and vault validators reject hostile input and pass clean in
   assert.equal(del.permanent, false, 'permanent must be literal true, not truthy');
   assert.deepEqual(del.noteSnapshot, { title: 'x' });
   assert.equal(validateNoteDeleteRequest({ vaultId: 'v1', noteId: 'n1', noteSnapshot: 'text' }).noteSnapshot, null);
+  assert.throws(
+    () => validateNoteDeleteRequest({
+      vaultId: 'v1',
+      noteId: 'n1',
+      noteSnapshot: { body: 'x'.repeat((2 * 1024 * 1024) + 1) },
+    }),
+    /Note content is too large/
+  );
+  assert.equal(validateNoteDeleteRequest({
+    vaultId: 'v1',
+    noteId: 'n1',
+    noteSnapshot: { diskRevision: 'a'.repeat(64) },
+  }).options.expectedRevision, 'a'.repeat(64));
   assert.throws(() => validateNoteDeleteRequest({ vaultId: 'v1', noteId: 'a/b' }), /Invalid note id/);
+  assert.throws(
+    () => validateNoteSaveRequest({ vaultId: 'v1', note: { id: 'n1' }, options: { expectedRevision: 'bad' } }),
+    /Invalid expected revision/
+  );
 
   assert.deepEqual(validateVaultRenameRequest({ vaultId: 'v1', name: '  Work  ' }), { vaultId: 'v1', name: 'Work' });
   assert.throws(() => validateVaultRenameRequest({ vaultId: 'v1', name: '' }), /vault name/);

@@ -1,4 +1,7 @@
-const { useCallback } = React;
+import LATEST_WRITE_QUEUE from '../../shared/latestWriteQueue.js';
+
+const { createLatestWriteQueue } = LATEST_WRITE_QUEUE;
+const { useCallback, useRef } = React;
 
 export function useCanvasController({
   activeVaultId,
@@ -20,6 +23,20 @@ export function useCanvasController({
   navigateView,
   showNotice,
 }) {
+  const writeQueueRef = useRef(null);
+  const deletingKeysRef = useRef(new Set());
+  const diskRevisionRef = useRef(new Map());
+  const failedWritesRef = useRef(new Map());
+  const openSequenceRef = useRef(0);
+  const activeVaultIdRef = useRef(activeVaultId);
+  if (!writeQueueRef.current) writeQueueRef.current = createLatestWriteQueue();
+  activeVaultIdRef.current = activeVaultId;
+  for (const canvas of [...(canvases || []), ...(activeCanvas ? [activeCanvas] : [])]) {
+    if (activeVaultId && canvas?.id && canvas.diskRevision) {
+      diskRevisionRef.current.set(`${activeVaultId}:${canvas.id}`, canvas.diskRevision);
+    }
+  }
+
   const actionContext = useCallback((overrides = {}) => ({
     activeVaultId,
     activeCanvas,
@@ -40,11 +57,73 @@ export function useCanvasController({
     ...overrides,
   }), [activeCanvas, activeVaultId, canvases, hasDisk, navigateView, newCanvas, platform, setActiveCanvas, setCanvases, setQuery, setSelectedTag, setSelectedWorkflow, setVaults, showNotice, upsertCanvasList]);
 
-  const openDashboard = useCallback(() => canvasActions.openCanvasDashboard(actionContext()), [actionContext, canvasActions]);
-  const openCanvas = useCallback((canvasId) => canvasActions.openCanvas(canvasId, actionContext()), [actionContext, canvasActions]);
-  const createCanvas = useCallback((title = 'Untitled canvas', options = {}) => canvasActions.createCanvas(title, options, actionContext()), [actionContext, canvasActions]);
-  const saveCanvas = useCallback((canvas) => canvasActions.saveCanvas(canvas, actionContext()), [actionContext, canvasActions]);
-  const deleteCanvas = useCallback((canvasId) => canvasActions.deleteCanvas(canvasId, actionContext()), [actionContext, canvasActions]);
+  const openDashboard = useCallback(() => {
+    openSequenceRef.current++;
+    return canvasActions.openCanvasDashboard(actionContext());
+  }, [actionContext, canvasActions]);
+
+  const openCanvas = useCallback((canvasId) => {
+    const requestId = ++openSequenceRef.current;
+    const requestVaultId = activeVaultId;
+    return canvasActions.openCanvas(canvasId, actionContext({
+      isOperationCurrent: () => (
+        requestId === openSequenceRef.current &&
+        requestVaultId === activeVaultIdRef.current
+      ),
+    })).then(canvas => {
+      if (canvas?.diskRevision) diskRevisionRef.current.set(`${requestVaultId}:${canvas.id}`, canvas.diskRevision);
+      return canvas;
+    });
+  }, [activeVaultId, actionContext, canvasActions]);
+
+  const createCanvas = useCallback(async (title = 'Untitled canvas', options = {}) => {
+    const canvas = await canvasActions.createCanvas(title, options, actionContext());
+    if (canvas?.diskRevision && activeVaultId) {
+      diskRevisionRef.current.set(`${activeVaultId}:${canvas.id}`, canvas.diskRevision);
+    }
+    return canvas;
+  }, [activeVaultId, actionContext, canvasActions]);
+
+  const saveCanvas = useCallback((canvas) => {
+    if (!canvas?.id || !activeVaultId) return Promise.resolve(null);
+    const requestVaultId = activeVaultId;
+    const key = `${requestVaultId}:${canvas.id}`;
+    if (deletingKeysRef.current.has(key)) return Promise.resolve(null);
+    return writeQueueRef.current.enqueue(key, canvas, async (latestCanvas, operation) => {
+      if (deletingKeysRef.current.has(key)) return null;
+      const expectedRevision = diskRevisionRef.current.get(key) ?? latestCanvas.diskRevision ?? null;
+      const saved = await canvasActions.saveCanvas(latestCanvas, actionContext({
+        activeVaultId: requestVaultId,
+        expectedRevision,
+        shouldCommitResult: operation.isLatest,
+      }));
+      if (saved?.diskRevision) {
+        diskRevisionRef.current.set(key, saved.diskRevision);
+        failedWritesRef.current.delete(key);
+      } else if (operation.isLatest()) {
+        failedWritesRef.current.set(key, latestCanvas);
+      }
+      return saved;
+    }).then(result => result.value);
+  }, [activeVaultId, actionContext, canvasActions]);
+
+  const deleteCanvas = useCallback(async (canvasId) => {
+    if (!canvasId || !activeVaultId) return null;
+    const requestVaultId = activeVaultId;
+    const key = `${requestVaultId}:${canvasId}`;
+    deletingKeysRef.current.add(key);
+    await writeQueueRef.current.flush(key);
+    const result = await canvasActions.deleteCanvas(canvasId, actionContext({
+      activeVaultId: requestVaultId,
+      expectedRevision: diskRevisionRef.current.get(key) ?? activeCanvas?.diskRevision ?? null,
+    }));
+    if (result) {
+      diskRevisionRef.current.delete(key);
+      failedWritesRef.current.delete(key);
+    }
+    else deletingKeysRef.current.delete(key);
+    return result;
+  }, [activeCanvas?.diskRevision, activeVaultId, actionContext, canvasActions]);
 
   const addNote = useCallback(async (noteId, canvasId = null) => {
     const note = notes.find(item => item.id === noteId);

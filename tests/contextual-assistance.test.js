@@ -33,7 +33,7 @@ test('all note-writing assistance is preview-before-apply', () => {
   assert.match(component, /aria-labelledby="mn-assistance-preview-title"/);
   assert.match(component, /Create linked note/);
   assert.match(component, /triggerRef\.current\?\.focus/);
-  assert.match(component, /event\.key !== 'Tab'/);
+  assert.match(component, /useDialogFocus\(\{ initialFocusRef: applyRef, onEscape: onClose \}\)/);
   assert.match(component, /!String\(sourceMarkdown \|\| ''\)\.trim\(\)/);
   assert.doesNotMatch(component, /onBlocksChange|updateNoteBody/);
 });

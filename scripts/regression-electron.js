@@ -1656,7 +1656,7 @@ async function seedEditorNote(win, { id, title, body, expect = 'Parent' }) {
         tags: ['qe-regression'],
         date: now,
         modifiedAt: now,
-      }, {}), 'saveNote');
+      }, { expectedRevision: null }), 'saveNote');
       unwrap(await window.mn.vaults.saveVaultMeta(active.id, {
         lastSelectedId: ${JSON.stringify(id)},
       }), 'saveVaultMeta');

@@ -45,6 +45,7 @@ export function useConnectionsController({
       setDiskBacklinks(null);
       return undefined;
     }
+    setDiskBacklinks(null);
     let cancelled = false;
     const handle = setTimeout(async () => {
       try {
@@ -64,6 +65,7 @@ export function useConnectionsController({
       setMentions([]);
       return undefined;
     }
+    setMentions([]);
     let cancelled = false;
     const handle = setTimeout(async () => {
       try {
@@ -147,7 +149,7 @@ export function useConnectionsController({
       return undefined;
     }
     let cancelled = false;
-    setConnected(previous => ({ ...previous, loading: true }));
+    setConnected({ items: [], explanation: '', via: '', loading: true });
     const handle = setTimeout(async () => {
       try {
         const response = await memory.connected(vaultId, note.id, { limit: 8 });
