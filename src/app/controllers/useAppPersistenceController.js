@@ -69,7 +69,36 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
         return next;
       });
     }, [recordFeatureUsage, showAppNotice]);
-  
+
+    // Saved views were read at boot and never written back, so every edit was
+    // lost on restart. This is the write half. The list is checked here before
+    // it is sent because the preference sanitizer *throws* on a bad id, a
+    // duplicate, or a 25th definition — a refusal we can explain beats a
+    // rejected patch the user never sees.
+    const saveSmartViewDefinitions = useCallbackA((next) => {
+      const checked = mnViewsCheckSavable(next);
+      if (!checked.ok) {
+        showAppNotice(
+          'Views not saved',
+          checked.reason === 'cap'
+            ? 'A vault can hold 24 saved views. Delete one before adding another.'
+            : 'That view is missing a name or has an id the vault cannot store.',
+          'warn'
+        );
+        return false;
+      }
+      setSavedSmartViews(checked.definitions);
+      if (HAS_DISK && desktopBridge.preferences?.setPrefs) {
+        desktopBridge.preferences.setPrefs({ smartViews: checked.definitions })
+          .then(result => {
+            if (result?.ok === false) showAppNotice('Views not saved', result.error, 'warn');
+          })
+          .catch(error => showAppNotice('Views not saved', error.message || String(error), 'warn'));
+      }
+      recordFeatureUsage('views', 'used');
+      return true;
+    }, [recordFeatureUsage, showAppNotice, setSavedSmartViews]);
+
     useEffectA(() => {
       const featureByView = {
         today: 'today',
@@ -489,8 +518,9 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       }, 1000);
       return () => clearTimeout(t);
     }, [selectedId, activeVaultId, tags, saveVaultMetaNow]);
-  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, searchUsageActiveRef, noteDiskStampRef, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, retryBoot, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
+  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, saveSmartViewDefinitions, searchUsageActiveRef, noteDiskStampRef, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, retryBoot, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
 }
 
 export { useAppPersistenceController };
 import { mnSetWorkflowStates } from '../../editor/blockFeatures.jsx';
+import { mnViewsCheckSavable } from '../../features/views/index.js';

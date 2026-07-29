@@ -1341,6 +1341,69 @@ test('grouping reads the source note of a task, not just a note result', () => {
   assert.deepEqual(appHelpers.smartViewGroup(notes, { by: 'status' }).map(g => g.label), ['DONE', 'No status']);
 });
 
+test('managing saved views refuses what the preference layer would throw on', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const m = loadRendererModule('src/features/views/viewsManage.js');
+  const seed = [
+    { format: 'vispnote.smartView.v2', id: 'recent_notes', title: 'Recent notes', type: 'notes', filters: {}, limit: 60 },
+    { format: 'vispnote.smartView.v2', id: 'open_tasks', title: 'Open tasks', type: 'tasks', filters: {}, limit: 80 },
+  ];
+
+  // Ids are derived from the title, and the id rule the sanitizer enforces
+  // (leading letter, then letters/digits/_/-) has to hold for free text.
+  const made = m.mnViewsCreate(seed, { title: '  3 things!!  ', format: 'vispnote.smartView.v2' });
+  assert.equal(made.ok, true);
+  assert.match(made.definitions[2].id, m.MN_VIEW_ID_RE);
+  assert.equal(made.definitions[2].title, '3 things!!');
+  assert.equal(made.definitions[2].format, 'vispnote.smartView.v2');
+
+  // A title with nothing id-safe in it still has to produce a legal id.
+  const symbols = m.mnViewsCreate(seed, { title: '???' });
+  assert.equal(symbols.ok, true);
+  assert.match(symbols.definitions[2].id, m.MN_VIEW_ID_RE);
+
+  // Never two views with the same id: the sanitizer throws on a duplicate.
+  const twice = m.mnViewsCreate(m.mnViewsCreate(seed, { title: 'Notes' }).definitions, { title: 'Notes' });
+  assert.equal(twice.ok, true);
+  assert.equal(new Set(twice.definitions.map(d => d.id)).size, twice.definitions.length);
+  assert.equal(new Set(twice.definitions.map(d => d.title)).size, twice.definitions.length);
+
+  // The cap is 24 and the sanitizer throws above it, so creating the 25th is
+  // refused with a reason rather than attempted.
+  const full = Array.from({ length: 24 }, (_, n) => ({ id: `view_${n + 1}`, title: `View ${n + 1}` }));
+  assert.deepEqual(m.mnViewsCreate(full, { title: 'One more' }), { ok: false, reason: 'cap' });
+  assert.equal(m.mnViewsCheckSavable(full).ok, true);
+  assert.equal(m.mnViewsCheckSavable([...full, { id: 'view_25', title: 'x' }]).reason, 'cap');
+
+  // A duplicate lands beside its source, carrying the source's shape.
+  const copied = m.mnViewsDuplicate(seed, 'recent_notes');
+  assert.equal(copied.ok, true);
+  assert.equal(copied.definitions[1].title, 'Recent notes copy');
+  assert.equal(copied.definitions[1].type, 'notes');
+  assert.equal(copied.definitions[1].limit, 60);
+  assert.equal(copied.definitions[2].id, 'open_tasks');
+
+  // Renaming refuses a blank or a name already in use.
+  assert.equal(m.mnViewsRename(seed, 'open_tasks', '  ').reason, 'empty');
+  assert.equal(m.mnViewsRename(seed, 'open_tasks', 'recent notes').reason, 'duplicate');
+  assert.equal(m.mnViewsRename(seed, 'open_tasks', ' Doing  now ').definitions[1].title, 'Doing now');
+
+  // Deleting the last view is refused: an empty saved list makes the app fall
+  // back to the built-in defaults, so the view would appear to come back.
+  assert.equal(m.mnViewsDelete(seed, 'open_tasks').definitions.length, 1);
+  assert.equal(m.mnViewsDelete([seed[0]], 'recent_notes').reason, 'last');
+  assert.equal(m.mnViewsDelete(seed, 'nope').reason, 'missing');
+
+  // Drafts: a change is dirty, saving folds it in, and unknown keys never
+  // reach the saved shape.
+  assert.equal(m.mnViewsDraftDiffers(seed[0], { id: 'recent_notes', layout: 'table' }), true);
+  assert.equal(m.mnViewsDraftDiffers(seed[0], { id: 'recent_notes', title: 'Recent notes' }), false);
+  const saved = m.mnViewsApplyDraft(seed, { id: 'recent_notes', layout: 'table', bogus: 1 });
+  assert.equal(saved.definitions[0].layout, 'table');
+  assert.equal('bogus' in saved.definitions[0], false);
+  assert.equal(m.mnViewsCheckSavable(saved.definitions).ok, true);
+});
+
 test('a view row resolves to the exact block it was parsed from', async () => {
   const { loadRendererModule } = require('./helpers/rendererModule.js');
   const write = loadRendererModule('src/features/views/viewsWrite.js');

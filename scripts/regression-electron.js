@@ -435,6 +435,38 @@ async function setPackEnabledForRegression(win, packId, enabled) {
   });
 }
 
+async function renameActiveView(win, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const value = ${JSON.stringify(value)};
+      const el = document.querySelector('input[aria-label="View name"]');
+      if (!el) return { ok: false };
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error('Views rename input not found');
+}
+
+async function viewsTabTitles(win) {
+  return evaluate(win, `(() => {
+    const bar = document.querySelector('[role="tablist"][aria-label="Saved views"]');
+    if (!bar) return [];
+    return [...bar.querySelectorAll('[role="tab"]')].map(el => (el.firstChild?.textContent || '').trim());
+  })()`);
+}
+
+async function viewsSaveStateText(win) {
+  return evaluate(win, `(() => {
+    const bar = document.querySelector('[role="tablist"][aria-label="Saved views"]');
+    return bar ? (bar.textContent || '') : '';
+  })()`);
+}
+
 async function setViewsRowSearch(win, value) {
   const result = await evaluate(win, `
     (() => {
@@ -531,6 +563,74 @@ async function runViewsPanelScenario(win) {
         };
       })()`);
       return { ok: current.panel && current.nextMonth && current.dayCells >= 28, current };
+    });
+
+    // View management: a view you make, name, shape and save has to be there
+    // afterwards. Each step is checked by what the tab bar actually shows.
+    const before = await viewsTabTitles(win);
+    await clickButton(win, { aria: 'New view' });
+    await waitFor(win, 'a new view appears as a tab', async () => {
+      const titles = await viewsTabTitles(win);
+      return { ok: titles.length === before.length + 1 && titles.includes('New view'), titles, before };
+    });
+
+    await clickButton(win, { aria: 'View options' });
+    await clickVisibleText(win, 'Rename');
+    await renameActiveView(win, 'QE Renamed View');
+    await waitFor(win, 'renaming a view relabels its tab', async () => {
+      const titles = await viewsTabTitles(win);
+      return { ok: titles.includes('QE Renamed View') && !titles.includes('New view'), titles };
+    });
+
+    // Changing the layout is a draft until saved: the pill has to say so, and
+    // saving has to make it stick across a switch away and back.
+    await clickVisibleText(win, 'Cards');
+    await waitFor(win, 'an unsaved layout change is announced', async () => {
+      const text = await viewsSaveStateText(win);
+      return { ok: /Unsaved changes/.test(text), text };
+    });
+    await clickVisibleText(win, 'Save view');
+    await waitFor(win, 'saving a view clears the unsaved state', async () => {
+      const text = await viewsSaveStateText(win);
+      return { ok: /Saved/.test(text) && !/Unsaved changes/.test(text), text };
+    });
+    await clickVisibleText(win, before[0]);
+    await clickVisibleText(win, 'QE Renamed View');
+    await waitFor(win, 'a saved layout is what the view reopens as', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('[role="tablist"][aria-label="Layout"]');
+        const on = strip ? [...strip.querySelectorAll('[role="tab"]')].find(el => el.getAttribute('aria-selected') === 'true') : null;
+        return { layout: on ? (on.textContent || '').trim() : '' };
+      })()`);
+      return { ok: current.layout === 'Cards', current };
+    });
+
+    // The point of saving is that it outlives the window, so check the stored
+    // preference rather than only the pixels the panel is showing.
+    await waitFor(win, 'a saved view is written to preferences', async () => {
+      const current = await evaluate(win, `(async () => {
+        const prefs = await window.mn?.preferences?.getPrefs?.();
+        const views = prefs?.value?.smartViews || [];
+        const made = views.find(view => view && view.title === 'QE Renamed View');
+        return { count: views.length, layout: made ? made.layout : '', found: Boolean(made) };
+      })()`);
+      return { ok: current.found && current.layout === 'cards', current };
+    });
+
+    await clickButton(win, { aria: 'View options' });
+    await clickVisibleText(win, 'Delete');
+    await clickVisibleText(win, 'Delete view');
+    await waitFor(win, 'deleting a view removes its tab', async () => {
+      const titles = await viewsTabTitles(win);
+      return { ok: !titles.includes('QE Renamed View') && titles.length === before.length, titles };
+    });
+    await waitFor(win, 'a deleted view is gone from preferences too', async () => {
+      const current = await evaluate(win, `(async () => {
+        const prefs = await window.mn?.preferences?.getPrefs?.();
+        const views = prefs?.value?.smartViews || [];
+        return { titles: views.map(view => view && view.title) };
+      })()`);
+      return { ok: !current.titles.includes('QE Renamed View'), current };
     });
 
     // Ticking a task from the board must change the note on disk, not just

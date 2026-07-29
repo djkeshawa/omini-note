@@ -22,7 +22,11 @@ import { mnViewsRenderResults } from './ViewsLayouts.jsx';
 import { mnViewsRenderBoard, mnViewsBoardGroup } from './ViewsBoard.jsx';
 import { mnViewsRenderCalendar } from './ViewsCalendar.jsx';
 import { mnViewsActionItem } from './viewsWrite.js';
-import { ViewTabs, ViewsRowSearch, ViewsSaveState, mnViewChipStyle } from './ViewsChrome.jsx';
+import { ViewTabs, ViewMenu, ViewsRowSearch, ViewsSaveState, mnViewChipStyle } from './ViewsChrome.jsx';
+import {
+  mnViewsCreate, mnViewsDuplicate, mnViewsRename, mnViewsDelete,
+  mnViewsApplyDraft, mnViewsDraftDiffers,
+} from './viewsManage.js';
 
 // mnSentenceCase only rewrites ALL-CAPS strings, so it leaves a lowercase
 // layout id alone. These are labels, not machine values, so they get a
@@ -52,6 +56,17 @@ function mnViewsRowMatches(result, needle) {
   return haystack.includes(needle);
 }
 
+// Every refusal from the management layer is a reason code; this is the only
+// place that turns one into a sentence, so the wording stays in one file.
+const MN_VIEWS_REFUSALS = {
+  cap: ['That is as many views as a vault holds', 'A vault keeps up to 24 saved views. Delete one you no longer use, then try again.'],
+  last: ['That view cannot be deleted', 'A vault keeps at least one view. Make another one first, then delete this.'],
+  duplicate: ['That name is already taken', 'Another view already uses that name. Views are told apart by name, so pick a different one.'],
+  empty: ['A view needs a name', 'Type a name for this view before saving it.'],
+  missing: ['That view is no longer there', 'It may have been deleted in another window. Pick a view from the tabs above.'],
+  id: ['That view could not be created', 'The name produced an identifier the vault cannot store. Try a name with some letters or numbers in it.'],
+};
+
 const MN_VIEWS_FALLBACK = {
   id: 'all_notes',
   title: 'All notes',
@@ -67,11 +82,13 @@ function MnViewsPanel({
   definitions = [],
   activeDefinitionId = '',
   onActiveDefinitionChange,
+  onDefinitionsChange,
   onOpen,
   onOpenAllNotes,
   onUpdateTaskItem,
   onNotice,
   weekStart = 'monday',
+  viewFormat,
   helpers = {},
   walk,
   T,
@@ -86,14 +103,20 @@ function MnViewsPanel({
     setActiveId(activeDefinitionId);
   }, [activeDefinitionId, safeDefinitions]);
 
-  // The saved layout is what a view opens as. The switcher overrides it only
-  // while you stay on that view, so each one keeps the shape it was given.
-  const [layoutOverride, setLayoutOverride] = useStateV(null);
+  // A view opens as it was saved. Changing the layout edits a draft rather
+  // than the saved definition, so the state pill can say the view has unsaved
+  // changes instead of the change vanishing the next time you switch tabs.
+  const [draft, setDraft] = useStateV(null);
   const [calendarAnchor, setCalendarAnchor] = useStateV(() => new Date());
   const [rowQuery, setRowQuery] = useStateV('');
-  const layout = layoutOverride && layoutOverride.id === activeDefinition?.id
-    ? layoutOverride.mode
-    : mnViewLayout(activeDefinition);
+  const [menuOpen, setMenuOpen] = useStateV(false);
+  const [confirmDelete, setConfirmDelete] = useStateV(false);
+  const [renamingId, setRenamingId] = useStateV('');
+  const [renameValue, setRenameValue] = useStateV('');
+
+  const activeDraft = draft && draft.id === activeDefinition?.id ? draft : null;
+  const dirty = mnViewsDraftDiffers(activeDefinition, activeDraft);
+  const layout = activeDraft?.layout || mnViewLayout(activeDefinition);
 
   const results = useMemoV(() => (
     helpers.smartViewQuery
@@ -159,9 +182,52 @@ function MnViewsPanel({
 
   const selectDefinition = (id) => {
     setActiveId(id);
-    setLayoutOverride(null);
+    setDraft(null);
     setRowQuery('');
+    setMenuOpen(false);
+    setConfirmDelete(false);
+    setRenamingId('');
     onActiveDefinitionChange?.(id);
+  };
+
+  // Every management action lands here: apply the transform, explain a refusal,
+  // otherwise persist the whole list and follow the result.
+  const commit = (result) => {
+    if (!result?.ok) {
+      const [headline, body] = MN_VIEWS_REFUSALS[result?.reason] || MN_VIEWS_REFUSALS.missing;
+      onNotice?.(headline, body, 'warn');
+      return false;
+    }
+    if (!onDefinitionsChange) {
+      onNotice?.('Views cannot be changed here', 'This window has no way to save view settings.', 'warn');
+      return false;
+    }
+    // A false return means the save was refused further down; leaving the draft
+    // in place keeps the change on screen rather than silently dropping it.
+    if (onDefinitionsChange(result.definitions) === false) return false;
+    setDraft(null);
+    setMenuOpen(false);
+    setConfirmDelete(false);
+    setRenamingId('');
+    if (result.activeId && result.activeId !== activeId) selectDefinition(result.activeId);
+    return true;
+  };
+
+  const startRename = () => {
+    setMenuOpen(false);
+    setRenameValue(activeDefinition?.title || '');
+    setRenamingId(activeDefinition?.id || '');
+  };
+
+  const finishRename = () => {
+    const id = renamingId;
+    setRenamingId('');
+    if (!id) return;
+    const next = renameValue.trim();
+    // Closing the box without changing anything is not a rename, and an empty
+    // box is a cancel rather than an error worth interrupting for.
+    if (!next || next === (activeDefinition?.title || '')) return;
+    commit(mnViewsRename(safeDefinitions, id, next));
   };
 
   return (
@@ -184,9 +250,30 @@ function MnViewsPanel({
           definitions={safeDefinitions}
           activeId={activeDefinition?.id}
           counts={tabCounts}
+          renamingId={renamingId}
+          renameValue={renameValue}
+          onRenameInput={event => setRenameValue(event.target.value)}
+          onRenameKey={event => {
+            if (event.key === 'Enter') { event.preventDefault(); finishRename(); }
+            if (event.key === 'Escape') { event.preventDefault(); setRenamingId(''); }
+          }}
+          onRenameEnd={finishRename}
+          menu={menuOpen ? (
+            <ViewMenu
+              definition={activeDefinition || {}}
+              canDelete={safeDefinitions.length > 1}
+              confirming={confirmDelete}
+              onRename={startRename}
+              onDuplicate={() => commit(mnViewsDuplicate(safeDefinitions, activeDefinition?.id, { format: viewFormat }))}
+              onDelete={() => setConfirmDelete(true)}
+              onConfirmDelete={() => commit(mnViewsDelete(safeDefinitions, activeDefinition?.id))}
+              onCancelDelete={() => { setConfirmDelete(false); setMenuOpen(false); }}
+              T={T}
+            />
+          ) : null}
           onPick={selectDefinition}
-          onOpenMenu={() => onNotice?.('Not wired up yet', 'Renaming, duplicating and deleting a view arrive in the next step.', 'info')}
-          onNewView={() => onNotice?.('Not wired up yet', 'Creating a view arrives in the next step.', 'info')}
+          onOpenMenu={() => { setConfirmDelete(false); setMenuOpen(open => !open); }}
+          onNewView={() => commit(mnViewsCreate(safeDefinitions, { title: 'New view', format: viewFormat }))}
           T={T}
         />
         <span style={{ flex: 1 }} />
@@ -196,7 +283,12 @@ function MnViewsPanel({
           onClear={() => setRowQuery('')}
           T={T}
         />
-        <ViewsSaveState dirty={false} T={T} />
+        <ViewsSaveState
+          dirty={dirty}
+          onRevert={() => setDraft(null)}
+          onSave={() => commit(mnViewsApplyDraft(safeDefinitions, activeDraft))}
+          T={T}
+        />
       </div>
 
       {/* Control strip: what a row is, and how it is drawn. */}
@@ -226,7 +318,11 @@ function MnViewsPanel({
               type="button"
               role="tab"
               aria-selected={layout === mode}
-              onClick={() => setLayoutOverride({ id: activeDefinition?.id || '', mode })}
+              onClick={() => setDraft(current => ({
+                ...(current && current.id === activeDefinition?.id ? current : {}),
+                id: activeDefinition?.id || '',
+                layout: mode,
+              }))}
               style={{
                 height: 24, padding: '0 11px',
                 borderRadius: DS_RADIUS.icon,

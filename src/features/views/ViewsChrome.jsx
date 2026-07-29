@@ -9,8 +9,9 @@
 // Numbers here are the prototype's: 46px and 48px rows at 20px gutters, 28px
 // controls on radius 8, a 176px search box, a 26px state pill on radius 999.
 //
-// Rename, duplicate and delete are the next step; the caret says so rather
-// than pretending. Nothing here is drawn that cannot yet be used.
+// The caret on the active tab opens a 168px menu for rename, duplicate and
+// delete. Delete asks inside the menu rather than through a dialog, so the
+// question appears where the click did.
 
 import { DS_RADIUS, dsMachineStyle } from '../../shared/designSystem.js';
 
@@ -42,6 +43,73 @@ function mnViewChipStyle(on, T) {
   };
 }
 
+function mnViewMenuStyle(width, T) {
+  return {
+    position: 'absolute', top: 40, left: 0, zIndex: 60, width,
+    background: T.bgElevated || T.bg,
+    border: `1px solid ${T.line}`,
+    borderRadius: DS_RADIUS.row,
+    boxShadow: `0 14px 34px color-mix(in oklab, ${T.ink} 18%, transparent)`,
+    padding: 5,
+  };
+}
+
+function mnViewMenuItemStyle(T, tone) {
+  return {
+    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+    height: 30, padding: '0 9px',
+    border: 'none', borderRadius: DS_RADIUS.icon,
+    background: 'transparent',
+    color: tone === 'danger' ? T.danger || T.warn : T.ink,
+    cursor: 'pointer', textAlign: 'left',
+    fontFamily: 'var(--mn-ui)', fontSize: 12.5,
+  };
+}
+
+// Delete confirms in place. The name is repeated in the question because a
+// menu can be opened on the wrong tab and the count is not visible from here.
+function ViewMenu({ definition, canDelete, confirming, onRename, onDuplicate, onDelete, onConfirmDelete, onCancelDelete, T }) {
+  if (confirming) {
+    return (
+      <div style={{ ...mnViewMenuStyle(220, T), padding: 11 }} role="dialog" aria-label="Confirm delete view">
+        <div style={{ fontSize: 12.5, color: T.ink, marginBottom: 4, fontWeight: 600 }}>
+          Delete “{definition.title || 'Untitled view'}”?
+        </div>
+        <div style={{ fontSize: 11.5, color: T.inkMed, lineHeight: 1.45, marginBottom: 10 }}>
+          The notes and tasks it shows are not touched — only this way of looking at them.
+        </div>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onCancelDelete} style={{
+            height: 26, padding: '0 10px', borderRadius: DS_RADIUS.control,
+            border: `1px solid ${T.lineSub}`, background: T.bg, color: T.inkMed,
+            fontFamily: 'var(--mn-ui)', fontSize: 11.5, cursor: 'pointer',
+          }}>Cancel</button>
+          <button type="button" onClick={onConfirmDelete} style={{
+            height: 26, padding: '0 10px', borderRadius: DS_RADIUS.control,
+            border: 'none', background: T.danger || T.warn, color: T.bg,
+            fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+          }}>Delete view</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={mnViewMenuStyle(168, T)} role="menu" aria-label="View options">
+      <button type="button" role="menuitem" onClick={onRename} style={mnViewMenuItemStyle(T)}>Rename</button>
+      <button type="button" role="menuitem" onClick={onDuplicate} style={mnViewMenuItemStyle(T)}>Duplicate</button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onDelete}
+        disabled={!canDelete}
+        title={canDelete ? undefined : 'A vault keeps at least one view.'}
+        style={{ ...mnViewMenuItemStyle(T, 'danger'), opacity: canDelete ? 1 : 0.45, cursor: canDelete ? 'pointer' : 'not-allowed' }}>
+        Delete
+      </button>
+    </div>
+  );
+}
+
 function Caret({ T }) {
   return (
     <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
@@ -50,11 +118,35 @@ function Caret({ T }) {
   );
 }
 
-function ViewTabs({ definitions, activeId, counts, onPick, onOpenMenu, onNewView, T }) {
+function ViewTabs({
+  definitions, activeId, counts, renamingId, renameValue, menu,
+  onPick, onRenameInput, onRenameKey, onRenameEnd, onOpenMenu, onNewView, T,
+}) {
   return (
     <>
       {definitions.map(definition => {
         const active = definition.id === activeId;
+        if (renamingId === definition.id) {
+          return (
+            <input
+              key={definition.id}
+              autoFocus
+              aria-label="View name"
+              value={renameValue}
+              onChange={onRenameInput}
+              onKeyDown={onRenameKey}
+              onBlur={onRenameEnd}
+              style={{
+                height: 28, width: 148, padding: '0 9px',
+                borderRadius: DS_RADIUS.control,
+                border: `1px solid ${T.accent}`,
+                background: T.bg, color: T.ink,
+                fontFamily: 'var(--mn-ui)', fontSize: 12.5, fontWeight: 600,
+                outline: 'none',
+              }}
+            />
+          );
+        }
         return (
           <React.Fragment key={definition.id}>
             <button
@@ -69,10 +161,12 @@ function ViewTabs({ definitions, activeId, counts, onPick, onOpenMenu, onNewView
               </span>
             </button>
             {active && (
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
               <button
                 type="button"
                 title="Rename, duplicate or delete"
                 aria-label="View options"
+                aria-expanded={Boolean(menu)}
                 onClick={onOpenMenu}
                 style={{
                   height: 28, width: 22, padding: 0,
@@ -83,6 +177,8 @@ function ViewTabs({ definitions, activeId, counts, onPick, onOpenMenu, onNewView
                 }}>
                 <Caret T={T} />
               </button>
+              {menu}
+              </span>
             )}
           </React.Fragment>
         );
@@ -187,4 +283,4 @@ function ViewsSaveState({ dirty, onRevert, onSave, T }) {
   );
 }
 
-export { ViewTabs, ViewsRowSearch, ViewsSaveState, Caret, mnViewTabStyle, mnViewChipStyle };
+export { ViewTabs, ViewMenu, ViewsRowSearch, ViewsSaveState, Caret, mnViewTabStyle, mnViewChipStyle };
