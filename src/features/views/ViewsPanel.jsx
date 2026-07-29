@@ -18,6 +18,7 @@ import { DsEmptyState, DsGroupLabel } from '../../shared/components/DesignPrimit
 import { MN_VIEW_LAYOUTS, mnViewLayout } from '../../shared/viewLayout.js';
 import { mnViewsRenderResults } from './ViewsLayouts.jsx';
 import { mnViewsRenderBoard, mnViewsBoardGroup } from './ViewsBoard.jsx';
+import { mnViewsRenderCalendar } from './ViewsCalendar.jsx';
 
 function ViewRow({ definition, active, onSelect, T }) {
   return (
@@ -69,6 +70,7 @@ function MnViewsPanel({
   onActiveDefinitionChange,
   onOpen,
   onOpenAllNotes,
+  weekStart = 'monday',
   helpers = {},
   walk,
   T,
@@ -86,6 +88,7 @@ function MnViewsPanel({
   // The saved layout is what a view opens as. The switcher overrides it only
   // while you stay on that view, so each one keeps the shape it was given.
   const [layoutOverride, setLayoutOverride] = useStateV(null);
+  const [calendarAnchor, setCalendarAnchor] = useStateV(() => new Date());
   const layout = layoutOverride && layoutOverride.id === activeDefinition?.id
     ? layoutOverride.mode
     : mnViewLayout(activeDefinition);
@@ -189,7 +192,13 @@ function MnViewsPanel({
 
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 20px 24px' }}>
           {results.length
-            ? (layout === 'board'
+            ? (layout === 'calendar'
+              ? mnViewsRenderCalendar({
+                results, helpers, onOpen, weekStart, T,
+                anchor: calendarAnchor,
+                onAnchorChange: setCalendarAnchor,
+              })
+              : layout === 'board'
               ? mnViewsRenderBoard({ groups: groups || [], helpers, onOpen, T })
               : groups
               ? groups

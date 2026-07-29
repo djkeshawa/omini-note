@@ -465,6 +465,7 @@ function AppView({ model }) {
                 onOpenAllNotes={() => { setSelectedTag(null); setSelectedWorkflow(null); setQuery(''); navigateView('notes'); }}
                 helpers={MN_APP_HELPERS}
                 walk={mnWalk}
+                weekStart={tweaks.weekStart || 'monday'}
                 T={T}
               />
             )}

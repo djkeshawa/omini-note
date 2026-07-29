@@ -1341,6 +1341,34 @@ test('grouping reads the source note of a task, not just a note result', () => {
   assert.deepEqual(appHelpers.smartViewGroup(notes, { by: 'status' }).map(g => g.label), ['DONE', 'No status']);
 });
 
+test('the calendar places rows by the date the other layouts print', async () => {
+  const { loadRendererModule } = require('./helpers/rendererModule.js');
+  const cal = loadRendererModule('src/features/views/ViewsCalendar.jsx');
+
+  const results = [
+    { key: 'a', type: 'task', reminderDate: '2026-07-29', label: 'due today' },
+    { key: 'b', type: 'task', reminderDate: '2026-07-29', label: 'also today' },
+    { key: 'c', type: 'note', modifiedDate: '2026-07-28', title: 'edited note' },
+    { key: 'd', type: 'task', label: 'no date at all' },
+    { key: 'e', type: 'note', title: 'nothing usable', modifiedDate: 'not-a-date' },
+  ];
+  const { byDate, undated } = cal.mnViewsResultsByDate(results, {});
+
+  // A task lands on its reminder date, a note on when it was modified — the
+  // same date each row shows in the table.
+  assert.deepEqual([...byDate.get('2026-07-29')].map(r => r.key), ['a', 'b']);
+  assert.deepEqual([...byDate.get('2026-07-28')].map(r => r.key), ['c']);
+
+  // Undated rows are kept, not dropped. A calendar that silently discarded
+  // them would under-report what the view actually matched.
+  assert.deepEqual(undated.map(r => r.key), ['d', 'e']);
+  assert.equal(
+    [...byDate.values()].reduce((n, list) => n + list.length, 0) + undated.length,
+    results.length,
+    'every row is placed exactly once'
+  );
+});
+
 test('a board view always has columns to draw', async () => {
   const { loadRendererModule } = require('./helpers/rendererModule.js');
   const board = loadRendererModule('src/features/views/ViewsBoard.jsx');

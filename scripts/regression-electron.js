@@ -451,7 +451,7 @@ async function runViewsPanelScenario(win) {
       })()`);
       // A seeded definition and the five layout tabs must both be there — an
       // empty shell would pass a bare "does the panel exist" probe.
-      return { ok: current.panel && current.views > 0 && current.layouts === 5, current };
+      return { ok: current.panel && current.views > 0 && current.layouts === 6, current };
     });
     // Switching to the board must produce real columns, not an empty frame.
     await clickVisibleText(win, 'Board');
@@ -464,6 +464,18 @@ async function runViewsPanelScenario(win) {
         return { panel: true, columns: headers.length, text: panel.textContent.slice(0, 160) };
       })()`);
       return { ok: current.panel && current.columns > 0, current };
+    });
+    // The calendar must draw a real month grid, not an empty frame.
+    await clickVisibleText(win, 'Calendar');
+    await waitFor(win, 'views calendar renders a month grid', async () => {
+      const current = await evaluate(win, `(() => {
+        const panel = document.querySelector('[data-mn-views-panel]');
+        if (!panel) return { panel: false };
+        const nextMonth = panel.querySelector('button[aria-label="Next month"]');
+        const dayCells = [...panel.querySelectorAll('div')].filter(el => /^\\d{1,2}$/.test((el.textContent || '').trim()));
+        return { panel: true, nextMonth: Boolean(nextMonth), dayCells: dayCells.length };
+      })()`);
+      return { ok: current.panel && current.nextMonth && current.dayCells >= 28, current };
     });
   } finally {
     await setPackEnabledForRegression(win, 'views', false);
