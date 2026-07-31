@@ -10,7 +10,7 @@
 import {
   BASE_SLASH_COMMANDS,
   BLOCK_CLIPBOARD_TYPE,
-  changeBlockKind,
+  changeBlockKind, commitOutlinerSelection, ensureEditableBlock,
   deleteBlock,
   findSlashCommandTrigger,
   indentBlock,
@@ -22,6 +22,7 @@ import {
   normalizeClipboardMarkdown,
   outdentBlock,
   reidBlocks,
+  removeSelectedBlockTrees,
   renderSpellCheckedText,
   slashCommandScore,
   slashCommands,
@@ -99,7 +100,7 @@ function MnOutliner({
   aiEnabled = false, workflowEnabled = false,
 }) {
   const [focusId, setFocusId] = useStateOE(null);
-  const [selection, setSelection] = useStateOE(null); // { blockId, start, end, rect }
+  const [selection, setSelectionState] = useStateOE(null); // text or block-range selection
   const [ctxMenu, setCtxMenu] = useStateOE(null); // { blockId, x, y } | null
   const [aiMenu, setAiMenu] = useStateOE(null); // { scope, blockId, x, y } | null
   const [aiPrompt, setAiPrompt] = useStateOE(null); // { actionId, scope, payload, title, value } | null
@@ -125,7 +126,7 @@ function MnOutliner({
   const localClipboardRef = useRefOE(null);
   const clipboardHandlersRef = useRefOE(null);
   const contentEditHistoryRef = useRefOE({ blockId: null, armed: false });
-
+  const setSelection = nextSelection => commitOutlinerSelection(selectionRef, setSelectionState, nextSelection);
   const { snapshotBlocks, mutate, replaceAllBlocks, undo, redo, onChange, onBeginContentEdit, onEndContentEdit, onChangeKind, onToggleCollapse, onToggleCheck, onIndent, onOutdent, onSplit, onInsertBlocksAt, onMergePrev, onDelete } = useOutlinerBlockActions({
     blocks, mnCloneBlocks, noteId, undoStack, redoStack, historyRef, noteIdRef, setBlocks, mnShareBlockTree, contentEditHistoryRef, undoActionRef, redoActionRef, selectionRef, selection, focusIdRef, focusId, useOutlinerKeyboardShortcuts, deleteSelectionRef, keyboardEditActionsRef, zoomBlockRef, moveBlockRef, duplicateBlockRef, deleteBlockRef, mnLocate, mnUpdateBlockContent, changeBlockKind, toggleBlockCollapse, toggleBlockCheck, indentBlock, outdentBlock, mkBlock, splitBlockAt, mnSplitBlock, setFocusId, insertBlocksAt, mnSplitAnnotations, mergeBlockWithPrevious, mnMergeBlockContent, deleteBlock,
   });
@@ -134,29 +135,23 @@ function MnOutliner({
     if (!selectionRef.current) return;
     const current = selectionRef.current;
     if (current.kind === 'text') {
+      setSelection(null);
       applyTextReplacement({
         blockId: current.blockId,
         start: current.start,
         end: current.end,
       }, '');
-      setSelection(null);
       return;
     }
     if (current.kind !== 'blocks') return;
+    setSelection(null);
     mutate(bs => {
       const ids = topLevelSelectedIds(current.blockIds || [], bs);
       if (!ids.length) return;
-      const selected = new Set(ids);
-      const removeSelected = (arr) => {
-        for (let i = arr.length - 1; i >= 0; i--) {
-          if (selected.has(arr[i].id)) arr.splice(i, 1);
-          else removeSelected(arr[i].children || []);
-        }
-      };
-      removeSelected(bs);
+      removeSelectedBlockTrees(bs, ids);
+      const editableBlocks = zoomBlockId ? (mnLocate(bs, zoomBlockId)?.block.children || bs) : bs;
+      setFocusId(ensureEditableBlock(editableBlocks, mkBlock));
     });
-    setSelection(null);
-    setFocusId(null);
   };
 
   deleteSelectionRef.current = deleteSelection;
@@ -647,7 +642,7 @@ function MnOutliner({
     onCancelAiPreview: cancelAiPreview,
     aiTarget: aiEnabled && (!aiTarget?.noteId || !noteId || aiTarget.noteId === noteId) ? aiTarget : null,
     focusId, setFocusId, T, allNotes, allCanvases, onOpenCanvas, onCreateCanvas,
-    onSelectionChange: setSelection,
+    onSelectionChange: nextSelection => selectionRef.current?.kind !== 'blocks' && setSelection(nextSelection),
     onBlockMouseDown: beginBlockSelection,
     onBlockMouseEnter: extendBlockSelection,
     selectedBlockIds,

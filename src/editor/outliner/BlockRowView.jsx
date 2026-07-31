@@ -5,7 +5,7 @@ function MnBlockRowView({ model }) {
         className="mn-block-row"
         data-block-id={block.id}
         data-block-kind={block.kind || 'paragraph'}
-        data-block-depth={depth}
+        data-block-depth={depth} data-mn-area-selected={selectedAsArea ? 'true' : undefined}
         onDragOver={(e) => {
           if (attachmentFiles.mnDataTransferHasFiles(e.dataTransfer) && blockAcceptsAttachmentDrops) {
             e.preventDefault();

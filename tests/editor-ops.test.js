@@ -15,6 +15,12 @@ const appCanvasActions = require('../src/app/appCanvasActions.js');
 const panelHelpers = require('../src/panels/panelHelpers.js');
 const { block, loadOutlineForTest, withIsolatedStore } = require('./helpers/common.js');
 const projectPaths = require('./helpers/paths.js');
+const {
+  blockIdsInSelectionRange,
+  commitOutlinerSelection,
+  ensureEditableBlock,
+  removeSelectedBlockTrees,
+} = loadRendererModule('src/features/editor/outliner/selectionModel.js');
 
 test('Enter in the middle splits content and annotations without duplicating the tail', () => {
   const first = block('hello world', [
@@ -192,6 +198,190 @@ test('Markdown table rows round-trip through table helpers', () => {
     ['Grace', 'C:\\temp\\notes'],
   ]);
   assert.match(tableOps.markdownTableToHtml(markdown), /<table><thead><tr><th>Name<\/th><th>Notes<\/th><\/tr><\/thead>/);
+});
+
+test('Block selection model returns the full visible range in either drag direction', () => {
+  const visibleIds = ['a', 'b', 'd', 'e'];
+
+  assert.deepEqual(blockIdsInSelectionRange(visibleIds, 'b', 'e'), ['b', 'd', 'e']);
+  assert.deepEqual(blockIdsInSelectionRange(visibleIds, 'e', 'b'), ['b', 'd', 'e']);
+});
+
+test('Outliner selection commits update the live ref before rendering state', () => {
+  const selectionRef = { current: null };
+  const selection = { kind: 'blocks', blockIds: ['a', 'b'] };
+  let renderedSelection = null;
+  let refWhenStateWasWritten = null;
+
+  const committed = commitOutlinerSelection(selectionRef, (nextSelection) => {
+    refWhenStateWasWritten = selectionRef.current;
+    renderedSelection = nextSelection;
+  }, selection);
+
+  assert.strictEqual(committed, selection);
+  assert.strictEqual(selectionRef.current, selection);
+  assert.strictEqual(refWhenStateWasWritten, selection);
+  assert.strictEqual(renderedSelection, selection);
+});
+
+test('Deleting every selected block leaves one editable paragraph', () => {
+  const blocks = [
+    { id: 'a', children: [{ id: 'a-child', children: [] }] },
+    { id: 'b', children: [] },
+  ];
+  let createdWith = null;
+
+  removeSelectedBlockTrees(blocks, ['a', 'b']);
+  const focusId = ensureEditableBlock(blocks, (options) => {
+    createdWith = options;
+    return { id: 'empty', kind: options.kind, content: '', children: [] };
+  });
+
+  assert.deepEqual(blocks, [{ id: 'empty', kind: 'paragraph', content: '', children: [] }]);
+  assert.deepEqual(createdWith, { kind: 'paragraph' });
+  assert.equal(focusId, 'empty');
+});
+
+test('Outliner drag finalization keeps the anchor range after rows scroll', () => {
+  const windowListeners = new Map();
+  const documentListeners = new Map();
+  const fakeWindow = {
+    addEventListener(name, listener) {
+      windowListeners.set(name, listener);
+    },
+    removeEventListener(name, listener) {
+      if (windowListeners.get(name) === listener) windowListeners.delete(name);
+    },
+  };
+  const fakeOutliner = {
+    querySelectorAll() {
+      return rows;
+    },
+  };
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const rows = ids.map((id, index) => ({
+    dataset: { blockId: id },
+    rect: { top: 100 + index * 40, bottom: 120 + index * 40, left: 10, right: 210 },
+    closest(selector) {
+      if (selector === '.mn-block-row[data-block-id]') return this;
+      if (selector === '.mn-outliner') return fakeOutliner;
+      return null;
+    },
+    getBoundingClientRect() {
+      return this.rect;
+    },
+  }));
+  const rowById = new Map(rows.map(row => [row.dataset.blockId, row]));
+  let nativeSelectionClears = 0;
+  let collapsedCaret = null;
+  const activeTextarea = {
+    tagName: 'TEXTAREA',
+    selectionStart: 2,
+    selectionEnd: 5,
+    closest: () => fakeOutliner,
+    setSelectionRange(start, end) {
+      collapsedCaret = [start, end];
+    },
+  };
+  const fakeDocument = {
+    activeElement: activeTextarea,
+    addEventListener(name, listener) {
+      documentListeners.set(name, listener);
+    },
+    removeEventListener(name, listener) {
+      if (documentListeners.get(name) === listener) documentListeners.delete(name);
+    },
+    getSelection() {
+      return { removeAllRanges: () => { nativeSelectionClears += 1; } };
+    },
+    querySelector(selector) {
+      const id = selector.match(/data-block-id="([^"]+)"/)?.[1];
+      return rowById.get(id) || null;
+    },
+    querySelectorAll() {
+      return rows;
+    },
+  };
+  const previousDocument = global.document;
+  const previousCss = global.CSS;
+  const hadDocument = Object.prototype.hasOwnProperty.call(global, 'document');
+  const hadCss = Object.prototype.hasOwnProperty.call(global, 'CSS');
+
+  global.document = fakeDocument;
+  global.CSS = { escape: value => value };
+
+  try {
+    const React = { useEffect: effect => effect() };
+    const { useOutlinerSelectionActions } = loadRendererModule(
+      'src/editor/outliner/useOutlinerSelectionActions.js',
+      { React, window: fakeWindow }
+    );
+    const ref = current => ({ current });
+    const blocks = ids.map(id => ({ id, children: [] }));
+    const selectionRef = ref(null);
+    const selectDragRef = ref(null);
+    let renderedSelection = null;
+    const setSelection = nextSelection => commitOutlinerSelection(
+      selectionRef,
+      value => { renderedSelection = value; },
+      nextSelection
+    );
+    const actions = useOutlinerSelectionActions({
+      blocks,
+      mutate() {},
+      mnWalk() {},
+      mnCloneBlocks: value => structuredClone(value),
+      mnBlocksToMd: () => '',
+      mnMdToBlocks: () => [],
+      mkBlock() {},
+      mnFlatten: sourceBlocks => sourceBlocks.map(item => ({ block: item })),
+      mnLocate() {},
+      MN_BLOCK_CLIPBOARD_TYPE: 'application/x-test-blocks',
+      mnIsClipboardBlock: () => true,
+      mnReidBlocks: value => value,
+      mnNormalizeClipboardMarkdown: value => value,
+      mnLooksLikeBlockMarkdown: () => false,
+      localClipboardRef: ref(null),
+      clipboardHandlersRef: ref(null),
+      selectDragRef,
+      selectionRef,
+      deleteSelectionRef: ref(null),
+      deleteSelection() {},
+      selection: null,
+      onDelete() {},
+      onShowToast() {},
+      keyboardEditActionsRef: ref(null),
+      focusIdRef: ref(null),
+      setSelection,
+      setCtxMenu() {},
+      setFocusId() {},
+      focusScopeBlocks: () => blocks,
+    });
+
+    actions.beginBlockSelection('a', {
+      button: 0,
+      currentTarget: { closest: () => fakeOutliner },
+      target: { closest: () => null },
+    });
+    actions.extendBlockSelection('f');
+
+    // The anchor row moves offscreen while the extent row moves under the
+    // pointer. Viewport-coordinate selection would retain only the last row.
+    rows.forEach((row, index) => {
+      row.rect = { top: -140 + index * 40, bottom: -120 + index * 40, left: 10, right: 210 };
+    });
+    windowListeners.get('mouseup')({ clientY: 70, target: rows.at(-1) });
+
+    assert.deepEqual(renderedSelection.blockIds, ids);
+    assert.strictEqual(selectionRef.current, renderedSelection);
+    assert.equal(nativeSelectionClears, 1);
+    assert.deepEqual(collapsedCaret, [5, 5]);
+  } finally {
+    if (hadDocument) global.document = previousDocument;
+    else delete global.document;
+    if (hadCss) global.CSS = previousCss;
+    else delete global.CSS;
+  }
 });
 
 test('Block area selection can delete as one undoable operation and redo it', () => {

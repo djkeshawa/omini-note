@@ -1,3 +1,5 @@
+import { blockIdsInSelectionRange } from '../../features/editor/outliner/index.js';
+
 const { useEffect: useEffectOE } = React;
 
 function useOutlinerSelectionActions({ blocks, mutate, mnWalk, mnCloneBlocks, mnBlocksToMd, mnMdToBlocks, mkBlock, mnFlatten, mnLocate, MN_BLOCK_CLIPBOARD_TYPE, mnIsClipboardBlock, mnReidBlocks, mnNormalizeClipboardMarkdown, mnLooksLikeBlockMarkdown, localClipboardRef, clipboardHandlersRef, selectDragRef, selectionRef, deleteSelectionRef, deleteSelection, selection, onDelete, onShowToast, keyboardEditActionsRef, focusIdRef, setSelection, setCtxMenu, setFocusId, focusScopeBlocks }) {
@@ -159,16 +161,47 @@ function useOutlinerSelectionActions({ blocks, mutate, mnWalk, mnCloneBlocks, mn
       return { top, left, width: right - left, height: 22 };
     };
   
-    const blockIdsInVerticalRange = (startY, endY) => {
+    const blockRowsForSelection = (outliner = null) => {
+      const scope = outliner || document;
+      return [...scope.querySelectorAll('.mn-block-row[data-block-id]')]
+        .filter(row => !outliner || row.closest('.mn-outliner') === outliner);
+    };
+
+    const blockIdsInVerticalRange = (startY, endY, outliner = null) => {
       const top = Math.min(startY, endY);
       const bottom = Math.max(startY, endY);
-      const rows = [...document.querySelectorAll('.mn-block-row[data-block-id]')];
       const ids = [];
-      for (const row of rows) {
+      for (const row of blockRowsForSelection(outliner)) {
         const rect = row.getBoundingClientRect();
         if (rect.bottom >= top && rect.top <= bottom) ids.push(row.dataset.blockId);
       }
       return orderedBlockIds(ids);
+    };
+
+    const blockIdAtVerticalPosition = (clientY, outliner = null) => {
+      let closestId = null;
+      let closestDistance = Infinity;
+      for (const row of blockRowsForSelection(outliner)) {
+        const rect = row.getBoundingClientRect();
+        const distance = clientY < rect.top
+          ? rect.top - clientY
+          : clientY > rect.bottom
+            ? clientY - rect.bottom
+            : 0;
+        if (distance < closestDistance) {
+          closestId = row.dataset.blockId;
+          closestDistance = distance;
+        }
+      }
+      return closestId;
+    };
+
+    const clearNativeSelection = () => {
+      document.getSelection?.()?.removeAllRanges?.();
+      const active = document.activeElement;
+      if (active?.tagName !== 'TEXTAREA' || typeof active.setSelectionRange !== 'function') return;
+      const caret = active.selectionEnd ?? active.selectionStart ?? 0;
+      active.setSelectionRange(caret, caret);
     };
   
     const replaceSelectedBlocksWith = (insertedBlocks) => {
@@ -259,11 +292,17 @@ function useOutlinerSelectionActions({ blocks, mutate, mnWalk, mnCloneBlocks, mn
   
     const beginBlockSelection = (id, e) => {
       if (e.button !== 0 || e.target.closest('button')) return;
-      selectDragRef.current = { startY: e.clientY, ids: new Set([id]) };
+      selectDragRef.current = {
+        anchorId: id,
+        extentId: id,
+        outliner: e.currentTarget?.closest?.('.mn-outliner') || e.target.closest?.('.mn-outliner') || null,
+        ids: new Set([id]),
+      };
     };
   
     const extendBlockSelection = (id) => {
       if (!selectDragRef.current) return;
+      selectDragRef.current.extentId = id;
       selectDragRef.current.ids.add(id);
     };
   
@@ -272,8 +311,24 @@ function useOutlinerSelectionActions({ blocks, mutate, mnWalk, mnCloneBlocks, mn
         const drag = selectDragRef.current;
         selectDragRef.current = null;
         if (!drag) return;
-        const ids = blockIdsInVerticalRange(drag.startY, e?.clientY ?? drag.startY);
+        const targetRow = e?.target?.closest?.('.mn-block-row[data-block-id]');
+        const targetId = targetRow && (!drag.outliner || targetRow.closest('.mn-outliner') === drag.outliner)
+          ? targetRow.dataset.blockId
+          : null;
+        const extentId = targetId
+          || blockIdAtVerticalPosition(e?.clientY ?? 0, drag.outliner)
+          || drag.extentId;
+        const visibleIds = blockRowsForSelection(drag.outliner)
+          .map(row => row.dataset.blockId)
+          .filter(Boolean);
+        const ids = blockIdsInSelectionRange(
+          visibleIds,
+          drag.anchorId,
+          extentId,
+          drag.ids
+        );
         if (ids.length <= 1) return;
+        clearNativeSelection();
         setSelection({
           kind: 'blocks',
           blockIds: ids,

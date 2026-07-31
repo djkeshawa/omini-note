@@ -722,7 +722,7 @@ function MnBlockRow({
         onChangeKind={onChangeKind}
         onDelete={onDelete}
         onAiAction={onAiAction}
-        aiActive={aiActive}
+        aiActive={aiActive} onBlockMouseDown={onBlockMouseDown} onBlockMouseEnter={onBlockMouseEnter} selectedAsArea={selectedAsArea}
       />
     );
   }
@@ -734,13 +734,13 @@ function MnBlockRow({
         className="mn-block-row"
         data-block-id={block.id}
         data-block-kind="divider"
-        data-block-depth={depth}
+        data-block-depth={depth} data-mn-area-selected={selectedAsArea ? 'true' : undefined}
         onMouseDown={(e) => onBlockMouseDown && onBlockMouseDown(block.id, e)}
         onMouseEnter={() => onBlockMouseEnter && onBlockMouseEnter(block.id)}
         style={{
           marginLeft: indentPx,
           padding: '14px 0',
-          position: 'relative',
+          position: 'relative', ...(selectedAsArea ? { background: T.selBg, outline: `1px solid color-mix(in oklab, ${T.accent || T.ink} 32%, transparent)`, outlineOffset: -1 } : {}),
         }}>
         <div style={{ height: 1, background: T.line, width: '100%' }} />
       </div>

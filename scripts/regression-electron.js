@@ -1856,6 +1856,19 @@ async function editorRows(win) {
   `);
 }
 
+async function editorBlockSelectionState(win) {
+  return await evaluate(win, `
+    [...document.querySelectorAll('.mn-outliner .mn-block-row[data-block-id]')]
+      .map(row => ({
+        id: row.dataset.blockId || '',
+        kind: row.dataset.blockKind || '',
+        active: row.contains(document.activeElement),
+        editing: Boolean(row.querySelector('[data-mn-block-content="editor"]')),
+        selected: row.dataset.mnAreaSelected === 'true',
+      }))
+  `);
+}
+
 async function runScenario(win, area, name, fn) {
   try {
     await fn();
@@ -1942,6 +1955,107 @@ async function waitForEditorLayout(win, label, predicate) {
   return await waitFor(win, `editor layout: ${label}`, async () => {
     const rows = await editorRows(win);
     return { ok: predicate(rows), rows };
+  });
+}
+
+async function dragEditorBlockRangeAcrossScroll(win, startIndex, endIndex) {
+  const pointForRow = async (index) => {
+    const result = await evaluate(win, `
+      (() => {
+        const rows = [...document.querySelectorAll('.mn-outliner .mn-block-row[data-block-id]')];
+        const row = rows[${Number(index)}];
+        if (!row) return { ok: false, rows: rows.length };
+        row.scrollIntoView({ block: 'center' });
+        const rect = row.getBoundingClientRect();
+        return {
+          ok: rect.width > 0 && rect.height > 0,
+          rows: rows.length,
+          x: rect.left + Math.min(120, rect.width / 2),
+          y: rect.top + rect.height / 2,
+        };
+      })()
+    `);
+    if (!result.ok) throw new Error(`Could not position editor row ${index}: ${JSON.stringify(result)}`);
+    return { x: Math.round(result.x), y: Math.round(result.y) };
+  };
+
+  const start = await pointForRow(startIndex);
+  win.webContents.sendInputEvent({ type: 'mouseMove', ...start });
+  await wait(30);
+  win.webContents.sendInputEvent({ type: 'mouseDown', ...start, button: 'left', clickCount: 1 });
+  await wait(30);
+  const end = await pointForRow(endIndex);
+  win.webContents.sendInputEvent({ type: 'mouseMove', ...end, button: 'left' });
+  await wait(60);
+  win.webContents.sendInputEvent({ type: 'mouseUp', ...end, button: 'left', clickCount: 1 });
+}
+
+async function runLargeBlockSelectionDeleteScenario(win) {
+  const blockCount = 60;
+  const body = Array.from({ length: blockCount }, (_, index) => `Selection block ${String(index).padStart(2, '0')}`).join('\n\n');
+  await seedEditorNote(win, {
+    id: 'qe_editor_large_block_selection',
+    title: 'QE Large Block Selection',
+    body,
+    expect: 'Selection block 00',
+  });
+
+  const original = await editorBlockSelectionState(win);
+  if (original.length !== blockCount) throw new Error(`Expected ${blockCount} blocks, got ${original.length}`);
+  const startIndex = 2;
+  const endIndex = blockCount - 3;
+  const expectedSelectedIds = original.slice(startIndex, endIndex + 1).map(row => row.id);
+  const expectedRemainingIds = original
+    .filter((_, index) => index < startIndex || index > endIndex)
+    .map(row => row.id);
+
+  const exerciseDelete = async (keyCode, fromIndex, toIndex) => {
+    await dragEditorBlockRangeAcrossScroll(win, fromIndex, toIndex);
+    await waitFor(win, `${keyCode} range selected across editor scroll`, async () => {
+      const rows = await editorBlockSelectionState(win);
+      const selectedIds = rows.filter(row => row.selected).map(row => row.id);
+      return {
+        ok: JSON.stringify(selectedIds) === JSON.stringify(expectedSelectedIds),
+        selectedIds,
+      };
+    });
+    await pressAccelerator(win, keyCode);
+    await waitFor(win, `${keyCode} removes the complete block range`, async () => {
+      const rows = await editorBlockSelectionState(win);
+      return {
+        ok: JSON.stringify(rows.map(row => row.id)) === JSON.stringify(expectedRemainingIds),
+        rows,
+      };
+    });
+    await pressAccelerator(win, 'Z', ['control']);
+    await waitFor(win, `${keyCode} block deletion undoes in one step`, async () => {
+      const rows = await editorBlockSelectionState(win);
+      return {
+        ok: JSON.stringify(rows.map(row => row.id)) === JSON.stringify(original.map(row => row.id)),
+        rows: rows.length,
+      };
+    });
+  };
+
+  await exerciseDelete('Backspace', startIndex, endIndex);
+  await exerciseDelete('Delete', endIndex, startIndex);
+
+  await dragEditorBlockRangeAcrossScroll(win, 0, blockCount - 1);
+  await pressAccelerator(win, 'Backspace');
+  await waitFor(win, 'deleting every block leaves one focused empty paragraph', async () => {
+    const rows = await editorBlockSelectionState(win);
+    return {
+      ok: rows.length === 1 && rows[0].kind === 'paragraph' && rows[0].editing && rows[0].active,
+      rows,
+    };
+  });
+  await pressAccelerator(win, 'Z', ['control']);
+  await waitFor(win, 'full block deletion undoes in one step', async () => {
+    const rows = await editorBlockSelectionState(win);
+    return {
+      ok: JSON.stringify(rows.map(row => row.id)) === JSON.stringify(original.map(row => row.id)),
+      rows: rows.length,
+    };
   });
 }
 
@@ -3149,6 +3263,9 @@ async function runRegression() {
   });
   await runScenario(win, 'Editor', 'literal markers and slash commands remain predictable after markdown rules', async () => {
     await runMarkdownPredictabilityScenario(win);
+  });
+  await runScenario(win, 'Editor', 'large scrolled block ranges delete completely and undo once', async () => {
+    await runLargeBlockSelectionDeleteScenario(win);
   });
 
   const finalState = await state(win);

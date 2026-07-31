@@ -71,7 +71,7 @@ const mnSpellWords = spellWords;
 const mnRenderSpellCheckedText = renderSpellCheckedText;
 const MnSpellSuggestionMenu = SpellSuggestionMenu;
 
-function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeKind, onDelete, onAiAction, aiActive = false }) {
+function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeKind, onDelete, onAiAction, aiActive = false, onBlockMouseDown, onBlockMouseEnter, selectedAsArea = false }) {
   const [contextPickerOpen, setContextPickerOpen] = useStateOE(false);
   const [contextQuery, setContextQuery] = useStateOE('');
   const beats = Array.isArray(block.beats) && block.beats.length ? block.beats : [''];
@@ -106,9 +106,9 @@ function MnPlotPointsBlock({ block, depth, T, indentPx, allNotes = [], onChangeK
   };
   return (
     <div
-      className="mn-block-row mn-plot-points"
-      data-block-id={block.id}
-      style={{ paddingLeft: indentPx, marginTop: 10, position: 'relative' }}>
+      className="mn-block-row mn-plot-points" data-block-id={block.id} data-block-kind="plot-points" data-block-depth={depth} data-mn-area-selected={selectedAsArea ? 'true' : undefined}
+      onMouseDown={(e) => onBlockMouseDown?.(block.id, e)} onMouseEnter={() => onBlockMouseEnter?.(block.id)}
+      style={{ paddingLeft: indentPx, marginTop: 10, position: 'relative', ...(selectedAsArea ? { background: T.selBg, outline: `1px solid color-mix(in oklab, ${T.accent || T.ink} 32%, transparent)`, outlineOffset: -1 } : {}) }}>
       <div style={{ width: 18, flexShrink: 0 }} />
       <div style={{
         flex: 1,
