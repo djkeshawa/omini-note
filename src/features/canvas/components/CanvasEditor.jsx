@@ -1,13 +1,9 @@
 const { useState: useStateC, useEffect: useEffectC, useRef: useRefC, useMemo: useMemoC } = React;
 const {
-  MN_CANVAS_TOOLS, MN_CANVAS_COLORS, MN_CANVAS_DEFAULT_STYLE, mnCloneCanvasState, mnCanvasId,
-  mnNewCanvas, mnCanvasElement, mnCanvasNoteElement, mnCanvasNotePreview, mnCanvasDate,
-  mnCanvasPreviewElements, mnCanvasCloneElement, mnCanvasBounds, mnCanvasSelectionBounds,
-  mnCanvasMoveElement, mnCanvasAlign, mnCanvasDistribute, mnCanvasIsConnector,
-  mnCanvasAnchorTargetAt, mnCanvasResolveConnector, mnCanvasSyncConnectors, mnCanvasCloneElements,
+  MN_CANVAS_TOOLS, MN_CANVAS_COLORS, MN_CANVAS_DEFAULT_STYLE, mnCloneCanvasState, mnCanvasElement,
+  mnCanvasNoteElement, mnCanvasCloneElement, mnCanvasSelectionBounds, mnCanvasMoveElement, mnCanvasAlign,
+  mnCanvasDistribute, mnCanvasAnchorTargetAt, mnCanvasSyncConnectors, mnCanvasCloneElements,
 } = MN_CANVAS_MODEL;
-import { MnCanvasNotePicker, MnCanvasActionButton, MnCanvasResizeHandles, MnCanvasContextMenu, MnCanvasDeleteDialog } from './CanvasControls.jsx';
-import { MnCanvasElement } from './CanvasElements.jsx';
 import { CanvasToolbar } from './CanvasToolbar.jsx';
 import { CanvasOverlays } from './CanvasOverlays.jsx';
 import { CanvasDialogs } from './CanvasDialogs.jsx';
@@ -15,14 +11,14 @@ import { useCanvasKeyboardShortcuts } from '../useCanvasKeyboardShortcuts.js';
 import { CanvasToolDock } from './CanvasToolDock.jsx';
 import { CanvasStyleBar } from './CanvasStyleBar.jsx';
 import { CanvasZoomCluster } from './CanvasZoomCluster.jsx';
-import { mnCanvasStageBackground } from './CanvasStyles.js';
+import { CanvasStage } from './CanvasStage.jsx';
+import { canvasElementsInRect, canvasEventPoint, canvasPointToScreen, canvasRectFromPoints, canvasResizePatch } from './CanvasEditorGeometry.js';
 
 function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNote, onTextEditingChange, T }) {
   const [draft, setDraft] = useStateC(canvas);
   const [tool, setTool] = useStateC('select');
   const [notePickerOpen, setNotePickerOpen] = useStateC(false);
-  // The note card sits after a divider, as the prototype has it — it places
-  // something that already exists rather than drawing something new.
+  // The note card follows a divider because it places something existing instead of drawing something new.
   const dockTools = useMemoC(() => (
     (notes || []).length
       ? [...MN_CANVAS_TOOLS, { id: 'note', label: 'Note card', divider: true }]
@@ -201,36 +197,11 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     });
   };
 
-  const toCanvasPoint = (event) => {
-    const svg = svgRef.current;
-    const viewport = draftRef.current.viewport || { x: 0, y: 0, scale: 1 };
-    if (svg?.createSVGPoint && svg?.getScreenCTM) {
-      const screenMatrix = svg.getScreenCTM();
-      if (screenMatrix) {
-        const point = svg.createSVGPoint();
-        point.x = event.clientX;
-        point.y = event.clientY;
-        const svgPoint = point.matrixTransform(screenMatrix.inverse());
-        return {
-          x: (svgPoint.x - viewport.x) / viewport.scale,
-          y: (svgPoint.y - viewport.y) / viewport.scale,
-        };
-      }
-    }
-    const rect = svg.getBoundingClientRect();
-    return {
-      x: (event.clientX - rect.left - viewport.x) / viewport.scale,
-      y: (event.clientY - rect.top - viewport.y) / viewport.scale,
-    };
-  };
-
-  const canvasPointToScreen = (point) => {
-    const viewport = draftRef.current.viewport || { x: 0, y: 0, scale: 1 };
-    return {
-      x: point.x * viewport.scale + viewport.x,
-      y: point.y * viewport.scale + viewport.y,
-    };
-  };
+  const toCanvasPoint = (event) => canvasEventPoint(
+    event,
+    svgRef.current,
+    draftRef.current.viewport || { x: 0, y: 0, scale: 1 }
+  );
 
   const currentSelectionIds = () => selectedIds.length ? selectedIds : [];
 
@@ -500,25 +471,8 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
   };
 
   const updateResizeAction = (action, point) => {
-    const original = action.original;
-    if (!original || ['line', 'arrow', 'pen'].includes(original.type)) return;
-    const dx = point.x - action.start.x;
-    const dy = point.y - action.start.y;
-    let x = original.x;
-    let y = original.y;
-    let w = original.w || 1;
-    let h = original.h || 1;
-    if (action.handle.includes('e')) w = Math.max(12, original.w + dx);
-    if (action.handle.includes('s')) h = Math.max(12, original.h + dy);
-    if (action.handle.includes('w')) {
-      x = Math.min(original.x + original.w - 12, original.x + dx);
-      w = Math.max(12, original.w - dx);
-    }
-    if (action.handle.includes('n')) {
-      y = Math.min(original.y + original.h - 12, original.y + dy);
-      h = Math.max(12, original.h - dy);
-    }
-    updateElementById(action.id, { x, y, w, h }, false);
+    const patch = canvasResizePatch(action.original, action.handle, action.start, point);
+    if (patch) updateElementById(action.id, patch, false);
   };
 
   const onPointerMove = (e) => {
@@ -535,12 +489,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     if (action.mode === 'move') updateMoveAction(action, point);
     if (action.mode === 'resize') updateResizeAction(action, point);
     if (action.mode === 'marquee') {
-      setMarquee({
-        x: Math.min(action.start.x, point.x),
-        y: Math.min(action.start.y, point.y),
-        w: Math.abs(point.x - action.start.x),
-        h: Math.abs(point.y - action.start.y),
-      });
+      setMarquee(canvasRectFromPoints(action.start, point));
     }
   };
 
@@ -551,18 +500,10 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
     svgRef.current?.releasePointerCapture?.(e.pointerId);
     if (action.mode === 'marquee') {
       const point = toCanvasPoint(e);
-      const box = {
-        x: Math.min(action.start.x, point.x),
-        y: Math.min(action.start.y, point.y),
-        w: Math.abs(point.x - action.start.x),
-        h: Math.abs(point.y - action.start.y),
-      };
+      const box = canvasRectFromPoints(action.start, point);
       setMarquee(null);
-      if (box && (box.w > 3 || box.h > 3)) {
-        const hits = (draftRef.current.elements || []).filter(el => {
-          const b = mnCanvasBounds(el);
-          return b.x <= box.x + box.w && b.x + b.w >= box.x && b.y <= box.y + box.h && b.y + b.h >= box.y;
-        });
+      if (box.w > 3 || box.h > 3) {
+        const hits = canvasElementsInRect(draftRef.current.elements, box);
         setSelectedIds(hits.map(el => el.id));
       }
       return;
@@ -614,7 +555,7 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
   const activeStroke = selectedElement?.stroke || style.stroke;
   const activeFill = selectedElement?.fill || style.fill;
   const activeStrokeWidth = selectedElement?.strokeWidth || style.strokeWidth;
-  const editingOrigin = editingElement ? canvasPointToScreen({ x: editingElement.x || 0, y: editingElement.y || 0 }) : null;
+  const editingOrigin = editingElement ? canvasPointToScreen({ x: editingElement.x || 0, y: editingElement.y || 0 }, viewport) : null;
   const showSelectionUi = tool === 'select';
   const runToolbarMenuCommand = async (command) => {
     await command?.();
@@ -697,70 +638,29 @@ function MnCanvasEditor({ canvas, onBack, onSave, onDelete, notes = [], onOpenNo
           onSelect={id => (id === 'note' ? setNotePickerOpen(v => !v) : setTool(id))}
           T={T}
         />
-        <svg
-          ref={svgRef}
-          data-mn-canvas-stage="true"
-          onPointerDown={onStageDown}
+        <CanvasStage
+          svgRef={svgRef}
+          onStageDown={onStageDown}
           onPointerMove={onPointerMove}
-          onPointerUp={finishPointerAction}
-          onPointerCancel={finishPointerAction}
-          onPointerLeave={finishPointerAction}
-          onContextMenu={(e) => e.preventDefault()}
+          finishPointerAction={finishPointerAction}
           onWheel={onWheel}
-          width="100%"
-          height="100%"
-          style={{
-            display: 'block',
-            cursor: spaceDown ? 'grab' : tool === 'select' ? 'default' : tool === 'eraser' ? 'not-allowed' : 'crosshair',
-            background: mnCanvasStageBackground(T, 28),
-          }}>
-          <g transform={`translate(${viewport.x || 0} ${viewport.y || 0}) scale(${viewport.scale || 1})`}>
-            {(draft.elements || []).map(el => {
-              const anchored = mnCanvasIsConnector?.(el) && (el.startAnchorId || el.endAnchorId) && mnCanvasResolveConnector;
-              const display = anchored ? { ...el, ...mnCanvasResolveConnector(el, elementById) } : el;
-              return (
-                <MnCanvasElement
-                  key={el.id}
-                  element={display}
-                  note={el.type === 'note' ? noteById.get(el.noteId) : null}
-                  selected={showSelectionUi && selectedIds.includes(el.id)}
-                  onPointerDown={(e) => onElementDown(e, el)}
-                  onDoubleClick={() => (el.type === 'note' ? (onOpenNote && onOpenNote(el.noteId)) : editText(el))}
-                  T={T}
-                />
-              );
-            })}
-            {showSelectionUi && selectedIds.length > 1 && selectionBounds && (
-              <rect
-                x={selectionBounds.x - 6}
-                y={selectionBounds.y - 6}
-                width={selectionBounds.w + 12}
-                height={selectionBounds.h + 12}
-                fill="none"
-                stroke={T.accent}
-                strokeDasharray="5 4"
-                strokeWidth="1.2"
-                pointerEvents="none"
-              />
-            )}
-            {showSelectionUi && selectedIds.length === 1 && selectedElement && !['line', 'arrow', 'pen'].includes(selectedElement.type) && (
-              <MnCanvasResizeHandles bounds={mnCanvasBounds(selectedElement)} onPointerDown={onResizeDown} T={T} />
-            )}
-            {marquee && (
-              <rect
-                x={marquee.x}
-                y={marquee.y}
-                width={marquee.w}
-                height={marquee.h}
-                fill={`color-mix(in oklab, ${T.accent} 10%, transparent)`}
-                stroke={T.accent}
-                strokeDasharray="4 3"
-                strokeWidth="1"
-                pointerEvents="none"
-              />
-            )}
-          </g>
-        </svg>
+          spaceDown={spaceDown}
+          tool={tool}
+          viewport={viewport}
+          elements={draft.elements}
+          elementById={elementById}
+          noteById={noteById}
+          showSelectionUi={showSelectionUi}
+          selectedIds={selectedIds}
+          onElementDown={onElementDown}
+          onOpenNote={onOpenNote}
+          editText={editText}
+          selectionBounds={selectionBounds}
+          selectedElement={selectedElement}
+          onResizeDown={onResizeDown}
+          marquee={marquee}
+          T={T}
+        />
         <CanvasOverlays
           editingElement={editingElement}
           editingOrigin={editingOrigin}

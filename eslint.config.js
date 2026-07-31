@@ -15,7 +15,7 @@ module.exports = [
     ],
   },
   {
-    files: ['main.js', 'main/**/*.js', 'preload.js', 'lib/**/*.js', 'scripts/**/*.js', 'tests/**/*.js', 'src/**/*.js'],
+    files: ['main.js', 'main/**/*.js', 'preload.js', 'lib/**/*.js', 'scripts/**/*.js', 'tests/**/*.js', 'src/**/*.js', 'src/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',
@@ -31,7 +31,7 @@ module.exports = [
       ...js.configs.recommended.rules,
       'no-unused-vars': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
-      'no-undef': 'off',
+      'no-undef': 'error',
       'no-redeclare': 'off',
       'no-useless-assignment': 'off',
       'no-control-regex': 'off',
@@ -57,7 +57,7 @@ module.exports = [
       ...js.configs.recommended.rules,
       'no-unused-vars': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
-      'no-undef': 'off',
+      'no-undef': 'error',
       'no-redeclare': 'off',
       'no-useless-assignment': 'off',
       'no-control-regex': 'off',
@@ -67,7 +67,7 @@ module.exports = [
     },
   },
   {
-    files: ['src/**/*.{js,jsx}'],
+    files: ['src/**/*.{js,jsx,mjs}'],
     languageOptions: {
       sourceType: 'module',
     },

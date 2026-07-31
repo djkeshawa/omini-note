@@ -12,12 +12,12 @@ const { createVaultWatcher, isRelevantVaultFile } = require('../lib/vaultWatcher
 function harness() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-watch-'));
   const seen = [];
-  let emit = () => {};
+  let deliver = () => {};
   const watcher = createVaultWatcher({
     debounceMs: 50,
     onChange: change => seen.push(change),
     watch: (_watchPath, _options, listener) => {
-      emit = listener;
+      deliver = listener;
       return { close() {}, on() {} };
     },
   });
@@ -28,8 +28,9 @@ function harness() {
     watcher,
     write(name, text) {
       fs.writeFileSync(path.join(dir, name), text);
-      emit('change', name);
+      deliver('change', name);
     },
+    emit: (eventType, fileName) => deliver(eventType, fileName),
     settle: () => new Promise(resolve => setTimeout(resolve, 160)),
     cleanup() {
       watcher.close();
@@ -124,6 +125,110 @@ test('closing a vault clears the state that decides what is ours', async () => {
     h.write('note.md', 'changed while unwatched');
     await h.settle();
     assert.equal(h.seen.length, 1, 'a rewatched vault starts with no assumptions');
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('an edit made before our own save is still reported, not swallowed by it', async () => {
+  const h = harness();
+  try {
+    // Somebody else edits a note, and before the debounce closes our autosave
+    // lands on a different one. Against a single vault-wide stamp their edit
+    // looked older than our newest write and vanished — and with autosave every
+    // 500ms that was most of the time the user was typing.
+    h.write('theirs.md', 'their content');
+    await new Promise(resolve => setTimeout(resolve, 12));
+    h.write('ours.md', 'our content');
+    h.watcher.markInternal('v1', ['ours']);
+    await h.settle();
+    assert.equal(h.seen.length, 1);
+    assert.equal(h.seen[0].fileName, 'theirs.md');
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('every note a link-rename cascade wrote counts as ours', async () => {
+  const h = harness();
+  try {
+    h.write('a.md', 'one');
+    h.write('b.md', 'two');
+    h.write('c.md', 'three');
+    h.watcher.markInternal('v1', ['a', 'b', 'c']);
+    await h.settle();
+    assert.deepEqual(h.seen, [], 'a save plus its cascade is one internal mutation');
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('a mutation that cannot name its notes still suppresses vault-wide', async () => {
+  const h = harness();
+  try {
+    h.write('ours.md', 'our content');
+    h.watcher.markInternal('v1');
+    await h.settle();
+    assert.deepEqual(h.seen, [], 'the blunt fallback stays available for callers without note ids');
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('the newest applicable mutation stamp wins across file and vault scopes', async () => {
+  const h = harness();
+  try {
+    h.watcher.markInternal('v1', ['note']);
+    await new Promise(resolve => setTimeout(resolve, 12));
+    h.write('note.md', 'written by a later broad mutation');
+    await new Promise(resolve => setTimeout(resolve, 12));
+    h.watcher.markInternal('v1');
+    await h.settle();
+    assert.deepEqual(h.seen, [], 'a stale file stamp must not override a newer vault-wide stamp');
+
+    h.watcher.markInternal('v1');
+    await new Promise(resolve => setTimeout(resolve, 12));
+    h.write('other.md', 'written by a later named mutation');
+    h.watcher.markInternal('v1', ['other']);
+    await h.settle();
+    assert.deepEqual(h.seen, [], 'a stale vault-wide stamp must not override a newer file stamp');
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('one debounce reports every external Markdown file in a single batch', async () => {
+  const h = harness();
+  try {
+    h.write('one.md', 'one');
+    h.write('two.md', 'two');
+    h.write('ours.md', 'internal');
+    h.watcher.markInternal('v1', ['ours']);
+    await h.settle();
+
+    assert.equal(h.seen.length, 1, 'a vault batch emits once');
+    assert.equal(h.seen[0].fileName, 'one.md', 'legacy consumers still receive the first filename');
+    assert.deepEqual(h.seen[0].fileNames, ['one.md', 'two.md']);
+    assert.deepEqual(h.seen[0].changes, [
+      { fileName: 'one.md', eventType: 'change' },
+      { fileName: 'two.md', eventType: 'change' },
+    ]);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('a watcher event without a filename requests a full-vault refresh', async () => {
+  const h = harness();
+  try {
+    h.emit('change', null);
+    await h.settle();
+
+    assert.equal(h.seen.length, 1);
+    assert.equal(h.seen[0].fullVault, true);
+    assert.equal(h.seen[0].fileName, '');
+    assert.deepEqual(h.seen[0].fileNames, []);
+    assert.deepEqual(h.seen[0].changes, [{ fileName: null, eventType: 'change' }]);
   } finally {
     h.cleanup();
   }

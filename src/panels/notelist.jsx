@@ -1,6 +1,6 @@
 // Middle pane: list of notes (filtered). Click to select.
 import { MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES } from '../editor/blockFeatures.jsx';
-import { mnGetTagColor } from '../shared/theme.jsx';
+import { mnGetTagColor, mnTagHueMap } from '../shared/theme.jsx';
 import { DS_RADIUS, dsButtonStyle, dsGroupLabelStyle, dsMachineStyle, dsPaneWidth } from '../shared/designSystem.js';
 import { DsEmptyState } from '../shared/components/DesignPrimitives.jsx';
 
@@ -252,7 +252,7 @@ function NoteRow({ n, depth = 0, compact = false, meta = '', ctx }) {
             <React.Fragment key={t}>
               <span style={{
                 width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                background: mnGetTagColor(tagHue[t] ?? 240, theme),
+                background: mnGetTagColor(tagHue.get(t) ?? 240, theme),
               }} />
               <span style={{
                 fontFamily: 'var(--mn-ui)', fontSize: 11,
@@ -295,9 +295,7 @@ function MnNoteList({
   const [renameId, setRenameId] = useStateL(null);
   const [renameValue, setRenameValue] = useStateL('');
   const [visibleLimit, setVisibleLimit] = useStateL(160);
-  const tagHue = useMemoL(() => {
-    const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
-  }, [tags]);
+  const tagHue = useMemoL(() => mnTagHueMap(tags), [tags]);
   const novelistList = useMemoL(() => {
     if (!novelistStructure) return null;
     const sourceNotes = allNotes || notes || [];
@@ -305,8 +303,8 @@ function MnNoteList({
     const visibleIds = new Set((notes || []).map(note => note.id));
     const used = new Set();
     const acts = (novelistStructure.acts || []).filter(note => visibleIds.has(note.id));
-    const chapterIdsByAct = {};
-    const sceneIdsByChapter = {};
+    const chapterIdsByAct = Object.create(null);
+    const sceneIdsByChapter = Object.create(null);
     const addUnique = (bucket, parentId, childId) => {
       if (!parentId || !childId) return;
       if (!bucket[parentId]) bucket[parentId] = [];

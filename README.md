@@ -88,8 +88,8 @@ The 10,000-note benchmark uses an isolated temporary vault and enforces a 100 ms
 Run the Electron smoke test:
 
 ```bash
-VISPNOTE_HOME=/tmp/vispnote-smoke npm run smoke:electron
-VISPNOTE_HOME=/tmp/vispnote-regression npm run regression:renderer
+npm run smoke:electron
+npm run regression:renderer
 ```
 
 ## Project Structure

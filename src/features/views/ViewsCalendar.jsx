@@ -60,7 +60,10 @@ function DayChip({ result, onOpen, T }) {
 function mnViewsRenderCalendar({ results, helpers, onOpen, weekStart = 'monday', anchor, onAnchorChange, T }) {
   const { byDate, undated } = mnViewsResultsByDate(results, helpers);
   const days = mnCalendarMonthDays(anchor, weekStart);
-  const labels = MN_WEEK_LABELS[weekStart] || MN_WEEK_LABELS.monday;
+  // Tested against 'sunday' the way calendarPanel and mnCalendarMonthDays do.
+  // Indexing by the raw preference meant a stored value naming an
+  // Object.prototype member resolved to a function, and labels.map threw.
+  const labels = weekStart === 'sunday' ? MN_WEEK_LABELS.sunday : MN_WEEK_LABELS.monday;
   const monthTitle = anchor.toLocaleDateString([], { month: 'long', year: 'numeric' });
   const step = (delta) => {
     const next = new Date(anchor);

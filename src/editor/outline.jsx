@@ -176,13 +176,16 @@ function mnMdToBlocks(md) {
       currentParentList().push(mkBlock({ kind: 'plot-points', content: 'Plot Points', beats, contexts }));
       continue;
     }
-    const codeFence = line.match(/^```\s*([A-Za-z0-9_+#.-]*)\s*$/);
+    const codeFence = line.match(/^(`{3,})\s*([A-Za-z0-9_+#.-]*)\s*$/);
     if (codeFence) {
       flushPara(); listStack = [];
-      const language = mnCleanCodeLanguage(codeFence[1]);
+      const language = mnCleanCodeLanguage(codeFence[2]);
+      // Only a fence at least as long as the opening one closes the block, so
+      // a code block that quotes ``` survives being written out and read back.
+      const closeFence = new RegExp(`^\`{${codeFence[1].length},}\\s*$`);
       const buf = [];
       i++;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
+      while (i < lines.length && !closeFence.test(lines[i])) {
         buf.push(lines[i]);
         i++;
       }
@@ -268,6 +271,19 @@ function mnMdToBlocks(md) {
   return out;
 }
 
+// The fence that will still be the block's own when the note is read back:
+// longer than any line of bare backticks inside it. Those are the only lines
+// the reader can mistake for the close, so ordinary code containing ``` mid
+// line keeps the usual three and existing notes rewrite unchanged.
+function mnCodeFence(content) {
+  let longest = 0;
+  for (const line of String(content || '').split('\n')) {
+    const match = line.match(/^(`{3,})\s*$/);
+    if (match && match[1].length > longest) longest = match[1].length;
+  }
+  return '`'.repeat(Math.max(3, longest + 1));
+}
+
 function mnBlocksToMd(blocks, depth = 0) {
   let out = [];
   let previousBlock = null;
@@ -310,7 +326,8 @@ function mnBlocksToMd(blocks, depth = 0) {
       pushBlock(b, '---');
     } else if (b.kind === 'code') {
       const language = mnCleanCodeLanguage(b.language);
-      pushBlock(b, '```' + language + '\n' + b.content + '\n```');
+      const fence = mnCodeFence(b.content);
+      pushBlock(b, fence + language + '\n' + b.content + '\n' + fence);
     } else if (b.kind === 'table') {
       pushBlock(b, b.content);
     } else if (b.kind === 'plot-points') {

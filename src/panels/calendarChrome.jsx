@@ -205,7 +205,7 @@ function MnItemCard({ item, compact = false, ctx }) {
               {detail.reason && <span style={{ color: overdue ? T.danger : T.accent }}>{detail.reason}</span>}
               {item.remindAt && <span style={{ color: overdue ? T.danger : T.warn }}>{mnCalendarTimeText(item)}</span>}
               {detailTags.slice(0, 3).map(tag => (
-                <span key={tag} style={{ color: mnGetTagColor(tagHue[tag] ?? 240, theme) }}>#{tag}</span>
+                <span key={tag} style={{ color: mnGetTagColor(tagHue.get(tag) ?? 240, theme) }}>#{tag}</span>
               ))}
               {dateDetails.slice(0, 2).map(text => <span key={text}>{text}</span>)}
             </div>

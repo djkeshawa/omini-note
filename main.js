@@ -33,6 +33,7 @@ const { createUpdateService } = require('./main/updateService');
 const { createIpcRuntime } = require('./main/ipcRuntime');
 const { createNovelImportService } = require('./main/novelImportService');
 const { createMarkdownImportService } = require('./main/markdownImportService');
+const { createExternalVaultChangeHandler } = require('./main/externalVaultChangeService');
 const {
   sanitizeAttachmentPayload,
   sanitizeZoteroSearchPayload,
@@ -97,24 +98,24 @@ const noteExportService = createNoteExportService({
 const { spellcheckWords, loadSpellWords } = createSpellcheckService();
 const { wrap, wrapWithEvent } = createIpcRuntime();
 const INITIAL_UPDATE_CHECK_DELAY_MS = 5000;
+const handleExternalVaultChange = createExternalVaultChangeHandler({
+  store,
+  idx,
+  ai,
+  withIndexVaultLock,
+  runOptionalSearchIndexTask,
+  getIndexReadyPromise: () => indexReadyPromise,
+  notifyRenderer: event => {
+    const win = windowLifecycle.getMainWindow();
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    win.webContents.send('mn:vaultFilesChanged', event);
+  },
+  onError: (error, vaultId) => console.error('external vault refresh failed', vaultId, error),
+});
 const vaultWatcher = process.env.VISPNOTE_DISABLE_SINGLE_INSTANCE === '1'
   ? { refresh() {}, close() {}, markInternal() {} }
   : createVaultWatcher({
-    onChange: event => {
-      Promise.resolve(indexReadyPromise).then(async () => {
-        const data = await store.loadVault(event.vaultId);
-        await withIndexVaultLock(event.vaultId, async () => runOptionalSearchIndexTask(
-          'rescan externally changed vault',
-          () => idx.rescanVault(event.vaultId, data.notes)
-        ));
-        const noteId = path.basename(event.fileName || '', path.extname(event.fileName || ''));
-        const note = data.notes.find(item => item.id === noteId);
-        if (note) ai.scheduleEmbed(event.vaultId, note);
-      }).catch(error => console.error('external vault refresh failed', event.vaultId, error));
-      const win = windowLifecycle.getMainWindow();
-      if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
-      win.webContents.send('mn:vaultFilesChanged', event);
-    },
+    onChange: handleExternalVaultChange,
   });
 const {
   isPlainObject,
@@ -238,6 +239,7 @@ const markdownImportService = createMarkdownImportService({
   store,
   attachments,
   getMainWindow: windowLifecycle.getMainWindow,
+  onNoteSaved: (vaultId, note) => vaultWatcher.markInternal(vaultId, [note.id]),
 });
 
 registerVaultNoteHandlers(ipcMain, {
@@ -261,6 +263,7 @@ memoryConnector = registerMemoryHandlers(ipcMain, {
   memoryLinks,
   withIndexVaultLock,
   runOptionalSearchIndexTask,
+  vaultWatcher,
 });
 
 registerWorkspaceHandlers(ipcMain, {
@@ -299,6 +302,8 @@ registerBackupHandlers(ipcMain, {
   markdownImportService,
   exportNote: noteExportService.exportNote,
   backupImportFileLimit: BACKUP_IMPORT_FILE_LIMIT,
+  withIndexVaultLock,
+  vaultWatcher,
 });
 
 registerZoteroHandlers(ipcMain, {

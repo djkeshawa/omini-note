@@ -1,7 +1,7 @@
 import { mnNormalizeWorkflowId, mnNormalizeWorkflowStates, mnWorkflowIsClosed } from '../../editor/blockFeatures.jsx';
 import { SectionHead } from '../../panels/panelShared.jsx';
 import { DS_RADIUS, dsGroupLabelStyle, mnSentenceCase } from '../../shared/designSystem.js';
-import { mnGetTagColor } from '../../shared/theme.jsx';
+import { mnTagHueMap } from '../../shared/theme.jsx';
 
 const { useState: useStateP, useMemo: useMemoP, useEffect: useEffectP, useRef: useRefP } = React;
 import { WorkflowStateManager, ArchivedWorkflowNotes } from './WorkflowSupportPanels.jsx';
@@ -25,9 +25,7 @@ function MnWorkflowPanel({
   const dragItemRef = useRefP(null);
   const suppressCardClickRef = useRefP(false);
   const cardDragCleanupRef = useRefP(null);
-  const tagHue = useMemoP(() => {
-    const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
-  }, [tags]);
+  const tagHue = useMemoP(() => mnTagHueMap(tags), [tags]);
   const countFor = (id) => (workflowItems?.[id] || []).length;
   const total = (workflowStates || []).reduce((sum, state) => {
     return sum + countFor(state.id);

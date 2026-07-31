@@ -1,3 +1,5 @@
+const { createSmartViewYamlHelpers } = require('./smartViewYaml.js');
+
 function createSmartViewHelpers(scope = {}) {
   const SMART_VIEW_FORMAT = scope.SMART_VIEW_FORMAT;
   const SMART_VIEW_FORMATS = scope.SMART_VIEW_FORMATS || [scope.SMART_VIEW_FORMAT];
@@ -648,94 +650,10 @@ function createSmartViewHelpers(scope = {}) {
     };
   }
   
-  function smartViewYamlScalar(value) {
-    if (Array.isArray(value) || smartViewIsPlainObject(value)) return JSON.stringify(value);
-    const text = String(value ?? '');
-    if (!text || /[:#\n\r]/.test(text) || /^\s|\s$/.test(text)) return JSON.stringify(text);
-    return text;
-  }
-  
-  function smartViewParseYamlScalar(value) {
-    const text = String(value || '').trim();
-    if (!text) return '';
-    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
-      return JSON.parse(text);
-    }
-    if (text.startsWith("'") && text.endsWith("'")) return text.slice(1, -1).replace(/''/g, "'");
-    return text;
-  }
-  
-  function smartViewParseDefinitionYaml(text = '') {
-    const root = {};
-    let activeMapKey = null;
-    for (const rawLine of String(text || '').split(/\r?\n/)) {
-      if (!rawLine.trim() || rawLine.trimStart().startsWith('#')) continue;
-      if (/^\t/.test(rawLine)) throw new Error('Smart View YAML cannot use tabs for indentation');
-      const indent = rawLine.match(/^ */)[0].length;
-      const line = rawLine.trim();
-      const match = line.match(/^([A-Za-z][A-Za-z0-9_-]*):(?:\s*(.*))?$/);
-      if (!match) throw new Error(`Unsupported Smart View YAML line: ${line.slice(0, 80)}`);
-      const key = match[1];
-      const value = match[2] || '';
-      if (indent === 0) {
-        if (value === '') {
-          root[key] = {};
-          activeMapKey = key;
-        } else {
-          root[key] = smartViewParseYamlScalar(value);
-          activeMapKey = null;
-        }
-        continue;
-      }
-      if (indent < 2 || !activeMapKey || !smartViewIsPlainObject(root[activeMapKey])) {
-        throw new Error(`Unsupported Smart View YAML indentation near ${key}`);
-      }
-      root[activeMapKey][key] = smartViewParseYamlScalar(value);
-    }
-    return root;
-  }
-  
-  function smartViewSerializeDefinition(definition = {}, options = {}) {
-    const format = typeof options === 'string' ? options : options.format || 'json';
-    const saved = smartViewValidateSavedDefinition(definition);
-    if (format === 'yaml' || format === 'yml') {
-      const lines = [
-        `format: ${smartViewYamlScalar(saved.format)}`,
-        `id: ${smartViewYamlScalar(saved.id)}`,
-        `title: ${smartViewYamlScalar(saved.title)}`,
-        `type: ${smartViewYamlScalar(saved.type)}`,
-        'filters:',
-      ];
-      Object.entries(saved.filters).forEach(([key, value]) => {
-        if (value === '' || (Array.isArray(value) && !value.length)) return;
-        lines.push(`  ${key}: ${smartViewYamlScalar(value)}`);
-      });
-      lines.push('sort:');
-      lines.push(`  field: ${smartViewYamlScalar(saved.sort.field)}`);
-      lines.push(`  direction: ${smartViewYamlScalar(saved.sort.direction)}`);
-      lines.push(`limit: ${saved.limit}`);
-      lines.push(`layout: ${smartViewYamlScalar(saved.layout)}`);
-      if (saved.group) {
-        // group is a nested map, which the two-level parser already handles.
-        lines.push('group:');
-        lines.push(`  by: ${smartViewYamlScalar(saved.group.by)}`);
-        lines.push(`  direction: ${smartViewYamlScalar(saved.group.direction)}`);
-      }
-      // columns goes through the scalar writer, which JSON-stringifies arrays.
-      if (saved.columns) lines.push(`columns: ${smartViewYamlScalar(saved.columns)}`);
-      return `${lines.join('\n')}\n`;
-    }
-    return JSON.stringify(saved, null, 2);
-  }
-  
-  function smartViewParseDefinitionText(text = '', fileName = 'smart-view.json') {
-    const clean = String(text || '').trim();
-    const name = String(fileName || '').toLowerCase();
-    const raw = name.endsWith('.yaml') || name.endsWith('.yml') || (!clean.startsWith('{') && !clean.startsWith('['))
-      ? smartViewParseDefinitionYaml(clean)
-      : JSON.parse(clean);
-    return smartViewValidateSavedDefinition(raw);
-  }
+  const { smartViewYamlScalar, smartViewParseYamlScalar, smartViewParseDefinitionYaml,
+    smartViewSerializeDefinition, smartViewParseDefinitionText } = createSmartViewYamlHelpers({
+    smartViewIsPlainObject, smartViewValidateSavedDefinition,
+  });
   
   function smartViewParseEmbedBlock(text = '', savedViews = []) {
     const raw = String(text || '');

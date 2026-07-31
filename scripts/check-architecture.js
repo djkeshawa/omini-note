@@ -18,7 +18,7 @@ function sourceFiles(target) {
       for (const name of fs.readdirSync(file)) visit(path.join(file, name));
       return;
     }
-    if (/\.(?:js|jsx)$/.test(file)) result.push(file);
+    if (/\.(?:js|jsx|mjs)$/.test(file)) result.push(file);
   };
   visit(target);
   return result;
@@ -31,6 +31,7 @@ const checkedFiles = [
   ...rendererFiles,
   ...sourceFiles(path.join(ROOT, 'lib')),
 ];
+const lineCounts = new Map();
 
 for (const folder of ['src/features', 'src/platform', 'src/shared']) {
   if (!fs.existsSync(path.join(ROOT, folder))) failures.push(`Missing architecture folder: ${folder}`);
@@ -39,14 +40,26 @@ for (const folder of ['src/features', 'src/platform', 'src/shared']) {
 for (const file of checkedFiles) {
   const name = posix(file);
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).length;
+  lineCounts.set(name, lines);
+  const allowance = Number(baseline.lineBudgets?.[name]) || 0;
   if (lines > 500) {
     const reason = baseline.softLimitExceptions?.[name];
-    warnings.push(reason ? `${name}: ${lines} lines (documented exception: ${reason})` : `${name}: ${lines} lines`);
+    if (!allowance) failures.push(`${name} exceeds the 500-line soft limit without a legacy line budget (${lines})`);
+    else if (lines > allowance) failures.push(`${name} grew beyond its legacy line budget (${lines} > ${allowance})`);
+    const details = [
+      reason ? `documented exception: ${String(reason).replace(/[.;]\s*$/, '')}` : '',
+      allowance ? `no-growth budget ${allowance}` : '',
+    ].filter(Boolean).join('; ');
+    warnings.push(`${name}: ${lines} lines${details ? ` (${details})` : ''}`);
   }
   if (lines <= 800) continue;
-  const allowance = baseline.lineBudgets[name];
   if (!allowance) failures.push(`${name} exceeds the 800-line hard limit (${lines})`);
-  else if (lines > allowance) failures.push(`${name} grew beyond its legacy line budget (${lines} > ${allowance})`);
+}
+
+for (const name of Object.keys(baseline.lineBudgets || {})) {
+  const lines = lineCounts.get(name);
+  if (lines == null) warnings.push(`Legacy line budget can be removed because the file is gone: ${name}`);
+  else if (lines <= 500) warnings.push(`Legacy line budget can be removed because the file is ${lines} lines: ${name}`);
 }
 
 const directBridgeFiles = new Set();
@@ -77,7 +90,7 @@ const graph = new Map();
 function resolveImport(file, request) {
   if (!request.startsWith('.')) return null;
   const base = path.resolve(path.dirname(file), request);
-  for (const candidate of [base, `${base}.js`, `${base}.jsx`, path.join(base, 'index.js')]) {
+  for (const candidate of [base, `${base}.js`, `${base}.jsx`, `${base}.mjs`, path.join(base, 'index.js')]) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
   }
   return null;

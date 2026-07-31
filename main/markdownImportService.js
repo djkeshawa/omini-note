@@ -7,6 +7,7 @@ const {
   pathKey,
   rewriteAttachmentLinks,
   rewriteImportedLinks,
+  wikiLinkSourceNames,
 } = require('../lib/import/markdownImportModel');
 const { normalizeImportPreview } = require('../src/shared/importPreviewModel');
 
@@ -21,7 +22,10 @@ const DEFAULT_LIMITS = Object.freeze({
 });
 
 function createMarkdownImportService(deps) {
-  const { fs, path, crypto, dialog, store, attachments, getMainWindow } = deps;
+  const {
+    fs, path, crypto, dialog, store, attachments, getMainWindow,
+    onNoteSaved = () => {},
+  } = deps;
   const fsp = fs.promises;
   const limits = { ...DEFAULT_LIMITS, ...(deps.limits || {}) };
   const sessions = new Map();
@@ -195,6 +199,7 @@ function createMarkdownImportService(deps) {
       items.push({
         ...source,
         ...document,
+        wikiLinkSourceNames: wikiLinkSourceNames(document.sourceTitle, source.filePath),
         title,
         collision: title !== document.sourceTitle,
         id: importedNoteId(source.filePath, hashBuffer(bytes), usedIds),
@@ -208,12 +213,18 @@ function createMarkdownImportService(deps) {
     const titleByPath = new Map(items.map(item => [pathKey(item.filePath), item.title]));
     const sourceTitleCounts = new Map();
     for (const item of items) {
-      const key = item.sourceTitle.toLocaleLowerCase();
-      sourceTitleCounts.set(key, (sourceTitleCounts.get(key) || 0) + 1);
+      for (const key of item.wikiLinkSourceNames) {
+        sourceTitleCounts.set(key, (sourceTitleCounts.get(key) || 0) + 1);
+      }
     }
-    const renamedTitles = new Map(items
-      .filter(item => item.title !== item.sourceTitle && sourceTitleCounts.get(item.sourceTitle.toLocaleLowerCase()) === 1)
-      .map(item => [item.sourceTitle.toLocaleLowerCase(), item.title]));
+    const renamedTitles = new Map();
+    for (const item of items) {
+      for (const key of item.wikiLinkSourceNames) {
+        if (sourceTitleCounts.get(key) === 1 && key !== item.title.toLocaleLowerCase()) {
+          renamedTitles.set(key, item.title);
+        }
+      }
+    }
 
     const inspectedAttachments = new Map();
     let attachmentBytes = 0;
@@ -353,6 +364,10 @@ function createMarkdownImportService(deps) {
         }, { expectedRevision: null });
         createdNoteIds.push(item.id);
         savedNotes.push(saved);
+        // Imports can outlast the watcher debounce. Announce each completed
+        // write immediately rather than waiting for the whole batch, or early
+        // files are mistaken for external edits while later files are saved.
+        await onNoteSaved(vaultId, saved);
       }
     } catch (error) {
       await rollbackCreatedFiles(vaultId, createdNoteIds, createdAttachmentPaths);

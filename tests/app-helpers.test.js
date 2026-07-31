@@ -966,7 +966,7 @@ test('App helpers collect reminders and workflow notes without renderer state', 
   assert.ok(todayAiResult.sources.some(source => source.title === 'Today note'));
 
   const workflow = appHelpers.collectWorkflowNotes([
-    { id: 'n1', title: 'Draft', tags: ['project'], body: 'status:: DRAFT\n# Draft\n- Body', modifiedAt: '2026-05-06T00:00:00.000Z' },
+    { id: 'n1', title: 'Draft', tags: ['project'], body: 'status:: DRAFT\nconstructor:: owner\ntoString:: label\nhasOwnProperty:: safe\n# Draft\n- Body', modifiedAt: '2026-05-06T00:00:00.000Z' },
     { id: 'n2', title: 'Archived', tags: [], body: 'status:: DONE\nClosed', workflowArchived: true },
     { id: 'n3', title: 'No status', tags: [], body: 'Body' },
   ], [{ id: 'DRAFT' }, { id: 'DONE' }]);
@@ -975,6 +975,10 @@ test('App helpers collect reminders and workflow notes without renderer state', 
   assert.deepEqual([...workflow.noteIdsByState.DRAFT], ['n1']);
   assert.deepEqual(workflow.archivedNotes.map(note => note.id), ['n2']);
   assert.equal(workflow.byState.DRAFT[0].text, 'Body');
+  assert.equal(Object.getPrototypeOf(workflow.byState.DRAFT[0].properties), null);
+  assert.equal(workflow.byState.DRAFT[0].properties.constructor, 'owner');
+  assert.equal(workflow.byState.DRAFT[0].properties.toString, 'label');
+  assert.equal(workflow.byState.DRAFT[0].properties.hasOwnProperty, 'safe');
 });
 
 test('App helpers normalize novelist notes and body properties', () => {
@@ -1398,6 +1402,16 @@ test('view table columns read real fields and only save a sort the vault accepts
   assert.equal(c.mnViewsSortIsStorable('words'), false);
   assert.equal(c.mnViewsSortIsStorable('priority'), false);
   assert.equal(c.mnViewsSortField('priority'), '');
+
+  // Column keys are discovered from note bodies, so a note carrying
+  // `constructor:: x` makes a column named after an Object.prototype member.
+  // Those must miss the lookup like any other unknown key — reporting them as
+  // storable saved a function where a field name belongs, and the preference
+  // sanitizer then rejected the entire patch.
+  for (const key of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+    assert.equal(c.mnViewsSortIsStorable(key), false, `${key} must not be storable`);
+    assert.equal(c.mnViewsSortField(key), '', `${key} must have no sort field`);
+  }
 
   // A saved definition round-trips into the table's own sort shape.
   assert.deepEqual(c.mnViewsSortFromDefinition({ sort: { field: 'reminder', direction: 'desc' } }), { key: 'due', direction: 'desc' });
@@ -1883,4 +1897,71 @@ test('a saved view opens in the layout it was saved with', async () => {
   assert.equal(presentation(null), 'list');
   assert.equal(presentation({ layout: 'TABLE' }), 'table', 'layout match is case-insensitive');
   assert.equal(presentation({ layout: 'nonsense' }), 'list');
+});
+
+test('Smart View text that YAML could reinterpret survives export and import', () => {
+  // The reader recognises a structured value by its first character, so a bare
+  // [WIP] was handed to JSON.parse: the export threw on import, and [1,2] came
+  // back as an array flattened to "1,2".
+  for (const title of [
+    '[WIP]', '[[Note]]', '[1,2]', '{note}', "'quoted'", '"quoted"',
+    'true', 'null', 'yes', '1e3', '.nan', '2026-08-01', '*alias', '@owner', '- item', 'Plain title',
+  ]) {
+    const saved = appHelpers.smartViewValidateSavedDefinition({
+      id: 'bracket_view', title, type: 'notes',
+      filters: { titleContains: title }, sort: { field: 'modified', direction: 'desc' }, limit: 50,
+    });
+    const yaml = appHelpers.smartViewSerializeDefinition(saved, 'yaml');
+    const parsed = appHelpers.smartViewParseDefinitionText(yaml, 'bracket-view.yaml');
+    assert.equal(parsed.title, title, `${JSON.stringify(title)} must round-trip through YAML`);
+    assert.equal(parsed.filters.titleContains, title);
+    if (title !== 'Plain title') {
+      assert.match(yaml, new RegExp(`title: ${JSON.stringify(title).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    }
+  }
+});
+
+test('legacy Smart View YAML parses structured values only for structured fields', () => {
+  for (const title of ['[WIP]', '[1,2]', '{"owner":"sam"}']) {
+    const yaml = `format: vispnote.smartView.v2\nid: v_old\ntitle: ${title}\ntype: notes\nfilters:\n  titleContains: ${title}\n`;
+    const parsed = appHelpers.smartViewParseDefinitionText(yaml, 'old.yaml');
+    assert.equal(parsed.title, title, `${title} remains title text`);
+    assert.equal(parsed.filters.titleContains, title, `${title} remains filter text`);
+  }
+
+  const withStructuredFields = [
+    'format: vispnote.smartView.v2',
+    'id: v_a',
+    'title: T',
+    'type: notes',
+    'filters:',
+    '  tags: ["work","home"]',
+    '  properties: [{"key":"priority","value":"high"}]',
+    'columns: ["__proto__","owner"]',
+  ].join('\n');
+  const parsed = appHelpers.smartViewParseDefinitionText(withStructuredFields, 'structured.yaml');
+  assert.deepEqual(parsed.filters.tags, ['work', 'home']);
+  assert.deepEqual(parsed.filters.properties, [{ key: 'priority', values: ['high'], op: 'is' }]);
+  assert.deepEqual(parsed.columns, ['__proto__', 'owner']);
+});
+
+test('a note whose id names an Object.prototype member still builds the outline', () => {
+  // A note id is its file name for anything hand-made or synced in, and
+  // constructor.md is an ordinary file to find in a vault. Keyed into a plain
+  // object those ids already resolved to prototype members, so the outline
+  // threw `bucket[parentId].includes is not a function` and took the Novelist
+  // panel with it — or, for __proto__, quietly dropped the note.
+  for (const actId of ['n_act', 'constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
+    const structure = appHelpers.buildNovelistStructure([
+      { id: actId, title: 'Act One', tags: ['novel-act'], body: '' },
+      { id: 'n_ch', title: 'Chapter 1', tags: ['novel-chapter'], body: 'act:: [[Act One]]' },
+      { id: 'n_sc', title: 'Scene 1', tags: ['novel-scene'], body: 'chapter:: [[Chapter 1]]' },
+    ]);
+    assert.equal(structure.acts.length, 1, `${actId} must still be an act`);
+    assert.equal(structure.chapters.length, 1, `${actId} must not lose its chapter`);
+    assert.equal(structure.scenes.length, 1, `${actId} must not lose its scene`);
+    assert.equal(structure.acts[0].id, actId);
+    assert.deepEqual(structure.pathByNoteId[actId].map(note => note.id), [actId]);
+    assert.equal(Object.getPrototypeOf(structure.pathByNoteId), null);
+  }
 });

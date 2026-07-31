@@ -164,3 +164,37 @@ test('Specialized markdown blocks keep current parse and serialization behavior'
   assert.match(roundTrip, /```javascript\nconst answer = 42;\n```/);
   assert.match(roundTrip, /::: plot-points\n- Find the key\n  - context:: \[\[Alice\]\]\n:::/);
 });
+
+test('a code block that quotes a fence survives being written out and read back', () => {
+  const outlineApi = loadOutlineForTest();
+
+  // Writing about markdown inside a code block is ordinary in a notes app. A
+  // fixed three-backtick fence let the inner ``` close the block early, so the
+  // note came back as three blocks with the tail of the code turned into prose.
+  for (const content of [
+    'Here is a fence:\n```\nend',
+    '```',
+    'line1\n```\nline2',
+    'nested\n````\ndeeper\n```\nx',
+  ]) {
+    const markdown = outlineApi.mnBlocksToMd([outlineApi.mkBlock({ kind: 'code', content, language: 'javascript' })]);
+    const blocks = outlineApi.mnMdToBlocks(markdown);
+    assert.equal(blocks.length, 1, `${JSON.stringify(content)} must stay one block`);
+    assert.equal(blocks[0].kind, 'code');
+    assert.equal(blocks[0].content, content);
+  }
+});
+
+test('code blocks with no bare fence inside keep the usual three backticks', () => {
+  const outlineApi = loadOutlineForTest();
+
+  // Widening the fence for every block would rewrite every existing note, so
+  // only a line of nothing but backticks counts as needing a longer one.
+  for (const markdown of [
+    '```javascript\nconst a = 1;\n```',
+    '```\nplain\n```',
+    '```javascript\nconst s = "```";\n```',
+  ]) {
+    assert.equal(outlineApi.mnBlocksToMd(outlineApi.mnMdToBlocks(markdown)), markdown);
+  }
+});

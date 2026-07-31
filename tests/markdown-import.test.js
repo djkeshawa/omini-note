@@ -36,7 +36,11 @@ function serviceFor(root, overrides = {}) {
   const store = {
     ROOT: path.join(root, 'vault-root'),
     async loadVault() { return { notes: [{ id: 'existing', title: 'Project' }] }; },
-    async saveNote(_vaultId, note) { savedNotes.push(note); return { ...note, modifiedAt: '2026-07-13T00:00:00.000Z' }; },
+    async saveNote(_vaultId, note) {
+      const persisted = { ...note, title: String(note.title || 'Untitled').trim().slice(0, 240) };
+      savedNotes.push(persisted);
+      return { ...persisted, modifiedAt: '2026-07-13T00:00:00.000Z' };
+    },
     async loadConfig() { return { vaults: [{ id: 'v1', slug: 'personal' }] }; },
     ...overrides.store,
   };
@@ -54,6 +58,7 @@ function serviceFor(root, overrides = {}) {
   };
   const service = createMarkdownImportService({
     fs, path, crypto, store, attachments, dialog, getMainWindow: () => null,
+    onNoteSaved: overrides.onNoteSaved,
   });
   return { service, savedNotes, savedAttachments };
 }
@@ -127,6 +132,55 @@ test('Markdown import refuses apply when a previewed source changes', async () =
   }
 });
 
+test('long collision titles stay unique on disk and links use that canonical title', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-markdown-long-title-'));
+  const longTitle = 'L'.repeat(240);
+  fs.writeFileSync(path.join(root, 'Target.md'), `# ${longTitle}\n`);
+  fs.writeFileSync(path.join(root, 'Reference.md'), '[Long target](Target.md)\n');
+  const hooked = [];
+  try {
+    const { service, savedNotes } = serviceFor(root, {
+      store: {
+        async loadVault() { return { notes: [{ id: 'existing', title: longTitle }] }; },
+      },
+      onNoteSaved: (vaultId, note) => hooked.push([vaultId, note.id]),
+    });
+    const previewed = await service.preview({ vaultId: 'v1', sourceType: 'folder' });
+    const targetPreview = previewed.preview.items.find(item => item.source === 'Target.md');
+    assert.equal(targetPreview.title.length, 240);
+    assert.match(targetPreview.title, / \(2\)$/);
+    assert.notEqual(targetPreview.title, longTitle);
+
+    await service.apply({ vaultId: 'v1', token: previewed.preview.token });
+    const target = savedNotes.find(note => note.title === targetPreview.title);
+    const reference = savedNotes.find(note => note.title === 'Reference');
+    assert.equal(target.title, targetPreview.title, 'the allocated title survives persistence unchanged');
+    assert.match(reference.body, new RegExp(`\\[\\[${target.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\|Long target\\]\\]`));
+    assert.deepEqual(hooked.map(([, noteId]) => noteId).sort(), savedNotes.map(note => note.id).sort());
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Obsidian filename links follow an imported note whose heading is sanitized', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-markdown-wiki-title-'));
+  fs.writeFileSync(path.join(root, 'Target.md'), '# Setup | Windows\n');
+  fs.writeFileSync(path.join(root, 'Reference.md'), 'See [[Target]] and keep [[Setup | Windows]] as an alias link.\n');
+  try {
+    const { service, savedNotes } = serviceFor(root);
+    const previewed = await service.preview({ vaultId: 'v1', sourceType: 'folder' });
+    await service.apply({ vaultId: 'v1', token: previewed.preview.token });
+
+    const target = savedNotes.find(note => note.title === 'Setup Windows');
+    const reference = savedNotes.find(note => note.title === 'Reference');
+    assert.ok(target);
+    assert.match(reference.body, /\[\[Setup Windows\]\]/);
+    assert.match(reference.body, /\[\[Setup \| Windows\]\]/, 'ambiguous alias syntax is left untouched');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('Markdown import refuses apply when vault collisions change after preview', async () => {
   const root = makeFixture();
   let loads = 0;
@@ -166,4 +220,29 @@ test('Markdown import is wired through preload, settings, and an accessible prev
   assert.match(settings, /Choose folder/);
   assert.match(dialog, /aria-modal="true"/);
   assert.match(dialog, /Source files stay untouched/);
+});
+
+test('an imported title stays addressable by the wiki links pointing at it', () => {
+  // Wiki-link syntax in a title makes the note unreachable: the reader stops at
+  // the first `[`, `]`, `|` or `#`, so `# Setup | Windows` produced
+  // `[[Setup | Windows|the guide]]` which resolves to "Setup " — a note that
+  // does not exist. Every link to it was dead the moment it was written.
+  const WIKI_LINK_RE = /\[\[([^\]|#\n]+)((?:#[^\]\n|]+)?(?:\|[^\]\n]+)?)\]\]/;
+  for (const heading of ['Setup | Windows', 'Q1 #goals', 'Plan [draft]', 'Normal Title']) {
+    const title = model.cleanTitle(heading, 'Imported note');
+    const titleByPath = new Map([[model.pathKey('/vault/b.md'), title]]);
+    const body = model.rewriteImportedLinks(
+      'See [the guide](b.md).',
+      '/vault/a.md',
+      '/vault',
+      titleByPath,
+      new Map()
+    );
+    const match = body.match(WIKI_LINK_RE);
+    assert.ok(match, `${heading} must still produce a wiki link`);
+    assert.equal(match[1], title, `${heading} must be reachable by the link written for it`);
+  }
+
+  // A title made only of syntax has nothing left, so it takes the fallback.
+  assert.equal(model.cleanTitle('#|[]', 'Imported note'), 'Imported note');
 });

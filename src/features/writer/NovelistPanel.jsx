@@ -7,8 +7,10 @@ import { buildNovelistStatusModel } from './novelistStatusModel.js';
 import { NovelistStatusSection, NovelistAiConfigurationSection } from './NovelistSections.jsx';
 import { NovelistPanelView } from './NovelistPanelView.jsx';
 import { TypeLine } from './TypeLine.jsx';
+import { NOVELIST_STRUCTURE_TAGS, buildNovelistTemplates, buildSupportingTypes,
+  nextNovelistOrder, normalizeSupportingTypeTag, readNovelistOrder, uniqueNovelistTitle } from './novelistPanelModel.js';
 import { mnPanelButton, mnPanelMiniButton, mnPanelInputStyle, mnPanelTextareaStyle, mnPanelMenuItem } from '../../shared/panels/panelStyles.js';
-const { bodyPropertyValue: mnBodyPropertyValue, noteOrderValue: mnNoteOrderValue, setBodyProperty: mnSetBodyProperty } = createNovelistHelpers();
+const { bodyPropertyValue: mnBodyPropertyValue, noteOrderValue: mnNoteOrderValue } = createNovelistHelpers();
 
 function MnNovelistPanel({
   notes, novelistNotes, tags, vaultId = '', workflowStates, workflowItems,
@@ -74,105 +76,15 @@ function MnNovelistPanel({
   const childrenByChapterId = novelistStructure?.childrenByChapterId || {};
   const parentByChapterId = novelistStructure?.parentByChapterId || {};
   const parentBySceneId = novelistStructure?.parentBySceneId || {};
-  const structureTagNames = new Set(['novel-act', 'novel-chapter', 'novel-scene']);
-  const supportTypeDefaults = {
-    'novel-character': {
-      label: 'Character',
-      sectionTitle: 'Characters',
-      body: 'want:: \nneed:: \nsecret:: \nchange:: ',
-    },
-    'novel-location': {
-      label: 'Location',
-      sectionTitle: 'Locations',
-      body: 'mood:: \nsensory-details:: \nrules-or-constraints:: ',
-    },
-    'novel-plot': {
-      label: 'Plot Thread',
-      sectionTitle: 'Plot Threads',
-      body: 'status:: IDEA\n- Promise\n- Setup\n- Payoff',
-    },
-    'novel-research': {
-      label: 'Research',
-      sectionTitle: 'Research',
-      body: 'source:: \n## Notes\n- ',
-    },
-    'novel-revision': {
-      label: 'Revision Note',
-      sectionTitle: 'Revision Notes',
-      body: 'status:: IDEA\n## Notes\n- ',
-    },
-  };
-  const titleFromTag = (tagName) => String(tagName || '')
-    .replace(/^novel-/, '')
-    .split('-')
-    .filter(Boolean)
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || 'Note';
-  const pluralize = (label) => {
-    if (/s$/i.test(label)) return label;
-    if (/y$/i.test(label)) return `${label.slice(0, -1)}ies`;
-    return `${label}s`;
-  };
-  const normalizeSupportingTypeTag = (raw) => {
-    const clean = String(raw || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]+/g, '').replace(/^-+|-+$/g, '');
-    if (!clean) return '';
-    return clean.startsWith('novel-') ? clean : `novel-${clean}`;
-  };
-  const supportingTypes = (tags || [])
-    .filter(tag => tag?.name?.startsWith('novel-') && !structureTagNames.has(tag.name))
-    .filter((tag, index, arr) => arr.findIndex(item => item.name === tag.name) === index)
-    .map(tag => {
-      const fallbackLabel = titleFromTag(tag.name);
-      const defaults = supportTypeDefaults[tag.name] || {};
-      return {
-        tag: tag.name,
-        label: defaults.label || fallbackLabel,
-        sectionTitle: defaults.sectionTitle || pluralize(fallbackLabel),
-        body: defaults.body || '## Notes\n- ',
-      };
-    });
+  const structureTagNames = new Set(NOVELIST_STRUCTURE_TAGS);
+  const supportingTypes = buildSupportingTypes(tags);
   const supportingTotal = supportingTypes.reduce((sum, type) => sum + byTag(type.tag).length, 0);
 
-  const uniqueTitle = (base) => {
-    const existing = new Set((notes || []).map(note => String(note.title || '').toLowerCase()));
-    if (!existing.has(base.toLowerCase())) return base;
-    for (let i = 2; i < 1000; i++) {
-      const next = `${base} ${i}`;
-      if (!existing.has(next.toLowerCase())) return next;
-    }
-    return `${base} ${Date.now().toString(36)}`;
-  };
-  const readOrder = (note) => {
-    if (typeof mnNoteOrderValue === 'function') return mnNoteOrderValue(note);
-    const raw = String(note?.body || '').match(/^\s*-?\s*order::\s*(.*)$/im)?.[1];
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-  const setBodyProperty = (body, key, value) => {
-    if (typeof mnSetBodyProperty === 'function') return mnSetBodyProperty(body, key, value);
-    const source = String(body || '');
-    const re = new RegExp(`^\\s*(?:-\\s*)?${key}::\\s*.*$`, 'im');
-    if (re.test(source)) return source.replace(re, () => `${key}:: ${value}`.trimEnd());
-    return `${key}:: ${value}\n${source}`.trimEnd();
-  };
-  const nextOrder = (kind, parent = null) => {
-    const values = (items, step, base) => {
-      let maxOrder = null;
-      for (const item of items) {
-        const value = readOrder(item);
-        if (value == null) continue;
-        maxOrder = maxOrder == null ? value : Math.max(maxOrder, value);
-      }
-      return maxOrder != null ? maxOrder + step : base + step;
-    };
-    if (kind === 'act') return values(acts, 100, 0);
-    if (kind === 'chapter') {
-      const base = readOrder(parent) ?? 100;
-      return values(parent ? childrenForAct(parent) : chapters, 10, base);
-    }
-    const base = readOrder(parent) ?? 100;
-    return values(parent ? childrenForChapter(parent) : scenes, 1, base);
-  };
+  const uniqueTitle = (base) => uniqueNovelistTitle(base, notes);
+  const readOrder = (note) => readNovelistOrder(note, mnNoteOrderValue);
+  const nextOrder = (kind, parent = null) => nextNovelistOrder(kind, parent, {
+    acts, chapters, scenes, childrenForAct, childrenForChapter, readOrder,
+  });
   const createChapterForAct = (act) => {
     if (!act) return;
     const title = uniqueTitle(`${act.title || 'Act'} Chapter`);
@@ -250,12 +162,7 @@ function MnNovelistPanel({
     setNoteMenu({ note, x: e.clientX, y: e.clientY });
   };
 
-  const templates = [
-    { title: 'Act', tags: ['novel-act'], body: 'status:: OUTLINE\norder:: \npurpose:: \n## Chapters' },
-    { title: 'Chapter', tags: ['novel-chapter'], body: 'status:: OUTLINE\norder:: \nact:: \n## Scenes' },
-    { title: 'Scene', tags: ['novel-scene'], body: 'status:: DRAFT\norder:: \nchapter:: \npov:: \nsetting:: \npurpose:: \n::: plot-points\n- Opening beat\n:::\nDraft the scene here.' },
-    ...supportingTypes.map(type => ({ title: type.label, tags: [type.tag], body: type.body })),
-  ];
+  const templates = buildNovelistTemplates(supportingTypes);
   const updateAiConfig = (updater) => {
     setAiConfig(current => {
       const next = mnNormalizeNovelistAiConfig(typeof updater === 'function' ? updater(current) : updater);
@@ -367,12 +274,8 @@ function MnNovelistPanel({
     ) : null
   );
 
-  // These structure components are declared inline deliberately, unlike the
-  // hoisted rows elsewhere. This panel re-renders only on direct interaction
-  // (collapse, menus) — never per keystroke — and contains no text inputs, so
-  // the remount-per-render defect class (caret jumps, dropped drags) cannot
-  // occur here. Hoisting would mean threading ~15 closures through five
-  // interdependent components for no observable gain.
+  // These inline structure components contain no text inputs, so remounting
+  // cannot disturb caret or drag interactions.
   const StructureNoteButton = ({ note, label, linkedTo, extraParent, count, depth = 0 }) => (
     <button
       onClick={(e) => { e.stopPropagation(); onOpen && onOpen(note.id); }}

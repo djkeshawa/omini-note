@@ -236,7 +236,7 @@ test('Outliner chrome stays out of the text column and off childless rows', () =
 });
 
 test('a block ignores vault-wide churn unless it renders other notes', async () => {
-  const { blockRowMemoEqual, blockReadsOtherNotes } = await import('../src/editor/outliner/blockRowMemo.js');
+  const { blockRowMemoEqual, blockReadsOtherNotes } = await import('../src/editor/outliner/blockRowMemo.mjs');
 
   // Only embeds, block refs and plot-points read other notes at render time;
   // a plain paragraph — or a plain [[wiki link]], which renders its own label —

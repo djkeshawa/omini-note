@@ -34,7 +34,6 @@ import {
 } from '../features/editor/outliner/index.js';
 import { platformApi } from '../platform/index.js';
 import { mnAiContentFingerprint } from '../ai/aiOwnership.js';
-import { mnReadNovelistAiConfig } from '../panels/panelHelpers.js';
 import { MnCanvasEmbed } from '../features/canvas/index.js';
 import {
   mkBlock, mnBlocksToMd, mnCloneBlocks, mnFlatten, mnIsListLike, mnLocate,
@@ -75,9 +74,11 @@ import { useOutlinerBlockActions } from './outliner/useOutlinerBlockActions.js';
 import { useOutlinerSelectionActions } from './outliner/useOutlinerSelectionActions.js';
 import { MnOutlinerView } from './outliner/MnOutlinerView.jsx';
 import { MnCanvasPicker } from './outliner/OutlinerChrome.jsx';
-import { MnMemoBlockRow, mnCreateBlockLabel } from './outliner/BlockRow.jsx';
+import { mnCreateBlockLabel } from './outliner/BlockRow.jsx';
+import { MnOutlineTree } from './outliner/OutlineTree.jsx';
 import { MnSelectionToolbar } from './outliner/SelectionToolbar.jsx';
 import { MnAiActionMenu, MnAiPreviewDialog, MnInlineAiPreview } from './outliner/OutlinerPopovers.jsx';
+import { createOutlinerAiInstructions } from './outliner/aiInstructions.js';
 
 const mnAiLiveDot = 'mnAiLiveDot';
 const mnAiPagePulse = 'mnAiPagePulse';
@@ -89,30 +90,6 @@ const mnReidBlocks = reidBlocks;
 const mnNormalizeClipboardMarkdown = normalizeClipboardMarkdown;
 const mnLooksLikeBlockMarkdown = looksLikeBlockMarkdown;
 const MN_BLOCK_CLIPBOARD_TYPE = BLOCK_CLIPBOARD_TYPE;
-
-function MnOutlineTree({ blocks, depth, ...handlers }) {
-  return (
-    <>
-      {blocks.map(b => (
-        <React.Fragment key={b.id}>
-          <MnMemoBlockRow block={b} depth={depth} {...handlers} />
-          {handlers.aiPreview?.target?.kind === 'insert-after' && handlers.aiPreview.target.blockId === b.id && (
-            <MnInlineAiPreview
-              preview={handlers.aiPreview}
-              depth={depth}
-              T={handlers.T}
-              onApply={handlers.onApplyAiPreview}
-              onCancel={handlers.onCancelAiPreview}
-            />
-          )}
-          {b.children && b.children.length > 0 && !b.collapsed && (
-            <MnOutlineTree blocks={b.children} depth={depth + 1} {...handlers} />
-          )}
-        </React.Fragment>
-      ))}
-    </>
-  );
-}
 
 // ── Main outliner component ────────────────────────────────────────────
 function MnOutliner({
@@ -269,6 +246,14 @@ function MnOutliner({
     blocks, mutate, mnWalk, mnCloneBlocks, mnBlocksToMd, mnMdToBlocks, mkBlock, mnFlatten, mnLocate, MN_BLOCK_CLIPBOARD_TYPE, mnIsClipboardBlock, mnReidBlocks, mnNormalizeClipboardMarkdown, mnLooksLikeBlockMarkdown, localClipboardRef, clipboardHandlersRef, selectDragRef, selectionRef, deleteSelectionRef, deleteSelection, selection, onDelete, onShowToast, keyboardEditActionsRef, focusIdRef, setSelection, setCtxMenu, setFocusId, focusScopeBlocks,
   });
 
+  const {
+    pageContinuationInstruction,
+    plotPointsContextText,
+    plotPointsInstruction,
+    readNovelistAiConfig,
+    writeInstruction,
+  } = createOutlinerAiInstructions({ noteTags, vaultId, allNotes });
+
   const parseAiBlocks = (text) => {
     const parsed = mnMdToBlocks(String(text || '').trim());
     return parsed.length ? parsed : [mkBlock({ kind: 'paragraph', content: String(text || '').trim() })];
@@ -291,105 +276,6 @@ function MnOutliner({
     if (!res.ok) throw new Error(res.error || 'AI edit failed');
     if (res.value && !res.value.ok) throw new Error(res.value.error || 'AI edit failed');
     return res.value.text;
-  };
-
-  const readNovelistAiConfig = () => {
-    if (!(noteTags || []).some(tag => String(tag || '').startsWith('novel-'))) return null;
-    const config = mnReadNovelistAiConfig(vaultId);
-    if (!config) return null;
-    return {
-      wordLimit: config.wordLimit,
-      defaultPromptId: config.defaultPromptId,
-      model: config.model || '',
-      systemMessage: config.systemMessage || '',
-      userMessage: config.userMessage || '',
-      instructions: config.instructions || '',
-      additionalContext: config.additionalContext || '',
-      includedComponents: config.includedComponents || {},
-      advanced: config.advanced || {},
-      prompts: Array.isArray(config.prompts) ? config.prompts : [],
-    };
-  };
-
-  const writeInstruction = (scope, userRequest, sourceText) => {
-    const novelConfig = readNovelistAiConfig();
-    const activePrompt = (novelConfig?.prompts || []).find(item => item.id === novelConfig.defaultPromptId)
-      || (novelConfig?.prompts || []).find(item => item.prompt);
-    return [
-      novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
-      activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
-      novelConfig?.instructions ? `Vault instructions:\n${novelConfig.instructions}` : null,
-      novelConfig?.additionalContext ? `Additional context:\n${novelConfig.additionalContext}` : null,
-      novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
-      mnAiAction('write').instruction,
-      `User request: ${userRequest}`,
-      sourceText?.trim()
-        ? 'Use the existing text below as local context. Replace it with the newly written text.'
-        : 'Write new text for this empty location.',
-    ].filter(Boolean).join('\n\n');
-  };
-
-  const pageContinuationInstruction = (userRequest, sourceText) => {
-    const novelConfig = readNovelistAiConfig();
-    const activePrompt = (novelConfig?.prompts || []).find(item => item.id === novelConfig.defaultPromptId)
-      || (novelConfig?.prompts || []).find(item => item.prompt);
-    return [
-      novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
-      activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
-      novelConfig?.instructions ? `Vault instructions:\n${novelConfig.instructions}` : null,
-      novelConfig?.additionalContext ? `Additional context:\n${novelConfig.additionalContext}` : null,
-      novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
-      'Write new markdown that continues the existing page.',
-      `User request: ${userRequest}`,
-      sourceText?.trim()
-        ? 'Use the full existing page below as context. Continue from the end of it. Do not repeat, summarize, move, or rewrite the existing content. Return only the new markdown that should be appended below the current last block.'
-        : 'The page is empty. Return only the new markdown for the page.',
-    ].filter(Boolean).join('\n\n');
-  };
-
-  const plotPointsContextText = (block) => {
-    const titles = new Set(
-      (block.contexts || [])
-        .map(context => String(context || '').replace(/^\[\[|\]\]$/g, '').trim().toLowerCase())
-        .filter(Boolean)
-    );
-    if (!titles.size) return '';
-    return (allNotes || [])
-      .filter(note => titles.has(String(note?.title || '').trim().toLowerCase()))
-      .slice(0, 8)
-      .map(note => `[[${note.title}]]\n${String(note.body || '').slice(0, 2500)}`)
-      .join('\n\n');
-  };
-
-  const plotPointsInstruction = (plotAction, userRequest, sourceText, contextText = '', pageText = '') => {
-    const novelConfig = readNovelistAiConfig();
-    const activePrompt = (novelConfig?.prompts || []).find(item => item.id === novelConfig.defaultPromptId)
-      || (novelConfig?.prompts || []).find(item => item.prompt);
-    const task =
-      plotAction === 'write-scene'
-        ? 'Write the scene prose from these plot points.'
-        : plotAction === 'improve'
-          ? 'Turn these plot points into a clearer, more useful scene plan.'
-          : 'Summarize these plot points into concise scene planning notes.';
-    return [
-      novelConfig?.wordLimit ? `Target length: up to ${novelConfig.wordLimit} words unless the user asks otherwise.` : null,
-      activePrompt?.prompt ? `Novelist writing prompt (${activePrompt.name || 'Default'}):\n${activePrompt.prompt}` : null,
-      novelConfig?.instructions ? `Vault instructions:\n${novelConfig.instructions}` : null,
-      novelConfig?.additionalContext ? `Additional context:\n${novelConfig.additionalContext}` : null,
-      novelConfig?.userMessage ? `User message template:\n${novelConfig.userMessage}` : null,
-      task,
-      'Use the beat lines and linked context pages as source material. Do not rewrite the Plot Points block itself.',
-      plotAction === 'write-scene' && pageText?.trim()
-        ? 'Continue from the end of the existing page. Do not insert content above existing draft text, repeat existing prose, summarize it, or rewrite it.'
-        : null,
-      userRequest?.trim() ? `User request: ${userRequest.trim()}` : null,
-      plotAction === 'write-scene'
-        ? 'Return only markdown that should be appended to the bottom of the page after the user approves it.'
-        : 'Return only markdown that should be inserted below the Plot Points block after the user approves it.',
-      sourceText?.trim() ? `Plot Points source:\n${sourceText}` : null,
-      contextText?.trim() ? `Linked context pages:\n${contextText}` : null,
-      pageText?.trim() ? `Existing page context:\n${pageText}` : null,
-    ].filter(Boolean).join('\n\n');
   };
 
   const applyTextReplacement = (target, text) => {

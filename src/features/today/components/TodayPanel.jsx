@@ -1,4 +1,4 @@
-import { mnGetTagColor } from '../../../shared/theme.jsx';
+import { mnGetTagColor, mnTagHueMap } from '../../../shared/theme.jsx';
 import { DS_TYPE, dsGroupLabelStyle, mnSentenceCase } from '../../../shared/designSystem.js';
 
 const { useEffect, useMemo, useState } = React;
@@ -124,7 +124,7 @@ function TodayNoteGroups({
                               }}>
                                 <span aria-hidden="true" style={{
                                   width: 6, height: 6, borderRadius: '50%',
-                                  background: mnGetTagColor(tagHue[tag] ?? 240, theme), display: 'inline-block',
+                                  background: mnGetTagColor(tagHue.get(tag) ?? 240, theme), display: 'inline-block',
                                 }} />
                                 {tag}
                               </span>
@@ -241,7 +241,7 @@ function MnTodayPanel({
 
   const todayKey = helpers.todayIsoDate ? helpers.todayIsoDate() : new Date().toISOString().slice(0, 10);
   const dailyNote = todayNote || notes.find(note => String(note.title || '').trim() === todayKey) || null;
-  const tagHue = useMemo(() => Object.fromEntries(tags.map(tag => [tag.name, tag.hue])), [tags]);
+  const tagHue = useMemo(() => mnTagHueMap(tags), [tags]);
   const noteById = useMemo(() => new Map(notes.map(note => [note.id, note])), [notes]);
   const visibleAgendaItems = useMemo(() => (
     helpers.digestUniqueActionItems ? helpers.digestUniqueActionItems(agendaItems, { limit: 5 }) : agendaItems.slice(0, 5)

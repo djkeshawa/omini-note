@@ -170,14 +170,21 @@ function mnViewsCompareValues(a, b, type) {
   return left.localeCompare(right, undefined, { numeric: type === 'date', sensitivity: 'base' });
 }
 
+function mnViewsCachedCellValue(result, key) {
+  const cells = result?.__cells;
+  if (cells instanceof Map) return cells.get(key);
+  if (!cells || !Object.prototype.hasOwnProperty.call(cells, key)) return undefined;
+  return cells[key];
+}
+
 function mnViewsSortResults(results = [], columns = [], sort) {
   if (!sort?.key) return results;
   const column = columns.find(item => item.key === sort.key);
   if (!column) return results;
   const factor = sort.direction === 'desc' ? -1 : 1;
   return [...results].sort((a, b) => {
-    const left = a.__cells?.[column.key];
-    const right = b.__cells?.[column.key];
+    const left = mnViewsCachedCellValue(a, column.key);
+    const right = mnViewsCachedCellValue(b, column.key);
     // Rows with nothing in the sorted column sink to the bottom whichever way
     // the sort runs, so reversing never opens the table on a block of blanks.
     const leftEmpty = mnViewsCellIsEmpty(left);
@@ -199,11 +206,19 @@ function mnViewsNextSort(current, key) {
 // Sorting by title, created, modified or due can be saved into the view;
 // anything else sorts the table for now and says so.
 function mnViewsSortIsStorable(key) {
-  return Boolean(MN_VIEW_SORTABLE_FIELDS[key]);
+  return Boolean(mnViewsSortField(key));
 }
 
+// Own keys only. Column keys are discovered from whatever someone typed in a
+// note, so `constructor::` or `toString::` produced a column whose key hits
+// Object.prototype — the header then claimed the sort was storable and saved a
+// function where a field name belongs, which the IPC sanitizer rejects along
+// with the rest of the preferences patch.
 function mnViewsSortField(key) {
-  return MN_VIEW_SORTABLE_FIELDS[key] || '';
+  const name = String(key || '');
+  return Object.prototype.hasOwnProperty.call(MN_VIEW_SORTABLE_FIELDS, name)
+    ? MN_VIEW_SORTABLE_FIELDS[name]
+    : '';
 }
 
 function mnViewsSortFromDefinition(definition = {}) {
@@ -217,6 +232,6 @@ export {
   mnViewsBaseColumns, mnViewsColumns, mnViewsCatalogue, mnViewsDiscoverProperties,
   mnViewsToggleColumn, mnViewsMoveColumn, mnViewsPropertyColumn,
   mnViewsCellValue, mnViewsWordCount,
-  mnViewsCompareValues, mnViewsCellIsEmpty, mnViewsSortResults, mnViewsNextSort,
+  mnViewsCompareValues, mnViewsCellIsEmpty, mnViewsCachedCellValue, mnViewsSortResults, mnViewsNextSort,
   mnViewsSortIsStorable, mnViewsSortField, mnViewsSortFromDefinition,
 };

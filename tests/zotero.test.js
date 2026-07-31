@@ -171,3 +171,31 @@ test('Zotero validates search text and item keys', async () => {
   assert.ok(zotero.__test.titleMatchScore({ title: 'Recursive Language Models' }, 'RLM') >= 900);
   assert.ok(zotero.__test.titleMatchScore({ title: 'Recursive Language Models' }, 'zotero RLM papper') >= 900);
 });
+
+test('parentFirst orders parents before children without scrambling equals', () => {
+  const items = [
+    { key: 'childA', parentItem: 'P1', itemType: 'attachment' },
+    { key: 'parent1', parentItem: '', itemType: 'journalArticle' },
+    { key: 'note1', parentItem: '', itemType: 'note' },
+    { key: 'childB', parentItem: 'P2', itemType: 'attachment' },
+    { key: 'parent2', parentItem: '', itemType: 'book' },
+  ];
+  assert.deepEqual(
+    zotero.__test.parentFirst(items).map(item => item.key),
+    ['parent1', 'parent2', 'childA', 'note1', 'childB'],
+    'parents first, everything else in the order it arrived'
+  );
+
+  // The comparator fell out as the parentItem string rather than a boolean, so
+  // two children of different parents compared as different and compare(a, b)
+  // and compare(b, a) were both 1 — an inconsistent comparator leaves the
+  // result unspecified. Equal-class pairs must simply keep their input order.
+  for (const pair of [
+    [items[0], items[3]],
+    [items[0], items[2]],
+    [items[1], items[4]],
+  ]) {
+    assert.deepEqual(zotero.__test.parentFirst(pair).map(item => item.key), [pair[0].key, pair[1].key]);
+    assert.deepEqual(zotero.__test.parentFirst([pair[1], pair[0]]).map(item => item.key), [pair[1].key, pair[0].key]);
+  }
+});

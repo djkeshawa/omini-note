@@ -276,13 +276,19 @@ function createNovelistHelpers(scope = {}) {
     const isTagged = (note, tag) => (note?.tags || []).includes(tag);
     const stageRank = { scene: 1, chapter: 2, act: 3 };
     const stageIds = { acts: new Set(), chapters: new Set(), scenes: new Set() };
-    const explicitStageByNoteId = {};
-    const stageByNoteId = {};
-    const childrenByActId = {};
-    const childrenByChapterId = {};
-    const parentByChapterId = {};
-    const parentBySceneId = {};
-    const actBySceneId = {};
+    // Keyed by note id, which for a hand-made file is its name — and
+    // `constructor.md` or `toString.md` is an ordinary thing to have in a
+    // vault. On a normal object those keys already resolve to Object.prototype
+    // members, so the bucket for one read back as a function: the outline
+    // threw `bucket[parentId].includes is not a function`, and `__proto__.md`
+    // vanished from it instead. No prototype, no collision.
+    const explicitStageByNoteId = Object.create(null);
+    const stageByNoteId = Object.create(null);
+    const childrenByActId = Object.create(null);
+    const childrenByChapterId = Object.create(null);
+    const parentByChapterId = Object.create(null);
+    const parentBySceneId = Object.create(null);
+    const actBySceneId = Object.create(null);
     const noteById = new Map(allNotes.map(note => [note.id, note]));
   
     const addUnique = (bucket, parentId, childId) => {
@@ -408,7 +414,7 @@ function createNovelistHelpers(scope = {}) {
       parentBySceneId[note.id]
     );
   
-    const pathByNoteId = {};
+    const pathByNoteId = Object.create(null);
     acts.forEach(act => { pathByNoteId[act.id] = [act].filter(Boolean); });
     chapters.forEach(chapter => {
       const act = noteById.get(parentByChapterId[chapter.id]);

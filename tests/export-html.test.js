@@ -86,3 +86,21 @@ test('renderNoteHtml keeps unsafe link schemes out of anchors', async () => {
   assert.match(html, /<a href="https:\/\/example\.com">site<\/a>/);
   assert.ok(!html.includes('href="javascript:'), 'unsafe scheme never becomes a link');
 });
+
+test('exported code blocks are not cut short by a fence inside them', async () => {
+  const html = await exportHtml.renderNoteHtml({
+    title: 'Fences',
+    body: '````js\nHere is a fence:\n```\ndone\n````\n\nAfter.',
+  });
+  assert.match(html, /<pre><code data-language="js">Here is a fence:\n```\ndone<\/code><\/pre>/);
+  assert.match(html, /After\./);
+});
+
+test('an indented fence inside exported code remains code like it does in the editor', async () => {
+  const html = await exportHtml.renderNoteHtml({
+    title: 'Indented fence',
+    body: '````\nbefore\n  ````\nafter\n````\n\nDone.',
+  });
+  assert.match(html, /<pre><code>before\n  ````\nafter<\/code><\/pre>/);
+  assert.match(html, /Done\./);
+});

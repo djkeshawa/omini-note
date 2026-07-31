@@ -2,7 +2,7 @@ import { DS_TYPE, DS_HEIGHT, DS_RADIUS, dsMachineStyle } from '../shared/designS
 // Agenda panel for dated reminders and todo planning.
 
 import MN_APP_HELPERS from '../app/appHelpers.js';
-import { mnGetTagColor } from '../shared/theme.jsx';
+import { mnGetTagColor, mnTagHueMap } from '../shared/theme.jsx';
 import { mnCalendarDateKey, mnCalendarDateFromKey, mnCalendarMonthDays, mnCalendarItemDateKey, mnCalendarTimeText } from './calendarDates.js';
 import { mnCalendarIcon, mnAgendaStepBtn, mnCalendarInput, mnCalendarPrimaryButton, MnDayChip, MnItemCard } from './calendarChrome.jsx';
 
@@ -55,11 +55,7 @@ function MnCalendarPanel({
     setCreateDate(selectedKey || todayKey);
   }, [selectedKey, todayKey]);
 
-  const tagHue = useMemoC(() => {
-    const map = {};
-    tags.forEach(tag => { map[tag.name] = tag.hue; });
-    return map;
-  }, [tags]);
+  const tagHue = useMemoC(() => mnTagHueMap(tags), [tags]);
 
   const filteredItems = useMemoC(() => (
     helpers.agendaFilterActionItems

@@ -24,6 +24,8 @@ test('notes/vault IPC validation rejects unsafe payloads', () => {
   assert.throws(() => validateVaultIdRequest({ vaultId: '../bad' }), /Invalid vault id/);
   assert.throws(() => validateVaultCreateRequest({ name: '../bad' }), /path separators/);
   assert.throws(() => validateNoteSaveRequest({ vaultId: 'v1', note: { id: '../bad' } }), /Invalid note id/);
+  const created = validateVaultCreateRequest({ name: 'Safe', rootPath: '/unsupported/custom/path' });
+  assert.equal(Object.prototype.hasOwnProperty.call(created, 'rootPath'), false, 'unsupported custom roots are not forwarded');
 });
 
 test('notes/vault IPC validation accepts note save payloads', () => {
@@ -76,8 +78,8 @@ test('remaining note and vault validators reject hostile input and pass clean in
   assert.throws(() => validateNoteOpenRequest({ vaultId: 'v1', noteId: '../../etc/passwd' }), /Invalid note id/);
   assert.throws(() => validateNoteOpenRequest({ vaultId: 'v1' }), /note id/);
 
-  const del = validateNoteDeleteRequest({ vaultId: 'v1', noteId: 'n1', noteSnapshot: { title: 'x' }, permanent: 'yes' });
-  assert.equal(del.permanent, false, 'permanent must be literal true, not truthy');
+  const del = validateNoteDeleteRequest({ vaultId: 'v1', noteId: 'n1', noteSnapshot: { title: 'x' }, permanent: true });
+  assert.equal(Object.prototype.hasOwnProperty.call(del, 'permanent'), false, 'unsupported delete modes are not advertised downstream');
   assert.deepEqual(del.noteSnapshot, { title: 'x' });
   assert.equal(validateNoteDeleteRequest({ vaultId: 'v1', noteId: 'n1', noteSnapshot: 'text' }).noteSnapshot, null);
   assert.throws(

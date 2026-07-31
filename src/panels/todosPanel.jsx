@@ -4,7 +4,7 @@ import MN_APP_HELPERS from '../app/appHelpers.js';
 import { mnWalk } from '../editor/outline.jsx';
 import { MN_REMIND } from '../shared/markdown.jsx';
 import { SectionHead } from './panelShared.jsx';
-import { mnGetTagColor } from '../shared/theme.jsx';
+import { mnGetTagColor, mnTagHueMap } from '../shared/theme.jsx';
 
 const { useMemo: useMemoP } = React;
 
@@ -78,7 +78,7 @@ function Card({ it, idx, ctx }) {
             <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: T.inkDim }}>
               <span aria-hidden="true" style={{
                 width: 6, height: 6, borderRadius: '50%',
-                background: mnGetTagColor(tagHue[t] ?? 240, theme),
+                background: mnGetTagColor(tagHue.get(t) ?? 240, theme),
               }} />
               {t}
             </span>
@@ -103,9 +103,7 @@ function Card({ it, idx, ctx }) {
 }
 
 function MnTodosPanel({ notes, tags, onOpen, onToggleCheck, T, theme, variant }) {
-  const tagHue = useMemoP(() => {
-    const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
-  }, [tags]);
+  const tagHue = useMemoP(() => mnTagHueMap(tags), [tags]);
 
   const items = useMemoP(() => {
     return MN_APP_HELPERS.collectTaskItems?.(notes, MN_REMIND, mnWalk) || [];

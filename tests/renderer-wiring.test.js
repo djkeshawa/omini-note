@@ -59,6 +59,7 @@ function specialistPanelsSource() {
   const files = [
     '../src/features/writer/NovelistPanel.jsx',
     '../src/features/writer/NovelistPanelView.jsx',
+    '../src/features/writer/novelistPanelModel.js',
     '../src/features/writer/NovelistSections.jsx',
     '../src/features/writer/SupportingNoteSection.jsx',
     '../src/features/workflow/WorkflowPanel.jsx',
@@ -96,6 +97,7 @@ function appCompositionSource() {
   return [
     appSource(__dirname),
     '../src/app/actions/useAppActionRegistry.js',
+    '../src/app/actions/actionRegistryHelpers.js',
     '../src/app/actions/buildDynamicActions.js',
   ].map(file => file.startsWith?.('../') ? fs.readFileSync(path.join(__dirname, file), 'utf8') : file).join('\n');
 }
@@ -765,7 +767,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(panels, /Word Count by Act/);
   assert.match(panels, /Character Appearance Heat Map/);
   assert.match(panelHelpersSource, /mn_novelist_ai_config_v2/);
-  assert.match(panels, /supportingTypes = \(tags \|\| \[\]\)/);
+  assert.match(panels, /supportingTypes = buildSupportingTypes\(tags\)/);
   assert.match(panels, /normalizeSupportingTypeTag/);
   assert.match(panels, /onCreateTag\?\.\(tagName\)/);
   assert.match(panels, /onRemoveSupportingType\?\.\(type\.tag\)/);
@@ -813,7 +815,7 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   assert.match(editor, /vaultId=\{vaultId\}/);
   assert.match(outliner, /noteTags = \[\]/);
   assert.match(outliner, /vaultId = ''/);
-  assert.match(outliner, /import \{ mnReadNovelistAiConfig \} from '\.\.\/panels\/panelHelpers\.js'/);
+  assert.match(outliner, /import \{ mnReadNovelistAiConfig \} from '\.\.\/\.\.\/panels\/panelHelpers\.js'/);
   assert.match(outliner, /mnReadNovelistAiConfig\(vaultId\)/);
   assert.match(outliner, /defaultPromptId: config\.defaultPromptId/);
   assert.match(outliner, /Target length: up to \$\{novelConfig\.wordLimit\} words/);
@@ -1980,8 +1982,10 @@ test('Structural markdown blocks edit with markdown source prefixes', () => {
   assert.match(helper, /function editableMarkdownForBlock/);
   assert.match(helper, /function parseEditableMarkdownBlock/);
   assert.match(helper, /function displayProjectionForMarkdownSourceBlock/);
-  assert.ok(helper.includes('value.match(/^(#{1,6})\\s(.*)$/s)'));
+  // Both directions consume the whole whitespace run after the hashes, so the
+  // projection's sourceOffset stays exact and editing agrees with the display.
   assert.ok(helper.includes('value.match(/^(#{1,6})\\s+(.*)$/s)'));
+  assert.ok(helper.includes('value.match(/^(#{1,6})(\\s+)(.*)$/s)'));
   assert.ok(outline.includes('const h = line.match(/^(#{1,6})\\s+(.*)$/);'));
   assert.match(outliner, /const editorValue = MN_MARKDOWN_INPUT_RULES\.editableMarkdownForBlock\?\.\(block\) \?\? block\.content/);
   assert.match(outliner, /const markdownDisplayProjection = MN_MARKDOWN_INPUT_RULES\.displayProjectionForMarkdownSourceBlock\?\.\(block\)/);

@@ -260,13 +260,13 @@ function createWorkflowHelpers(scope = {}) {
     // Columns are discovered from the notes, never declared, so every
     // `key:: value` line a note carries is offered to the table.
     const readProperties = (body = '') => {
-      const out = {};
+      const out = Object.create(null);
       String(body || '').split('\n').forEach(line => {
         const match = line.match(/^\s*(?:-\s*)?([A-Za-z][A-Za-z0-9 _-]{0,40})::\s*(.*)$/);
         if (!match) return;
         const key = match[1].trim();
         const value = match[2].trim();
-        if (!key || out[key] != null) return;
+        if (!key || Object.prototype.hasOwnProperty.call(out, key)) return;
         out[key] = value;
       });
       return out;

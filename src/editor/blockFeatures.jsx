@@ -37,7 +37,10 @@ function mnWorkflowColor(index) {
 
 function mnNormalizeWorkflowStates(states) {
   if (Array.isArray(states) && states.length === 0) return [];
-  const byDefault = Object.fromEntries(MN_DEFAULT_WORKFLOW_STATES.map(s => [s.id, s]));
+  // Workflow state ids are user-defined, so this is looked up with whatever
+  // someone named their state. Without a null prototype, `constructor` found
+  // Object itself rather than missing.
+  const byDefault = Object.assign(Object.create(null), Object.fromEntries(MN_DEFAULT_WORKFLOW_STATES.map(s => [s.id, s])));
   const seen = new Set();
   const source = Array.isArray(states) && states.length ? states : MN_DEFAULT_WORKFLOW_STATES;
   const next = source.map((state, index) => {

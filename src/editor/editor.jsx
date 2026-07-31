@@ -16,7 +16,7 @@ import { EditorHeader } from './EditorHeader.jsx';
 import { ContextualAssistance } from '../features/assistance/index.js';
 import { MnContextualTip } from '../features/onboarding/index.js';
 import { mkBlock, mnBlocksToMd, mnWalk } from './outline.jsx';
-import { mnGetTagBg, mnGetTagColor, mnIconButtonStyle } from '../shared/theme.jsx';
+import { mnGetTagBg, mnGetTagColor, mnIconButtonStyle, mnTagHueMap } from '../shared/theme.jsx';
 import MN_EDITOR_SEARCH from './searchNavigation.js';
 
 const { useState: useStateE, useMemo: useMemoE, useRef: useRefE, useEffect: useEffectE } = React;
@@ -124,9 +124,7 @@ function MnEditor({
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
   }, []);
 
-  const tagHue = useMemoE(() => {
-    const m = {}; tags.forEach(t => m[t.name] = t.hue); return m;
-  }, [tags]);
+  const tagHue = useMemoE(() => mnTagHueMap(tags), [tags]);
 
   const {
     backlinks,
@@ -416,8 +414,8 @@ function MnEditor({
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 height: 24, padding: '0 9px', borderRadius: DS_RADIUS.pill,
                 fontFamily: 'var(--mn-ui)', fontSize: 11.5, fontWeight: 500,
-                color: mnGetTagColor(tagHue[t] ?? 240, theme),
-                background: mnGetTagBg(tagHue[t] ?? 240, theme),
+                color: mnGetTagColor(tagHue.get(t) ?? 240, theme),
+                background: mnGetTagBg(tagHue.get(t) ?? 240, theme),
                 border: 'none', cursor: 'pointer',
               }} title={`Remove tag ${t}`}>
                 <span aria-hidden="true" style={{

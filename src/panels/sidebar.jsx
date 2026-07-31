@@ -2,6 +2,7 @@ import { storage } from '../shared/storageUtils.js'; import { mnGetTagColor } fr
 import { MnContextualTip } from '../features/onboarding/index.js';
 import { SidebarNavRow } from './SidebarNavRow.jsx';
 import { LocalStatusPopover } from './LocalStatusPopover.jsx';
+import { mnSidebarTagCounts } from './sidebarModel.js';
 import { DS_HEIGHT, dsGroupLabelStyle, dsMachineStyle, dsPaneWidth, dsSelectedBarStyle, dsSelectedRow, mnSentenceCase } from '../shared/designSystem.js';
 const { useMemo: useMemoS } = React;
 
@@ -104,12 +105,7 @@ function MnSidebar({
     });
   };
   const activeVault = vaults?.find(v => v.id === activeVaultId);
-  const noteCounts = useMemoS(() => {
-    const c = {};
-    tags.forEach(t => { c[t.name] = 0; });
-    notes.forEach(n => n.tags.forEach(t => { if (c[t] != null) c[t]++; }));
-    return c;
-  }, [tags, notes]);
+  const noteCounts = useMemoS(() => mnSidebarTagCounts(tags, notes), [tags, notes]);
 
   // Cached per note object, the way buildLinks caches its link targets. The
   // note-object identities are stable across keystrokes, so editing one note
@@ -431,7 +427,7 @@ function MnSidebar({
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>{tag.name}</span>
               <span style={dsMachineStyle(T, active ? T.inkMed : T.inkDim)}>
-                {noteCounts[tag.name] || 0}
+                {noteCounts.get(tag.name) || 0}
               </span>
             </div>
           );

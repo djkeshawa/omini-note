@@ -123,6 +123,12 @@ function mnGetTagBg(hue, theme) {
   return `oklch(0.96 0.03 ${hue})`;
 }
 
+function mnTagHueMap(tags = []) {
+  return new Map((Array.isArray(tags) ? tags : [])
+    .filter(tag => tag && typeof tag.name === 'string')
+    .map(tag => [tag.name, tag.hue]));
+}
+
 function mnShadow(T, level = 'soft') {
   if (level === 'elevated') return `0 18px 46px ${T.shadowElevated || `color-mix(in oklab, ${T.ink} 18%, transparent)`}`;
   if (level === 'popover') return `0 12px 32px ${T.shadowElevated || `color-mix(in oklab, ${T.ink} 18%, transparent)`}, 0 1px 2px ${T.shadowSoft || `color-mix(in oklab, ${T.ink} 8%, transparent)`}`;
@@ -146,4 +152,4 @@ function mnIconButtonStyle(T, active = false, size = 28) {
   };
 }
 
-export { MN_FONTS, MN_THEMES, mnGetTagBg, mnGetTagColor, mnIconButtonStyle, mnShadow };
+export { MN_FONTS, MN_THEMES, mnGetTagBg, mnGetTagColor, mnIconButtonStyle, mnShadow, mnTagHueMap };

@@ -868,15 +868,20 @@ test('Saving known fields preserves unknown front matter, comments, and block li
 
     const loaded = await store.getNote(vault.id, 'n_portable');
     assert.deepEqual(loaded.tags, ['alpha']);
-    await store.saveNote(vault.id, { ...loaded, title: 'After', tags: ['alpha', 'beta', 'true'] });
+    const savedNote = await store.saveNote(vault.id, {
+      ...loaded,
+      title: 'After',
+      tags: ['alpha', 'beta', "mom's", '{brace}', '1e3'],
+    });
     const saved = fs.readFileSync(notePath, 'utf8');
 
     assert.match(saved, /title: After # visible title comment/);
     assert.equal((saved.match(/^title:/gm) || []).length, 1);
-    assert.match(saved, /tags: \[alpha, beta, "true"\]\n  # keep this list comment/);
+    assert.match(saved, /tags: \[alpha, beta, "mom's", "\{brace\}", "1e3"\]\n  # keep this list comment/);
     assert.match(saved, /aliases:\n  - First alias\n  - Second alias/);
     assert.match(saved, /custom:\n  nested: true/);
     assert.match(saved, /Body with \[relative\]\(\.\.\/reference\.md\)\./);
+    assert.deepEqual((await store.getNote(vault.id, savedNote.id)).tags, ['alpha', 'beta', "mom's", '{brace}', '1e3']);
 
     const [version] = await store.listNoteVersions(vault.id, 'n_portable');
     assert.ok(version);

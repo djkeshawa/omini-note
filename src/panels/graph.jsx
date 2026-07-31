@@ -74,11 +74,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
     return () => ro.disconnect();
   }, []);
 
-  const tagColor = useMemo(() => {
-    const map = {};
-    tags.forEach(t => { map[t.name] = t.hue; });
-    return map;
-  }, [tags]);
+  const tagColor = useMemo(() => mnTagHueMap(tags), [tags]);
 
   const visibleEdges = useMemo(() => {
     const ids = new Set(notes.map(n => n.id));
@@ -86,7 +82,11 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
   }, [notes, links]);
 
   useEffect(() => {
-    const linkCounts = {};
+    // No prototype: with one, a note id of `toString` made
+    // `(linkCounts[id] || 0) + 1` concatenate onto a function and the node's
+    // radius came out NaN — which is exactly the poison the date guard below
+    // exists to keep out of the layout.
+    const linkCounts = Object.create(null);
     visibleEdges.forEach(l => {
       linkCounts[l.source] = (linkCounts[l.source] || 0) + 1;
       linkCounts[l.target] = (linkCounts[l.target] || 0) + 1;
@@ -132,7 +132,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
       });
     } else if (style === 'cluster' && ns.length) {
       const uniqueTags = [...new Set(ns.map(n => n.tag))];
-      const centers = {};
+      const centers = Object.create(null);
       uniqueTags.forEach((t, i) => {
         const angle = (i / uniqueTags.length) * Math.PI * 2;
         centers[t] = {
@@ -162,7 +162,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
       setNodes(prev => {
         if (!prev) return prev;
         const next = prev.map(n => ({ ...n }));
-        const byId = Object.fromEntries(next.map(n => [n.id, n]));
+        const byId = new Map(next.map(n => [n.id, n]));
         const alpha = Math.max(0.025, 1 - ticks / maxTicks);
 
         // Repulsion falls off as 1/d², so only nearby nodes matter. Bucket
@@ -201,8 +201,8 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
         }
 
         for (const e of edges) {
-          const a = byId[e.source];
-          const b = byId[e.target];
+          const a = byId.get(e.source);
+          const b = byId.get(e.target);
           if (!a || !b) continue;
           const dx = b.x - a.x, dy = b.y - a.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -252,7 +252,10 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
     // what stays on screen, frozen.
   }, [edges, style, W, H, opts.linkDistance, opts.repulsion, opts.center, layoutSeed, opts.sizeByContent]);
 
-  const nodeById = useMemo(() => Object.fromEntries((nodes || []).map(n => [n.id, n])), [nodes]);
+  // A Map, so an edge naming a note id like `constructor` misses cleanly and
+  // the `!a || !b` guard below drops it, instead of finding Object.prototype
+  // and drawing a path from undefined coordinates.
+  const nodeById = useMemo(() => new Map((nodes || []).map(n => [n.id, n])), [nodes]);
   const themeName = T === MN_THEMES.dark ? 'dark' : 'light';
   const connectedToHover = (id) => {
     if (!hoverId) return true;
@@ -519,7 +522,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
             )}
 
             {edges.map((e, i) => {
-              const a = nodeById[e.source], b = nodeById[e.target];
+              const a = nodeById.get(e.source), b = nodeById.get(e.target);
               if (!a || !b) return null;
               const active = connectedToHover(a.id) && connectedToHover(b.id);
               return (
@@ -536,7 +539,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
             {nodes.map(n => {
               const active = connectedToHover(n.id);
               const focus = focusId === n.id;
-              const tagHue = tagColor[n.tag] ?? 230;
+              const tagHue = tagColor.get(n.tag) ?? 230;
               const raw = mnGetTagColor(tagHue, themeName);
               const isTagged = n.tag !== 'untagged';
               const fill = opts.tagColors && isTagged
@@ -750,4 +753,4 @@ function MnGraphControls({
 }
 
 export { MnGraph };
-import { MN_THEMES, mnGetTagColor, mnShadow } from '../shared/theme.jsx';
+import { MN_THEMES, mnGetTagColor, mnShadow, mnTagHueMap } from '../shared/theme.jsx';

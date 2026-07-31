@@ -139,15 +139,18 @@
   function displayProjectionForMarkdownSourceBlock(block) {
     if (asText(block?.kind || 'paragraph') !== 'paragraph') return null;
     const value = asText(block?.content);
-    const heading = value.match(/^(#{1,6})\s+(.*)$/s);
+    const heading = value.match(/^(#{1,6})(\s+)(.*)$/s);
     if (!heading) return null;
-    const sourcePrefix = `${heading[1]} `;
+    // The prefix has to be exactly what the match consumed. Assuming a single
+    // space put `##  Heading` out by one, so a click landed the caret a
+    // character early and every inline annotation shifted with it.
+    const sourcePrefix = `${heading[1]}${heading[2]}`;
     return {
       block: {
         ...block,
         kind: 'heading',
         level: heading[1].length,
-        content: heading[2],
+        content: heading[3],
       },
       sourcePrefix,
       sourceOffset: sourcePrefix.length,
@@ -156,7 +159,9 @@
 
   function parseEditableMarkdownBlock({ block, text } = {}) {
     const value = asText(text);
-    const heading = value.match(/^(#{1,6})\s(.*)$/s);
+    // `\s+`, matching the display projection: spaces after the hashes open the
+    // heading, they are not the first characters of its text.
+    const heading = value.match(/^(#{1,6})\s+(.*)$/s);
     if (heading) {
       return {
         patch: { kind: 'heading', level: heading[1].length, checked: null, content: heading[2], language: '' },

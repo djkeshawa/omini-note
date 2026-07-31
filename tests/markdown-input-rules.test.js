@@ -107,6 +107,27 @@ test('Structural blocks expose editable markdown source prefixes', () => {
   assert.equal(rules.displayProjectionForMarkdownSourceBlock({ kind: 'heading', level: 3, content: 'Role' }), null);
 });
 
+test('a heading with extra spaces after the hashes maps offsets exactly', () => {
+  // sourceOffset is what the caret and every inline annotation are shifted by,
+  // so it has to equal the number of characters the projection actually hid.
+  for (const content of ['# One', '##  Two', '###   Three']) {
+    const projection = rules.displayProjectionForMarkdownSourceBlock({ kind: 'paragraph', content });
+    assert.equal(
+      projection.sourceOffset,
+      content.length - projection.block.content.length,
+      `${JSON.stringify(content)} must not shift the caret`
+    );
+    assert.equal(projection.sourcePrefix, content.slice(0, projection.sourceOffset));
+  }
+
+  // Editing the same text back must agree with what the projection displayed:
+  // the spaces open the heading, they are not part of its text.
+  assert.equal(
+    rules.parseEditableMarkdownBlock({ block: { kind: 'paragraph' }, text: '##  Two' }).patch.content,
+    'Two'
+  );
+});
+
 test('Inline parser recognizes supported markers and preserves markdown delimiter serialization', () => {
   const source = 'Plain **bold** *italic* `code` ~~gone~~ [site](https://example.com/a?b=1).';
   const segments = rules.parseInlineMarkdown(source);

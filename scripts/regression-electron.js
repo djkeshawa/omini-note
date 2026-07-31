@@ -707,16 +707,18 @@ async function runViewsPanelScenario(win) {
       const current = await evaluate(win, `(() => {
         const table = document.querySelector('[data-mn-views-table]');
         if (!table) return { table: false };
-        const heads = [...table.querySelectorAll('button[aria-sort]')];
+        const heads = [...table.querySelectorAll('[role="columnheader"] > button')];
+        const sorted = table.querySelectorAll('[role="columnheader"][aria-sort]').length;
         return {
           table: true,
           heads: heads.map(el => (el.textContent || '').trim()),
           titled: heads.filter(el => /Read from the note|property line/.test(el.getAttribute('title') || '')).length,
+          sorted,
           rows: table.querySelectorAll('[data-mn-view-row]').length,
         };
       })()`);
       return {
-        ok: current.table && current.heads.length >= 4 && current.rows > 0
+        ok: current.table && current.heads.length >= 4 && current.rows > 0 && current.sorted === 1
           && current.titled === current.heads.length,
         current,
       };
@@ -771,7 +773,7 @@ async function runViewsPanelScenario(win) {
       const current = await evaluate(win, `(() => {
         const table = document.querySelector('[data-mn-views-table]');
         const bar = document.querySelector('[role="tablist"][aria-label="Saved views"]');
-        const heads = table ? [...table.querySelectorAll('button[aria-sort]')].map(el => (el.textContent || '').trim()) : [];
+        const heads = table ? [...table.querySelectorAll('[role="columnheader"] > button')].map(el => (el.textContent || '').trim()) : [];
         const cells = table ? [...table.querySelectorAll('[data-mn-view-row]')].map(row => (row.textContent || '')) : [];
         return { heads, dirty: /Unsaved changes/.test(bar ? bar.textContent : ''), sam: cells.filter(text => text.includes('sam')).length };
       })()`);

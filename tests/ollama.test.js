@@ -66,6 +66,20 @@ test('AI runtime stays disabled until preferences explicitly enable it', () => {
   assert.equal(ai.getConfig().enabled, false);
 });
 
+test('an unknown provider always falls back to Ollama, prototype names included', () => {
+  const ai = require('../lib/ai');
+  assert.equal(ai.previewConfig({ provider: 'openai' }).provider, 'openai');
+  // These name Object.prototype members, so an unguarded lookup found a truthy
+  // "provider" and skipped the fallback, leaving the AI layer with no base URL.
+  for (const provider of ['constructor', '__proto__', 'nonsense', '']) {
+    assert.equal(
+      ai.previewConfig({ provider }).provider,
+      'ollama',
+      `${JSON.stringify(provider)} must fall back to ollama`
+    );
+  }
+});
+
 test('Ollama chat stream ignores malformed chunks and keeps valid tokens', async () => {
   const ollama = require('../lib/ollama');
   const originalFetch = global.fetch;

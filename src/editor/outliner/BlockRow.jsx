@@ -105,7 +105,7 @@ const MN_LOGSEQ = { mnIsPropertyLine, mnParseProperty, mnWorkflow };
 
 // ── Selection toolbar (floats above selected text) ────────────────────
 import { MnBlockRowView } from './BlockRowView.jsx';
-import { blockRowMemoEqual } from './blockRowMemo.js';
+import { blockRowMemoEqual } from './blockRowMemo.mjs';
 
 function MnBlockRow({
   block, depth, focusId, T, allNotes, vaultId = '',
