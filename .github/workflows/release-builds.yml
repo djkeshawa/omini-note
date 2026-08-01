@@ -4,6 +4,22 @@ on:
   push:
     tags:
       - "v*.*.*"
+  # A weekly rehearsal. Everything in scripts/release-tools/ was written after
+  # v0.2.1 and never ran until someone tried to ship, by which point it had
+  # accumulated eight independent breakages — npm that could not launch on
+  # Windows, an asar lookup using the wrong path separator, a blockmap
+  # assertion comparing undefined to a number, and more. A release pipeline is
+  # only tested by releasing, so release on a Monday when nothing is at stake.
+  #
+  # This validates and builds installers on all four targets. It cannot
+  # publish: every publishing step requires a tag ref or an explicit
+  # workflow_dispatch input, and the publish job additionally refuses to run
+  # for a scheduled event.
+  #
+  # GitHub disables scheduled workflows in a repository with no activity for 60
+  # days. If these stop arriving, that is why.
+  schedule:
+    - cron: "17 6 * * 1"
   workflow_dispatch:
     inputs:
       publish_release:
@@ -303,7 +319,13 @@ jobs:
     name: Publish GitHub Release
     needs: [metadata, build, release-gate]
     runs-on: ubuntu-22.04
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish_release == true
+    # The event check is redundant today — a scheduled run has neither a tag ref
+    # nor a dispatch input — but it is the one guarantee worth stating outright,
+    # so a later edit to the conditions below cannot make the weekly rehearsal
+    # start publishing.
+    if: >-
+      github.event_name != 'schedule'
+      && (startsWith(github.ref, 'refs/tags/v') || inputs.publish_release == true)
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
