@@ -18,10 +18,14 @@ import { MN_REMIND } from '../../shared/markdown.jsx';
 import { DS_HEIGHT, DS_RADIUS, dsMachineStyle } from '../../shared/designSystem.js';
 import { DsEmptyState, DsGroupLabel } from '../../shared/components/DesignPrimitives.jsx';
 import { MN_VIEW_LAYOUTS, mnViewLayout } from '../../shared/viewLayout.js';
+import { mnTagHueMap } from '../../shared/theme.jsx';
 import { mnViewsRenderResults } from './ViewsLayouts.jsx';
 import { mnViewsRenderBoard, mnViewsBoardGroup } from './ViewsBoard.jsx';
 import { mnViewsRenderCalendar } from './ViewsCalendar.jsx';
 import { mnViewsRenderTable } from './ViewsTable.jsx';
+import { useViewsPlanner } from './useViewsPlanner.js';
+import { useViewsRowActions } from './useViewsRowActions.js';
+import { mnViewsOrderIsSet } from './viewsOrder.js';
 import {
   mnViewsNextSort, mnViewsSortIsStorable, mnViewsSortField, mnViewsSortFromDefinition,
   mnViewsColumns, mnViewsCatalogue, mnViewsToggleColumn, mnViewsMoveColumn,
@@ -33,8 +37,7 @@ import {
   mnViewsAddCondition, mnViewsUpdateCondition, mnViewsRemoveCondition,
   mnViewsSetConditionsMatch, mnViewsClearConditions,
 } from './viewsConditions.js';
-import { mnViewsActionItem } from './viewsWrite.js';
-import { ViewTabs, ViewMenu, ViewsRowSearch, ViewsSaveState, mnViewChipStyle } from './ViewsChrome.jsx';
+import { ViewsTabBar, mnViewChipStyle } from './ViewsChrome.jsx';
 import {
   mnViewsCreate, mnViewsDuplicate, mnViewsRename, mnViewsDelete,
   mnViewsApplyDraft, mnViewsDraftDiffers,
@@ -92,11 +95,18 @@ function MnViewsPanel({
   onOpen,
   onOpenAllNotes,
   onUpdateTaskItem,
+  onRenameNote,
+  onSetProperty,
+  onCreateItem,
+  onCreateNote,
   onNotice,
+  selectedNoteId = '',
+  snoozeMinutes = '15',
   weekStart = 'monday',
   viewFormat,
   helpers = {},
   walk,
+  theme,
   T,
 }) {
   const safeDefinitions = definitions.length ? definitions : [MN_VIEWS_FALLBACK];
@@ -114,6 +124,10 @@ function MnViewsPanel({
   // changes instead of the change vanishing the next time you switch tabs.
   const [draft, setDraft] = useStateV(null);
   const [calendarAnchor, setCalendarAnchor] = useStateV(() => new Date());
+  // A hand-made arrangement of the cards, per view. It is not saved with the
+  // definition — see viewsOrder.js for why — so it is held here and dropped
+  // when you leave the view, and the strip says so while it is in force.
+  const [cardOrder, setCardOrder] = useStateV({});
   const [rowQuery, setRowQuery] = useStateV('');
   const [confirmDelete, setConfirmDelete] = useStateV(false);
   const [renamingId, setRenamingId] = useStateV('');
@@ -159,29 +173,26 @@ function MnViewsPanel({
     return helpers.smartViewGroup(visibleResults, group, {});
   }, [helpers, visibleResults, queryDefinition, layout]);
 
-  // Ticking a task from a view writes to the note it came from. The row
-  // remembers the block it was parsed out of, so the edit lands exactly
-  // there; when that anchor is gone and the text is ambiguous we say so
-  // rather than editing a line that might be the wrong one.
-  const toggleCheck = (result) => {
-    if (!onUpdateTaskItem) return;
-    const note = (notes || []).find(candidate => candidate.id === result.noteId) || null;
-    const resolved = mnViewsActionItem(result, { note, walk });
-    if (!resolved.ok) {
-      onNotice?.(
-        'That task could not be updated',
-        resolved.reason === 'ambiguous'
-          ? 'The same line appears more than once in that note, so there is no way to tell which one you meant. Open the note and tick it there.'
-          : 'The line this row came from is no longer in that note. Open the note to check it.',
-        'warn'
-      );
-      return;
-    }
-    const ok = onUpdateTaskItem(resolved.item, { checked: !result.checked });
-    if (ok === false) {
-      onNotice?.('That task could not be updated', 'The note it came from did not change. Open the note to edit it directly.', 'warn');
-    }
-  };
+  // Everything a gesture on a row can mean — tick it, retype it, drag it into
+  // another column — resolves to a write in useViewsRowActions, which is also
+  // where a refusal gets its sentence.
+  const { writeRow, toggleCheck, renameRow, moveCard } = useViewsRowActions({
+    notes, walk, onUpdateTaskItem, onRenameNote, onSetProperty, onNotice,
+  });
+  const canRename = (onRenameNote || onUpdateTaskItem) ? renameRow : null;
+
+  // The colour a row wears comes from its first registered tag, so a card here
+  // and the same note in the sidebar are the same colour.
+  const tagHue = useMemoV(() => mnTagHueMap(tags), [tags]);
+
+  // The planner turns itself off when nothing is wired to write with, so a
+  // Views panel mounted without the planning actions draws a plain month grid
+  // rather than a form whose every button would refuse.
+  const plan = useViewsPlanner({
+    rows: visibleResults, notes, selectedNoteId, helpers, snoozeMinutes,
+    onCreateItem, onCreateNote, onWriteRow: onUpdateTaskItem ? writeRow : null,
+    onRenameRow: canRename, onNotice,
+  });
 
   // Tabs carry their own counts, so the shape of the vault is legible without
   // opening each view. That is one whole-vault query per saved view; it is
@@ -196,6 +207,17 @@ function MnViewsPanel({
     });
     return counts;
   }, [helpers, notes, safeDefinitions, walk, activeDefinition, results]);
+
+  // One bag of everything a layout needs to draw a row and write to it, so the
+  // four call sites below stay readable and cannot drift apart.
+  const rowProps = {
+    helpers, onOpen, onToggleCheck: toggleCheck,
+    onRename: canRename,
+    tagHue, theme, T,
+  };
+  const activeOrder = cardOrder[activeDefinition?.id || ''] || null;
+  const setActiveOrder = (next) => setCardOrder(current => ({ ...current, [activeDefinition?.id || '']: next }));
+  const arranged = layout === 'cards' && mnViewsOrderIsSet(activeOrder, visibleResults);
 
   const selectDefinition = (id) => {
     setActiveId(id);
@@ -338,61 +360,32 @@ function MnViewsPanel({
       data-mn-views-panel="true"
       style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', background: T.bg }}>
 
-      {/* Tab bar. Every saved view is a tab carrying its own count, so the
-          shape of the vault is legible without opening anything. */}
-      <div style={{
-        height: 46, flexShrink: 0, boxSizing: 'border-box',
-        display: 'flex', alignItems: 'center', gap: 4, padding: '0 20px',
-        borderBottom: `1px solid ${T.lineSub}`, position: 'relative', zIndex: 2,
-      }} role="tablist" aria-label="Saved views">
-        <span style={{
-          fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600,
-          color: T.ink, marginRight: 10,
-        }}>Views</span>
-        <ViewTabs
-          definitions={safeDefinitions}
-          activeId={activeDefinition?.id}
-          counts={tabCounts}
-          renamingId={renamingId}
-          renameValue={renameValue}
-          onRenameInput={event => setRenameValue(event.target.value)}
-          onRenameKey={event => {
-            if (event.key === 'Enter') { event.preventDefault(); finishRename(); }
-            if (event.key === 'Escape') { event.preventDefault(); setRenamingId(''); }
-          }}
-          onRenameEnd={finishRename}
-          menu={menuOpen ? (
-            <ViewMenu
-              definition={activeDefinition || {}}
-              canDelete={safeDefinitions.length > 1}
-              confirming={confirmDelete}
-              onRename={startRename}
-              onDuplicate={() => commit(mnViewsDuplicate(safeDefinitions, activeDefinition?.id, { format: viewFormat }))}
-              onDelete={() => setConfirmDelete(true)}
-              onConfirmDelete={() => commit(mnViewsDelete(safeDefinitions, activeDefinition?.id))}
-              onCancelDelete={closeMenu}
-              T={T}
-            />
-          ) : null}
-          onPick={selectDefinition}
-          onOpenMenu={() => toggleMenu('view')}
-          onNewView={() => commit(mnViewsCreate(safeDefinitions, { title: 'New view', format: viewFormat }))}
-          T={T}
-        />
-        <span style={{ flex: 1 }} />
-        <ViewsRowSearch
-          value={rowQuery}
-          onChange={event => setRowQuery(event.target.value)}
-          onClear={() => setRowQuery('')}
-          T={T}
-        />
-        <ViewsSaveState
-          dirty={dirty}
-          onRevert={() => setDraft(null)}
-          onSave={() => commit(mnViewsApplyDraft(safeDefinitions, activeDraft))}
-          T={T}
-        />
-      </div>
+      <ViewsTabBar
+        definitions={safeDefinitions}
+        activeDefinition={activeDefinition}
+        counts={tabCounts}
+        dirty={dirty}
+        rowQuery={rowQuery}
+        renamingId={renamingId}
+        renameValue={renameValue}
+        menuOpen={menuOpen}
+        confirmDelete={confirmDelete}
+        onRenameInput={setRenameValue}
+        onRenameCommit={finishRename}
+        onRenameCancel={() => setRenamingId('')}
+        onStartRename={startRename}
+        onRowQuery={setRowQuery}
+        onPick={selectDefinition}
+        onOpenMenu={() => toggleMenu('view')}
+        onCloseMenu={closeMenu}
+        onNewView={() => commit(mnViewsCreate(safeDefinitions, { title: 'New view', format: viewFormat }))}
+        onDuplicate={() => commit(mnViewsDuplicate(safeDefinitions, activeDefinition?.id, { format: viewFormat }))}
+        onAskDelete={() => setConfirmDelete(true)}
+        onConfirmDelete={() => commit(mnViewsDelete(safeDefinitions, activeDefinition?.id))}
+        onRevert={() => setDraft(null)}
+        onSave={() => commit(mnViewsApplyDraft(safeDefinitions, activeDraft))}
+        T={T}
+      />
 
       <ViewsControlStrip
         definition={queryDefinition}
@@ -432,19 +425,35 @@ function MnViewsPanel({
       <div
         data-mn-views-body="true"
         style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 20px 24px' }}>
+        {/* A hand-made arrangement overrides the view's sort, which is a
+            surprising thing to have happen silently — so it says so, and says
+            how to undo it, for as long as it is in force. */}
+        {arranged && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ ...dsMachineStyle(T), fontSize: 11 }}>arranged by hand</span>
+            <span style={{ fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkDim }}>
+              Kept until you leave this view — a saved view stores a sort, not positions.
+            </span>
+            <button type="button" onClick={() => setActiveOrder(null)} style={mnViewChipStyle(false, T)}>Reset order</button>
+          </div>
+        )}
         {visibleResults.length
           ? (layout === 'calendar'
             ? mnViewsRenderCalendar({
-              results: visibleResults, helpers, onOpen, weekStart, T,
-              anchor: calendarAnchor,
-              onAnchorChange: setCalendarAnchor,
+              results: visibleResults, weekStart, plan,
+              anchor: calendarAnchor, onAnchorChange: setCalendarAnchor,
+              ...rowProps,
             })
             : layout === 'board'
-            ? mnViewsRenderBoard({ groups: groups || [], helpers, onOpen, onToggleCheck: toggleCheck, T })
+            ? mnViewsRenderBoard({
+              groups: groups || [], definition: queryDefinition,
+              onMoveCard: onSetProperty ? moveCard : null,
+              ...rowProps,
+            })
             : layout === 'table'
             ? mnViewsRenderTable({
-              results: visibleResults, definition: queryDefinition, sort,
-              onSort: sortByColumn, onOpen, onToggleCheck: toggleCheck, helpers, T,
+              results: visibleResults, definition: queryDefinition, sort, onSort: sortByColumn,
+              ...rowProps,
             })
             : groups
             ? groups
@@ -458,10 +467,14 @@ function MnViewsPanel({
                     T={T}
                     style={{ marginBottom: 8 }}
                   />
-                  {mnViewsRenderResults({ layout, results: bucket.items, helpers, onOpen, T })}
+                  {mnViewsRenderResults({ layout, results: bucket.items, ...rowProps })}
                 </div>
               ))
-            : mnViewsRenderResults({ layout, results: visibleResults, helpers, onOpen, T }))
+            : mnViewsRenderResults({
+              layout, results: visibleResults,
+              order: activeOrder, onReorder: setActiveOrder,
+              ...rowProps,
+            }))
           : (
             <DsEmptyState
               headline={rowQuery ? 'No rows match that search' : 'Nothing matches this view yet'}

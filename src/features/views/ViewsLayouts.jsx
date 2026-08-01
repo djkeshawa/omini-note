@@ -1,21 +1,22 @@
 // The layout renderers for Views.
 //
-// v1 reuses the four presentations the Smart Views panel already ships, so a
-// definition renders identically in both while the two surfaces coexist.
-// Board and calendar arrive in later steps and slot in here.
+// v1 borrowed the Smart Views panel's four presentations so a definition drew
+// identically in both while the surfaces coexisted. Views has since grown
+// things a dashboard cannot have — a clickable row, an editable card, an
+// arrangement you made by hand — so list, cards and timeline are its own.
+// Smart Views keeps its renderers untouched; the shared per-result readers
+// (`mnSmartViewResultDate` and friends) still describe a row identically.
+//
+// Table, board and calendar are routed by the panel, which has the definition,
+// the sort and the planner they each need.
 
-import {
-  mnSmartViewList,
-  mnSmartViewTable,
-  mnSmartViewCards,
-  mnSmartViewTimeline,
-} from '../../panels/smartViewsPanel.jsx';
+import { mnViewsRenderCards } from './ViewsCards.jsx';
+import { mnViewsRenderList, mnViewsRenderTimeline } from './ViewsList.jsx';
 
-function mnViewsRenderResults({ layout, results, helpers, onOpen, T }) {
-  if (layout === 'table') return mnSmartViewTable({ results, helpers, onOpen, T });
-  if (layout === 'cards') return mnSmartViewCards({ results, helpers, onOpen, T });
-  if (layout === 'timeline') return mnSmartViewTimeline({ results, helpers, onOpen, T });
-  return mnSmartViewList({ results, helpers, onOpen, T });
+function mnViewsRenderResults({ layout, ...props }) {
+  if (layout === 'cards') return mnViewsRenderCards(props);
+  if (layout === 'timeline') return mnViewsRenderTimeline(props);
+  return mnViewsRenderList(props);
 }
 
 export { mnViewsRenderResults };

@@ -142,6 +142,21 @@ function useAppPlanningActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, markDirty, ma
         : mnRemoveBodyProperty(body, 'status'));
     }, [notes, updateNoteBody]);
   
+    // The general form of the line above: set any `key:: value` on a note, or
+    // remove it when the value is empty. Dragging a card between columns on a
+    // Views board writes through here, so a board grouped by `status` moves a
+    // note exactly as the workflow board does, and a board grouped by anything
+    // else — `stage`, `owner` — moves it the same way without a second action.
+    const updateNoteProperty = useCallbackA((noteId, key, value) => {
+      const cleanKey = String(key || '').trim();
+      if (!cleanKey || !notes.find(candidate => candidate.id === noteId)) return false;
+      const cleanValue = String(value ?? '').trim();
+      updateNoteBody(noteId, body => (cleanValue
+        ? mnSetBodyProperty(body, cleanKey, cleanValue)
+        : mnRemoveBodyProperty(body, cleanKey)));
+      return true;
+    }, [notes, updateNoteBody]);
+
     const updateWorkflowArchived = useCallbackA((noteId, workflowArchived) => {
       updateNote(noteId, { workflowArchived: !!workflowArchived });
     }, [updateNote]);
@@ -193,7 +208,7 @@ function useAppPlanningActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, markDirty, ma
       if (selectedTag === clean) setSelectedTag(null);
       markTagsDirty();
     };
-  return { updateTaskItemSource, createCalendarTaskItem, snoozeCalendarTaskItem, linkNovelistChapter, linkNovelistScene, setNovelistOrder, renameNoteTitle, convertNovelistType, updateNoteBlocks, toggleCheckFromAggregate, updateWorkflowNoteStatus, updateWorkflowArchived, updateNoteTags, addTag, tagCurrentNoteFromAi, removeTag, removeNovelistSupportingType };
+  return { updateTaskItemSource, createCalendarTaskItem, snoozeCalendarTaskItem, linkNovelistChapter, linkNovelistScene, setNovelistOrder, renameNoteTitle, convertNovelistType, updateNoteBlocks, toggleCheckFromAggregate, updateWorkflowNoteStatus, updateNoteProperty, updateWorkflowArchived, updateNoteTags, addTag, tagCurrentNoteFromAi, removeTag, removeNovelistSupportingType };
 }
 
 export { useAppPlanningActions };

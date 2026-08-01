@@ -576,6 +576,104 @@ async function viewsRowCount(win) {
   return evaluate(win, `document.querySelector('[data-mn-views-body]')?.querySelectorAll('[data-mn-view-row]').length ?? -1`);
 }
 
+// A card is clicked by the note it shows, not by its whole text: the card's
+// textContent is the title, the source, a preview and its tags run together.
+async function clickViewsCard(win, text) {
+  const result = await evaluate(win, `
+    (() => {
+      const cards = [...document.querySelectorAll('[data-mn-views-body] [data-mn-view-row]')];
+      const card = cards.find(el => (el.textContent || '').includes(${JSON.stringify(text)}));
+      if (!card) return { ok: false, cards: cards.map(el => (el.textContent || '').trim().slice(0, 40)) };
+      card.click();
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error(`Views card not found for ${text}: ${JSON.stringify(result.cards)}`);
+}
+
+// Ticks the row that shows a particular line, not whichever card happens to be
+// first. A view can hold several open tasks at once, and "the first checkbox on
+// screen" quietly becomes the wrong one the moment another task is added.
+async function clickViewsRowCheck(win, text) {
+  const result = await evaluate(win, `
+    (() => {
+      const rows = [...document.querySelectorAll('[data-mn-views-body] [data-mn-view-row]')];
+      const row = rows.find(el => (el.textContent || '').includes(${JSON.stringify(text)}));
+      if (!row) return { ok: false, rows: rows.map(el => (el.textContent || '').trim().slice(0, 40)) };
+      const box = row.querySelector('button[aria-label="Complete task"], button[aria-label="Reopen task"]');
+      if (!box) return { ok: false, box: false };
+      box.click();
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error(`Views row check not found for ${text}: ${JSON.stringify(result)}`);
+}
+
+// Commits an inline title the way a person does: type, then Enter.
+async function commitViewsInlineTitle(win, ariaLabel, value) {
+  const result = await evaluate(win, `
+    (() => {
+      const el = document.querySelector('input[aria-label=' + ${JSON.stringify(JSON.stringify(ariaLabel))} + ']');
+      if (!el) return { ok: false, inputs: [...document.querySelectorAll('input')].map(input => input.getAttribute('aria-label')) };
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, ${JSON.stringify(value)});
+      else el.value = ${JSON.stringify(value)};
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return { ok: true };
+    })()
+  `);
+  if (!result.ok) throw new Error(`Views inline title not found for ${ariaLabel}: ${JSON.stringify(result.inputs)}`);
+}
+
+// A board drag, one event per turn of the loop. Dispatching dragstart, dragover
+// and drop in a single script would read stale handlers: each one sets state
+// the next one depends on, and React has not re-rendered in between. Waiting on
+// what each step makes visible is also the assertion that the step worked.
+async function dragViewsCardToColumn(win, cardText, columnKey) {
+  const started = await evaluate(win, `
+    (() => {
+      const cards = [...document.querySelectorAll('[data-mn-views-board-column] [data-mn-view-row]')];
+      const card = cards.find(el => (el.textContent || '').includes(${JSON.stringify(cardText)}));
+      if (!card) return { ok: false, cards: cards.map(el => (el.textContent || '').trim().slice(0, 40)) };
+      if (card.getAttribute('draggable') !== 'true') return { ok: false, draggable: false };
+      card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }));
+      return { ok: true };
+    })()
+  `);
+  if (!started.ok) throw new Error(`Views board card not draggable for ${cardText}: ${JSON.stringify(started)}`);
+
+  await waitFor(win, `views board card ${cardText} picks up`, async () => {
+    const current = await evaluate(win, `(() => {
+      const cards = [...document.querySelectorAll('[data-mn-views-board-column] [data-mn-view-row]')];
+      const card = cards.find(el => (el.textContent || '').includes(${JSON.stringify(cardText)}));
+      return { opacity: card ? getComputedStyle(card).opacity : '' };
+    })()`);
+    return { ok: Number(current.opacity) < 1, current };
+  });
+
+  await evaluate(win, `(() => {
+    const column = document.querySelector('[data-mn-views-board-column=' + ${JSON.stringify(JSON.stringify(columnKey))} + ']');
+    if (!column) return false;
+    column.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }));
+    return true;
+  })()`);
+  await waitFor(win, `views board column ${columnKey} offers the drop`, async () => {
+    const current = await evaluate(win, `(() => {
+      const column = document.querySelector('[data-mn-views-board-column=' + ${JSON.stringify(JSON.stringify(columnKey))} + ']');
+      return { release: /Release to move here/.test(column ? column.textContent : '') };
+    })()`);
+    return { ok: current.release, current };
+  });
+
+  await evaluate(win, `(() => {
+    const column = document.querySelector('[data-mn-views-board-column=' + ${JSON.stringify(JSON.stringify(columnKey))} + ']');
+    if (!column) return false;
+    column.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }));
+    return true;
+  })()`);
+}
+
 async function runViewsPanelScenario(win) {
   await setPackEnabledForRegression(win, 'views', true);
   try {
@@ -979,6 +1077,154 @@ async function runViewsPanelScenario(win) {
       return { ok: !current.titles.includes('QE Renamed View'), current };
     });
 
+    // A card is editable where it sits. Clicking the space in a card opens the
+    // small edit; the title it commits has to be the note's title on disk, not
+    // a label that reverts the next time the query runs.
+    await seedEditorNote(win, {
+      id: 'qe_views_card',
+      title: 'QE Views Card Note',
+      body: 'Parent\n\nstatus:: doing\n',
+      expect: 'Parent',
+    });
+    await clickVisibleText(win, 'Views');
+    await clickVisibleText(win, 'Recent notes');
+    await clickVisibleText(win, 'Cards');
+    await waitFor(win, 'a views card carries a hue open mark and a hover bar', async () => {
+      const current = await evaluate(win, `(() => {
+        const card = [...document.querySelectorAll('[data-mn-views-body] [data-mn-view-row]')]
+          .find(el => (el.textContent || '').includes('QE Views Card Note'));
+        if (!card) return { card: false };
+        const bar = card.querySelector('.mn-view-card-bar');
+        return {
+          card: true,
+          bar: Boolean(bar),
+          // Hidden until the pointer arrives, but present and reachable.
+          hidden: bar ? getComputedStyle(bar).opacity === '0' : false,
+          open: Boolean(card.querySelector('button[aria-label^="Open "]')),
+          // The solid Open button the dashboard drew is gone from a card.
+          solid: [...card.querySelectorAll('button')].some(el => (el.textContent || '').trim() === 'Open'),
+        };
+      })()`);
+      return { ok: current.card && current.bar && current.hidden && current.open && !current.solid, current };
+    });
+    await clickViewsCard(win, 'QE Views Card Note');
+    await commitViewsInlineTitle(win, 'Rename QE Views Card Note', 'QE Views Renamed Card');
+    await waitForPersistedNote(win, 'QE Views Renamed Card', note => /status::\s*doing/.test(String(note.body || '')));
+
+    // Dragging a card to another board column writes the property the board is
+    // grouped by. The seeded note carries `status:: doing`, so the board has a
+    // doing column to drop into and a note without a status to drop.
+    await clickVisibleText(win, 'Board');
+    await waitFor(win, 'the board offers the column the seeded status made', async () => {
+      const current = await evaluate(win, `(() => {
+        const columns = [...document.querySelectorAll('[data-mn-views-board-column]')].map(el => el.getAttribute('data-mn-views-board-column'));
+        return { columns, hint: /Drag a card to another column to set its status/.test(document.querySelector('[data-mn-views-body]')?.textContent || '') };
+      })()`);
+      return { ok: current.columns.includes('doing') && current.hint, current };
+    });
+    await dragViewsCardToColumn(win, 'QE Views Property Note', 'doing');
+    await waitForPersistedNote(win, 'QE Views Property Note', note => /status::\s*doing/.test(String(note.body || '')));
+
+    // Dragging the last card out of a column must not erase the column: the
+    // grouping only makes buckets for values still present in notes, so the
+    // board remembers columns it has shown. A column you cannot see is one
+    // you cannot drag a card back into.
+    await seedEditorNote(win, {
+      id: 'qe_views_review',
+      title: 'QE Views Review Note',
+      body: 'Parent\n\nstatus:: review\n',
+      expect: 'Parent',
+    });
+    await clickVisibleText(win, 'Views');
+    await clickVisibleText(win, 'Recent notes');
+    await clickVisibleText(win, 'Board');
+    await dragViewsCardToColumn(win, 'QE Views Review Note', 'doing');
+    await waitFor(win, 'the emptied review column stays on screen', async () => {
+      const current = await evaluate(win, `(() => ({
+        columns: [...document.querySelectorAll('[data-mn-views-board-column]')].map(el => el.getAttribute('data-mn-views-board-column')),
+      }))()`);
+      return { ok: current.columns.includes('review') && current.columns.includes('doing'), current };
+    });
+    await dragViewsCardToColumn(win, 'QE Views Review Note', 'review');
+    await waitForPersistedNote(win, 'QE Views Review Note', note => /status::\s*review/.test(String(note.body || '')));
+
+    // The calendar plans as well as reports: adding a todo on a day writes a
+    // real `- [ ]` line into a real note, the way the agenda does.
+    await clickVisibleText(win, 'Calendar');
+    await clickButton(win, { aria: 'Add to the selected day' });
+    await setInputByAria(win, 'New item text', 'qe views calendar todo');
+    await setSelectByAria(win, 'Note this item lives in', 'qe_views_card');
+    await clickButton(win, { text: 'Add' });
+    await waitForPersistedNote(win, 'QE Views Renamed Card', note => /- \[ \]\s+qe views calendar todo @remind \d{4}-\d{2}-\d{2}/.test(String(note.body || '')));
+
+    // Picking a chip edits the row it came from. Clearing its date is the write
+    // in reverse, and it also puts the vault back the way the later scenarios
+    // expect it: a dated item is what makes the app infer the planning pack, so
+    // leaving one here would hand every scenario after this an Agenda it never
+    // asked for.
+    await clickVisibleText(win, 'Open tasks');
+    await clickVisibleText(win, 'Calendar');
+    await clickVisibleText(win, 'qe views calendar todo');
+    await waitFor(win, 'picking a calendar chip opens the row editor', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('[data-mn-views-planner]');
+        const input = strip?.querySelector('input[aria-label="Row text"]');
+        return { strip: Boolean(strip), value: input ? input.value : '', clear: Boolean([...(strip?.querySelectorAll('button') || [])].find(el => (el.textContent || '').trim() === 'Clear date')) };
+      })()`);
+      return { ok: current.value === 'qe views calendar todo' && current.clear, current };
+    });
+    await clickVisibleText(win, 'Clear date');
+    await waitForPersistedNote(win, 'QE Views Renamed Card', note => /- \[ \]\s+qe views calendar todo\s*$/m.test(String(note.body || '')));
+
+    // A note chip is the note itself: picking it offers a rename, never the
+    // date form — a note's date is the file's own modified time, and a form
+    // that could only refuse taught that the editor was broken. The renamed
+    // card was written to a moment ago, so it sits within the two chips a
+    // day shows.
+    await clickVisibleText(win, 'Recent notes');
+    await clickVisibleText(win, 'Calendar');
+    await clickVisibleText(win, 'QE Views Renamed Card');
+    await waitFor(win, 'a note chip opens a rename editor, not a date form', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('[data-mn-views-planner]');
+        return {
+          strip: Boolean(strip),
+          value: strip?.querySelector('input[aria-label="Row text"]')?.value || '',
+          date: Boolean(strip?.querySelector('input[aria-label="Row date"]')),
+          renames: /Saving renames it/.test(strip?.textContent || ''),
+        };
+      })()`);
+      return { ok: current.strip && current.value === 'QE Views Renamed Card' && !current.date && current.renames, current };
+    });
+    await setInputByAria(win, 'Row text', 'QE Views Redux Card');
+    await clickVisibleText(win, 'Save');
+    // The rename went through the app rename, so the body — the status line
+    // and the todo added above — survived it untouched.
+    await waitForPersistedNote(win, 'QE Views Redux Card', note => /status::\s*doing/.test(String(note.body || '')) && /- \[ \]\s+qe views calendar todo/.test(String(note.body || '')));
+
+    // "New note for this item" makes the note and then the item: the note is
+    // not in the app's list until the next render, so the item write is
+    // deferred — the todo line landing in the brand-new note is the proof.
+    await clickVisibleText(win, 'Open tasks');
+    await clickVisibleText(win, 'Calendar');
+    await clickButton(win, { aria: 'Add to the selected day' });
+    await setInputByAria(win, 'New item text', 'qe views planner fresh note');
+    await setSelectByAria(win, 'Note this item lives in', '__mn_views_new_note');
+    await clickButton(win, { text: 'Add' });
+    await waitForPersistedNote(win, 'qe views planner fresh note', note => /- \[ \]\s+qe views planner fresh note @remind \d{4}-\d{2}-\d{2}/.test(String(note.body || '')));
+    // Undate it so this scenario leaves the vault the way it found it — a
+    // dated item is what makes the app infer the planning pack.
+    await clickVisibleText(win, 'qe views planner fresh note');
+    await waitFor(win, 'the fresh todo opens in the row editor', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('[data-mn-views-planner]');
+        return { value: strip?.querySelector('input[aria-label="Row text"]')?.value || '' };
+      })()`);
+      return { ok: current.value === 'qe views planner fresh note', current };
+    });
+    await clickVisibleText(win, 'Clear date');
+    await waitForPersistedNote(win, 'qe views planner fresh note', note => /- \[ \]\s+qe views planner fresh note\s*$/m.test(String(note.body || '')));
+
     // Ticking a task from the board must change the note on disk, not just
     // the pixel. Last, because completing it empties the Open tasks view.
     await seedEditorNote(win, {
@@ -1000,7 +1246,26 @@ async function runViewsPanelScenario(win) {
       })()`);
       return { ok: current.panel && current.box, current };
     });
-    await clickButton(win, { aria: 'Complete task' });
+    // Enter pressed on the checkbox itself belongs to the checkbox. The card
+    // around it also listens for Enter, and used to hijack the bubbled key
+    // and open the note instead of completing the task.
+    const dispatchedKey = await evaluate(win, `(() => {
+      const rows = [...document.querySelectorAll('[data-mn-views-body] [data-mn-view-row]')];
+      const row = rows.find(el => (el.textContent || '').includes('ship the views board'));
+      const box = row?.querySelector('button[aria-label="Complete task"]');
+      if (!box) return false;
+      box.focus();
+      box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      return true;
+    })()`);
+    if (!dispatchedKey) throw new Error('Could not aim Enter at the views task checkbox');
+    await waitFor(win, 'views panel survives keyboard on the checkbox', async () => {
+      const current = await evaluate(win, `(() => ({
+        panel: Boolean(document.querySelector('[data-mn-views-panel]')),
+      }))()`);
+      return { ok: current.panel, current };
+    });
+    await clickViewsRowCheck(win, 'ship the views board');
     await waitForPersistedNote(win, 'QE Views Task Note', note => /- \[x\]\s+ship the views board/i.test(String(note.body || '')));
   } finally {
     await setPackEnabledForRegression(win, 'views', false);
@@ -2904,6 +3169,14 @@ async function runGeneralAttachmentScenario(win) {
   await waitForPersistedNote(win, 'QE General Attachment', note => (
     String(note.body || '').includes('[QE Project Brief.pdf](attachments/QE-Project-Brief-')
   ));
+  // The renderer persists which note is selected into .meta.json on a
+  // debounced timer, and the reload below kills that timer with the write
+  // still pending. Reloading before it lands boots the app back on whatever
+  // note the meta last flushed — so the reload waits for the meta, not luck.
+  await waitFor(win, 'general attachment selection persists to vault meta', async () => {
+    const vault = await loadActiveVault(win);
+    return { ok: vault.lastSelectedId === 'qe_general_attachment', lastSelectedId: vault.lastSelectedId };
+  });
   win.webContents.reload();
   await waitFor(win, 'general attachment note reloads in display mode', async () => {
     const current = await state(win);
