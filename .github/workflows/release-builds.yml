@@ -187,8 +187,12 @@ jobs:
 
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CSC_LINK: ${{ secrets[matrix.csc_link_secret] }}
-      CSC_KEY_PASSWORD: ${{ secrets[matrix.csc_password_secret] }}
+      # CSC_LINK and CSC_KEY_PASSWORD are deliberately absent here. Setting them
+      # from a missing secret defines them as empty strings, and electron-builder
+      # treats "" as a certificate path, resolves it against the project root and
+      # dies with "<project dir> not a file". An unset variable is skipped; an
+      # empty one is a broken path. They are exported below only when real.
+      #
       # Signing engages automatically when the certificate secret exists. With no
       # secret, disable identity auto-discovery so the build is deterministically
       # unsigned instead of depending on an empty runner keychain.
@@ -207,6 +211,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Defined only when a real certificate exists, so electron-builder sees no
+      # variable at all rather than an empty path it cannot resolve.
+      - name: Export signing credentials
+        if: env.SIGNING_AVAILABLE == 'true'
+        shell: bash
+        env:
+          CERTIFICATE: ${{ secrets[matrix.csc_link_secret] }}
+          CERTIFICATE_PASSWORD: ${{ secrets[matrix.csc_password_secret] }}
+        run: |
+          printf 'CSC_LINK=%s\n' "${CERTIFICATE}" >> "${GITHUB_ENV}"
+          printf 'CSC_KEY_PASSWORD=%s\n' "${CERTIFICATE_PASSWORD}" >> "${GITHUB_ENV}"
 
       # Still fails closed: when signing credentials are present they must all be
       # present and valid. It is skipped only when none are configured, so a
