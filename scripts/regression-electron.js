@@ -3127,6 +3127,14 @@ async function runGeneralAttachmentScenario(win) {
   await waitForPersistedNote(win, 'QE General Attachment', note => (
     String(note.body || '').includes('[QE Project Brief.pdf](attachments/QE-Project-Brief-')
   ));
+  // The renderer persists which note is selected into .meta.json on a
+  // debounced timer, and the reload below kills that timer with the write
+  // still pending. Reloading before it lands boots the app back on whatever
+  // note the meta last flushed — so the reload waits for the meta, not luck.
+  await waitFor(win, 'general attachment selection persists to vault meta', async () => {
+    const vault = await loadActiveVault(win);
+    return { ok: vault.lastSelectedId === 'qe_general_attachment', lastSelectedId: vault.lastSelectedId };
+  });
   win.webContents.reload();
   await waitFor(win, 'general attachment note reloads in display mode', async () => {
     const current = await state(win);
