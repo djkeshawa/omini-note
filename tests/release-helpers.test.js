@@ -395,3 +395,20 @@ test('a .deb needs no block map, because Debian packages have no differential up
     );
   });
 });
+
+test('the release pipeline rehearses on a schedule and cannot publish from one', () => {
+  // scripts/release-tools/ was written after v0.2.1 and first ran months later,
+  // by which point it had eight independent breakages. A release pipeline is
+  // only exercised by releasing, so it runs weekly with nothing at stake.
+  const workflow = fs.readFileSync(
+    path.join(PROJECT_ROOT, '.github', 'workflows', 'release-builds.yml'),
+    'utf8'
+  );
+  assert.match(workflow, /^\s+schedule:\n\s+- cron: "[^"]+"/m, 'the rehearsal must be scheduled');
+
+  // The safety property: a rehearsal builds, and never ships.
+  assert.match(workflow, /github\.event_name != 'schedule'/, 'publish must refuse scheduled runs');
+  const publishJob = workflow.slice(workflow.indexOf('\n  publish:'));
+  assert.match(publishJob, /if: >-\n\s+github\.event_name != 'schedule'/);
+  assert.match(publishJob, /startsWith\(github\.ref, 'refs\/tags\/v'\) \|\| inputs\.publish_release == true/);
+});

@@ -54,6 +54,17 @@ The final July 13, 2026 Windows/Electron verification measured a 164.04 ms index
   integrity, and reject anything outside the fixed per-platform inventory.
 - A publish tag must be exactly `v${package.json.version}`. Matrix CLI
   `--x64`/`--arm64` flags are the only package-architecture authority.
+- The release pipeline rehearses weekly (Mondays, `17 6 * * 1`). It validates
+  and builds installers on all four targets and **cannot publish**: every
+  publishing step needs a tag ref or an explicit dispatch input, and the publish
+  job additionally refuses `github.event_name == 'schedule'`.
+  **Added for 0.2.3.** Everything in `scripts/release-tools/` was written after
+  v0.2.1 and first ran months later, by which point it carried eight
+  independent breakages — npm that could not launch on Windows, an asar lookup
+  using the wrong path separator, a blockmap assertion comparing `undefined` to
+  a number, among others. A release pipeline is only exercised by releasing.
+  GitHub disables scheduled workflows after 60 days of repository inactivity;
+  if the rehearsals stop arriving, that is why.
 - Release validation is comprehensive on Linux and a smoke test on macOS and
   Windows, matching what `ci.yml` runs per platform on every pull request.
   **Changed for 0.2.3.** Those two previously ran the full `test:all` at release
