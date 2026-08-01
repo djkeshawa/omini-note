@@ -4,17 +4,22 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { createVaultWatcher, isRelevantVaultFile } = require('../lib/vaultWatcher');
+const { createVaultWatcher, isRelevantVaultFile, DEFAULT_MTIME_SKEW_MS } = require('../lib/vaultWatcher');
 
 // fs.watch is replaced so a test can deliver events deterministically; the
 // directory and the files in it are real, because mtime is what the watcher
 // now reasons about.
-function harness() {
+const DEBOUNCE_MS = 50;
+const SETTLE_TIMEOUT_MS = 4000;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function harness({ mtimeSkewMs } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-watch-'));
   const seen = [];
   let deliver = () => {};
   const watcher = createVaultWatcher({
-    debounceMs: 50,
+    debounceMs: DEBOUNCE_MS,
+    mtimeSkewMs,
     onChange: change => seen.push(change),
     watch: (_watchPath, _options, listener) => {
       deliver = listener;
@@ -31,7 +36,19 @@ function harness() {
       deliver('change', name);
     },
     emit: (eventType, fileName) => deliver(eventType, fileName),
-    settle: () => new Promise(resolve => setTimeout(resolve, 160)),
+    // Waits for the watcher's debounce to flush.
+    //
+    // A test that expects events polls for them, so a loaded CI runner cannot
+    // fail a test that was merely late. A test that expects none has nothing to
+    // poll for and must wait out a window — but it waits a stated multiple of
+    // the debounce rather than a magic 160ms, so the margin is visible and
+    // scales if the debounce changes.
+    async settle(expectedEvents = 0) {
+      await sleep(DEBOUNCE_MS * 3);
+      if (!expectedEvents) return;
+      const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+      while (seen.length < expectedEvents && Date.now() < deadline) await sleep(10);
+    },
     cleanup() {
       watcher.close();
       fs.rmSync(dir, { recursive: true, force: true });
@@ -65,7 +82,7 @@ test('an edit made after our save is reported however recently we wrote', async 
     // permanently — continuous autosave kept the window open indefinitely.
     await new Promise(resolve => setTimeout(resolve, 12));
     h.write('note.md', 'edited in another app');
-    await h.settle();
+    await h.settle(1);
     assert.equal(h.seen.length, 1, 'the external edit is reported');
     assert.equal(h.seen[0].fileName, 'note.md');
     assert.equal(h.seen[0].vaultId, 'v1');
@@ -97,7 +114,7 @@ test('an external edit to a second file is reported even while our own save is p
     h.watcher.markInternal('v1');
     await new Promise(resolve => setTimeout(resolve, 12));
     h.write('theirs.md', 'their content');
-    await h.settle();
+    await h.settle(1);
     assert.equal(h.seen.length, 1);
     assert.equal(h.seen[0].fileName, 'theirs.md', 'suppression is per file, not per vault');
   } finally {
@@ -123,7 +140,7 @@ test('closing a vault clears the state that decides what is ours', async () => {
     h.watcher.refresh([]);
     h.watcher.refresh([{ id: 'v1', path: h.dir }]);
     h.write('note.md', 'changed while unwatched');
-    await h.settle();
+    await h.settle(1);
     assert.equal(h.seen.length, 1, 'a rewatched vault starts with no assumptions');
   } finally {
     h.cleanup();
@@ -141,7 +158,7 @@ test('an edit made before our own save is still reported, not swallowed by it', 
     await new Promise(resolve => setTimeout(resolve, 12));
     h.write('ours.md', 'our content');
     h.watcher.markInternal('v1', ['ours']);
-    await h.settle();
+    await h.settle(1);
     assert.equal(h.seen.length, 1);
     assert.equal(h.seen[0].fileName, 'theirs.md');
   } finally {
@@ -204,7 +221,7 @@ test('one debounce reports every external Markdown file in a single batch', asyn
     h.write('two.md', 'two');
     h.write('ours.md', 'internal');
     h.watcher.markInternal('v1', ['ours']);
-    await h.settle();
+    await h.settle(1);
 
     assert.equal(h.seen.length, 1, 'a vault batch emits once');
     assert.equal(h.seen[0].fileName, 'one.md', 'legacy consumers still receive the first filename');
@@ -222,7 +239,7 @@ test('a watcher event without a filename requests a full-vault refresh', async (
   const h = harness();
   try {
     h.emit('change', null);
-    await h.settle();
+    await h.settle(1);
 
     assert.equal(h.seen.length, 1);
     assert.equal(h.seen[0].fullVault, true);
@@ -231,5 +248,80 @@ test('a watcher event without a filename requests a full-vault refresh', async (
     assert.deepEqual(h.seen[0].changes, [{ fileName: null, eventType: 'change' }]);
   } finally {
     h.cleanup();
+  }
+});
+
+// stat is injected so mtime is stated outright rather than raced for. The bug
+// this covers is a clock disagreement, not a scheduling one, so nothing here
+// depends on how fast the machine is.
+function skewHarness(mtimeSkewMs) {
+  const seen = [];
+  let deliver = () => {};
+  let mtimeMs = 0;
+  const watcher = createVaultWatcher({
+    debounceMs: DEBOUNCE_MS,
+    mtimeSkewMs,
+    onChange: change => seen.push(change),
+    stat: async () => ({ mtimeMs }),
+    watch: (_watchPath, _options, listener) => {
+      deliver = listener;
+      return { close() {}, on() {} };
+    },
+  });
+  watcher.refresh([{ id: 'v1', path: path.join(os.tmpdir(), 'vispnote-skew-none') }]);
+  return {
+    seen,
+    watcher,
+    async changeWithMtime(at) {
+      mtimeMs = at;
+      deliver('change', 'note.md');
+      await sleep(DEBOUNCE_MS * 3);
+    },
+    cleanup: () => watcher.close(),
+  };
+}
+
+test('clock skew between Date.now and file mtime does not turn our own save into an outside edit', async () => {
+  // Windows stamps Date.now() from a ~15.6ms-granular clock while NTFS records
+  // file times from a finer source, so a file we just wrote reads as tens of
+  // milliseconds newer than the moment we recorded finishing it. At the old
+  // 2ms tolerance that surfaced the user's own writes as external edits, and
+  // took Windows release validation down at random.
+  const h = skewHarness(50);
+  try {
+    const markedAt = Date.now();
+    h.watcher.markInternal('v1');
+
+    await h.changeWithMtime(markedAt + 30);
+    assert.deepEqual(h.seen, [], '30ms of clock skew is still our own write');
+
+    // Tolerance, not blindness: past the window it is somebody else.
+    await h.changeWithMtime(Date.now() + 5000);
+    assert.equal(h.seen.length, 1, 'a genuinely later write is still reported');
+    assert.equal(h.seen[0].fileName, 'note.md');
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('the tolerance is what decides it, so the platform default has to be wide enough', async () => {
+  // Proves the constant is load-bearing rather than decorative: the same 30ms
+  // skew that passes above is reported as external under the old 2ms value.
+  const h = skewHarness(2);
+  try {
+    const markedAt = Date.now();
+    h.watcher.markInternal('v1');
+    await h.changeWithMtime(markedAt + 30);
+    assert.equal(h.seen.length, 1, 'this is the failure the platform default exists to prevent');
+  } finally {
+    h.cleanup();
+  }
+
+  assert.ok(DEFAULT_MTIME_SKEW_MS >= 2, 'some tolerance is always needed');
+  if (process.platform === 'win32') {
+    assert.ok(
+      DEFAULT_MTIME_SKEW_MS >= 16,
+      'Windows needs more than one system clock tick (~15.6ms) of tolerance'
+    );
   }
 });
