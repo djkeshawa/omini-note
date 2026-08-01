@@ -281,7 +281,7 @@ function skewHarness(mtimeSkewMs) {
   };
 }
 
-test('clock skew between Date.now and file mtime does not turn our own save into an outside edit', async () => {
+test('the vault-wide fallback tolerates clock skew, because it has no file to measure', async () => {
   // Windows stamps Date.now() from a ~15.6ms-granular clock while NTFS records
   // file times from a finer source, so a file we just wrote reads as tens of
   // milliseconds newer than the moment we recorded finishing it. At the old
@@ -304,7 +304,7 @@ test('clock skew between Date.now and file mtime does not turn our own save into
   }
 });
 
-test('the tolerance is what decides it, so the platform default has to be wide enough', async () => {
+test('the fallback tolerance is what decides it, so the platform default has to be wide enough', async () => {
   // Proves the constant is load-bearing rather than decorative: the same 30ms
   // skew that passes above is reported as external under the old 2ms value.
   const h = skewHarness(2);
@@ -323,5 +323,74 @@ test('the tolerance is what decides it, so the platform default has to be wide e
       DEFAULT_MTIME_SKEW_MS >= 16,
       'Windows needs more than one system clock tick (~15.6ms) of tolerance'
     );
+  }
+});
+
+// Both stat entry points are injected, so the "filesystem clock" can be placed
+// anywhere relative to Date.now() and the named path can be tested for what it
+// actually promises: that the wall clock never enters into it.
+function namedHarness({ mtimeSkewMs = 0 } = {}) {
+  const seen = [];
+  let deliver = () => {};
+  let mtimeMs = 0;
+  const watcher = createVaultWatcher({
+    debounceMs: DEBOUNCE_MS,
+    mtimeSkewMs,
+    onChange: change => seen.push(change),
+    stat: async () => ({ mtimeMs }),
+    statSync: () => ({ mtimeMs }),
+    watch: (_watchPath, _options, listener) => {
+      deliver = listener;
+      return { close() {}, on() {} };
+    },
+  });
+  watcher.refresh([{ id: 'v1', path: path.join(os.tmpdir(), 'vispnote-named-none') }]);
+  return {
+    seen,
+    watcher,
+    setMtime(value) { mtimeMs = value; },
+    async change() {
+      deliver('change', 'note.md');
+      await sleep(DEBOUNCE_MS * 3);
+    },
+    cleanup: () => watcher.close(),
+  };
+}
+
+test('a named mutation needs no clock tolerance, however far the clocks disagree', async () => {
+  // Zero tolerance, and a filesystem reading an hour ahead of Date.now(). No
+  // skew constant could survive that, which is the point: markInternal reads
+  // the mtime its own write produced, so both sides of the comparison come
+  // from the same clock and the wall clock is never consulted.
+  const h = namedHarness({ mtimeSkewMs: 0 });
+  try {
+    const ourWrite = Date.now() + 3600_000;
+    h.setMtime(ourWrite);
+    h.watcher.markInternal('v1', ['note']);
+
+    await h.change();
+    assert.deepEqual(h.seen, [], 'our own write is ours whatever the clocks say');
+
+    // One millisecond past what we wrote is somebody else, with no grace.
+    h.setMtime(ourWrite + 1);
+    await h.change();
+    assert.equal(h.seen.length, 1, 'a later write is reported with no tolerance to hide in');
+    assert.equal(h.seen[0].fileName, 'note.md');
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('a named mutation to one note says nothing about another', async () => {
+  // The stamp is the mtime of the file we named. A second file sharing that
+  // mtime must not inherit the suppression.
+  const h = namedHarness({ mtimeSkewMs: 0 });
+  try {
+    h.setMtime(Date.now());
+    h.watcher.markInternal('v1', ['other']);
+    await h.change();
+    assert.equal(h.seen.length, 1, 'note.md was never claimed by a mutation to other.md');
+  } finally {
+    h.cleanup();
   }
 });
