@@ -26,6 +26,10 @@ function expectedArtifactNames(platformValue, archValue, versionValue) {
     return [
       `VispNote-${version}-mac-${arch}.dmg`,
       `VispNote-${version}-mac-${arch}.zip`,
+      // electron-builder emits a sibling block map for the zip. The dmg has
+      // writeUpdateInfo disabled so it produces none. Listing it keeps the
+      // inventory exact rather than letting a produced artifact go unclaimed.
+      `VispNote-${version}-mac-${arch}.zip.blockmap`,
     ];
   }
   if (platform === 'linux' && arch === 'x64') {
