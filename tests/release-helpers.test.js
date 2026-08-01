@@ -286,3 +286,59 @@ test('the release retry helper can actually start npm on Windows', () => {
   const failed = retry.defaultRun(process.execPath, ['-e', 'process.exit(3)']);
   assert.equal(failed.status, 3, 'a real exit code must survive the wrapper');
 });
+
+const renderer = require('../scripts/verify-packaged-renderer');
+
+test('packaged renderer discovery finds the macOS capital-R Resources directory', () => {
+  // electron-builder writes VispNote.app/Contents/Resources/app.asar. Matching
+  // '/resources/' literally found nothing on macOS, so the verifier reported a
+  // missing bundle for an app it had just built correctly, and no release could
+  // pass the build stage.
+  withTemp(root => {
+    const mac = path.join(root, 'VispNote.app', 'Contents', 'Resources');
+    write(path.join(mac, 'app.asar'), 'archive');
+    const found = renderer.discoverResourceRoots(root, 'darwin');
+    assert.equal(found.length, 1, 'capital-R Resources must be discovered');
+    assert.equal(found[0].resources, mac);
+  });
+
+  // Linux and Windows keep their lowercase layout.
+  withTemp(root => {
+    const linux = path.join(root, 'linux-unpacked', 'resources');
+    write(path.join(linux, 'app.asar'), 'archive');
+    assert.equal(renderer.discoverResourceRoots(root, 'linux').length, 1);
+  });
+});
+
+test('reading a file out of app.asar uses separators this platform understands', () => {
+  // @electron/asar splits an archive path on path.sep, so a forward-slash entry
+  // resolves to nothing on Windows however correct the archive is. Assert the
+  // separator the lookup is given rather than the archive format.
+  withTemp(root => {
+    const resources = path.join(root, 'resources');
+    let requested = null;
+    const original = require.cache[require.resolve('@electron/asar')];
+    write(path.join(resources, 'app.asar'), 'archive');
+
+    // The unpacked branch is the reference: it already joins natively.
+    write(path.join(resources, 'app', 'build', 'renderer', 'app.js'), 'bundle');
+    assert.equal(
+      renderer.readPackagedFile(resources, 'build/renderer/app.js').toString(),
+      'bundle',
+      'the unpacked path must resolve on every platform'
+    );
+
+    // With no unpacked copy the asar branch runs, and must be handed a native path.
+    fs.rmSync(path.join(resources, 'app'), { recursive: true, force: true });
+    require.cache[require.resolve('@electron/asar')] = {
+      exports: { extractFile: (_archive, entry) => { requested = entry; return Buffer.from('bundle'); } },
+    };
+    try {
+      renderer.readPackagedFile(resources, 'build/renderer/app.js');
+    } finally {
+      if (original) require.cache[require.resolve('@electron/asar')] = original;
+      else delete require.cache[require.resolve('@electron/asar')];
+    }
+    assert.equal(requested, ['build', 'renderer', 'app.js'].join(path.sep));
+  });
+});

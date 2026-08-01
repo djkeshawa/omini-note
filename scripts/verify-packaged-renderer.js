@@ -89,7 +89,11 @@ function readPackagedFile(resources, entry) {
     throw new Error(`Missing packaged app.asar in ${resources}`);
   }
   try {
-    return loadAsar().extractFile(asarFile, entry);
+    // @electron/asar resolves an archive path with p.split(path.sep), so on
+    // Windows a forward-slash entry never splits into directories and every
+    // lookup misses however correct the archive is. The unpacked branch above
+    // already goes through path.join for exactly this reason.
+    return loadAsar().extractFile(asarFile, entry.split('/').join(path.sep));
   } catch (error) {
     throw new Error(`Missing ${entry} from packaged app.asar: ${error.message}`);
   }
@@ -99,7 +103,11 @@ function discoverResourceRoots(searchRoot, platform) {
   const normalizedPlatform = normalizePlatform(platform);
   const resources = new Set();
   for (const file of walk(searchRoot)) {
-    const normalized = file.replace(/\\/g, '/');
+    // Case-insensitive on purpose: macOS packages to
+    // VispNote.app/Contents/Resources/app.asar with a capital R, so matching
+    // '/resources/' literally found nothing there and the verifier reported a
+    // missing bundle for an app it had just built correctly.
+    const normalized = file.replace(/\\/g, '/').toLowerCase();
     if (normalized.endsWith('/resources/app.asar')) resources.add(path.dirname(file));
     if (normalized.endsWith('/resources/app/package.json')) {
       resources.add(path.dirname(path.dirname(file)));
@@ -114,8 +122,8 @@ function discoverResourceRoots(searchRoot, platform) {
 function packagedResourceRoots(root = ROOT, platform = process.platform) {
   const normalizedPlatform = normalizePlatform(platform);
   return discoverResourceRoots(path.join(root, 'dist'), normalizedPlatform).filter(resourceRoot => {
-    const normalized = resourceRoot.resources.replace(/\\/g, '/');
-    if (normalizedPlatform === 'darwin') return normalized.endsWith('.app/Contents/Resources');
+    const normalized = resourceRoot.resources.replace(/\\/g, '/').toLowerCase();
+    if (normalizedPlatform === 'darwin') return normalized.endsWith('.app/contents/resources');
     if (normalizedPlatform === 'win32') return normalized.includes('/win-unpacked/resources');
     return normalized.includes('/linux-unpacked/resources');
   });
