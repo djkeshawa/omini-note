@@ -89,7 +89,12 @@ test('macOS signing preparation fails closed and writes a private API key file',
       RUNNER_TEMP: root,
       GITHUB_ENV: githubEnv,
     });
-    assert.equal(fs.statSync(keyFile).mode & 0o777, 0o600);
+    // POSIX permission bits only. Windows has no mode bits, so chmod(0o600)
+    // reports 0o666 there and the assertion is meaningless rather than failing
+    // usefully. The signing job itself only ever runs on macOS.
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(keyFile).mode & 0o777, 0o600);
+    }
     const githubEnvironment = fs.readFileSync(githubEnv, 'utf8');
     assert.match(githubEnvironment, /^APPLE_API_KEY=.*AuthKey_KEY123\.p8/m);
     assert.match(githubEnvironment, /^APPLE_API_KEY_ID=KEY123$/m);

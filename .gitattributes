@@ -1,0 +1,10 @@
+# Check out LF on every platform, including Windows.
+#
+# tests/renderer-wiring.test.js and tests/ui-regressions.test.js assert against
+# literal source text with regexes that contain \n. Git for Windows converts LF
+# to CRLF on checkout by default, which silently breaks any pattern needing two
+# consecutive newlines: \n\n becomes \n\r\n and never matches. That took the
+# Windows release validation down and blocked publishing.
+#
+# text=auto still detects binaries, so images and archives are left alone.
+* text=auto eol=lf
