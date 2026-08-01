@@ -99,12 +99,17 @@ function assertUpdateMetadata(file, expectedInstallers, artifactDir = path.dirna
     // entirely when given an out file. Comparing blockMapSize against a sibling
     // file's size therefore compared undefined to a number and could not pass
     // for any NSIS build, which is the only kind this repo produces.
+    // Only the targets that support differential download carry one. A .deb has
+    // neither a sibling file nor a blockMapSize, so requiring one of them for
+    // every entry rejects a correct Linux build.
     const blockmap = `${artifact}.blockmap`;
+    const supportsDifferentialUpdate = /\.(?:exe|AppImage|zip)$/i.test(installer);
     if (fs.existsSync(blockmap)) {
       if (!fs.statSync(blockmap).size) {
         throw new Error(`Empty updater blockmap for ${installer}`);
       }
-    } else if (!Number.isSafeInteger(entry.blockMapSize) || entry.blockMapSize <= 0) {
+    } else if (supportsDifferentialUpdate
+      && (!Number.isSafeInteger(entry.blockMapSize) || entry.blockMapSize <= 0)) {
       throw new Error(`Missing updater blockmap for ${installer}`);
     }
   }
