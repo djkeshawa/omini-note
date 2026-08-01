@@ -93,9 +93,19 @@ function assertUpdateMetadata(file, expectedInstallers, artifactDir = path.dirna
     if (entry.sha512 !== hash || entry.size !== contentsBuffer.length) {
       throw new Error(`Updater metadata integrity mismatch for ${installer}`);
     }
+    // electron-builder writes the compressed block map either to a sibling
+    // .blockmap file or appended to the installer itself, never both:
+    // buildBlockMap returns blockMapSize only in append mode, and omits it
+    // entirely when given an out file. Comparing blockMapSize against a sibling
+    // file's size therefore compared undefined to a number and could not pass
+    // for any NSIS build, which is the only kind this repo produces.
     const blockmap = `${artifact}.blockmap`;
-    if (fs.existsSync(blockmap) && entry.blockMapSize !== fs.statSync(blockmap).size) {
-      throw new Error(`Updater blockmap size mismatch for ${installer}`);
+    if (fs.existsSync(blockmap)) {
+      if (!fs.statSync(blockmap).size) {
+        throw new Error(`Empty updater blockmap for ${installer}`);
+      }
+    } else if (!Number.isSafeInteger(entry.blockMapSize) || entry.blockMapSize <= 0) {
+      throw new Error(`Missing updater blockmap for ${installer}`);
     }
   }
 }

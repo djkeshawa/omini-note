@@ -150,7 +150,8 @@ test('Aggregate release inventory requires separate complete matrix directories'
         write(path.join(directory, name));
       }
     }
-    assert.equal(artifacts.verifyAggregateInventory(root, '1.2.3').length, 10);
+    // 12, not 10: each macOS arch also ships the zip's sibling block map.
+    assert.equal(artifacts.verifyAggregateInventory(root, '1.2.3').length, 12);
     fs.rmSync(path.join(root, 'VispNote-macos-arm64'), { recursive: true });
     assert.throws(() => artifacts.verifyAggregateInventory(root, '1.2.3'), /missing: VispNote-macos-arm64/);
   });
@@ -178,8 +179,26 @@ test('Final artifact verifier validates archive headers and updater integrity me
       metadata,
       `files:\n  - url: VispNote-1.2.3-setup-x64.exe\n    sha512: ${hash}\n    size: ${fs.statSync(installer).size}\n`
     );
+    // NSIS writes the compressed block map to a sibling file, and in that mode
+    // electron-builder does not emit blockMapSize at all. The old check compared
+    // the two, so it compared undefined to a number and could never pass.
+    const blockmapFile = `${installer}.blockmap`;
+    write(blockmapFile, Buffer.from('compressed blockmap'));
     assert.doesNotThrow(
       () => finalVerifier.assertUpdateMetadata(metadata, 'VispNote-1.2.3-setup-x64.exe')
+    );
+
+    write(blockmapFile, Buffer.alloc(0));
+    assert.throws(
+      () => finalVerifier.assertUpdateMetadata(metadata, 'VispNote-1.2.3-setup-x64.exe'),
+      /Empty updater blockmap/
+    );
+
+    // No sibling file means append mode, where blockMapSize must be present.
+    fs.rmSync(blockmapFile);
+    assert.throws(
+      () => finalVerifier.assertUpdateMetadata(metadata, 'VispNote-1.2.3-setup-x64.exe'),
+      /Missing updater blockmap/
     );
     write(metadata, 'path: other.exe\n');
     assert.throws(() => finalVerifier.assertUpdateMetadata(metadata, 'expected.exe'), /does not reference/);
