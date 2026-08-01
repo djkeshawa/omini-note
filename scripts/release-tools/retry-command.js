@@ -51,11 +51,18 @@ function sleep(ms) {
 }
 
 function defaultRun(command, args) {
-  const executable = process.platform === 'win32' && command === 'npm' ? 'npm.cmd' : command;
+  const isWindows = process.platform === 'win32';
+  const executable = isWindows && command === 'npm' ? 'npm.cmd' : command;
   return spawnSync(executable, args, {
     cwd: process.cwd(),
     env: process.env,
     stdio: 'inherit',
+    // Node refuses to spawn a .cmd without a shell since the CVE-2024-27980
+    // fix, so npm.cmd fails with EINVAL and the Windows release build never
+    // starts. Only Windows needs this; elsewhere a shell would just add a
+    // quoting hazard for nothing. Release arguments are bare flags, so there
+    // is nothing here for cmd.exe to mis-split.
+    shell: isWindows,
   });
 }
 
@@ -112,6 +119,7 @@ if (require.main === module) {
 
 module.exports = {
   defaultClean,
+  defaultRun,
   main,
   parseArgs,
   retryCommand,

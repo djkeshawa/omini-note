@@ -222,7 +222,12 @@ test('Release configuration has one architecture authority and collision-free ar
   assert.match(workflow, /Download build artifacts without merging/);
   assert.doesNotMatch(workflow, /merge-multiple:\s*true/);
   assert.match(workflow, /APPLE_API_KEY_BASE64/);
-  assert.match(workflow, /CSC_LINK: \$\{\{ secrets\[matrix\.csc_link_secret\] \}\}/);
+  // CSC_LINK must never be defined from a possibly-missing secret at job level:
+  // an empty value is a certificate path electron-builder resolves to the
+  // project root and rejects as "not a file". It is exported only when real.
+  assert.doesNotMatch(workflow, /^\s+CSC_LINK: \$\{\{ secrets\[matrix\.csc_link_secret\] \}\}$/m);
+  assert.match(workflow, /name: Export signing credentials\n\s+if: env\.SIGNING_AVAILABLE == 'true'/);
+  assert.match(workflow, /printf 'CSC_LINK=%s\\n'/);
   // Signing engages off the certificate secret alone, so adding credentials
   // restores signed releases without another workflow edit — and a partial
   // credential set still fails closed inside prepare-macos-signing.js.
@@ -259,4 +264,25 @@ test('macOS signature verification only relaxes on an explicit false', () => {
       `expected "${bad}" to be rejected`
     );
   }
+});
+
+test('the release retry helper can actually start npm on Windows', () => {
+  // Node refuses to spawn a .cmd without a shell since the CVE-2024-27980 fix,
+  // so npm.cmd fails with EINVAL and the Windows release build never starts.
+  // The retry wrapper is the only thing that launches electron-builder, so this
+  // took the whole Windows installer down while every PR stayed green.
+  const source = fs.readFileSync(
+    path.join(PROJECT_ROOT, 'scripts', 'release-tools', 'retry-command.js'),
+    'utf8'
+  );
+  assert.match(source, /shell: isWindows/, 'npm.cmd needs a shell on Windows');
+  assert.match(source, /npm\.cmd/);
+
+  // And defaultRun still launches a real process on whatever platform this is,
+  // which is the part a source assertion alone cannot prove.
+  const ok = retry.defaultRun(process.execPath, ['-e', 'process.exit(0)']);
+  assert.equal(ok.status, 0, ok.error ? String(ok.error) : '');
+
+  const failed = retry.defaultRun(process.execPath, ['-e', 'process.exit(3)']);
+  assert.equal(failed.status, 3, 'a real exit code must survive the wrapper');
 });
