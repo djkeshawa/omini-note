@@ -253,7 +253,14 @@ function parseArgs(argv) {
     else if (flag === '--platform') options.platform = value;
     else if (flag === '--arch') options.arch = value;
     else if (flag === '--version') options.version = value;
-    else throw new Error(`Unknown release verifier option: ${flag}`);
+    else if (flag === '--verify-mac-signing') {
+      // Only an explicit "false" relaxes the check, so a typo or an unresolved
+      // workflow expression still verifies signatures rather than skipping them.
+      if (value !== 'true' && value !== 'false') {
+        throw new Error('--verify-mac-signing requires "true" or "false"');
+      }
+      options.verifyMacSigning = value === 'true';
+    } else throw new Error(`Unknown release verifier option: ${flag}`);
   }
   return options;
 }
@@ -277,6 +284,7 @@ module.exports = {
   assertArtifactMagic,
   assertUpdateMetadata,
   extractWindowsInstaller,
+  parseArgs,
   parseUpdateFiles,
   runCommand,
   verifyReleaseArtifacts,
