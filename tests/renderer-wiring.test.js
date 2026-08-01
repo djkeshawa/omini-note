@@ -327,7 +327,10 @@ test('Ask AI can continue in background and reopen completed responses', () => {
   assert.match(sessionsController, /setSessions\(\[\]\)/);
   assert.match(app, /No AI chats/);
   assert.doesNotMatch(app, /!next\.some\(session => !session\.archived\)/);
-  const deleteChatMatch = sessionsController.match(/const deleteChat = useCallback\([\s\S]*?(?=\n\n  const renameChat)/);
+  // \r?\n, not \n: a CRLF checkout makes a blank line \n\r\n, so a bare \n\n
+  // lookahead never matches and this silently returns null. .gitattributes now
+  // forces LF, and this keeps the test honest if someone's git config differs.
+  const deleteChatMatch = sessionsController.match(/const deleteChat = useCallback\([\s\S]*?(?=\r?\n\r?\n  const renameChat)/);
   assert.ok(deleteChatMatch);
   assert.doesNotMatch(deleteChatMatch[0], /newAiSession/);
   assert.match(appShell, /function MnAiNotice/);
