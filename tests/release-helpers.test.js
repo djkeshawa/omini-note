@@ -230,6 +230,13 @@ test('Release configuration has one architecture authority and collision-free ar
   assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY: \$\{\{ secrets\[matrix\.csc_link_secret\] != '' \}\}/);
   assert.match(workflow, /if: runner\.os == 'macOS' && env\.SIGNING_AVAILABLE == 'true'/);
   assert.match(workflow, /--verify-mac-signing \$\{\{ env\.SIGNING_AVAILABLE \}\}/);
+  // Linux is the comprehensive gate; macOS and Windows run the same Electron
+  // smoke test ci.yml runs on every PR. Running the full suite on those two
+  // only at release time made platform-specific test defects invisible until
+  // someone tried to ship, and blocked releases for three months.
+  assert.match(workflow, /if: runner\.os == 'Linux'\n        run: xvfb-run -a npm run test:all/);
+  assert.match(workflow, /if: runner\.os != 'Linux'\n        run: npm run smoke:electron/);
+  assert.doesNotMatch(workflow, /if: runner\.os != 'Linux'\n        run: npm run test:all/);
   assert.match(workflow, /VISPNOTE_MEMORY_IMAGE/);
   assert.match(workflow, /VISP_MEMORY_SERVER_AUTH_ENABLED: "false"/);
   assert.match(workflow, /VISP_MEMORY_EMBEDDING_PROVIDER: "noop"/);
