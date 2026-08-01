@@ -361,3 +361,37 @@ test('reading a file out of app.asar uses separators this platform understands',
     assert.equal(requested, ['build', 'renderer', 'app.js'].join(path.sep));
   });
 });
+
+test('a .deb needs no block map, because Debian packages have no differential update', () => {
+  // Requiring a block map for every entry in latest-linux.yml rejected a
+  // correct Linux build: deb produces neither a sibling file nor a
+  // blockMapSize, unlike AppImage and NSIS.
+  withTemp(root => {
+    const deb = path.join(root, 'VispNote-1.2.3-linux-amd64.deb');
+    write(deb, Buffer.from('!<arch>\n debian package'));
+    const contents = fs.readFileSync(deb);
+    const hash = crypto.createHash('sha512').update(contents).digest('base64');
+    const metadata = path.join(root, 'latest-linux.yml');
+    write(
+      metadata,
+      `files:\n  - url: VispNote-1.2.3-linux-amd64.deb\n    sha512: ${hash}\n    size: ${contents.length}\n`
+    );
+    assert.doesNotThrow(
+      () => finalVerifier.assertUpdateMetadata(metadata, 'VispNote-1.2.3-linux-amd64.deb', root)
+    );
+
+    // An AppImage in the same position still has to carry one.
+    const appImage = path.join(root, 'VispNote-1.2.3-linux-x86_64.AppImage');
+    write(appImage, Buffer.from('\x7fELF app image'));
+    const appContents = fs.readFileSync(appImage);
+    const appHash = crypto.createHash('sha512').update(appContents).digest('base64');
+    write(
+      metadata,
+      `files:\n  - url: VispNote-1.2.3-linux-x86_64.AppImage\n    sha512: ${appHash}\n    size: ${appContents.length}\n`
+    );
+    assert.throws(
+      () => finalVerifier.assertUpdateMetadata(metadata, 'VispNote-1.2.3-linux-x86_64.AppImage', root),
+      /Missing updater blockmap/
+    );
+  });
+});
