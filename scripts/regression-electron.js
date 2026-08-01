@@ -2619,6 +2619,130 @@ async function runNavigationPanelsScenario(win) {
     const current = await state(win);
     return { ok: current.text.includes('Graph'), current };
   });
+
+  // The graph is a thing you handle, not a picture. Every gesture below is
+  // asserted by what the canvas actually draws afterwards: where a node's
+  // centre is, and what transform the view group carries.
+  await waitFor(win, 'graph canvas draws nodes to grab', async () => {
+    const current = await evaluate(win, `(() => ({
+      nodes: document.querySelectorAll('[data-mn-graph-node]').length,
+      view: document.querySelector('[data-mn-graph-canvas]')?.getAttribute('data-mn-graph-view') || '',
+    }))()`);
+    return { ok: current.nodes > 0 && Boolean(current.view), current };
+  });
+
+  const nodeCentre = async () => await evaluate(win, `(() => {
+    const node = document.querySelector('[data-mn-graph-node]');
+    const circle = node?.querySelector('circle:not([stroke-dasharray])');
+    return {
+      id: node?.getAttribute('data-mn-graph-node') || '',
+      x: Number(circle?.getAttribute('cx') || 0),
+      y: Number(circle?.getAttribute('cy') || 0),
+      rect: (() => { const r = node?.getBoundingClientRect(); return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; })(),
+    };
+  })()`);
+
+  const before = await nodeCentre();
+  await evaluate(win, `(() => {
+    const node = document.querySelector('[data-mn-graph-node=' + ${JSON.stringify(JSON.stringify(before.id))} + ']');
+    const svg = document.querySelector('[data-mn-graph-canvas]');
+    const from = ${JSON.stringify(before.rect)};
+    const opts = (x, y) => ({ bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, button: 0, buttons: 1, clientX: x, clientY: y });
+    node.dispatchEvent(new PointerEvent('pointerdown', opts(from.x, from.y)));
+    // Two moves: the first passes the click slop, the second is the carry.
+    svg.dispatchEvent(new PointerEvent('pointermove', opts(from.x + 12, from.y + 8)));
+    svg.dispatchEvent(new PointerEvent('pointermove', opts(from.x + 90, from.y + 60)));
+    return true;
+  })()`);
+  await waitFor(win, 'dragging a graph node carries it under the pointer', async () => {
+    const current = await nodeCentre();
+    // The node must have travelled roughly the pointer delta, not snapped to
+    // the cursor and not stayed behind fighting the layout clamp.
+    const dx = current.x - before.x;
+    const dy = current.y - before.y;
+    return { ok: dx > 40 && dy > 25, current, before, dx, dy };
+  });
+  await evaluate(win, `(() => {
+    const svg = document.querySelector('[data-mn-graph-canvas]');
+    const from = ${JSON.stringify(before.rect)};
+    svg.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, button: 0, buttons: 0, clientX: from.x + 90, clientY: from.y + 60 }));
+    return true;
+  })()`);
+  await waitFor(win, 'releasing a dragged node hands it back to the layout', async () => {
+    const current = await evaluate(win, `(() => ({
+      inspector: document.body.textContent.includes('Open note'),
+    }))()`);
+    // A drag is not a click: the inspector must not have opened behind it.
+    return { ok: !current.inspector, current };
+  });
+
+  const viewOf = async () => await evaluate(win, `(() => document.querySelector('[data-mn-graph-canvas]')?.getAttribute('data-mn-graph-view') || '')()`);
+  const restView = await viewOf();
+  await evaluate(win, `(() => {
+    const svg = document.querySelector('[data-mn-graph-canvas]');
+    const box = svg.getBoundingClientRect();
+    svg.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -240, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }));
+    return true;
+  })()`);
+  await waitFor(win, 'the wheel zooms the graph canvas', async () => {
+    const current = await viewOf();
+    const scale = Number(String(current).split(',')[2] || 1);
+    return { ok: current !== restView && scale > 1, current, restView };
+  });
+
+  const zoomedView = await viewOf();
+  await evaluate(win, `(() => {
+    const svg = document.querySelector('[data-mn-graph-canvas]');
+    const box = svg.getBoundingClientRect();
+    // Press empty canvas, well away from any node, so this pans rather than
+    // grabbing something.
+    const x = box.x + 24, y = box.y + box.height - 24;
+    const opts = (cx, cy, buttons) => ({ bubbles: true, cancelable: true, pointerId: 2, isPrimary: true, button: 0, buttons, clientX: cx, clientY: cy });
+    svg.dispatchEvent(new PointerEvent('pointerdown', opts(x, y, 1)));
+    svg.dispatchEvent(new PointerEvent('pointermove', opts(x + 60, y - 40, 1)));
+    svg.dispatchEvent(new PointerEvent('pointerup', opts(x + 60, y - 40, 0)));
+    return true;
+  })()`);
+  await waitFor(win, 'dragging the canvas pans the graph', async () => {
+    const current = await viewOf();
+    const [tx, ty] = String(current).split(',').map(Number);
+    const [wasTx, wasTy] = String(zoomedView).split(',').map(Number);
+    return { ok: tx > wasTx && ty < wasTy, current, zoomedView };
+  });
+
+  // Reset puts both the layout and the canvas back, then a plain click — no
+  // movement between press and release — must still open the inspector.
+  // clickButton, not clickVisibleText: the row's wrapping div carries the same
+  // text as the button inside it and sorts first, and a click on the wrapper
+  // never reaches the button.
+  await clickButton(win, { text: 'Forces' });
+  // The row expands on a state change, so its contents are not in the DOM on
+  // the very next evaluate — wait for the control rather than racing React.
+  await waitFor(win, 'the forces panel expands to offer Reset layout', async () => {
+    const current = await evaluate(win, `(() => ({
+      reset: [...document.querySelectorAll('button')].some(el => (el.textContent || '').trim() === 'Reset layout'),
+    }))()`);
+    return { ok: current.reset, current };
+  });
+  await clickButton(win, { text: 'Reset layout' });
+  await waitFor(win, 'reset layout also restores the canvas view', async () => {
+    const current = await viewOf();
+    return { ok: current.startsWith('0.00,0.00,1.000'), current };
+  });
+  const target = await nodeCentre();
+  await evaluate(win, `(() => {
+    const node = document.querySelector('[data-mn-graph-node=' + ${JSON.stringify(JSON.stringify(target.id))} + ']');
+    const at = ${JSON.stringify(target.rect)};
+    const opts = (buttons) => ({ bubbles: true, cancelable: true, pointerId: 3, isPrimary: true, button: 0, buttons, clientX: at.x, clientY: at.y });
+    node.dispatchEvent(new PointerEvent('pointerdown', opts(1)));
+    node.dispatchEvent(new PointerEvent('pointerup', opts(0)));
+    node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: at.x, clientY: at.y }));
+    return true;
+  })()`);
+  await waitFor(win, 'clicking a graph node still opens the inspector', async () => {
+    const current = await evaluate(win, `(() => ({ inspector: document.body.textContent.includes('Open note') }))()`);
+    return { ok: current.inspector, current };
+  });
 }
 
 async function runCalendarPlannerScenario(win) {

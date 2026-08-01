@@ -14,9 +14,15 @@ const MN_GRAPH_LAYOUTS = [
 
 function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags, theme, graphFilter = null, onGraphFilterChange }) {
   const frameRef = useRef(null);
-  const svgRef = useRef(null);
   const rafRef = useRef(null);
   const settledRef = useRef(false);
+  // How warm the layout is, whether the loop is turning, and whether the next
+  // start keeps that warmth. Refs: they change per frame, not per render.
+  const ticksRef = useRef(0);
+  const runningRef = useRef(false);
+  const warmRef = useRef(false);
+  const [view, setView] = useState(MN_GRAPH_VIEW);
+  const [simSeed, setSimSeed] = useState(0);
   const [dims, setDims] = useState({ w: 900, h: 620 });
   const [nodes, setNodes] = useState(null);
   const [edges, setEdges] = useState([]);
@@ -152,105 +158,68 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
     setEdges(visibleEdges);
   }, [notes, visibleEdges, style, W, H, layoutSeed, opts.sizeByContent]);
 
-  useEffect(() => {
-    let ticks = 0;
-    const maxTicks = 280;
+  // Only the three the simulation reads: passing the whole bag would restart
+  // the layout whenever a purely visual toggle like Show labels flipped.
+  const forceOpts = useMemo(
+    () => ({ linkDistance: opts.linkDistance, repulsion: opts.repulsion, center: opts.center }),
+    [opts.linkDistance, opts.repulsion, opts.center]
+  );
+
+  // Give the layout energy again without scattering it. The loop stops itself
+  // once the graph settles, so on a cold graph a drag would move one node and
+  // nothing else; this tops the energy back up and, if the loop has already
+  // stopped, turns it back on.
+  const warmLayout = (toTicks = 210) => {
+    ticksRef.current = Math.min(ticksRef.current, toTicks);
     settledRef.current = false;
+    if (!runningRef.current) {
+      warmRef.current = true;
+      setSimSeed(seed => seed + 1);
+    }
+  };
+
+  const {
+    attachSvg, svgRef, startNodeDrag, startPan, moveGesture, endGesture, claimClick,
+  } = useGraphGestures({ view, setView, setNodes, warmLayout });
+
+  useEffect(() => {
+    // A dependency change is a new layout and starts cold. A warm restart —
+    // one asked for by warmLayout when a drag begins — keeps whatever energy
+    // the layout had, so grabbing a node nudges its neighbours instead of
+    // rearranging the whole graph.
+    if (!warmRef.current) ticksRef.current = 0;
+    warmRef.current = false;
+    settledRef.current = false;
+    runningRef.current = true;
 
     function step() {
-      ticks++;
+      ticksRef.current++;
       setNodes(prev => {
         if (!prev) return prev;
-        const next = prev.map(n => ({ ...n }));
-        const byId = new Map(next.map(n => [n.id, n]));
-        const alpha = Math.max(0.025, 1 - ticks / maxTicks);
-
-        // Repulsion falls off as 1/d², so only nearby nodes matter. Bucket
-        // nodes into a coarse grid and evaluate pairs within the 3×3
-        // neighborhood — O(n × local density) instead of O(n²), which keeps
-        // multi-thousand-note graphs interactive. Long-range spreading is
-        // provided by the center-pull force below.
-        const CELL = 130;
-        const grid = new Map();
-        for (let i = 0; i < next.length; i++) {
-          const key = (((next[i].x / CELL) | 0) << 16) ^ ((next[i].y / CELL) | 0);
-          const bucket = grid.get(key);
-          if (bucket) bucket.push(i); else grid.set(key, [i]);
-        }
-        for (let i = 0; i < next.length; i++) {
-          const a = next[i];
-          const cx = (a.x / CELL) | 0, cy = (a.y / CELL) | 0;
-          for (let gx = cx - 1; gx <= cx + 1; gx++) {
-            for (let gy = cy - 1; gy <= cy + 1; gy++) {
-              const bucket = grid.get((gx << 16) ^ gy);
-              if (!bucket) continue;
-              for (const j of bucket) {
-                if (j <= i) continue;
-                const b = next[j];
-                const dx = b.x - a.x, dy = b.y - a.y;
-                const dist2 = dx * dx + dy * dy + 0.1;
-                const dist = Math.sqrt(dist2);
-                const minGap = a.r + b.r + 18;
-                const force = Math.max(160, minGap * opts.repulsion) / dist2;
-                const fx = (dx / dist) * force, fy = (dy / dist) * force;
-                a.vx -= fx; a.vy -= fy;
-                b.vx += fx; b.vy += fy;
-              }
-            }
-          }
-        }
-
-        for (const e of edges) {
-          const a = byId.get(e.source);
-          const b = byId.get(e.target);
-          if (!a || !b) continue;
-          const dx = b.x - a.x, dy = b.y - a.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const target = style === 'cluster' ? Math.max(68, opts.linkDistance * 0.7) : opts.linkDistance;
-          const f = (dist - target) * 0.018;
-          const fx = (dx / dist) * f, fy = (dy / dist) * f;
-          a.vx += fx; a.vy += fy;
-          b.vx -= fx; b.vy -= fy;
-        }
-
-        for (const n of next) {
-          if (style === 'cluster' && n.cx != null) {
-            n.vx += (n.cx - n.x) * 0.028;
-            n.vy += (n.cy - n.y) * 0.028;
-          } else if (style === 'timeline') {
-            if (n.fixedX != null) n.vx += (n.fixedX - n.x) * 0.18;
-            n.vy += (H / 2 - n.y) * 0.01;
-          } else {
-            n.vx += (W / 2 - n.x) * opts.center;
-            n.vy += (H / 2 - n.y) * opts.center;
-          }
-        }
-
-        let moved = 0;
-        for (const n of next) {
-          n.vx *= 0.84; n.vy *= 0.84;
-          n.x += n.vx * alpha * 2;
-          n.y += n.vy * alpha * 2;
-          n.x = Math.max(n.r + 18, Math.min(W - n.r - 18, n.x));
-          n.y = Math.max(n.r + 24, Math.min(H - n.r - 22, n.y));
-          moved += Math.abs(n.vx) + Math.abs(n.vy);
-        }
-        // Stop early once the layout has settled instead of always burning
-        // the full tick budget.
-        settledRef.current = next.length > 0 && moved / next.length < 0.03;
-        return next;
+        const tick = mnGraphTick(prev, { edges, style, W, H, ticks: ticksRef.current, opts: forceOpts });
+        settledRef.current = tick.settled;
+        return tick.nodes;
       });
-      if (ticks < maxTicks && !settledRef.current) rafRef.current = requestAnimationFrame(step);
+      // Dragging keeps the loop alive by warming it on every pointer move, so
+      // there is no separate "held" escape hatch that could spin forever.
+      if (ticksRef.current < MN_GRAPH_MAX_TICKS && !settledRef.current) {
+        rafRef.current = requestAnimationFrame(step);
+      } else {
+        runningRef.current = false;
+      }
     }
 
     rafRef.current = requestAnimationFrame(step);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+    return () => {
+      runningRef.current = false;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
     // layoutSeed restarts the loop on "reset layout" — required now that the
     // simulation can settle and stop before its tick budget runs out.
     // opts.sizeByContent is here because the node-build effect scatters the
     // nodes afresh when it flips; without a matching restart the scatter is
     // what stays on screen, frozen.
-  }, [edges, style, W, H, opts.linkDistance, opts.repulsion, opts.center, layoutSeed, opts.sizeByContent]);
+  }, [edges, style, W, H, forceOpts, layoutSeed, simSeed, opts.sizeByContent]);
 
   // A Map, so an edge naming a note id like `constructor` misses cleanly and
   // the `!a || !b` guard below drops it, instead of finding Object.prototype
@@ -502,19 +471,36 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
               </div>
               {/* The hint used to be its own overlay in this corner, which the
                   legend then covered. One panel, one corner. */}
-              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 11, color: T.inkDim }}>
-                Hover to isolate · click to inspect
+              <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 11, color: T.inkDim, lineHeight: 1.5 }}>
+                Drag a node to move it · drag the canvas to pan · scroll to zoom · click to inspect
               </div>
             </div>
           )}
-          <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+          <svg
+            ref={attachSvg}
+            width="100%" height="100%"
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="none"
+            data-mn-graph-canvas="true"
+            data-mn-graph-view={`${view.tx.toFixed(2)},${view.ty.toFixed(2)},${view.k.toFixed(3)}`}
+            onPointerDown={startPan}
+            onPointerMove={moveGesture}
+            onPointerUp={endGesture}
+            onPointerCancel={endGesture}
+            style={{ cursor: 'grab', touchAction: 'none' }}>
             <defs>
               <pattern id="mnGraphGrid" width="30" height="30" patternUnits="userSpaceOnUse">
                 <path d="M 30 0 L 0 0 0 30" fill="none" stroke={T.lineSub} strokeWidth="0.45" />
               </pattern>
             </defs>
 
+            {/* Fixed: the graph moves over the grid, not the paper under it. */}
             <rect width={W} height={H} fill="url(#mnGraphGrid)" opacity={themeName === 'dark' ? 0.18 : 0.34} />
+
+            {/* One transform for pan and zoom. Node coordinates are untouched
+                by it, which is why the exported SVG is still a picture of the
+                whole graph rather than of the current viewport. */}
+            <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
 
             {style === 'timeline' && (
               <line x1={64} y1={H / 2} x2={W - 64} y2={H / 2}
@@ -552,10 +538,16 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
               const showLabel = active && (opts.labels || notes.length <= 6 || focus || hoverId === n.id);
               return (
                 <g key={n.id}
+                  data-mn-graph-node={n.id}
                   onMouseEnter={() => setHoverId(n.id)}
                   onMouseLeave={() => setHoverId(null)}
-                  onClick={() => setInspectId(id => (id === n.id ? null : n.id))}
-                  style={{ cursor: 'default', opacity: active ? 1 : 0.22 }}>
+                  onPointerDown={(event) => startNodeDrag(event, n)}
+                  onClick={() => {
+                    // The drag that just ended already synthesised this click.
+                    if (!claimClick()) return;
+                    setInspectId(id => (id === n.id ? null : n.id));
+                  }}
+                  style={{ cursor: 'grab', opacity: active ? 1 : 0.22 }}>
                   {focus && (
                     <circle cx={n.x} cy={n.y} r={n.r + 8}
                       fill="none" stroke={T.accent} strokeWidth="1.2"
@@ -589,6 +581,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
                 </g>
               );
             })}
+            </g>
           </svg>
           </>
         )}
@@ -601,7 +594,11 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
           setOpt={setOpt}
           notesCount={notes.length}
           edgesCount={edges.length}
-          onReset={() => setLayoutSeed(s => s + 1)}
+          onReset={() => {
+            // The canvas comes back too, or a reset made off screen looks dead.
+            setView(MN_GRAPH_VIEW);
+            setLayoutSeed(s => s + 1);
+          }}
           onExportSvg={exportSvg}
         />
       </div>
@@ -754,3 +751,6 @@ function MnGraphControls({
 
 export { MnGraph };
 import { MN_THEMES, mnGetTagColor, mnShadow, mnTagHueMap } from '../shared/theme.jsx';
+import { MN_GRAPH_VIEW } from './graphView.js';
+import { mnGraphTick, MN_GRAPH_MAX_TICKS } from './graphForces.js';
+import { useGraphGestures } from './useGraphGestures.js';
