@@ -1125,6 +1125,29 @@ async function runViewsPanelScenario(win) {
     await dragViewsCardToColumn(win, 'QE Views Property Note', 'doing');
     await waitForPersistedNote(win, 'QE Views Property Note', note => /status::\s*doing/.test(String(note.body || '')));
 
+    // Dragging the last card out of a column must not erase the column: the
+    // grouping only makes buckets for values still present in notes, so the
+    // board remembers columns it has shown. A column you cannot see is one
+    // you cannot drag a card back into.
+    await seedEditorNote(win, {
+      id: 'qe_views_review',
+      title: 'QE Views Review Note',
+      body: 'Parent\n\nstatus:: review\n',
+      expect: 'Parent',
+    });
+    await clickVisibleText(win, 'Views');
+    await clickVisibleText(win, 'Recent notes');
+    await clickVisibleText(win, 'Board');
+    await dragViewsCardToColumn(win, 'QE Views Review Note', 'doing');
+    await waitFor(win, 'the emptied review column stays on screen', async () => {
+      const current = await evaluate(win, `(() => ({
+        columns: [...document.querySelectorAll('[data-mn-views-board-column]')].map(el => el.getAttribute('data-mn-views-board-column')),
+      }))()`);
+      return { ok: current.columns.includes('review') && current.columns.includes('doing'), current };
+    });
+    await dragViewsCardToColumn(win, 'QE Views Review Note', 'review');
+    await waitForPersistedNote(win, 'QE Views Review Note', note => /status::\s*review/.test(String(note.body || '')));
+
     // The calendar plans as well as reports: adding a todo on a day writes a
     // real `- [ ]` line into a real note, the way the agenda does.
     await clickVisibleText(win, 'Calendar');
@@ -1222,6 +1245,25 @@ async function runViewsPanelScenario(win) {
         };
       })()`);
       return { ok: current.panel && current.box, current };
+    });
+    // Enter pressed on the checkbox itself belongs to the checkbox. The card
+    // around it also listens for Enter, and used to hijack the bubbled key
+    // and open the note instead of completing the task.
+    const dispatchedKey = await evaluate(win, `(() => {
+      const rows = [...document.querySelectorAll('[data-mn-views-body] [data-mn-view-row]')];
+      const row = rows.find(el => (el.textContent || '').includes('ship the views board'));
+      const box = row?.querySelector('button[aria-label="Complete task"]');
+      if (!box) return false;
+      box.focus();
+      box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      return true;
+    })()`);
+    if (!dispatchedKey) throw new Error('Could not aim Enter at the views task checkbox');
+    await waitFor(win, 'views panel survives keyboard on the checkbox', async () => {
+      const current = await evaluate(win, `(() => ({
+        panel: Boolean(document.querySelector('[data-mn-views-panel]')),
+      }))()`);
+      return { ok: current.panel, current };
     });
     await clickViewsRowCheck(win, 'ship the views board');
     await waitForPersistedNote(win, 'QE Views Task Note', note => /- \[x\]\s+ship the views board/i.test(String(note.body || '')));

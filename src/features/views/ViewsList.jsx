@@ -35,6 +35,9 @@ function ViewsListRow({ result, hue, helpers, onOpen, onToggleCheck, T }) {
       onClick={open || undefined}
       onKeyDown={(event) => {
         if (!open) return;
+        // Only the row itself. A keydown that bubbled up from the checkbox or
+        // the open mark is that control's activation, not a request to open.
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
       }}
       style={{

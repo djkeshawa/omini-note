@@ -106,6 +106,52 @@ test('a board column can only be dropped into when the grouping is one value on 
   assert.equal(mnViewsBoardWritableKey({ group: { by: 'Reminder' } }), '');
 });
 
+test('a board keeps drawing a column after its last card moves away', () => {
+  const { mnViewsBoardColumns } = loadRendererModule('src/features/views/ViewsBoard.jsx');
+  const groups = [
+    { key: 'doing', label: 'doing', items: [{ id: 'a' }, { id: 'b' }] },
+    { key: '', label: 'No status', items: [] },
+  ];
+  const columns = mnViewsBoardColumns(groups, ['review', 'doing']);
+  assert.deepEqual(columns.map(bucket => bucket.key), ['doing', 'review', ''],
+    'the emptied remembered column sorts in among the live ones, unfiled stays last');
+  assert.deepEqual(columns[1].items, [], 'a remembered column returns empty, not stale cards');
+  assert.deepEqual(
+    mnViewsBoardColumns(groups, ['review'], 'desc').map(bucket => bucket.key),
+    ['review', 'doing', ''],
+    'remembered columns follow the group direction'
+  );
+  assert.deepEqual(mnViewsBoardColumns(groups, []).map(bucket => bucket.key), ['doing', ''],
+    'nothing remembered means exactly the live buckets');
+});
+
+test('keys aimed at a nested control are not hijacked by the row around it', () => {
+  const { mnViewsRenderList } = loadRendererModule('src/features/views/ViewsList.jsx', { React: executingReact() });
+  let opened = 0;
+  const rendered = mnViewsRenderList({
+    results: [taskRow], helpers: {}, onOpen: () => { opened += 1; },
+    onToggleCheck: () => {}, tagHue: new Map(), theme: 'light', T,
+  });
+  const row = jsxNodes(rendered, node => node.jsx[1]?.['data-mn-view-row'] === 'true')[0];
+  const onKeyDown = row.jsx[1].onKeyDown;
+  const rowEl = {};
+  const checkboxEl = {};
+  // Enter bubbling up from the checkbox is the checkbox's activation.
+  onKeyDown({ key: 'Enter', target: checkboxEl, currentTarget: rowEl, preventDefault() {} });
+  assert.equal(opened, 0, 'a key aimed at a nested control must not open the note');
+  onKeyDown({ key: 'Enter', target: rowEl, currentTarget: rowEl, preventDefault() {} });
+  assert.equal(opened, 1, 'a key aimed at the row itself still opens it');
+});
+
+test('the schedule placeholder advertises a phrase the parser accepts', () => {
+  const editor = fs.readFileSync(path.join(__dirname, '../src/features/views/ViewsCalendarEditor.jsx'), 'utf8');
+  const match = editor.match(/try “([^”]+)”/);
+  assert.ok(match, 'the create form suggests an example phrase');
+  const helpers = loadRendererModule('src/app/appHelpers.js');
+  const parsed = helpers.agendaParseScheduleInput(match[1]);
+  assert.equal(parsed?.ok, true, `the advertised example "${match[1]}" must parse: ${parsed?.error || ''}`);
+});
+
 test('every gesture on a row resolves to a write in the note it came from', () => {
   const { useViewsRowActions } = loadRendererModule('src/features/views/useViewsRowActions.js');
   const notes = [{ id: 'n1', title: 'Alpha', blocks: [] }, { id: 'n2', title: 'Work log', blocks: [] }];
@@ -271,6 +317,10 @@ test('the new Views capabilities have regression coverage that drives them', () 
   // refusing, and an item bound for a brand-new note lands one render later.
   assert.match(harness, /a note chip opens a rename editor, not a date form/);
   assert.match(harness, /qe views planner fresh note @remind/);
+  // Review findings stay fixed: an emptied column survives, and a key aimed
+  // at a nested control is not hijacked by the row around it.
+  assert.match(harness, /the emptied review column stays on screen/);
+  assert.match(harness, /views panel survives keyboard on the checkbox/);
   // Each drag event waits for what the previous one made visible, because they
   // depend on state React has not re-rendered yet.
   assert.match(harness, /views board card \$\{cardText\} picks up/);

@@ -164,6 +164,9 @@ function mnViewsRenderTable({ results = [], definition = {}, sort, onSort, onOpe
           onClick={open || undefined}
           onKeyDown={(event) => {
             if (!open) return;
+            // Only the row itself — a keydown bubbling from the checkbox or
+            // the open mark is that control's activation.
+            if (event.target !== event.currentTarget) return;
             if (event.key === 'Enter') { event.preventDefault(); open(); }
           }}
           style={{

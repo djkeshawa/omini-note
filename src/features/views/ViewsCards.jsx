@@ -80,6 +80,9 @@ function ViewsCard({ result, hue, ctx }) {
       title={onRename ? 'Click to rename · open it from the bar along the bottom' : undefined}
       onClick={startEdit}
       onKeyDown={(event) => {
+        // Only the card itself. A keydown bubbling from a bar button, the
+        // checkbox, or the rename input is that control's own activation.
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); startEdit(); }
       }}
       onDragStart={(event) => {

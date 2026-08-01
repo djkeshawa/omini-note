@@ -67,7 +67,7 @@ function ViewsCreateRow({ plan, T }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8 }}>
           <input
             aria-label="Schedule phrase"
-            placeholder="When — try “tomorrow 9am”"
+            placeholder="When — try “friday 9am”"
             value={plan.createWhen}
             onChange={event => plan.setCreateWhen(event.target.value)}
             style={mnCalendarInput(T)}

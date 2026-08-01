@@ -149,6 +149,9 @@ function mnViewsRenderCalendar({
               onClick={planning ? () => plan.setSelectedKey(day.key) : undefined}
               onKeyDown={(event) => {
                 if (!planning) return;
+                // Only the day cell itself — a keydown bubbling from a chip
+                // or the add button is that control's own activation.
+                if (event.target !== event.currentTarget) return;
                 if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); plan.setSelectedKey(day.key); }
               }}
               style={{

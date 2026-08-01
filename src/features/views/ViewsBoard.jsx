@@ -26,7 +26,7 @@ import {
   mnViewsCardStyle, mnViewsRowSource,
 } from './ViewsCardParts.jsx';
 
-const { useState: useStateVB } = React;
+const { useEffect: useEffectVB, useState: useStateVB } = React;
 
 // A board without columns is a list. When a definition asks for the board
 // layout without saying how to split it, status is the assumption — it is
@@ -45,6 +45,25 @@ function mnViewsBoardWritableKey(definition) {
   const by = String(mnViewsBoardGroup(definition)?.by || '').trim();
   if (!by || MN_VIEWS_UNWRITABLE_GROUPS.has(by.toLowerCase())) return '';
   return by;
+}
+
+// A column whose last card was dragged away must not vanish with it.
+// smartViewGroup only makes buckets for values still present in the notes,
+// so the board also remembers every named column it has shown and keeps
+// drawing the emptied ones — a column you cannot see is one you cannot
+// drag a card back into. Remembered names sort in among the live ones.
+function mnViewsBoardColumns(groups = [], remembered = [], direction = 'asc') {
+  const present = new Set((groups || []).map(bucket => bucket.key || ''));
+  const empties = (remembered || [])
+    .filter(key => key && !present.has(key))
+    .map(key => ({ key, label: key, items: [] }));
+  const named = [...(groups || []).filter(bucket => bucket.key), ...empties].sort((a, b) => (
+    direction === 'desc'
+      ? String(b.key).localeCompare(String(a.key))
+      : String(a.key).localeCompare(String(b.key))
+  ));
+  const unfiled = (groups || []).find(bucket => !bucket.key);
+  return unfiled ? [...named, unfiled] : named;
 }
 
 function BoardCard({ result, hue, bucketKey, ctx }) {
@@ -81,6 +100,9 @@ function BoardCard({ result, hue, bucketKey, ctx }) {
         : 'Click to rename · open it from the bar along the bottom'}
       onClick={startEdit}
       onKeyDown={(event) => {
+        // Only the card itself. A keydown bubbling from a bar button, the
+        // checkbox, or the rename input is that control's own activation.
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); startEdit(); }
       }}
       onDragStart={(event) => {
@@ -226,10 +248,28 @@ function ViewsBoardView({ groups = [], definition = {}, helpers, onOpen, onToggl
   const [editingKey, setEditingKey] = useStateVB('');
   const [draft, setDraft] = useStateVB('');
   const writeKey = onMoveCard ? mnViewsBoardWritableKey(definition) : '';
-  // Every column stays on screen, including empty ones — a board whose
-  // columns appear and vanish as work moves is hard to read, and an empty
-  // column you cannot see is one you cannot drop into.
-  const columns = (groups || []).filter(bucket => bucket.key !== '' || bucket.items.length || writeKey);
+  // Every column this board has shown stays on screen, including ones whose
+  // last card just moved away — a board whose columns appear and vanish as
+  // work moves is hard to read, and an empty column you cannot see is one
+  // you cannot drop into. The memory is scoped to the definition and its
+  // grouping, so switching views or regrouping starts fresh.
+  const scope = `${definition?.id || ''}::${mnViewsBoardGroup(definition)?.by || ''}`;
+  const [seen, setSeen] = useStateVB({ scope: '', keys: [] });
+  useEffectVB(() => {
+    setSeen(current => {
+      const keys = current.scope === scope ? current.keys : [];
+      const merged = keys.slice();
+      (groups || []).forEach(bucket => {
+        const key = bucket.key || '';
+        if (key && !merged.includes(key)) merged.push(key);
+      });
+      if (current.scope === scope && merged.length === keys.length) return current;
+      return { scope, keys: merged };
+    });
+  }, [scope, groups]);
+  const remembered = seen.scope === scope ? seen.keys : [];
+  const columns = mnViewsBoardColumns(groups, remembered, mnViewsBoardGroup(definition)?.direction)
+    .filter(bucket => bucket.key !== '' || bucket.items.length || writeKey);
   const total = columns.reduce((sum, bucket) => sum + bucket.items.length, 0);
   const ctx = { T, tagHue, theme, helpers, onOpen, onToggleCheck, onRename, onMoveCard, writeKey, drag, setDrag, editingKey, setEditingKey, draft, setDraft };
 
@@ -280,4 +320,4 @@ function mnViewsRenderBoard(props) {
   return <ViewsBoardView {...props} />;
 }
 
-export { mnViewsRenderBoard, mnViewsBoardGroup, mnViewsBoardWritableKey, ViewsBoardView };
+export { mnViewsRenderBoard, mnViewsBoardGroup, mnViewsBoardWritableKey, mnViewsBoardColumns, ViewsBoardView };
