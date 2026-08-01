@@ -54,6 +54,16 @@ The final July 13, 2026 Windows/Electron verification measured a 164.04 ms index
   integrity, and reject anything outside the fixed per-platform inventory.
 - A publish tag must be exactly `v${package.json.version}`. Matrix CLI
   `--x64`/`--arm64` flags are the only package-architecture authority.
+- Release validation is comprehensive on Linux and a smoke test on macOS and
+  Windows, matching what `ci.yml` runs per platform on every pull request.
+  **Changed for 0.2.3.** Those two previously ran the full `test:all` at release
+  time and nowhere else, so a platform-specific test defect was invisible on
+  every PR and surfaced only when someone tried to ship. Combined with the
+  signing gate it blocked every release after v0.2.1 (2026-07-25); 0.2.2 was
+  never published. In three months it caught a CRLF checkout, a POSIX
+  permission assertion and a Windows clock-granularity quirk — three test
+  defects, no product regression — while macOS validation began hanging past 30
+  minutes. Widen it again when the cost lands somewhere other than shipping.
 - macOS signing is conditional on credentials, and fails closed when they exist.
   If `MAC_CSC_LINK` is configured, the job requires the full Developer ID and
   App Store Connect set and then verifies `codesign`, Gatekeeper, and the
