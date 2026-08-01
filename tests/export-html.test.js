@@ -104,3 +104,74 @@ test('an indented fence inside exported code remains code like it does in the ed
   assert.match(html, /<pre><code>before\n  ````\nafter<\/code><\/pre>/);
   assert.match(html, /Done\./);
 });
+
+// A scene note as the Writer pack actually writes one: properties, a
+// plot-points block, then prose with no blank line after the closing fence.
+const SCENE_BODY = [
+  'act:: 1',
+  'chapter:: 2',
+  'order:: 3',
+  '',
+  '::: plot-points',
+  '- She finds the letter',
+  '- The train is late',
+  '  - context:: raining, near dusk',
+  ':::',
+  'The letter was still warm.',
+  '',
+  'She read it twice.',
+].join('\n');
+
+test('a plot-points block exports as a block instead of leaking ::: markers', async () => {
+  const html = await exportHtml.renderNoteHtml({ title: 'Scene 3', body: SCENE_BODY });
+
+  // The fence markers must not survive as body text.
+  assert.ok(!/:::/.test(html), 'export still contains ::: markers');
+  assert.ok(!/<p>[^<]*plot-points/i.test(html), 'plot-points header leaked into a paragraph');
+
+  // Beats and contexts render, and stay inside the block.
+  assert.match(html, /<div class="plot-points">/);
+  assert.match(html, /<li>She finds the letter<\/li>/);
+  assert.match(html, /<li>The train is late<\/li>/);
+  assert.match(html, /<div class="plot-context">raining, near dusk<\/div>/);
+  assert.ok(!/<li>context::/.test(html), 'context leaked in as a beat');
+});
+
+test('prose after a plot-points block is its own paragraph, not glued to the fence', async () => {
+  const html = await exportHtml.renderNoteHtml({ title: 'Scene 3', body: SCENE_BODY });
+  assert.match(html, /<p>The letter was still warm\.<\/p>/);
+  assert.match(html, /<p>She read it twice\.<\/p>/);
+});
+
+test('a paragraph after a list closes the list instead of nesting inside it', async () => {
+  const html = await exportHtml.renderNoteHtml({
+    title: 'List then prose',
+    body: '- first\n- second\nProse right after the list.',
+  });
+  // The </ul> must come before the paragraph, not after it.
+  const listEnd = html.indexOf('</ul>');
+  const paragraph = html.indexOf('<p>Prose right after the list.</p>');
+  assert.ok(listEnd !== -1 && paragraph !== -1, 'expected both a closed list and the paragraph');
+  assert.ok(listEnd < paragraph, '<p> was emitted inside the open <ul>');
+});
+
+test('an unterminated plot-points block never swallows the prose after it', async () => {
+  const html = await exportHtml.renderNoteHtml({
+    title: 'Unclosed',
+    body: '::: plot-points\n- a beat\n\nTrailing prose that must survive.',
+  });
+  // Losing a writer's words is worse than showing a stray marker, so an
+  // unclosed fence degrades to plain text rather than eating the note.
+  assert.match(html, /Trailing prose that must survive\./);
+  assert.match(html, /a beat/);
+});
+
+test('a plot-points block still closes correctly when it is the last thing in a note', async () => {
+  const html = await exportHtml.renderNoteHtml({
+    title: 'Ends on a block',
+    body: 'Prose first.\n\n::: plot-points\n- final beat\n:::',
+  });
+  assert.match(html, /<p>Prose first\.<\/p>/);
+  assert.match(html, /<li>final beat<\/li>/);
+  assert.ok(!/:::/.test(html), 'export still contains ::: markers');
+});
