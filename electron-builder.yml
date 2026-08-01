@@ -46,7 +46,14 @@ beforePack: scripts/before-pack.js
 mac:
   category: public.app-category.productivity
   publish: null
-  notarize: true
+  # Unsigned macOS builds. Notarization needs an App Store Connect key, and no
+  # signing secrets are configured, so requiring it blocked every release after
+  # v0.2.1 (see docs/final-hardening.md). Gatekeeper will warn on first launch.
+  # To restore signed releases: add the MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD,
+  # APPLE_API_KEY_BASE64, APPLE_API_KEY_ID and APPLE_API_ISSUER secrets, then set
+  # this back to true. The workflow re-enables signing on its own once the
+  # secrets exist; this flag is the only manual step.
+  notarize: false
   target:
     - dmg
     - zip

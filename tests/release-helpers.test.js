@@ -207,7 +207,10 @@ test('Release configuration has one architecture authority and collision-free ar
   );
   assert.doesNotMatch(builder, /^\s+arch:/m);
   assert.match(builder, /publish: null/);
-  assert.match(builder, /notarize: true/);
+  // Notarization is off while no signing secrets exist; requiring it blocked
+  // every release after v0.2.1. Signing itself stays conditional in the
+  // workflow, so this flips back to true when credentials are added.
+  assert.match(builder, /notarize: false/);
   assert.match(builder, /writeUpdateInfo: false/);
   assert.match(workflow, /scripts\/release-tools\/retry-command\.js/);
   assert.match(workflow, /path: dist\/release-output\/\*/);
@@ -215,7 +218,33 @@ test('Release configuration has one architecture authority and collision-free ar
   assert.doesNotMatch(workflow, /merge-multiple:\s*true/);
   assert.match(workflow, /APPLE_API_KEY_BASE64/);
   assert.match(workflow, /CSC_LINK: \$\{\{ secrets\[matrix\.csc_link_secret\] \}\}/);
+  // Signing engages off the certificate secret alone, so adding credentials
+  // restores signed releases without another workflow edit — and a partial
+  // credential set still fails closed inside prepare-macos-signing.js.
+  assert.match(workflow, /SIGNING_AVAILABLE: \$\{\{ secrets\[matrix\.csc_link_secret\] != '' \}\}/);
+  assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY: \$\{\{ secrets\[matrix\.csc_link_secret\] != '' \}\}/);
+  assert.match(workflow, /if: runner\.os == 'macOS' && env\.SIGNING_AVAILABLE == 'true'/);
+  assert.match(workflow, /--verify-mac-signing \$\{\{ env\.SIGNING_AVAILABLE \}\}/);
   assert.match(workflow, /VISPNOTE_MEMORY_IMAGE/);
   assert.match(workflow, /VISP_MEMORY_SERVER_AUTH_ENABLED: "false"/);
   assert.match(workflow, /VISP_MEMORY_EMBEDDING_PROVIDER: "noop"/);
+});
+
+test('macOS signature verification only relaxes on an explicit false', () => {
+  const base = ['--root', '.', '--artifacts', 'out', '--platform', 'darwin', '--arch', 'arm64', '--version', '0.2.3'];
+
+  // Default stays on, so an unflagged invocation still verifies signatures.
+  assert.equal(finalVerifier.parseArgs(base).verifyMacSigning, true);
+  assert.equal(finalVerifier.parseArgs([...base, '--verify-mac-signing', 'true']).verifyMacSigning, true);
+  assert.equal(finalVerifier.parseArgs([...base, '--verify-mac-signing', 'false']).verifyMacSigning, false);
+
+  // An unresolved workflow expression or a typo must fail loudly rather than
+  // being read as falsey and silently skipping the check.
+  for (const bad of ['', 'FALSE', 'no', '0', '${{ env.SIGNING_AVAILABLE }}']) {
+    assert.throws(
+      () => finalVerifier.parseArgs([...base, '--verify-mac-signing', bad]),
+      /requires "true" or "false"|requires a value/,
+      `expected "${bad}" to be rejected`
+    );
+  }
 });

@@ -171,6 +171,11 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CSC_LINK: ${{ secrets[matrix.csc_link_secret] }}
       CSC_KEY_PASSWORD: ${{ secrets[matrix.csc_password_secret] }}
+      # Signing engages automatically when the certificate secret exists. With no
+      # secret, disable identity auto-discovery so the build is deterministically
+      # unsigned instead of depending on an empty runner keychain.
+      CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets[matrix.csc_link_secret] != '' }}
+      SIGNING_AVAILABLE: ${{ secrets[matrix.csc_link_secret] != '' }}
 
     steps:
       - name: Checkout
@@ -185,8 +190,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Still fails closed: when signing credentials are present they must all be
+      # present and valid. It is skipped only when none are configured, so a
+      # missing Apple account cannot silently downgrade a signed release.
       - name: Require macOS signing and notarization credentials
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.SIGNING_AVAILABLE == 'true'
         env:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -227,6 +235,7 @@ jobs:
           --platform ${{ matrix.platform }}
           --arch ${{ matrix.arch }}
           --version ${{ needs.metadata.outputs.version }}
+          --verify-mac-signing ${{ env.SIGNING_AVAILABLE }}
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v7

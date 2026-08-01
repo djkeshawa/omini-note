@@ -54,8 +54,18 @@ The final July 13, 2026 Windows/Electron verification measured a 164.04 ms index
   integrity, and reject anything outside the fixed per-platform inventory.
 - A publish tag must be exactly `v${package.json.version}`. Matrix CLI
   `--x64`/`--arm64` flags are the only package-architecture authority.
-- macOS release jobs require Developer ID and App Store Connect credentials,
-  then verify `codesign`, Gatekeeper, and the stapled notarization ticket.
+- macOS signing is conditional on credentials, and fails closed when they exist.
+  If `MAC_CSC_LINK` is configured, the job requires the full Developer ID and
+  App Store Connect set and then verifies `codesign`, Gatekeeper, and the
+  stapled notarization ticket. If no signing secrets are configured at all, the
+  build is deterministically unsigned (`CSC_IDENTITY_AUTO_DISCOVERY=false`) and
+  the signature verification is skipped via `--verify-mac-signing false`.
+  A partial credential set still fails; only a complete absence relaxes it.
+  **This was changed for 0.2.3.** Requiring signing unconditionally meant every
+  release after v0.2.1 (2026-07-25) failed at the signing step, and 0.2.2 was
+  never published as a result. Unsigned macOS builds warn under Gatekeeper on
+  first launch. Restoring signed releases needs the five secrets plus
+  `mac.notarize: true` in `electron-builder.yml`.
   macOS updates remain manual and `latest-mac.yml` is excluded.
 - CI keeps the production dependency audit blocking. Development-only build
   tool advisories remain visible without weakening the shipped-dependency gate.
