@@ -284,4 +284,60 @@ function ViewsSaveState({ dirty, onRevert, onSave, T }) {
   );
 }
 
-export { ViewTabs, ViewMenu, ViewsRowSearch, ViewsSaveState, Caret, mnViewTabStyle, mnViewChipStyle };
+// The whole first row, assembled. It lives here rather than in the panel so
+// the panel reads as what it is — a query, a layout and a body — instead of
+// fifty lines of tab plumbing before any of that starts.
+function ViewsTabBar({
+  definitions, activeDefinition, counts, dirty, rowQuery, renamingId, renameValue,
+  menuOpen, confirmDelete, onRenameInput, onRenameCommit, onRenameCancel, onStartRename,
+  onRowQuery, onPick, onOpenMenu, onCloseMenu, onNewView, onDuplicate, onAskDelete,
+  onConfirmDelete, onRevert, onSave, T,
+}) {
+  return (
+    <div style={{
+      height: 46, flexShrink: 0, boxSizing: 'border-box',
+      display: 'flex', alignItems: 'center', gap: 4, padding: '0 20px',
+      borderBottom: `1px solid ${T.lineSub}`, position: 'relative', zIndex: 2,
+    }} role="tablist" aria-label="Saved views">
+      <span style={{
+        fontFamily: 'var(--mn-ui)', fontSize: 15, fontWeight: 600,
+        color: T.ink, marginRight: 10,
+      }}>Views</span>
+      <ViewTabs
+        definitions={definitions}
+        activeId={activeDefinition?.id}
+        counts={counts}
+        renamingId={renamingId}
+        renameValue={renameValue}
+        onRenameInput={event => onRenameInput?.(event.target.value)}
+        onRenameKey={event => {
+          if (event.key === 'Enter') { event.preventDefault(); onRenameCommit?.(); }
+          if (event.key === 'Escape') { event.preventDefault(); onRenameCancel?.(); }
+        }}
+        onRenameEnd={onRenameCommit}
+        menu={menuOpen ? (
+          <ViewMenu
+            definition={activeDefinition || {}}
+            canDelete={definitions.length > 1}
+            confirming={confirmDelete}
+            onRename={onStartRename}
+            onDuplicate={onDuplicate}
+            onDelete={onAskDelete}
+            onConfirmDelete={onConfirmDelete}
+            onCancelDelete={onCloseMenu}
+            T={T}
+          />
+        ) : null}
+        onPick={onPick}
+        onOpenMenu={onOpenMenu}
+        onNewView={onNewView}
+        T={T}
+      />
+      <span style={{ flex: 1 }} />
+      <ViewsRowSearch value={rowQuery} onChange={event => onRowQuery?.(event.target.value)} onClear={() => onRowQuery?.('')} T={T} />
+      <ViewsSaveState dirty={dirty} onRevert={onRevert} onSave={onSave} T={T} />
+    </div>
+  );
+}
+
+export { ViewTabs, ViewMenu, ViewsRowSearch, ViewsSaveState, ViewsTabBar, Caret, mnViewTabStyle, mnViewChipStyle };

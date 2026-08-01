@@ -261,6 +261,10 @@ to a pinned llm-memory service image before publishing; an optional
 `VISPNOTE_MEMORY_API_KEY` secret is passed to secured images. macOS updates
 remain manual, so macOS updater metadata is intentionally not published.
 
+## Pricing
+
+The desktop app is free.
+
 ## License
 
 VispNote is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

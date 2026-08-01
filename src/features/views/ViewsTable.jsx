@@ -14,6 +14,8 @@ import { DS_RADIUS, dsMachineStyle } from '../../shared/designSystem.js';
 import {
   mnViewsCachedCellValue, mnViewsColumns, mnViewsCellValue, mnViewsSortResults, mnViewsSortIsStorable,
 } from './viewsColumns.js';
+import { mnViewsRowHue } from './viewsHue.js';
+import { ViewsOpenMark } from './ViewsCardParts.jsx';
 
 function mnViewsGridColumns(columns) {
   return `30px ${columns.map(column => column.width).join(' ')} 40px`;
@@ -132,7 +134,7 @@ function mnViewsPrepareRows(results = [], columns = [], helpers = {}) {
   });
 }
 
-function mnViewsRenderTable({ results = [], definition = {}, sort, onSort, onOpen, onToggleCheck, helpers = {}, T }) {
+function mnViewsRenderTable({ results = [], definition = {}, sort, onSort, onOpen, onToggleCheck, helpers = {}, tagHue, theme, T }) {
   const columns = mnViewsColumns(definition);
   // Cell values are read once per row and cached on the row so sorting does
   // not re-read every note body on every comparison.
@@ -144,22 +146,39 @@ function mnViewsRenderTable({ results = [], definition = {}, sort, onSort, onOpe
   return (
     <div role="table" aria-label="View results" data-mn-views-table="true" style={{ margin: '0 -20px' }}>
       <ViewsTableHeader columns={columns} sort={sort} onSort={onSort} T={T} />
-      {sorted.map(row => (
+      {sorted.map(row => {
+        const noteId = row.noteId || row.source?.noteId || row.id;
+        // The row is the note, so the row is the target. It was reachable only
+        // through the chevron at its right edge, which meant a 40px-tall row
+        // had one 24px-wide place you could click.
+        const open = noteId && onOpen ? () => onOpen(noteId) : null;
+        const hue = mnViewsRowHue(row, { tagHue, theme, T });
+        return (
         <div
           key={row.key || row.id}
+          className="mn-view-row"
           role="row"
           data-mn-view-row="true"
+          tabIndex={open ? 0 : undefined}
+          title={open ? `Open ${row.sourceNoteTitle || row.noteTitle || 'this note'}` : undefined}
+          onClick={open || undefined}
+          onKeyDown={(event) => {
+            if (!open) return;
+            if (event.key === 'Enter') { event.preventDefault(); open(); }
+          }}
           style={{
             display: 'grid', gridTemplateColumns: grid, gap: 9,
             alignItems: 'center', height: 40, padding: '0 20px',
             borderBottom: `1px solid ${T.lineSub}`,
+            boxShadow: `inset 3px 0 0 ${hue}`,
+            cursor: open ? 'pointer' : 'default',
           }}>
           <span role="cell">
             {actionable(row) && onToggleCheck ? (
               <button
                 type="button"
                 aria-label={row.checked ? 'Reopen task' : 'Complete task'}
-                onClick={() => onToggleCheck(row)}
+                onClick={(event) => { event.stopPropagation(); onToggleCheck(row); }}
                 style={{
                   width: 15, height: 15, padding: 0, borderRadius: 4,
                   border: `1.5px solid ${row.checked ? T.accent : T.line}`,
@@ -179,24 +198,11 @@ function mnViewsRenderTable({ results = [], definition = {}, sort, onSort, onOpe
             />
           ))}
           <span role="cell" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              aria-label="Open note"
-              title="Open the note this row came from"
-              onClick={() => onOpen?.(row.noteId || row.id)}
-              style={{
-                width: 24, height: 24, padding: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: 'none', borderRadius: DS_RADIUS.icon,
-                background: 'transparent', color: T.inkDim, cursor: 'pointer',
-              }}>
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
-                <path d="M6 3.5L10.5 8L6 12.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+            <ViewsOpenMark hue={hue} label="Open note" onOpen={open} T={T} />
           </span>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

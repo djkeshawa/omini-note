@@ -26,6 +26,22 @@
     box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--mn-focus, #4f6fd5) 70%, transparent);
   }
   .mn-contextual-assistance-trigger-label { display: none; }
+  /* Views: the open affordance is quiet until you are on the row, and the bar
+     along a card's bottom edge is not drawn until then at all. Doing this in
+     CSS rather than React state matters — a view can hold hundreds of cards,
+     and re-rendering one on every pointer enter and leave is a lot of work to
+     show a strip that was already in the DOM. Both stay reachable by keyboard:
+     focus-within reveals the bar the moment Tab lands inside it. */
+  .mn-view-card-bar { opacity: 0; transition: opacity 110ms ease; }
+  .mn-view-card:hover .mn-view-card-bar,
+  .mn-view-card:focus-within .mn-view-card-bar { opacity: 1; }
+  .mn-view-mark { opacity: 0.4; transition: opacity 110ms ease; }
+  .mn-view-row:hover .mn-view-mark,
+  .mn-view-row:focus-within .mn-view-mark,
+  .mn-view-mark:focus-visible { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .mn-view-card-bar, .mn-view-mark { transition: none; }
+  }
   @media (max-width: 1050px) {
     .mn-contextual-assistance-trigger {
       width: 32px;
