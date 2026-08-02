@@ -192,6 +192,9 @@ function createContextualAiHelpers(scope = {}) {
   }
   
   function digestActionItemKey(item = {}) {
+    // A default parameter only fires for undefined, so null reached the label
+    // reader below and threw.
+    if (!item) return '||';
     const label = contextualAiActionLabel(item).toLowerCase().replace(/\s+/g, ' ');
     const when = [item?.remindAt?.date, item?.remindAt?.time, item?.rollupDateKey].filter(Boolean).join(':');
     return [item?.noteId || '', label, when].join('|');
@@ -202,8 +205,12 @@ function createContextualAiHelpers(scope = {}) {
     const seen = new Set();
     const out = [];
     for (const item of items || []) {
+      // The emptiness check has to come first: digestActionItemKey reads the
+      // item's label, so computing the key before this guard threw on a null
+      // entry rather than skipping it.
+      if (!item) continue;
       const key = digestActionItemKey(item);
-      if (!item || excluded.has(key) || seen.has(key)) continue;
+      if (excluded.has(key) || seen.has(key)) continue;
       seen.add(key);
       out.push(item);
       if (out.length >= Math.max(1, Number(limit) || 50)) break;
@@ -318,12 +325,15 @@ function createContextualAiHelpers(scope = {}) {
     const out = [];
     for (const line of lines) {
       const heading = line.replace(/^#{1,6}\s+/, '').replace(/[:*]+$/g, '').trim().toLowerCase();
-      const isHeading = /^#{1,6}\s+/.test(line) || wanted.includes(heading);
-      if (isHeading && wanted.includes(heading)) {
+      // Stopping is checked first. Collection starts on a plain-text label as
+      // well as a hashed heading, so it has to stop on one too -- and if the
+      // start check ran first it would simply restart collection on the next
+      // label, letting one section swallow every section after it.
+      if (collecting && (/^#{1,6}\s+/.test(line) || wanted.includes(heading))) break;
+      if (wanted.includes(heading)) {
         collecting = true;
         continue;
       }
-      if (collecting && /^#{1,6}\s+/.test(line)) break;
       if (collecting) out.push(line);
     }
     return out.join('\n').trim();
