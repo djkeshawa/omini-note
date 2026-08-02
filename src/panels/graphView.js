@@ -97,19 +97,17 @@ function mnGraphUnpin(pins, id) {
   return next;
 }
 
-// Applied to a freshly built node list. Pins are kept inside the canvas: one
-// made before the pane was resized smaller would otherwise sit off screen,
-// where it cannot be seen or released.
-function mnGraphApplyPins(nodes, pins, W = 900, H = 600) {
+// Applied to a freshly built node list. The position is restored exactly:
+// with the walls gone there is nothing to clamp against, and a pin quietly
+// moved to fit a smaller pane would be the app overruling a placement you
+// made on purpose. Anything left out of view is one Fit away.
+function mnGraphApplyPins(nodes, pins) {
   if (!Array.isArray(nodes) || !pins) return nodes;
-  const ids = Object.keys(pins);
-  if (!ids.length) return nodes;
+  if (!Object.keys(pins).length) return nodes;
   return nodes.map(node => {
     const pin = pins[node.id];
     if (!pin) return node;
-    const x = Math.max(node.r + 18, Math.min(W - node.r - 18, pin.x));
-    const y = Math.max(node.r + 24, Math.min(H - node.r - 22, pin.y));
-    return { ...node, x, y, hx: x, hy: y, vx: 0, vy: 0 };
+    return { ...node, x: pin.x, y: pin.y, hx: pin.x, hy: pin.y, vx: 0, vy: 0 };
   });
 }
 
@@ -117,9 +115,36 @@ function mnGraphIsPinned(pins, id) {
   return Boolean(pins && id && pins[id]);
 }
 
+// Frame the whole graph in the pane.
+//
+// Removing the walls means a node can settle anywhere, so there has to be one
+// gesture that says "show me everything" — otherwise a graph that spread past
+// the edges would look like a graph that had lost half its notes. Each node's
+// radius is counted so the outermost circles land inside the padding rather
+// than half over the edge.
+function mnGraphFitView(nodes, W = 900, H = 600, padding = 46) {
+  const points = (nodes || []).filter(node => Number.isFinite(node?.x) && Number.isFinite(node?.y));
+  if (!points.length) return MN_GRAPH_VIEW;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const node of points) {
+    const r = Number.isFinite(node.r) ? node.r : 0;
+    if (node.x - r < minX) minX = node.x - r;
+    if (node.x + r > maxX) maxX = node.x + r;
+    if (node.y - r < minY) minY = node.y - r;
+    if (node.y + r > maxY) maxY = node.y + r;
+  }
+  const spanX = Math.max(1, maxX - minX);
+  const spanY = Math.max(1, maxY - minY);
+  const room = (size, span) => Math.max(1, size - padding * 2) / span;
+  // One scale for both axes, or the graph would be stretched rather than
+  // framed. A single node has no span worth zooming into, so it sits at 1.
+  const k = mnGraphClampScale(points.length === 1 ? 1 : Math.min(room(W, spanX), room(H, spanY)));
+  return { tx: W / 2 - ((minX + maxX) / 2) * k, ty: H / 2 - ((minY + maxY) / 2) * k, k };
+}
+
 export {
   mnGraphPoint, mnGraphPanBy, mnGraphZoomAt, mnGraphZoomFactor, mnGraphClampScale,
   mnGraphPassedSlop, mnGraphHoldNode, mnGraphReleaseNode,
-  mnGraphPin, mnGraphUnpin, mnGraphApplyPins, mnGraphIsPinned,
+  mnGraphPin, mnGraphUnpin, mnGraphApplyPins, mnGraphIsPinned, mnGraphFitView,
   MN_GRAPH_ZOOM, MN_GRAPH_VIEW, MN_GRAPH_DRAG_SLOP,
 };

@@ -42,6 +42,11 @@
   @media (prefers-reduced-motion: reduce) {
     .mn-view-card-bar, .mn-view-mark { transition: none; }
   }
+  /* Graph: the canvas and its nodes are things you take hold of, so the
+     cursor closes while the button is down. Pure CSS — a React state for
+     this would re-render every node on every press. */
+  [data-mn-graph-canvas]:active { cursor: grabbing; }
+  [data-mn-graph-node]:active { cursor: grabbing; }
   @media (max-width: 1050px) {
     .mn-contextual-assistance-trigger {
       width: 32px;

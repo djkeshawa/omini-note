@@ -15,7 +15,7 @@ import {
   mnGraphPassedSlop, mnGraphHoldNode,
 } from './graphView.js';
 
-const { useEffect: useEffectG, useRef: useRefG, useState: useStateG } = React;
+const { useCallback: useCallbackG, useEffect: useEffectG, useRef: useRefG, useState: useStateG } = React;
 
 // Client coordinates into the SVG's own. This has to ask the browser rather
 // than do arithmetic: the canvas is drawn with a non-uniform
@@ -55,7 +55,17 @@ function useGraphGestures({ view, setView, setNodes, warmLayout, onPin }) {
   const gestureRef = useRefG(null);
   const suppressClickRef = useRefG(false);
 
-  const attachSvg = (el) => { svgRef.current = el; setSvgEl(el); };
+  // Stable, and deliberately so. React calls a ref callback with null and then
+  // with the element again whenever the callback's identity changes — and an
+  // inline arrow changes on every render. Each render therefore queued two
+  // more state writes, which queued another render: the graph would climb its
+  // own update depth until React gave up and the error boundary replaced the
+  // whole panel with "This view ran into a problem". The identity check is the
+  // second belt: re-attaching the same element must not be a state change.
+  const attachSvg = useCallbackG((el) => {
+    svgRef.current = el;
+    setSvgEl(current => (current === el ? current : el));
+  }, []);
   const localPoint = (event) => mnGraphLocalPoint(svgRef.current, event);
   const graphPoint = (event) => {
     const local = localPoint(event);
@@ -113,16 +123,27 @@ function useGraphGestures({ view, setView, setNodes, warmLayout, onPin }) {
     if (gesture.mode === 'pan') {
       const local = localPoint(event);
       if (!local) return;
-      setView(current => mnGraphPanBy(current, local.x - gesture.lastX, local.y - gesture.lastY));
+      // The delta is worked out here and handed over as two numbers. Reading
+      // `gesture.lastX` inside the updater instead looked equivalent and was
+      // not: React runs an updater when it renders, by which point the lines
+      // below have already moved `lastX` to this event's position, so the
+      // subtraction came out zero and the canvas never panned at all.
+      const dx = local.x - gesture.lastX;
+      const dy = local.y - gesture.lastY;
       gesture.lastX = local.x;
       gesture.lastY = local.y;
+      setView(current => mnGraphPanBy(current, dx, dy));
       return;
     }
     const at = graphPoint(event);
     if (!at) return;
-    gesture.lastGraphX = at.x + gesture.dx;
-    gesture.lastGraphY = at.y + gesture.dy;
-    setNodes(prev => mnGraphHoldNode(prev, gesture.id, gesture.lastGraphX, gesture.lastGraphY));
+    // Same rule for the node being carried: pass the position, do not let the
+    // updater read a field that later events are still writing to.
+    const nextX = at.x + gesture.dx;
+    const nextY = at.y + gesture.dy;
+    gesture.lastGraphX = nextX;
+    gesture.lastGraphY = nextY;
+    setNodes(prev => mnGraphHoldNode(prev, gesture.id, nextX, nextY));
     // Warm on every move rather than holding the loop open for the length of
     // the gesture. The layout then stays lively exactly while the pointer is
     // actually moving, and a gesture that never gets its pointerup — a lost

@@ -99,17 +99,18 @@ test('a node stays where it was dropped, and pins survive a rebuilt node list', 
     { id: 'a', x: 999, y: 999, vx: 4, vy: 4, r: 8, hx: null, hy: null },
     { id: 'b', x: 100, y: 100, vx: 1, vy: 1, r: 8, hx: null, hy: null },
   ];
-  const applied = mnGraphApplyPins(rebuilt, pinned, 900, 600);
+  const applied = mnGraphApplyPins(rebuilt, pinned);
   assert.deepEqual(
     { x: applied[0].x, y: applied[0].y, hx: applied[0].hx, vx: applied[0].vx },
     { x: 240, y: 160, hx: 240, vx: 0 }
   );
   assert.deepEqual(applied[1], rebuilt[1], 'an unpinned node is left to the layout');
 
-  // A pin made before the pane shrank must not strand the node off screen,
-  // where it could be neither seen nor released.
-  const tight = mnGraphApplyPins(rebuilt, mnGraphPin({}, 'a', 5000, 5000), 400, 300);
-  assert.ok(tight[0].x <= 400 && tight[0].y <= 300);
+  // The position is restored exactly. There are no walls to clamp against
+  // any more, and quietly moving a pin to fit a smaller pane would be the app
+  // overruling a placement made on purpose; Fit recovers anything out of view.
+  const far = mnGraphApplyPins(rebuilt, mnGraphPin({}, 'a', 5000, 5000));
+  assert.deepEqual({ x: far[0].x, y: far[0].y }, { x: 5000, y: 5000 });
 
   assert.deepEqual(mnGraphUnpin(pinned, 'a'), {});
   assert.deepEqual(mnGraphUnpin(pinned, 'missing'), pinned, 'unpinning what is not pinned changes nothing');
@@ -142,18 +143,96 @@ test('a held node stays exactly where the grip put it while the layout ticks', (
   assert.ok(free.x > 430, 'the neighbour is pushed by the node being held');
 });
 
-test('a held node is not clamped back inside the viewport, but a free one is', () => {
+test('the layout has no walls: a stray node is drawn back, not snapped back', () => {
   const { mnGraphTick } = loadRendererModule('src/panels/graphForces.js');
-  // Dragged well past the right edge. The clamp exists to stop the layout
-  // throwing nodes off screen; applied to a held node it fights the pointer.
-  const outside = [{ id: 'a', x: 1400, y: 900, vx: 0, vy: 0, r: 8, hx: 1400, hy: 900 }];
-  const heldTick = mnGraphTick(outside, { edges: [], W: 900, H: 600, ticks: 1 }).nodes[0];
-  assert.deepEqual({ x: heldTick.x, y: heldTick.y }, { x: 1400, y: 900 });
+  const opts = { center: 0.005, repulsion: 34, linkDistance: 118 };
+  // Well outside the pane. Nodes used to be clamped to the viewport, so a
+  // graph denser than its pane piled along four invisible edges and the
+  // arrangement you saw was the box rather than the links.
+  const start = { id: 'a', x: 1400, y: 900, vx: 0, vy: 0, r: 8, hx: null, hy: null };
+  const oneTick = mnGraphTick([start], { edges: [], W: 900, H: 600, ticks: 1, opts }).nodes[0];
+  assert.ok(oneTick.x > 900, 'one tick does not teleport it inside the pane');
+  assert.ok(oneTick.x < 1400 && oneTick.y < 900, 'the centre pull moves it homeward');
 
-  const released = [{ id: 'a', x: 1400, y: 900, vx: 0, vy: 0, r: 8, hx: null, hy: null }];
-  const freeTick = mnGraphTick(released, { edges: [], W: 900, H: 600, ticks: 1 }).nodes[0];
-  assert.ok(freeTick.x <= 900 - 8 - 18 && freeTick.y <= 600 - 8 - 22,
-    'once released the layout pulls it back inside the pane');
+  // Given time, the same force brings it home — containment is something the
+  // graph can argue with rather than a barrier it cannot cross.
+  let out = [start];
+  for (let i = 0; i < 400; i += 1) out = mnGraphTick(out, { edges: [], W: 900, H: 600, ticks: 1, opts }).nodes;
+  assert.ok(Math.abs(out[0].x - 450) < 200 && Math.abs(out[0].y - 300) < 200,
+    'it settles near the middle rather than against an edge');
+
+  // A held node is still exempt: it belongs to the pointer, not the layout.
+  const held = [{ ...start, hx: 1400, hy: 900 }];
+  const heldTick = mnGraphTick(held, { edges: [], W: 900, H: 600, ticks: 1, opts }).nodes[0];
+  assert.deepEqual({ x: heldTick.x, y: heldTick.y }, { x: 1400, y: 900 });
+});
+
+test('fit frames every node in the pane, whatever the layout did', () => {
+  const { mnGraphFitView, mnGraphPoint, MN_GRAPH_ZOOM, MN_GRAPH_VIEW } = view();
+  // A graph that spread well past the pane — which it now can, there being no
+  // walls — has to be recoverable in one gesture.
+  const nodes = [
+    { id: 'a', x: -600, y: -400, r: 10 },
+    { id: 'b', x: 1800, y: 1500, r: 10 },
+    { id: 'c', x: 400, y: 300, r: 10 },
+  ];
+  const fitted = mnGraphFitView(nodes, 900, 600, 40);
+  // Every node, counting its radius, lands inside the pane.
+  for (const node of nodes) {
+    const k = fitted.k;
+    const sx = node.x * k + fitted.tx;
+    const sy = node.y * k + fitted.ty;
+    assert.ok(sx - node.r * k >= -0.001 && sx + node.r * k <= 900.001, `${node.id} fits horizontally`);
+    assert.ok(sy - node.r * k >= -0.001 && sy + node.r * k <= 600.001, `${node.id} fits vertically`);
+  }
+  // The graph's midpoint lands on the pane's midpoint.
+  const middle = mnGraphPoint(fitted, 450, 300);
+  assert.ok(Math.abs(middle.x - 600) < 1 && Math.abs(middle.y - 550) < 1);
+  assert.ok(fitted.k >= MN_GRAPH_ZOOM.min && fitted.k <= MN_GRAPH_ZOOM.max);
+
+  // Degenerate inputs answer with the default rather than an infinity.
+  assert.deepEqual(mnGraphFitView([], 900, 600), MN_GRAPH_VIEW);
+  assert.deepEqual(mnGraphFitView(null, 900, 600), MN_GRAPH_VIEW);
+  const single = mnGraphFitView([{ id: 'a', x: 120, y: 90, r: 8 }], 900, 600);
+  assert.equal(single.k, 1, 'one node has no span worth zooming into');
+  assert.ok(Math.abs(120 * single.k + single.tx - 450) < 0.001, 'and it is centred');
+  const noRadius = mnGraphFitView([{ id: 'a', x: 0, y: 0 }, { id: 'b', x: 100, y: 100 }], 900, 600);
+  assert.ok(Number.isFinite(noRadius.k) && Number.isFinite(noRadius.tx));
+});
+
+test('a blow-up cannot travel through the layout and blank the graph', () => {
+  const { mnGraphTick, MN_GRAPH_ROAM } = loadRendererModule('src/panels/graphForces.js');
+  const opts = { center: 0.005, repulsion: 34, linkDistance: 118 };
+  // Two nodes on the exact same point make the repulsion term enormous. With
+  // no bound at all they can reach infinity, and one non-finite position
+  // spreads through the repulsion pass until every coordinate is NaN and the
+  // graph draws nothing at all.
+  let stacked = [
+    { id: 'a', x: 400, y: 300, vx: 0, vy: 0, r: 8, hx: null, hy: null },
+    { id: 'b', x: 400, y: 300, vx: 0, vy: 0, r: 8, hx: null, hy: null },
+  ];
+  for (let i = 0; i < 200; i += 1) stacked = mnGraphTick(stacked, { edges: [], W: 900, H: 600, ticks: i, opts }).nodes;
+  for (const node of stacked) {
+    assert.ok(Number.isFinite(node.x) && Number.isFinite(node.y), 'every coordinate stays a number');
+    assert.ok(Math.abs(node.x) <= 900 * (1 + MN_GRAPH_ROAM) + 1, 'and stays within the roaming backstop');
+  }
+
+  // A position that is already broken — a bad date used to produce one — is
+  // returned to the middle rather than poisoning its neighbours.
+  const poisoned = [
+    { id: 'a', x: Number.NaN, y: 10, vx: 0, vy: 0, r: 8, hx: null, hy: null },
+    { id: 'b', x: 500, y: 300, vx: 0, vy: 0, r: 8, hx: null, hy: null },
+  ];
+  const healed = mnGraphTick(poisoned, { edges: [], W: 900, H: 600, ticks: 1, opts }).nodes;
+  assert.deepEqual({ x: healed[0].x, y: healed[0].y }, { x: 450, y: 300 });
+  assert.ok(Number.isFinite(healed[1].x) && Number.isFinite(healed[1].y));
+
+  // The backstop is far enough out that it never shapes an ordinary layout:
+  // a node released just outside the pane is moved by the centre pull, not
+  // snapped by the bound.
+  const outside = [{ id: 'a', x: 1000, y: 700, vx: 0, vy: 0, r: 8, hx: null, hy: null }];
+  const stepped = mnGraphTick(outside, { edges: [], W: 900, H: 600, ticks: 1, opts }).nodes[0];
+  assert.ok(stepped.x > 900 && stepped.x < 1000, 'still outside the pane, just nudged homeward');
 });
 
 test('the layout still reports when it has come to rest', () => {
@@ -169,6 +248,20 @@ test('the layout still reports when it has come to rest', () => {
   assert.equal(mnGraphTick(scattered, { edges: [], W: 900, H: 600, ticks: 1 }).settled, false);
 });
 
+test('the canvas ref callback is stable, so the panel cannot loop itself to death', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/panels/useGraphGestures.js'), 'utf8');
+  // React re-runs a ref callback — null, then the element — whenever the
+  // callback's identity changes, and an inline arrow changes every render.
+  // With a setState inside, each render queued two more writes and another
+  // render, until React gave up and the error boundary replaced the graph
+  // with "This view ran into a problem". Caught in the Electron regression as
+  // a drag against a panel that had vanished.
+  assert.match(source, /const attachSvg = useCallbackG\(/);
+  assert.match(source, /\}, \[\]\);/, 'and with no dependencies, so it is created once');
+  // Re-attaching the same element must not count as a change either.
+  assert.match(source, /setSvgEl\(current => \(current === el \? current : el\)\)/);
+});
+
 test('the graph canvas gestures have regression coverage that drives them', () => {
   const harness = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
   assert.match(harness, /dragging a graph node carries it/);
@@ -176,4 +269,5 @@ test('the graph canvas gestures have regression coverage that drives them', () =
   assert.match(harness, /dragging the canvas pans the graph/);
   assert.match(harness, /clicking a graph node still opens the inspector/);
   assert.match(harness, /a dropped graph node stays where it was put/);
+  assert.match(harness, /fit brings every graph node inside the pane/);
 });

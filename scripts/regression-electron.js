@@ -2703,12 +2703,18 @@ async function runNavigationPanelsScenario(win) {
 
   const nodeCentre = async () => await evaluate(win, `(() => {
     const node = document.querySelector('[data-mn-graph-node]');
+    const canvas = document.querySelector('[data-mn-graph-canvas]');
     const circle = node?.querySelector('circle:not([stroke-dasharray])');
     return {
       id: node?.getAttribute('data-mn-graph-node') || '',
       x: Number(circle?.getAttribute('cx') || 0),
       y: Number(circle?.getAttribute('cy') || 0),
       rect: (() => { const r = node?.getBoundingClientRect(); return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; })(),
+      // Reported so a missing node says why: no canvas at all, an empty
+      // state, or a canvas drawing nodes whose coordinates went bad.
+      canvas: Boolean(canvas),
+      nodeCount: document.querySelectorAll('[data-mn-graph-node]').length,
+      panelText: (document.querySelector('[data-mn-graph-frame]')?.textContent || 'NO GRAPH FRAME').trim().slice(0, 160),
     };
   })()`);
 
@@ -2790,20 +2796,21 @@ async function runNavigationPanelsScenario(win) {
   await evaluate(win, `(() => {
     const svg = document.querySelector('[data-mn-graph-canvas]');
     const box = svg.getBoundingClientRect();
-    // Press empty canvas, well away from any node, so this pans rather than
-    // grabbing something.
-    const x = box.x + 24, y = box.y + box.height - 24;
+    // Mid-canvas, away from the legend and the control panel in the corners.
+    const x = Math.round(box.x + box.width / 2), y = Math.round(box.y + 40);
     const opts = (cx, cy, buttons) => ({ bubbles: true, cancelable: true, pointerId: 2, isPrimary: true, button: 0, buttons, clientX: cx, clientY: cy });
     svg.dispatchEvent(new PointerEvent('pointerdown', opts(x, y, 1)));
-    svg.dispatchEvent(new PointerEvent('pointermove', opts(x + 60, y - 40, 1)));
-    svg.dispatchEvent(new PointerEvent('pointerup', opts(x + 60, y - 40, 0)));
+    svg.dispatchEvent(new PointerEvent('pointermove', opts(x + 70, y + 50, 1)));
+    svg.dispatchEvent(new PointerEvent('pointerup', opts(x + 70, y + 50, 0)));
     return true;
   })()`);
   await waitFor(win, 'dragging the canvas pans the graph', async () => {
     const current = await viewOf();
     const [tx, ty] = String(current).split(',').map(Number);
     const [wasTx, wasTy] = String(zoomedView).split(',').map(Number);
-    return { ok: tx > wasTx && ty < wasTy, current, zoomedView };
+    // Down and to the right, by the pointer delta — panning used to compute a
+    // zero delta and leave the canvas exactly where it was.
+    return { ok: tx > wasTx && ty > wasTy, current, zoomedView };
   });
 
   // Reset puts both the layout and the canvas back, then a plain click — no
@@ -2817,9 +2824,42 @@ async function runNavigationPanelsScenario(win) {
   await waitFor(win, 'the forces panel expands to offer Reset layout', async () => {
     const current = await evaluate(win, `(() => ({
       reset: [...document.querySelectorAll('button')].some(el => (el.textContent || '').trim() === 'Reset layout'),
+      fit: [...document.querySelectorAll('button')].some(el => (el.textContent || '').trim() === 'Fit to view'),
     }))()`);
-    return { ok: current.reset, current };
+    return { ok: current.reset && current.fit, current };
   });
+  // Fit frames every node at once. Without walls the layout can settle past
+  // the pane, so this is the gesture that says "show me everything", and it
+  // has to work from a canvas that has been panned and zoomed away.
+  // Fit frames the graph as it is at that instant, so a layout still in
+  // motion can drift back out. Let it come to rest first, then fit — which is
+  // also how a person would use it.
+  await waitFor(win, 'the graph layout comes to rest before fitting', async () => {
+    const first = await evaluate(win, `(() => [...document.querySelectorAll('[data-mn-graph-node] circle')].map(c => c.getAttribute('cx')).join(','))()`);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    const second = await evaluate(win, `(() => [...document.querySelectorAll('[data-mn-graph-node] circle')].map(c => c.getAttribute('cx')).join(','))()`);
+    return { ok: Boolean(first) && first === second, still: first === second };
+  });
+  await clickButton(win, { text: 'Fit to view' });
+  await waitFor(win, 'fit brings every graph node inside the pane', async () => {
+    const current = await evaluate(win, `(() => {
+      const svg = document.querySelector('[data-mn-graph-canvas]');
+      const box = svg.getBoundingClientRect();
+      // Measure the circles, which is what Fit frames. The group's own box
+      // also covers the label, and labels appear once zoomed past 1.5 — so
+      // measuring the group would be asking Fit for a promise it never made.
+      const nodes = [...document.querySelectorAll('[data-mn-graph-node]')];
+      const outside = nodes.filter(node => {
+        return [...node.querySelectorAll('circle')].some(circle => {
+          const r = circle.getBoundingClientRect();
+          return r.left < box.left - 1 || r.right > box.right + 1 || r.top < box.top - 1 || r.bottom > box.bottom + 1;
+        });
+      }).length;
+      return { nodes: nodes.length, outside, view: svg.getAttribute('data-mn-graph-view') };
+    })()`);
+    return { ok: current.nodes > 0 && current.outside === 0, current };
+  });
+
   await clickButton(win, { text: 'Reset layout' });
   await waitFor(win, 'reset layout also restores the canvas view', async () => {
     const current = await viewOf();
