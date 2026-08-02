@@ -2254,8 +2254,20 @@ async function waitForEditorLayout(win, label, predicate) {
   });
 }
 
+// Drags a block selection from one row to another across a scrolling editor.
+//
+// The two halves of this travel by different routes: sendInputEvent hands the
+// press to the browser process, while the scroll below runs through
+// executeJavaScript. Nothing orders one against the other, so a fixed pause
+// after the press was a bet on the renderer draining its input queue first.
+// When the machine was busy it lost, the editor scrolled before the press was
+// hit-tested, and the drag anchored on whichever row had slid into that spot —
+// selecting a short range from the middle of the note instead of the whole
+// span. So the press is now *observed* to have landed on the intended row
+// before anything moves underneath it, and the release is likewise held until
+// the pointer is confirmed over the intended row.
 async function dragEditorBlockRangeAcrossScroll(win, startIndex, endIndex) {
-  const pointForRow = async (index) => {
+  const rowForDrag = async (index) => {
     const result = await evaluate(win, `
       (() => {
         const rows = [...document.querySelectorAll('.mn-outliner .mn-block-row[data-block-id]')];
@@ -2266,23 +2278,50 @@ async function dragEditorBlockRangeAcrossScroll(win, startIndex, endIndex) {
         return {
           ok: rect.width > 0 && rect.height > 0,
           rows: rows.length,
+          id: row.dataset.blockId,
           x: rect.left + Math.min(120, rect.width / 2),
           y: rect.top + rect.height / 2,
         };
       })()
     `);
     if (!result.ok) throw new Error(`Could not position editor row ${index}: ${JSON.stringify(result)}`);
-    return { x: Math.round(result.x), y: Math.round(result.y) };
+    return { id: result.id, x: Math.round(result.x), y: Math.round(result.y) };
   };
 
-  const start = await pointForRow(startIndex);
+  const blockUnderPoint = async (x, y) => await evaluate(win, `
+    (() => {
+      const el = document.elementFromPoint(${x}, ${y});
+      return { id: el?.closest?.('.mn-block-row[data-block-id]')?.dataset.blockId || '' };
+    })()
+  `);
+
+  const start = await rowForDrag(startIndex);
+  // A capturing one-shot listener, so the press reports the row it actually
+  // hit rather than the row we meant to hit. A data attribute rather than a
+  // window global: the renderer contract test refuses new globals.
+  await evaluate(win, `
+    (() => {
+      delete document.body.dataset.mnRegressionDragAnchor;
+      document.addEventListener('mousedown', (event) => {
+        const row = event.target?.closest?.('.mn-block-row[data-block-id]');
+        document.body.dataset.mnRegressionDragAnchor = row ? row.dataset.blockId : 'none';
+      }, { capture: true, once: true });
+      return true;
+    })()
+  `);
   win.webContents.sendInputEvent({ type: 'mouseMove', ...start });
-  await wait(30);
   win.webContents.sendInputEvent({ type: 'mouseDown', ...start, button: 'left', clickCount: 1 });
-  await wait(30);
-  const end = await pointForRow(endIndex);
+  await waitFor(win, `block drag anchors on row ${startIndex}`, async () => {
+    const current = await evaluate(win, `({ anchor: document.body.dataset.mnRegressionDragAnchor || '' })`);
+    return { ok: current.anchor === start.id, current, want: start.id };
+  });
+
+  const end = await rowForDrag(endIndex);
   win.webContents.sendInputEvent({ type: 'mouseMove', ...end, button: 'left' });
-  await wait(60);
+  await waitFor(win, `block drag reaches row ${endIndex}`, async () => {
+    const current = await blockUnderPoint(end.x, end.y);
+    return { ok: current.id === end.id, current, want: end.id };
+  });
   win.webContents.sendInputEvent({ type: 'mouseUp', ...end, button: 'left', clickCount: 1 });
 }
 
