@@ -133,6 +133,14 @@ function MnBlockRow({
   const [autoIdx, setAutoIdx] = useStateOE(0);
   const [slashQ, setSlashQ] = useStateOE(null); // slash menu query
   const [slashIdx, setSlashIdx] = useStateOE(0);
+  // Arrow keys move the highlight but the popover does not follow it on its
+  // own, so past the visible few commands the selection disappears off the
+  // bottom of the list.
+  useEffectOE(() => {
+    if (slashQ == null) return;
+    const active = document.querySelector('[data-mn-slash-item="active"]');
+    active?.scrollIntoView?.({ block: 'nearest' });
+  }, [slashIdx, slashQ]);
   const [canvasPicker, setCanvasPicker] = useStateOE(false);
   const [dropPos, setDropPos] = useStateOE(null); // 'before' | 'after' | 'child' | null
   const [spellIssues, setSpellIssues] = useStateOE({});

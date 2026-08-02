@@ -188,7 +188,11 @@
         },
       };
     }
-    const quote = value.match(/^>\s?(.*)$/s);
+    // The space is required, as it is for headings, bullets, todos and ordered
+    // items. With it optional, typing ">" converted the block to a quote before
+    // the space was typed, so the space itself became the block's content and
+    // the editable text came back as ">  " with a doubled space.
+    const quote = value.match(/^>\s(.*)$/s);
     if (quote) {
       return {
         patch: { kind: 'quote', level: 0, checked: null, content: quote[1], language: '' },

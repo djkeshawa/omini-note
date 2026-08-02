@@ -419,6 +419,7 @@ function MnBlockRowView({ model }) {
                     }}>No matching commands</div>
                   ) : slashMatches.map((cmd, i) => (
                     <div key={cmd.id}
+                      data-mn-slash-item={i === slashIdx ? 'active' : 'item'}
                       onMouseDown={(e) => { e.preventDefault(); applySlashCmd(cmd); }}
                       onMouseEnter={() => setSlashIdx(i)}
                       style={{
