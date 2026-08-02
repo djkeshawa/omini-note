@@ -2537,6 +2537,32 @@ async function runSlashCommandCaretScenario(win) {
   await waitForEditorLayout(win, 'typing lands after the quote marker', rows => rows[1]?.kind === 'quote' && rows[1]?.value === 'quoted text');
 }
 
+async function runUndoRedoTypingScenario(win) {
+  await seedEditorNote(win, {
+    id: 'qe_editor_undo_typing',
+    title: 'QE Editor Undo Typing',
+    body: 'Parent',
+  });
+  await focusEditorRow(win, 0);
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'undo scenario paragraph ready', rows => rows.length === 2 && rows[1].kind === 'paragraph' && rows[1].editing);
+  await typeActiveEditorText(win, 'hello world');
+  await waitForEditorLayout(win, 'typed run present before undo', rows => rows[1]?.value === 'hello world');
+  // A typing burst undoes as a chunk, not one character at a time.
+  await pressAccelerator(win, 'Z', ['control']);
+  await waitForEditorLayout(win, 'one undo removes the whole typed run', rows => (rows[1]?.value ?? rows[1]?.text ?? '') === '');
+  await pressAccelerator(win, 'Z', ['control', 'shift']);
+  await waitForEditorLayout(win, 'redo restores the typed run', rows => (rows[1]?.value ?? rows[1]?.text ?? '') === 'hello world');
+  // Undo across a block conversion restores both kind and text.
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await typeActiveEditorText(win, '> ');
+  await waitForEditorLayout(win, 'quote conversion before undo', rows => rows[2]?.kind === 'quote');
+  await pressAccelerator(win, 'Z', ['control']);
+  await waitForEditorLayout(win, 'undo reverts the conversion to a paragraph', rows => rows[2]?.kind === 'paragraph');
+}
+
 async function runNoteCreateEditPersistenceScenario(win) {
   const title = 'QE User Scenario Note';
   const body = 'A user can create, edit, and persist this note.';
@@ -3820,6 +3846,9 @@ async function runRegression() {
   });
   await runScenario(win, 'Editor', 'slash menu commands keep the caret after the marker', async () => {
     await runSlashCommandCaretScenario(win);
+  });
+  await runScenario(win, 'Editor', 'a typing burst undoes as one chunk and redo restores it', async () => {
+    await runUndoRedoTypingScenario(win);
   });
   await runScenario(win, 'Editor', 'large scrolled block ranges delete completely and undo once', async () => {
     await runLargeBlockSelectionDeleteScenario(win);
