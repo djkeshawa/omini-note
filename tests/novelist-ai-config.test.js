@@ -1,10 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { loadRendererModule } = require('./helpers/rendererModule.js');
-
-const panel = loadRendererModule('src/panels/panelHelpers.js');
-const normalize = panel.mnNormalizeNovelistAiConfig;
+// Imported as a real ES module (not through the renderer sandbox) so node's
+// coverage attributes these executions to the file.
+let panel, normalize;
+test('load panelHelpers as an ES module', async () => {
+  panel = await import('../src/panels/panelHelpers.js');
+  normalize = panel.mnNormalizeNovelistAiConfig;
+  assert.equal(typeof normalize, 'function');
+});
 
 // Novelist AI settings survive app restarts through localStorage, so whatever
 // was saved -- by an older version, a different machine, or a corrupted write
