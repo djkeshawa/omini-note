@@ -2455,17 +2455,17 @@ async function runMarkdownTypingScenario(win) {
   await waitForEditorLayout(win, 'markdown typing creates empty paragraph', rows => rows.length === 2 && rows[1].kind === 'paragraph' && rows[1].editing && rows[1].active);
 
   await typeEditorRowText(win, 1, '# ');
-  await waitForEditorLayout(win, 'heading starter converts immediately', rows => rows[1]?.kind === 'heading' && rows[1]?.value === '# ' && rows[1]?.editing && rows[1]?.active);
+  await waitForEditorLayout(win, 'heading starter converts immediately', rows => rows[1]?.kind === 'heading' && (rows[1]?.value === '' || rows[1]?.value === '# ') && rows[1]?.editing && rows[1]?.active);
   await typeEditorRowText(win, 1, 'Markdown heading');
-  await waitForEditorLayout(win, 'heading content remains editable as markdown source', rows => rows[1]?.kind === 'heading' && rows[1]?.value === '# Markdown heading' && rows[1]?.active);
+  await waitForEditorLayout(win, 'heading content shows without its marker while writing', rows => rows[1]?.kind === 'heading' && rows[1]?.value === 'Markdown heading' && rows[1]?.active);
 
   await pressAccelerator(win, 'End');
   await pressAccelerator(win, 'Enter');
   await waitForEditorLayout(win, 'paragraph after heading is editable', rows => rows.length >= 3 && rows[2]?.kind === 'paragraph' && rows[2]?.editing && rows[2]?.active);
   await typeEditorRowText(win, 2, '- [ ] ');
-  await waitForEditorLayout(win, 'todo starter converts immediately', rows => rows[2]?.kind === 'todo' && rows[2]?.value === '- [ ] ' && rows[2]?.editing && rows[2]?.active);
+  await waitForEditorLayout(win, 'todo starter converts immediately', rows => rows[2]?.kind === 'todo' && (rows[2]?.value === '' || rows[2]?.value === '- [ ] ') && rows[2]?.editing && rows[2]?.active);
   await typeEditorRowText(win, 2, 'Checklist item');
-  await waitForEditorLayout(win, 'todo content remains editable as markdown source', rows => rows[2]?.kind === 'todo' && rows[2]?.value === '- [ ] Checklist item' && rows[2]?.active);
+  await waitForEditorLayout(win, 'todo content shows without its marker while writing', rows => rows[2]?.kind === 'todo' && rows[2]?.value === 'Checklist item' && rows[2]?.active);
 
   await pressAccelerator(win, 'End');
   await pressAccelerator(win, 'Enter');
@@ -2478,11 +2478,13 @@ async function runMarkdownTypingScenario(win) {
   await pressAccelerator(win, 'End');
   await pressAccelerator(win, 'Enter');
   await typeEditorRowText(win, 4, '1. ');
-  await waitForEditorLayout(win, 'ordered starter converts immediately', rows => rows[4]?.kind === 'ordered' && rows[4]?.value === '1. ' && rows[4]?.active);
+  await waitForEditorLayout(win, 'ordered starter converts immediately', rows => rows[4]?.kind === 'ordered' && (rows[4]?.value === '' || rows[4]?.value === '1. ') && rows[4]?.active);
   await typeEditorRowText(win, 4, 'First ordered item');
   await pressAccelerator(win, 'End');
   await pressAccelerator(win, 'Enter');
-  await waitForEditorLayout(win, 'ordered Enter advances the portable marker', rows => rows[5]?.kind === 'ordered' && rows[5]?.value === '2. ' && rows[5]?.active);
+  await waitForEditorLayout(win, 'ordered Enter advances the portable marker', rows => rows[5]?.kind === 'ordered' && rows[5]?.active);
+  await pressAccelerator(win, 'Home');
+  await waitForEditorLayout(win, 'Home reveals the advanced ordered marker', rows => rows[5]?.kind === 'ordered' && rows[5]?.value === '2. ');
 }
 
 async function runMarkdownCompatibilityScenario(win) {
@@ -2528,11 +2530,11 @@ async function runSlashCommandCaretScenario(win) {
   await waitForEditorLayout(win, 'slash caret paragraph ready', rows => rows.length === 2 && rows[1].kind === 'paragraph' && rows[1].editing);
   await typeActiveEditorText(win, '/quote');
   await pressAccelerator(win, 'Enter');
-  await waitForEditorLayout(win, 'quote command converts the block', rows => rows[1]?.kind === 'quote' && rows[1]?.value === '> ');
+  await waitForEditorLayout(win, 'quote command converts the block', rows => rows[1]?.kind === 'quote' && (rows[1]?.value === '' || rows[1]?.value === '> '));
   // The caret must sit after the marker: with it at 0, this text lands in
   // front of ">" and un-converts the block.
   await typeActiveEditorText(win, 'quoted text');
-  await waitForEditorLayout(win, 'typing lands after the quote marker', rows => rows[1]?.kind === 'quote' && rows[1]?.value === '> quoted text');
+  await waitForEditorLayout(win, 'typing lands after the quote marker', rows => rows[1]?.kind === 'quote' && rows[1]?.value === 'quoted text');
 }
 
 async function runNoteCreateEditPersistenceScenario(win) {

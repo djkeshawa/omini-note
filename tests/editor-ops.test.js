@@ -618,7 +618,7 @@ test('Markdown input rules do not replace paste or clipboard markdown behavior',
 test('Markdown block conversion remains one undoable kind change and leaves text editing hooks intact', () => {
   const outliner = outlinerSource(__dirname);
 
-  assert.match(outliner, /const parsed = MN_MARKDOWN_INPUT_RULES\.parseEditableMarkdownBlock\?\.\(\{ block, text: v \}\)/);
+  assert.match(outliner, /const parsed = MN_MARKDOWN_INPUT_RULES\.parseEditableMarkdownBlock\?\.\(\{ block, text: parseSourceFor\(v\) \}\)/);
   assert.match(outliner, /if \(parsed\?\.patch\) onChangeKind\(block\.id, parsed\.patch\)/);
   assert.match(outliner, /const blockStarter = MN_MARKDOWN_INPUT_RULES\.findBlockStarterConversion/);
   assert.match(outliner, /onChangeKind\(block\.id, blockStarter\.patch\)/);

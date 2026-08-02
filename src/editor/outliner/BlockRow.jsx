@@ -68,6 +68,7 @@ import { MnCanvasPicker, MnDisclosure } from './OutlinerChrome.jsx';
 import { MnPlotPointsBlock, MnInlineAiButton, MnSmartViewEmbedFallback, MnSmartViewEmbed, MnMarkdownTable, mnEditorFontScale, mnGetFontStyle, mnAffordancePadTop, mnGripPadTop, mnPlaceholder } from './EmbeddedBlocks.jsx';
 import { MnPopover, MnPopoverHeader, MnPopoverItem, MnInlineAiPreview } from './OutlinerPopovers.jsx';
 import { useAttachmentInsertion } from './useAttachmentInsertion.js';
+import { useHiddenMarker } from './useHiddenMarker.js';
 
 const MN_SLASH_CMDS = BASE_SLASH_COMMANDS;
 
@@ -158,6 +159,8 @@ function MnBlockRow({
   const inputRef = useRefOE(null);
   const displayTextRef = useRefOE(null);
   const pendingCaretRef = useRefOE(null);
+  const marker = useHiddenMarker({ block, editing, inputRef });
+  const { markerHidden, taOffsetToContent, parseSourceFor } = marker;
 
   useEffectOE(() => {
     if (focusId === block.id) {
@@ -180,7 +183,7 @@ function MnBlockRow({
       inputRef.current.style.height = 'auto';
       inputRef.current.style.height = inputRef.current.scrollHeight + 'px';
     }
-  }, [block.content, editing]);
+  }, [block.content, editing, marker.markerRevealed]);
 
   useEffectOE(() => {
     if (!spellCheck || editing || block.kind === 'code' || block.kind === 'table' || !platformApi.available) {
@@ -292,13 +295,15 @@ function MnBlockRow({
       e.preventDefault();
       const ta = inputRef.current;
       if (!ta) return;
-      const pos = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionStart) ?? ta.selectionStart;
+      const pos = taOffsetToContent(ta.selectionStart);
       const v = String(block.content || '');
       const next = v.slice(0, pos) + '\n' + v.slice(pos);
       onChange(block.id, next);
       setTimeout(() => {
         if (inputRef.current) {
-          const nextEditorPos = MN_MARKDOWN_INPUT_RULES.contentOffsetToEditorOffset?.(block, pos + 1) ?? (pos + 1);
+          const nextEditorPos = markerHidden
+            ? pos + 1
+            : (MN_MARKDOWN_INPUT_RULES.contentOffsetToEditorOffset?.(block, pos + 1) ?? (pos + 1));
           inputRef.current.setSelectionRange(nextEditorPos, nextEditorPos);
         }
       }, 0);
@@ -320,6 +325,11 @@ function MnBlockRow({
     }
     if (e.key === 'Backspace') {
       const ta = inputRef.current;
+      if (ta && marker.atRevealBoundary(ta)) {
+        e.preventDefault();
+        onChangeKind(block.id, { kind: 'paragraph', level: 0, checked: null, language: '' });
+        return;
+      }
       if (ta && ta.selectionStart === 0 && ta.selectionEnd === 0) {
         // At start of block — convert formatted block back to paragraph, or merge with previous
         if (block.kind !== 'paragraph') {
@@ -341,8 +351,7 @@ function MnBlockRow({
 
   const handleEnter = () => {
     const ta = inputRef.current;
-    const pos = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta?.selectionStart ?? block.content.length)
-      ?? (ta?.selectionStart ?? block.content.length);
+    const pos = taOffsetToContent(ta?.selectionStart ?? block.content.length);
     const isEmptyBlock = block.content.trim() === '';
     // Empty nested blocks leave the current parent before creating more empty
     // children. At root, formatted empty blocks exit to paragraph.
@@ -365,7 +374,7 @@ function MnBlockRow({
 
   // ── input handlers ───────────────────────────────────────────────
   const applyEditorValue = (value, caret = null) => {
-    const parsed = MN_MARKDOWN_INPUT_RULES.parseEditableMarkdownBlock?.({ block, text: value });
+    const parsed = MN_MARKDOWN_INPUT_RULES.parseEditableMarkdownBlock?.({ block, text: parseSourceFor(value) });
     if (parsed?.patch) onChangeKind(block.id, parsed.patch);
     else onChange(block.id, value);
     if (caret != null) {
@@ -381,7 +390,8 @@ function MnBlockRow({
   const handleInput = (e) => {
     const v = e.target.value;
     const pos = e.target.selectionStart;
-    const parsed = MN_MARKDOWN_INPUT_RULES.parseEditableMarkdownBlock?.({ block, text: v });
+    marker.hideAfterInput(pos);
+    const parsed = MN_MARKDOWN_INPUT_RULES.parseEditableMarkdownBlock?.({ block, text: parseSourceFor(v) });
     if (parsed?.patch) onChangeKind(block.id, parsed.patch);
     else {
       const blockStarter = MN_MARKDOWN_INPUT_RULES.findBlockStarterConversion?.({
@@ -427,8 +437,8 @@ function MnBlockRow({
     const markdown = mnClipboardEventToMarkdownTable && mnClipboardEventToMarkdownTable(e);
     const ta = inputRef.current;
     if (!ta) return;
-    const start = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionStart ?? 0) ?? (ta.selectionStart ?? 0);
-    const end = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionEnd ?? ta.selectionStart ?? 0) ?? (ta.selectionEnd ?? start);
+    const start = taOffsetToContent(ta.selectionStart ?? 0);
+    const end = taOffsetToContent(ta.selectionEnd ?? ta.selectionStart ?? 0);
     const fullSelection = start === 0 && end === String(block.content || '').length;
     if (markdown) {
       e.preventDefault();
@@ -505,8 +515,9 @@ function MnBlockRow({
 
   const handleSelect = (e) => {
     const ta = e.target;
-    const start = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionStart) ?? ta.selectionStart;
-    const end = MN_MARKDOWN_INPUT_RULES.editorOffsetToContentOffset?.(block, ta.selectionEnd) ?? ta.selectionEnd;
+    if (marker.toggleFromSelect(ta)) return;
+    const start = taOffsetToContent(ta.selectionStart);
+    const end = taOffsetToContent(ta.selectionEnd);
     if (start !== end && onSelectionChange) {
       // Use the textarea's bounding rect + caret position to estimate
       const rect = ta.getBoundingClientRect();
@@ -604,6 +615,7 @@ function MnBlockRow({
     const sm = slashQ || mnFindSlashCommandTrigger(v, pos);
     let cleanContent = v;
     let newPos = pos;
+    let convertedContent = null;
     if (sm) {
       cleanContent = v.slice(0, sm.start) + v.slice(sm.end);
       newPos = sm.start;
@@ -648,11 +660,11 @@ function MnBlockRow({
         collapsed: collapseByDefault && cmd.kind === 'heading',
       };
       onChangeKind(block.id, patch);
-      // The textarea now shows the block's structural prefix ("> ", "# ",
-      // "- [ ] ") ahead of the content, but newPos was measured against the
-      // pre-conversion text. Without this offset the caret lands at 0 -- in
-      // front of the marker -- and the next keystroke un-converts the block.
-      newPos += MN_MARKDOWN_INPUT_RULES.editableMarkdownForBlock?.({ ...patch, content: '' }).length || 0;
+      // newPos is a content-space offset. Whether the textarea will be showing
+      // the bare content or the revealed marker by the time the caret restore
+      // below fires depends on event timing (an Enter keyup can reveal it), so
+      // the restore measures the live prefix instead of assuming either state.
+      convertedContent = patch.content;
     } else if (cmd.workflow !== undefined) {
       // Set workflow marker and strip the slash text atomically.
       onChangeKind(block.id, { workflow: cmd.workflow, content: cleanContent });
@@ -669,7 +681,10 @@ function MnBlockRow({
       const ta2 = inputRef.current;
       if (ta2) {
         ta2.focus();
-        ta2.setSelectionRange(newPos, newPos);
+        const livePrefix = convertedContent != null
+          ? Math.max(0, ta2.value.length - convertedContent.length)
+          : 0;
+        ta2.setSelectionRange(livePrefix + newPos, livePrefix + newPos);
       }
     }, 10);
   };
@@ -688,7 +703,7 @@ function MnBlockRow({
         .filter(annotation => annotation.end > annotation.start)
     : block.annotations;
   const fontStyle = mnGetFontStyle(displayBlock, T, editorFontSize);
-  const editorValue = MN_MARKDOWN_INPUT_RULES.editableMarkdownForBlock?.(block) ?? block.content;
+  const editorValue = marker.editorValue;
 
   const textOffsetFromPoint = (container, clientX, clientY, fallback) => {
     if (!container || !block.content) return fallback;
@@ -716,9 +731,11 @@ function MnBlockRow({
     const contentCaret = e
       ? textOffsetFromPoint(displayTextRef.current, e.clientX, e.clientY, fallback)
       : fallback;
+    // Editing starts with the marker hidden, so the textarea holds bare
+    // content and the clicked display offset needs no prefix mapping.
     pendingCaretRef.current = displaySourceOffset
       ? displaySourceOffset + contentCaret
-      : (MN_MARKDOWN_INPUT_RULES.contentOffsetToEditorOffset?.(block, contentCaret) ?? contentCaret);
+      : contentCaret;
     onBeginContentEdit && onBeginContentEdit(block.id);
     setFocusId && setFocusId(block.id);
     setEditing(true);

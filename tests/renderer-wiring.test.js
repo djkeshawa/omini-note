@@ -1982,7 +1982,7 @@ test('Markdown inline rendering is preserved when spellcheck issues are present'
   assert.doesNotMatch(outliner, /return mnRenderSpellCheckedText\(content, spellIssues, T, setSpellMenu\)/);
 });
 
-test('Structural markdown blocks edit with markdown source prefixes', () => {
+test('Structural markdown blocks hide their marker while writing', () => {
   const outliner = outlinerSource(__dirname);
   const helper = fs.readFileSync(path.join(__dirname, '../src/editor/markdownInputRules.js'), 'utf8');
   const outline = fs.readFileSync(path.join(__dirname, '../src/editor/outline.jsx'), 'utf8');
@@ -1995,13 +1995,19 @@ test('Structural markdown blocks edit with markdown source prefixes', () => {
   assert.ok(helper.includes('value.match(/^(#{1,6})\\s+(.*)$/s)'));
   assert.ok(helper.includes('value.match(/^(#{1,6})(\\s+)(.*)$/s)'));
   assert.ok(outline.includes('const h = line.match(/^(#{1,6})\\s+(.*)$/);'));
-  assert.match(outliner, /const editorValue = MN_MARKDOWN_INPUT_RULES\.editableMarkdownForBlock\?\.\(block\) \?\? block\.content/);
+  assert.match(outliner, /const editorValue = marker\.editorValue/);
+  // The hook owns the projection: bare content while writing, the full
+  // prefixed markdown only while the marker is revealed at the block start.
+  assert.match(outliner, /const editorValue = markerHidden\s*\n?\s*\? String\(block\.content \?\? ''\)/);
+  assert.match(outliner, /toggleFromSelect/);
+  assert.match(outliner, /hideAfterInput/);
   assert.match(outliner, /const markdownDisplayProjection = MN_MARKDOWN_INPUT_RULES\.displayProjectionForMarkdownSourceBlock\?\.\(block\)/);
   assert.match(outliner, /const displayBlock = markdownDisplayProjection\?\.block \|\| block/);
   assert.match(outliner, /value=\{editorValue\}/);
-  assert.match(outliner, /MN_MARKDOWN_INPUT_RULES\.parseEditableMarkdownBlock\?\.\(\{ block, text: v \}\)/);
-  assert.match(outliner, /contentOffsetToEditorOffset\?\.\(block, contentCaret\)/);
-  assert.match(outliner, /editorOffsetToContentOffset\?\.\(block, ta\?\.selectionStart/);
+  assert.match(outliner, /MN_MARKDOWN_INPUT_RULES\.parseEditableMarkdownBlock\?\.\(\{ block, text: parseSourceFor\(v\) \}\)/);
+  // Click-to-edit starts hidden, so the display offset needs no prefix map.
+  assert.match(outliner, /: contentCaret;/);
+  assert.match(outliner, /taOffsetToContent\(ta\?\.selectionStart/);
   assert.match(outliner, /displaySourceOffset \+ contentCaret/);
   assert.match(outliner, /mnRenderAnnotated\(content, displayAnnotations, T, onOpen, onTagClick, allNotes, renderSpellText, vaultId\)/);
 });
