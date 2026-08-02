@@ -24,7 +24,10 @@
   }
 
   function insightsResultMessage(reportResult, duplicateResult) {
-    if (reportResult?.ok === false) throw new Error(reportResult.error || 'Could not load memory insights');
+    // A missing result is not an empty graph. Reporting "0 memories" for a call
+    // that returned nothing tells the user their graph is fine when it was
+    // never read; the sibling sync action raises here too.
+    if (!reportResult || reportResult.ok === false) throw new Error(reportResult?.error || 'Could not load memory insights');
     const summary = reportResult?.value?.summary || {};
     const parts = [
       `${summary.total_memories ?? 0} memories`,
