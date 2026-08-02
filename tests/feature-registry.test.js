@@ -13,7 +13,7 @@ test('feature registry keeps an explicitly empty pack surface minimal', () => {
   assert.equal(state.showWriter, false);
   assert.equal(state.showAskAi, false);
   for (const actionId of [
-    'graph', 'smart-views', 'calendar', 'set-workflow-status', 'canvas',
+    'graph', 'calendar', 'set-workflow-status', 'canvas',
     'create-canvas', 'template-reading', 'template-novel-scene', 'memory-import', 'ask-ai',
   ]) {
     assert.equal(features.isActionAvailable(actionId, state), false, actionId);
@@ -30,7 +30,6 @@ test('the fresh-install Views pack does not enable planning or Labs', () => {
   assert.equal(state.showLabs, false);
   assert.equal(state.showAskAi, false);
   assert.equal(features.isActionAvailable('views', state), true);
-  assert.equal(features.isActionAvailable('smart-views', state), false);
 });
 
 test('feature registry infers packs from existing specialist data', () => {

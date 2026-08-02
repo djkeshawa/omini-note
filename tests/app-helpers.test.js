@@ -1939,25 +1939,18 @@ test('a board view always has columns to draw', async () => {
 
 test('a saved view opens in the layout it was saved with', async () => {
   const { loadRendererModule } = require('./helpers/rendererModule.js');
-  const panel = loadRendererModule('src/panels/smartViewsPanel.jsx');
-  const presentation = panel.mnSmartViewPresentation;
+  const { mnViewLayout, MN_VIEW_LAYOUTS } = loadRendererModule('src/shared/viewLayout.js');
 
-  // layout has been validated and persisted end to end for a while; the panel
-  // just never read it, so a view saved as a table always reopened as a list.
-  assert.equal(presentation({ layout: 'table' }), 'table');
-  assert.equal(presentation({ layout: 'cards' }), 'cards');
-  assert.equal(presentation({ layout: 'timeline' }), 'timeline');
-  assert.equal(presentation({ layout: 'list' }), 'list');
-
-  // The Views feature draws boards; this panel does not, so a board
-  // definition still falls back here.
-  assert.equal(presentation({ layout: 'board' }), 'list');
-  assert.equal(presentation({ layout: 'calendar' }), 'list');
-
-  assert.equal(presentation({}), 'list');
-  assert.equal(presentation(null), 'list');
-  assert.equal(presentation({ layout: 'TABLE' }), 'table', 'layout match is case-insensitive');
-  assert.equal(presentation({ layout: 'nonsense' }), 'list');
+  // The Views panel supports every layout, so each saved value round-trips.
+  for (const layout of MN_VIEW_LAYOUTS) {
+    assert.equal(mnViewLayout({ layout }), layout);
+  }
+  assert.equal(mnViewLayout({ layout: 'TABLE' }), 'table', 'layout match is case-insensitive');
+  assert.equal(mnViewLayout({}), 'list');
+  assert.equal(mnViewLayout(null), 'list');
+  assert.equal(mnViewLayout({ layout: 'nonsense' }), 'list');
+  // A surface that cannot draw a board says so and gets the fallback.
+  assert.equal(mnViewLayout({ layout: 'board' }, ['list', 'table']), 'list');
 });
 
 test('Smart View text that YAML could reinterpret survives export and import', () => {

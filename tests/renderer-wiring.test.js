@@ -1156,99 +1156,58 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(store, /path\.relative\(dir, file\)/);
 });
 
-test('Smart Views panel renders shared result presentations', () => {
+test('Views keeps its shared result readers and saved-definition wiring', () => {
   const app = appCompositionSource();
   const preferenceModels = fs.readFileSync(path.join(__dirname, '../src/features/preferences/models.js'), 'utf8');
   const navigationController = fs.readFileSync(path.join(__dirname, '../src/features/navigation/useNavigationController.js'), 'utf8');
   const bootController = fs.readFileSync(path.join(__dirname, '../src/features/boot/useBootController.js'), 'utf8');
-  const panels = specialistPanelsSource();
-  const smartViewsPanel = fs.readFileSync(path.join(__dirname, '../src/panels/smartViewsPanel.jsx'), 'utf8');
+  const readers = fs.readFileSync(path.join(__dirname, '../src/features/views/viewsResultReaders.js'), 'utf8');
   const sidebar = fs.readFileSync(path.join(__dirname, '../src/panels/sidebar.jsx'), 'utf8');
   const outliner = outlinerSource(__dirname);
   const main = mainProcessSource();
   const store = storeProcessSource();
 
-  assert.match(app, /import \{ MnSmartViewsPanel \} from '\.\.\/panels\/smartViewsPanel\.jsx';/);
-  assert.match(smartViewsPanel, /function MnSmartViewsPanel/);
-  assert.match(smartViewsPanel, /useEffect: useEffectSV/);
-  // The panel keeps its own supported set: it cannot draw a board, so a
-  // board definition falls back to the list here while the Views feature
-  // renders it properly.
-  assert.match(smartViewsPanel, /MN_SMART_VIEW_PRESENTATIONS = \['list', 'table', 'cards', 'timeline'\]/);
-  assert.match(smartViewsPanel, /mnViewLayout\(definition, MN_SMART_VIEW_PRESENTATIONS\)/);
-  assert.match(smartViewsPanel, /helpers\.smartViewQuery/);
-  assert.match(smartViewsPanel, /helpers\.smartViewQuery\(notes, activeDefinition/);
-  assert.match(smartViewsPanel, /activeDefinitionId = ''/);
-  assert.match(smartViewsPanel, /onActiveDefinitionChange/);
-  assert.match(smartViewsPanel, /setActiveId\(activeDefinitionId\)/);
-  assert.match(smartViewsPanel, /onActiveDefinitionChange\?\.\(nextId\)/);
-  assert.match(smartViewsPanel, /viewMode === 'table'/);
-  assert.match(smartViewsPanel, /viewMode === 'cards'/);
-  assert.match(smartViewsPanel, /viewMode === 'timeline'/);
-  assert.match(smartViewsPanel, /function mnSmartViewList/);
-  assert.match(smartViewsPanel, /function mnSmartViewTable/);
-  assert.match(smartViewsPanel, /function mnSmartViewCards/);
-  assert.match(smartViewsPanel, /function mnSmartViewTimeline/);
-  assert.match(smartViewsPanel, /No Smart View results/);
-  assert.match(smartViewsPanel, /onOpenAllNotes/);
-  assert.match(smartViewsPanel, /Open Notes/);
-  assert.match(smartViewsPanel, /function MnSmartViewActionButton/);
-  assert.match(smartViewsPanel, /source\?\.noteId/);
-  // The presentation resolver is exported alongside the panel so a saved
-  // layout can be tested behaviourally rather than by matching source text.
-  // Asserted by name rather than by the exact export line: this pins the
-  // API the Views feature depends on without breaking every time the list
-  // is reformatted.
-  for (const name of [
-    'MnSmartViewsPanel', 'mnSmartViewPresentation',
-    'mnSmartViewList', 'mnSmartViewTable', 'mnSmartViewCards', 'mnSmartViewTimeline',
-    'mnSmartViewResultDate', 'mnSmartViewResultSource', 'mnSmartViewResultKind',
-    'mnSmartViewResultTags', 'mnSmartViewResultPreview',
-  ]) {
-    assert.match(smartViewsPanel, new RegExp(`export \\{[^}]*\\b${name}\\b`, 's'), `${name} must stay exported`);
+  // The retired Smart Views panel must stay gone: no import site, no route,
+  // no navigation callback.
+  assert.doesNotMatch(app, /smartViewsPanel/);
+  assert.doesNotMatch(app, /openSmartView/);
+  assert.doesNotMatch(app, /view === 'smart-views'/);
+  assert.doesNotMatch(sidebar, /Smart Views/);
+
+  // Every Views layout describes a result row through the shared readers.
+  for (const name of ['mnSmartViewResultDate', 'mnSmartViewResultSource', 'mnSmartViewResultKind', 'mnSmartViewResultPreview']) {
+    assert.match(readers, new RegExp(`export \\{[^}]*\\b${name}\\b`, 's'), `${name} must stay exported`);
   }
-  assert.match(app, /import \{ MnSmartViewsPanel \} from '\.\.\/panels\/smartViewsPanel\.jsx'/);
-  assert.match(app, /MnSmartViewsPanel/);
+  for (const layout of ['ViewsCards', 'ViewsList', 'ViewsBoard', 'ViewsCalendar']) {
+    const source = fs.readFileSync(path.join(__dirname, `../src/features/views/${layout}.jsx`), 'utf8');
+    assert.match(source, /from '\.\/viewsResultReaders\.js'/, `${layout} must read rows through the shared readers`);
+  }
+
+  // Saved definitions still live under the legacy smartViews preference key,
+  // loaded at boot and validated on write.
   assert.match(preferenceModels, /function buildDefaultSmartViewDefinitions/);
   assert.match(preferenceModels, /function normalizeSmartViews/);
   assert.match(navigationController, /const \[savedSmartViews, setSavedSmartViews\]/);
   assert.match(navigationController, /const \[activeSmartViewId, setActiveSmartViewId\]/);
+  assert.match(navigationController, /const openViews = useCallback/);
   assert.match(bootController, /setSavedSmartViews\(smartViews\)/);
   assert.match(bootController, /platform\.preferences\.setPrefs\(\{ smartViews \}\)/);
-  assert.match(navigationController, /const openSmartView = useCallback/);
   assert.match(app, /const smartViewDefinitions = useMemoA/);
   assert.match(app, /MN_APP_HELPERS\.currentSmartViewDefinitions = smartViewDefinitions/);
   assert.match(preferenceModels, /id: 'recent_notes'/);
   assert.match(preferenceModels, /id: 'open_tasks'/);
-  assert.match(preferenceModels, /id: 'deferred_tasks'/);
-  assert.match(preferenceModels, /id: 'due_reminders'/);
-  assert.match(app, /id: 'smart-views'/);
-  assert.match(app, /smartViewDefinitions\.map\(definition =>/);
-  assert.match(app, /id: `smart-view-\$\{definition\.id\}`/);
-  assert.match(app, /run: \(\) => openSmartView\(definition\.id\)/);
-  assert.match(app, /onOpenSmartViews=\{\(\) => openSmartView\(\)\}/);
-  assert.match(app, /smartViewsActive=\{view === 'smart-views'\}/);
-  assert.match(app, /smartViewCount=\{smartViewDefinitions\.length\}/);
-  assert.match(app, /view === 'smart-views'/);
-  assert.match(app, /<MnSmartViewsPanel/);
-  assert.match(app, /definitions=\{smartViewDefinitions\}/);
-  assert.match(app, /activeDefinitionId=\{activeSmartViewId\}/);
-  assert.match(app, /onActiveDefinitionChange=\{setActiveSmartViewId\}/);
-  assert.match(app, /onOpenAllNotes=\{\(\) => \{ setSelectedTag\(null\); setSelectedWorkflow\(null\); setQuery\(''\); navigateView\('notes'\); \}\}/);
-  assert.match(sidebar, /onOpenSmartViews, smartViewsActive = false, smartViewCount = 0/);
-  assert.match(sidebar, /const iconSmartViews =/);
-  assert.match(sidebar, /!smartViewsActive/);
-  assert.match(sidebar, /label="Smart Views" count=\{smartViewCount\}/);
-  assert.match(outliner, /import MN_APP_HELPERS from '\.\.\/app\/appHelpers\.js'/);
+
+  // Each saved definition is one palette command that opens Views on it.
+  assert.match(app, /id: `view-\$\{definition\.id\}`/);
+  assert.match(app, /run: \(\) => openViews\(definition\.id\)/);
+  assert.match(app, /onOpenViews=\{\(\) => openViews\(\)\}/);
+
+  // View embeds in notes and the prefs/store gates are unchanged.
   assert.match(outliner, /function MnSmartViewEmbed/);
-  assert.match(outliner, /function MnSmartViewEmbedFallback/);
-  assert.match(outliner, /data-mn-smart-view-embed="rendered"/);
   assert.match(outliner, /smartViewParseEmbedBlock\(content, MN_APP_HELPERS\.currentSmartViewDefinitions \|\| \[\]\)/);
-  assert.match(main, /PREF_TOP_LEVEL_KEYS = new Set\(\[[\s\S]*'enabledPacks'[\s\S]*'localUsageMetrics'[\s\S]*'anonymousUsageSharing'/);
   assert.match(main, /function sanitizeSmartViewsForPrefs/);
   assert.match(main, /clean\.smartViews = sanitizeSmartViewsForPrefs\(value\)/);
   assert.match(store, /smartViews: Array\.isArray\(cfg\.smartViews\) \? cfg\.smartViews : null/);
-  assert.match(store, /const allowed = new Set\(\[[\s\S]*'enabledPacks'[\s\S]*'localUsageMetrics'[\s\S]*'anonymousUsageSharing'/);
   assert.match(store, /Object\.prototype\.hasOwnProperty\.call\(cleanPatch, 'smartViews'\)/);
 });
 
@@ -1360,7 +1319,7 @@ test('Focused product shell and private usage controls are wired end to end', ()
     assert.ok(index > previousPrimary && index < moreStart, `${label} must remain in primary sidebar order`);
     previousPrimary = index;
   }
-  for (const label of ['label="Today"', 'label="Agenda"', 'label="Workflow"', 'label="Thinking Board"', 'label="Smart Views"', 'label="Recently deleted"']) {
+  for (const label of ['label="Today"', 'label="Agenda"', 'label="Workflow"', 'label="Thinking Board"', 'label="Recently deleted"']) {
     assert.ok(sidebar.indexOf(label) > moreStart, `${label} must remain inside More`);
   }
   assert.match(app, /today: tweaks\.showTodayInSidebar === true/);

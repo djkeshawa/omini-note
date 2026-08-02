@@ -9,12 +9,11 @@
     { id: 'writer', label: 'Writer', description: 'Novel structure, scenes, and long-form planning.' },
     { id: 'agents', label: 'Agents', description: 'MCP and local memory integrations.' },
     { id: 'views', label: 'Views', description: 'One saved surface for tables, boards, calendars and lists over your notes.' },
-    { id: 'labs', label: 'Labs', description: 'Advanced graph, saved views, and experimental tools.' },
+    { id: 'labs', label: 'Labs', description: 'Advanced graph and experimental tools.' },
   ]);
   const PACK_IDS = new Set(PACKS.map(pack => pack.id));
   const ACTION_REQUIREMENTS = Object.freeze({
     graph: 'labs',
-    'smart-views': 'labs',
     views: 'views',
     calendar: 'agenda',
     todos: 'agenda',
@@ -128,7 +127,7 @@
   function actionRequirement(actionId, featureState = {}) {
     const id = String(actionId || '');
     if (featureState.actionRequirements?.[id]) return featureState.actionRequirements[id];
-    if (id.startsWith('smart-view-')) return 'labs';
+    if (id.startsWith('view-')) return 'views';
     if (id.startsWith('canvas-')) return 'canvas';
     if (id.startsWith('zotero-')) return 'research';
     return ACTION_REQUIREMENTS[id] || '';
@@ -156,8 +155,7 @@
     const requirements = {
       ai: 'assistance',
       graph: 'labs',
-      'smart-views': 'labs',
-      views: 'views',
+        views: 'views',
       calendar: 'agenda',
       todos: 'agenda',
       workflow: 'workflow',

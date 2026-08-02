@@ -1314,7 +1314,7 @@ async function runPackIsolationScenario(win) {
     // and 'Views' is contained in 'Smart Views'. The command id isolates it,
     // and the dedicated Views scenario probes the panel by attribute.
     { id: 'views', commands: ['views'], labels: [] },
-    { id: 'labs', commands: ['graph', 'smart-views'], labels: ['Smart Views', 'Graph'] },
+    { id: 'labs', commands: ['graph'], labels: ['Graph'] },
   ];
   const specialistCommands = new Set(cases.flatMap(item => item.commands));
   const specialistLabels = [...new Set(cases.flatMap(item => item.labels))];
@@ -3630,7 +3630,7 @@ async function runRegression() {
     const ids = await availableCommandIds(win);
     if (!ids.includes('views')) throw new Error(`default command surface omitted views: ${JSON.stringify(ids)}`);
     for (const commandId of [
-      'graph', 'smart-views', 'calendar', 'set-workflow-status', 'canvas',
+      'graph', 'calendar', 'set-workflow-status', 'canvas',
       'create-canvas', 'template-reading', 'template-novel-scene', 'memory-import', 'ask-ai',
     ]) {
       if (ids.includes(commandId)) throw new Error(`default command surface exposed ${commandId}`);

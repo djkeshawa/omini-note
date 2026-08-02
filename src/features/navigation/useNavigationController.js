@@ -17,18 +17,9 @@ export function useNavigationController({ defaultSmartViews }) {
     });
   }, []);
 
-  const openSmartView = useCallback((definitionId = '') => {
-    setSelectedTag(null);
-    setSelectedWorkflow(null);
-    setQuery('');
-    setActiveSmartViewId(String(definitionId || ''));
-    navigateView('smart-views');
-    return { message: 'Opened Smart Views.' };
-  }, [navigateView]);
 
-  // Views shares the saved-definition store with Smart Views — they read the
-  // same records — so it reuses activeSmartViewId rather than keeping a second
-  // pointer that could drift out of step while both surfaces exist.
+  // Saved view definitions live under the legacy smartViews preference key,
+  // so the active-definition pointer keeps its historical name too.
   const openViews = useCallback((definitionId = '') => {
     setSelectedTag(null);
     setSelectedWorkflow(null);
@@ -62,7 +53,6 @@ export function useNavigationController({ defaultSmartViews }) {
     query,
     setQuery,
     navigateView,
-    openSmartView,
     openViews,
     goBackView,
   };

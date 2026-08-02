@@ -19,7 +19,7 @@
 
 import { DS_HEIGHT, DS_RADIUS, dsGroupLabelStyle, dsMachineStyle } from '../../shared/designSystem.js';
 import { mnCalendarDateKey, mnCalendarMonthDays } from '../../panels/calendarDates.js';
-import { mnSmartViewResultDate, mnSmartViewResultSource } from '../../panels/smartViewsPanel.jsx';
+import { mnSmartViewResultDate, mnSmartViewResultSource } from './viewsResultReaders.js';
 import { mnViewsRowHue } from './viewsHue.js';
 import { mnViewsRowKey } from './viewsOrder.js';
 import { ViewsCalendarEditor } from './ViewsCalendarEditor.jsx';

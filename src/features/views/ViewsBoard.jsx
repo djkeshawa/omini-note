@@ -18,7 +18,7 @@
 import { DS_RADIUS, dsGroupLabelStyle, dsMachineStyle } from '../../shared/designSystem.js';
 import {
   mnSmartViewResultDate, mnSmartViewResultSource, mnSmartViewResultPreview,
-} from '../../panels/smartViewsPanel.jsx';
+} from './viewsResultReaders.js';
 import { mnViewsRowHue, mnViewsRowTags, mnViewsTint } from './viewsHue.js';
 import { mnViewsRowKey } from './viewsOrder.js';
 import {
