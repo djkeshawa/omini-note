@@ -831,7 +831,12 @@ test('Novelist mode is a vault type with settings, templates, workflow, and dash
   // Symmetric 20px gutters: the 88px right inset used to reserve room for the
   // floating reminder bell, which now lives in the app bar.
   assert.match(graph, /padding: '0 20px'/);
-  assert.match(graph, /right: 64/);
+  // The control panel moved to graphControls.jsx when the graph ran out of
+  // line budget; its inset is still the thing being pinned here.
+  assert.match(
+    fs.readFileSync(path.join(__dirname, '../src/panels/graphControls.jsx'), 'utf8'),
+    /right: 64/
+  );
   assert.match(notelist, /function MnNoteList[\s\S]*novelistStructure = null/);
   assert.match(notelist, /allNotes = null/);
   assert.match(notelist, /const sourceNotes = allNotes \|\| notes \|\| \[\]/);
