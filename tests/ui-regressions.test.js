@@ -113,6 +113,37 @@ test('Canvas editor supports expected drawing, color, clipboard, and delete inte
   assert.match(canvasActions, /setActiveCanvas\(current => current\?\.id === saved\.id \? saved : current\)/);
 });
 
+test('the block-range drag waits for its own press instead of racing the scroll', () => {
+  const regression = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
+  const drag = regression.slice(
+    regression.indexOf('async function dragEditorBlockRangeAcrossScroll'),
+    regression.indexOf('async function runLargeBlockSelectionDeleteScenario')
+  );
+  assert.ok(drag, 'the drag helper still exists');
+
+  // The press travels by sendInputEvent and the scroll by executeJavaScript,
+  // and nothing orders one against the other. A fixed pause between them was
+  // a bet that the renderer drained its input queue first; when it lost, the
+  // editor scrolled before the press was hit-tested and the drag anchored on
+  // whichever row had slid into that spot — selecting a short range out of
+  // the middle of the note. The press must therefore be observed to have
+  // landed before anything scrolls, not merely waited on.
+  const press = drag.indexOf("type: 'mouseDown'");
+  const anchored = drag.indexOf('block drag anchors on row');
+  const scroll = drag.indexOf('rowForDrag(endIndex)');
+  assert.ok(press > 0 && anchored > press, 'the press is confirmed after it is sent');
+  assert.ok(scroll > anchored, 'nothing scrolls until the press has been confirmed');
+  assert.match(drag, /mnRegressionDragAnchor/);
+  assert.doesNotMatch(
+    drag.slice(press, scroll),
+    /await wait\(/,
+    'a sleep between the press and the scroll is the bet that failed'
+  );
+  // The release is pinned the same way: it must be over the intended row.
+  const release = drag.indexOf("type: 'mouseUp'");
+  assert.ok(drag.indexOf('block drag reaches row') < release, 'the pointer is confirmed before releasing');
+});
+
 test('Renderer regression covers user-centered app workflows', () => {
   const regression = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
 
