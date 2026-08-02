@@ -133,13 +133,20 @@ function MnBlockRow({
   const [autoIdx, setAutoIdx] = useStateOE(0);
   const [slashQ, setSlashQ] = useStateOE(null); // slash menu query
   const [slashIdx, setSlashIdx] = useStateOE(0);
-  // Arrow keys move the highlight but the popover does not follow it on its
-  // own, so past the visible few commands the selection disappears off the
-  // bottom of the list.
+  // Arrow keys move the highlight but the popover does not follow it, so past
+  // the visible few commands the selection disappears off the bottom.
+  // Only the popover is scrolled, and only when the active row is actually out
+  // of view: scrollIntoView would also scroll the page, which shifts the editor
+  // under the cursor and retriggers the popover's own scroll reposition.
   useEffectOE(() => {
     if (slashQ == null) return;
     const active = document.querySelector('[data-mn-slash-item="active"]');
-    active?.scrollIntoView?.({ block: 'nearest' });
+    const box = active && active.parentElement;
+    if (!box) return;
+    const top = active.offsetTop;
+    const bottom = top + active.offsetHeight;
+    if (top < box.scrollTop) box.scrollTop = top;
+    else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight;
   }, [slashIdx, slashQ]);
   const [canvasPicker, setCanvasPicker] = useStateOE(false);
   const [dropPos, setDropPos] = useStateOE(null); // 'before' | 'after' | 'child' | null
