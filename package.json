@@ -2,7 +2,7 @@
   "name": "vispnote",
   "version": "0.2.3",
   "desktopName": "vispnote.desktop",
-  "description": "VispNote — a local-first, block-based note-taking desktop app",
+  "description": "VispNote \u2014 a local-first, block-based note-taking desktop app",
   "license": "Apache-2.0",
   "author": {
     "name": "djkeshawa",
@@ -62,7 +62,8 @@
     "build:win:portable": "electron-builder --win portable --publish never",
     "start": "npm run build:renderer && electron .",
     "postinstall": "electron-builder install-app-deps",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint . --max-warnings 0",
+    "coverage": "ELECTRON_RUN_AS_NODE=1 electron --test --experimental-test-coverage tests/*.test.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
