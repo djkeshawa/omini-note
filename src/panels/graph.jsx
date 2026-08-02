@@ -22,6 +22,10 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
   const runningRef = useRef(false);
   const warmRef = useRef(false);
   const [view, setView] = useState(MN_GRAPH_VIEW);
+  // Where you have put nodes by hand. Kept outside the node list because that
+  // list is rebuilt whenever a note changes or the pane resizes, and an
+  // arrangement that survived neither would not be worth making.
+  const [pins, setPins] = useState({});
   const [simSeed, setSimSeed] = useState(0);
   const [dims, setDims] = useState({ w: 900, h: 620 });
   const [nodes, setNodes] = useState(null);
@@ -154,9 +158,9 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
       });
     }
 
-    setNodes(ns);
+    setNodes(mnGraphApplyPins(ns, pins, W, H));
     setEdges(visibleEdges);
-  }, [notes, visibleEdges, style, W, H, layoutSeed, opts.sizeByContent]);
+  }, [notes, visibleEdges, style, W, H, layoutSeed, pins, opts.sizeByContent]);
 
   // Only the three the simulation reads: passing the whole bag would restart
   // the layout whenever a purely visual toggle like Show labels flipped.
@@ -180,7 +184,18 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
 
   const {
     attachSvg, svgRef, startNodeDrag, startPan, moveGesture, endGesture, claimClick,
-  } = useGraphGestures({ view, setView, setNodes, warmLayout });
+  } = useGraphGestures({
+    view, setView, setNodes, warmLayout,
+    onPin: (id, x, y) => setPins(current => mnGraphPin(current, id, x, y)),
+  });
+
+  // Double-click hands a node back to the layout. Pinning has to be reversible
+  // one node at a time, or the only way out of a nudge is to reset everything.
+  const unpinNode = (id) => {
+    setPins(current => mnGraphUnpin(current, id));
+    setNodes(prev => mnGraphReleaseNode(prev, id));
+    warmLayout();
+  };
 
   useEffect(() => {
     // A dependency change is a new layout and starts cold. A warm restart —
@@ -472,7 +487,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
               {/* The hint used to be its own overlay in this corner, which the
                   legend then covered. One panel, one corner. */}
               <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 11, color: T.inkDim, lineHeight: 1.5 }}>
-                Drag a node to move it · drag the canvas to pan · scroll to zoom · click to inspect
+                Drag a node and it stays · double-click frees it · drag canvas to pan · scroll to zoom
               </div>
             </div>
           )}
@@ -542,6 +557,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
                   onMouseEnter={() => setHoverId(n.id)}
                   onMouseLeave={() => setHoverId(null)}
                   onPointerDown={(event) => startNodeDrag(event, n)}
+                  onDoubleClick={() => unpinNode(n.id)}
                   onClick={() => {
                     // The drag that just ended already synthesised this click.
                     if (!claimClick()) return;
@@ -558,6 +574,14 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
                   <circle cx={n.x} cy={n.y} r={n.r}
                     fill={fill} stroke={stroke} strokeWidth="1.6"
                   />
+                  {/* A pinned node would otherwise just look stuck. The ring
+                      says it is holding a position you chose; double-click
+                      hands it back to the layout. */}
+                  {mnGraphIsPinned(pins, n.id) && (
+                    <circle cx={n.x} cy={n.y} r={n.r + 3.5}
+                      fill="none" stroke={T.ink} strokeWidth="1"
+                      opacity="0.5" strokeDasharray="1.5 2.5" />
+                  )}
                   {showLabel && (
                     <>
                       <rect
@@ -594,8 +618,12 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
           setOpt={setOpt}
           notesCount={notes.length}
           edgesCount={edges.length}
+          pinnedCount={Object.keys(pins).length}
+          onUnpinAll={() => { setPins({}); warmLayout(); }}
           onReset={() => {
-            // The canvas comes back too, or a reset made off screen looks dead.
+            // Everything comes back: the canvas, or a reset made off screen
+            // looks dead, and the pins, or the layout cannot actually re-lay.
+            setPins({});
             setView(MN_GRAPH_VIEW);
             setLayoutSeed(s => s + 1);
           }}
@@ -618,139 +646,12 @@ function mnGraphCurve(a, b) {
   return `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`;
 }
 
-// Module scope, not inside MnGraphControls. Redefined per render these were a
-// new component type each time, so React tore down and rebuilt the inputs —
-// dragging a slider was dropped after the first step, and a checkbox lost
-// focus on click. The simulation re-renders this panel constantly, so it hit
-// every frame.
-function Row({ id, title, children, open, toggle, T }) {
-  return (
-    <div>
-      <button onClick={() => toggle(id)} style={{
-        width: '100%', height: 38,
-        border: 'none', background: 'transparent',
-        display: 'flex', alignItems: 'center',
-        padding: '0 12px',
-        fontFamily: 'var(--mn-ui)', fontSize: 13.5,
-        fontWeight: 600,
-        color: T.ink, cursor: 'pointer',
-        textAlign: 'left',
-      }}>
-        <span style={{ flex: 1 }}>{title}</span>
-        <svg width="10" height="10" viewBox="0 0 10 10" style={{
-          transform: open[id] ? 'rotate(90deg)' : 'rotate(0deg)',
-          transition: 'transform 120ms ease',
-          color: T.ink,
-        }}>
-          <path d="M3 1.5L7 5L3 8.5Z" fill="currentColor" />
-        </svg>
-      </button>
-      {open[id] && (
-        <div style={{
-          padding: '0 12px 12px',
-          fontFamily: 'var(--mn-ui)', fontSize: 12,
-          color: T.inkMed,
-        }}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Toggle({ label, value, onChange }) {
-  return (
-    <label style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '5px 0', cursor: 'pointer',
-    }}>
-      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
-      <span>{label}</span>
-    </label>
-  );
-}
-
-function Range({ label, min, max, step, value, onChange, T }) {
-  return (
-    <label style={{ display: 'block', padding: '7px 0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span>{label}</span>
-        <span style={{ fontFamily: 'var(--mn-mono)', color: T.inkDim }}>{value}</span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        style={{ width: '100%' }}
-      />
-    </label>
-  );
-}
-
-function MnGraphControls({
-  T, open, setOpen, opts, setOpt,
-  notesCount, edgesCount, onReset, onExportSvg,
-}) {
-  const toggle = (key) => setOpen(prev => ({ ...prev, [key]: !prev[key] }));
-  return (
-    <div style={{
-      position: 'absolute',
-      top: 22,
-      right: 64,
-      width: 190,
-      zIndex: 3,
-      background: `color-mix(in oklab, ${T.bgElevated || T.bg} 90%, transparent)`,
-      border: `1px solid ${T.lineSub}`,
-      borderRadius: 6,
-      boxShadow: typeof mnShadow === 'function'
-        ? mnShadow(T, 'soft')
-        : `0 18px 42px color-mix(in oklab, ${T.ink} 12%, transparent)`,
-      overflow: 'hidden',
-    }}>
-      <Row id="nodes" title="Nodes" open={open} toggle={toggle} T={T}>
-        <div style={{ marginBottom: 6 }}>{notesCount} visible notes</div>
-        <Toggle label="Show labels" value={opts.labels} onChange={(v) => setOpt('labels', v)} />
-        <Toggle label="Tag colors" value={opts.tagColors} onChange={(v) => setOpt('tagColors', v)} />
-        <Toggle label="Size by content" value={opts.sizeByContent} onChange={(v) => setOpt('sizeByContent', v)} />
-      </Row>
-      <Row id="forces" title="Forces" open={open} toggle={toggle} T={T}>
-        <Range label="Link distance" min="70" max="180" step="1" value={opts.linkDistance} onChange={(v) => setOpt('linkDistance', v)} T={T} />
-        <Range label="Repulsion" min="20" max="60" step="1" value={opts.repulsion} onChange={(v) => setOpt('repulsion', v)} T={T} />
-        <Range label="Center pull" min="0" max="0.02" step="0.001" value={opts.center} onChange={(v) => setOpt('center', v)} T={T} />
-        <button onClick={onReset} style={{
-          marginTop: 6,
-          padding: '5px 8px',
-          borderRadius: 5,
-          border: `1px solid ${T.line}`,
-          background: T.bg,
-          color: T.inkMed,
-          fontFamily: 'var(--mn-ui)',
-          fontSize: 12,
-          cursor: 'pointer',
-        }}>Reset layout</button>
-      </Row>
-      <Row id="export" title="Export" open={open} toggle={toggle} T={T}>
-        <div style={{ marginBottom: 8 }}>{edgesCount} visible links</div>
-        <button onClick={onExportSvg} style={{
-          padding: '6px 9px',
-          borderRadius: 5,
-          border: `1px solid ${T.line}`,
-          background: T.bg,
-          color: T.ink,
-          fontFamily: 'var(--mn-ui)',
-          fontSize: 12,
-          cursor: 'pointer',
-        }}>Export SVG</button>
-      </Row>
-    </div>
-  );
-}
-
 export { MnGraph };
-import { MN_THEMES, mnGetTagColor, mnShadow, mnTagHueMap } from '../shared/theme.jsx';
-import { MN_GRAPH_VIEW } from './graphView.js';
+import { MN_THEMES, mnGetTagColor, mnTagHueMap } from '../shared/theme.jsx';
+import {
+  MN_GRAPH_VIEW, mnGraphPin, mnGraphUnpin, mnGraphApplyPins,
+  mnGraphIsPinned, mnGraphReleaseNode,
+} from './graphView.js';
 import { mnGraphTick, MN_GRAPH_MAX_TICKS } from './graphForces.js';
 import { useGraphGestures } from './useGraphGestures.js';
+import { MnGraphControls } from './graphControls.jsx';

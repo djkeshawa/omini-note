@@ -12,7 +12,7 @@
 
 import {
   mnGraphPoint, mnGraphPanBy, mnGraphZoomAt, mnGraphZoomFactor,
-  mnGraphPassedSlop, mnGraphHoldNode, mnGraphReleaseNode,
+  mnGraphPassedSlop, mnGraphHoldNode,
 } from './graphView.js';
 
 const { useEffect: useEffectG, useRef: useRefG, useState: useStateG } = React;
@@ -46,7 +46,7 @@ function mnGraphReleaseCapture(el, pointerId) {
   } catch { /* already gone */ }
 }
 
-function useGraphGestures({ view, setView, setNodes, warmLayout }) {
+function useGraphGestures({ view, setView, setNodes, warmLayout, onPin }) {
   // A callback ref as well as state: the SVG only exists once there is
   // something to draw, and the wheel listener must attach the moment it
   // appears rather than on every simulation frame.
@@ -78,6 +78,10 @@ function useGraphGestures({ view, setView, setNodes, warmLayout }) {
       dy: node.y - at.y,
       startX: event.clientX,
       startY: event.clientY,
+      startGraphX: node.x,
+      startGraphY: node.y,
+      lastGraphX: node.x,
+      lastGraphY: node.y,
       moved: false,
     };
     setNodes(prev => mnGraphHoldNode(prev, node.id, node.x, node.y));
@@ -116,7 +120,9 @@ function useGraphGestures({ view, setView, setNodes, warmLayout }) {
     }
     const at = graphPoint(event);
     if (!at) return;
-    setNodes(prev => mnGraphHoldNode(prev, gesture.id, at.x + gesture.dx, at.y + gesture.dy));
+    gesture.lastGraphX = at.x + gesture.dx;
+    gesture.lastGraphY = at.y + gesture.dy;
+    setNodes(prev => mnGraphHoldNode(prev, gesture.id, gesture.lastGraphX, gesture.lastGraphY));
     // Warm on every move rather than holding the loop open for the length of
     // the gesture. The layout then stays lively exactly while the pointer is
     // actually moving, and a gesture that never gets its pointerup — a lost
@@ -133,9 +139,12 @@ function useGraphGestures({ view, setView, setNodes, warmLayout }) {
     // synthesise from it must not also open the inspector.
     suppressClickRef.current = gesture.moved;
     if (gesture.mode === 'node') {
-      setNodes(prev => mnGraphReleaseNode(prev, gesture.id));
-      // Released, not pinned: the layout takes the node back from wherever it
-      // was let go, the way Obsidian's graph does.
+      // A node that was actually carried stays where it was dropped; the pin
+      // is what makes the arrangement yours rather than the layout's. A press
+      // that never moved pins nothing, so clicking to inspect does not quietly
+      // freeze whatever you clicked.
+      if (gesture.moved) onPin?.(gesture.id, gesture.lastGraphX, gesture.lastGraphY);
+      else setNodes(prev => mnGraphHoldNode(prev, gesture.id, gesture.startGraphX, gesture.startGraphY));
       warmLayout?.();
     }
     mnGraphReleaseCapture(svgRef.current, event?.pointerId);

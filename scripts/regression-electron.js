@@ -2668,12 +2668,38 @@ async function runNavigationPanelsScenario(win) {
     svg.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, button: 0, buttons: 0, clientX: from.x + 90, clientY: from.y + 60 }));
     return true;
   })()`);
-  await waitFor(win, 'releasing a dragged node hands it back to the layout', async () => {
+  await waitFor(win, 'releasing a dragged node does not also count as a click', async () => {
     const current = await evaluate(win, `(() => ({
       inspector: document.body.textContent.includes('Open note'),
     }))()`);
     // A drag is not a click: the inspector must not have opened behind it.
     return { ok: !current.inspector, current };
+  });
+
+  // Where you put a node is where it stays. The layout keeps ticking around
+  // it, so this is asserted after the simulation has had time to pull it back
+  // — a pin that only held for a frame would pass a snapshot taken too early.
+  const dropped = await nodeCentre();
+  await waitFor(win, 'a dropped graph node stays where it was put', async () => {
+    const current = await nodeCentre();
+    const drifted = Math.abs(current.x - dropped.x) + Math.abs(current.y - dropped.y);
+    const pinned = await evaluate(win, `(() => ({
+      rings: document.querySelectorAll('[data-mn-graph-node] circle[stroke-dasharray="1.5 2.5"]').length,
+      release: [...document.querySelectorAll('button')].some(el => (el.textContent || '').startsWith('Release ')),
+    }))()`);
+    return { ok: drifted < 1 && pinned.rings === 1, current, dropped, drifted, pinned };
+  }, 8000);
+  // Double-click hands it back, so a nudge is reversible one node at a time.
+  await evaluate(win, `(() => {
+    const node = document.querySelector('[data-mn-graph-node=' + ${JSON.stringify(JSON.stringify(before.id))} + ']');
+    node.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    return true;
+  })()`);
+  await waitFor(win, 'double-clicking a pinned node frees it again', async () => {
+    const current = await evaluate(win, `(() => ({
+      rings: document.querySelectorAll('[data-mn-graph-node] circle[stroke-dasharray="1.5 2.5"]').length,
+    }))()`);
+    return { ok: current.rings === 0, current };
   });
 
   const viewOf = async () => await evaluate(win, `(() => document.querySelector('[data-mn-graph-canvas]')?.getAttribute('data-mn-graph-view') || '')()`);

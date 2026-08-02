@@ -68,9 +68,9 @@ function mnGraphHoldNode(nodes, id, x, y) {
     : node));
 }
 
-// Releasing only forgets the grip. The node keeps the position it was left at
-// and the layout reclaims it from there — which is why a released node settles
-// back rather than staying pinned.
+// Releasing forgets the grip so the layout reclaims the node from wherever it
+// was let go. This is what a node does when it is unpinned, not what happens
+// at the end of a drag — see mnGraphPin.
 function mnGraphReleaseNode(nodes, id) {
   if (!Array.isArray(nodes) || !id) return nodes;
   return nodes.map(node => (node.id === id
@@ -78,8 +78,48 @@ function mnGraphReleaseNode(nodes, id) {
     : node));
 }
 
+// Where you put a node is where it stays.
+//
+// The layout's own arrangement is a guess about what belongs together; moving
+// a node by hand is a statement about it, and a statement that dissolves the
+// moment you let go is not worth making. So a dropped node keeps its position
+// and goes on pushing its neighbours from there, and the pins outlive the node
+// list — which is rebuilt whenever a note changes or the pane resizes.
+function mnGraphPin(pins, id, x, y) {
+  if (!id || !Number.isFinite(x) || !Number.isFinite(y)) return pins || {};
+  return { ...(pins || {}), [id]: { x, y } };
+}
+
+function mnGraphUnpin(pins, id) {
+  if (!pins || !id || !(id in pins)) return pins || {};
+  const next = { ...pins };
+  delete next[id];
+  return next;
+}
+
+// Applied to a freshly built node list. Pins are kept inside the canvas: one
+// made before the pane was resized smaller would otherwise sit off screen,
+// where it cannot be seen or released.
+function mnGraphApplyPins(nodes, pins, W = 900, H = 600) {
+  if (!Array.isArray(nodes) || !pins) return nodes;
+  const ids = Object.keys(pins);
+  if (!ids.length) return nodes;
+  return nodes.map(node => {
+    const pin = pins[node.id];
+    if (!pin) return node;
+    const x = Math.max(node.r + 18, Math.min(W - node.r - 18, pin.x));
+    const y = Math.max(node.r + 24, Math.min(H - node.r - 22, pin.y));
+    return { ...node, x, y, hx: x, hy: y, vx: 0, vy: 0 };
+  });
+}
+
+function mnGraphIsPinned(pins, id) {
+  return Boolean(pins && id && pins[id]);
+}
+
 export {
   mnGraphPoint, mnGraphPanBy, mnGraphZoomAt, mnGraphZoomFactor, mnGraphClampScale,
   mnGraphPassedSlop, mnGraphHoldNode, mnGraphReleaseNode,
+  mnGraphPin, mnGraphUnpin, mnGraphApplyPins, mnGraphIsPinned,
   MN_GRAPH_ZOOM, MN_GRAPH_VIEW, MN_GRAPH_DRAG_SLOP,
 };

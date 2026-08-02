@@ -308,10 +308,15 @@ test('list rows and graph controls are declared at module scope', () => {
   assert.doesNotMatch(notelist, /const NoteRow = \(/);
   assert.match(notelist, /<NoteRow key=\{[^}]+\} n=\{[^}]+\} ctx=\{rowCtx\}/);
 
-  assert.match(graph, /^function Row\(\{ id, title, children, open, toggle, T \}\)/m);
-  assert.match(graph, /^function Toggle\(\{ label, value, onChange \}\)/m);
-  assert.match(graph, /^function Range\(\{ label, min, max, step, value, onChange, T \}\)/m);
-  assert.doesNotMatch(graph, /const Range = \(/);
+  // The graph's control panel moved to its own file when the panel ran out of
+  // line budget; the rule it has to keep is the same one, so the assertions
+  // followed it rather than being dropped.
+  const graphControls = fs.readFileSync(path.join(__dirname, '../src/panels/graphControls.jsx'), 'utf8');
+  assert.match(graphControls, /^function Row\(\{ id, title, children, open, toggle, T \}\)/m);
+  assert.match(graphControls, /^function Toggle\(\{ label, value, onChange \}\)/m);
+  assert.match(graphControls, /^function Range\(\{ label, min, max, step, value, onChange, T \}\)/m);
+  assert.doesNotMatch(graphControls, /const Range = \(/);
+  assert.match(graph, /import \{ MnGraphControls \} from '\.\/graphControls\.jsx'/);
 
   const workflow = fs.readFileSync(path.join(__dirname, '../src/features/workflow/WorkflowBoardParts.jsx'), 'utf8');
   const workflowPanel = fs.readFileSync(path.join(__dirname, '../src/features/workflow/WorkflowPanel.jsx'), 'utf8');

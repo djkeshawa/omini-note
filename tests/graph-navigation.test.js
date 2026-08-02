@@ -86,6 +86,36 @@ test('holding a node moves that node alone and releasing hands it back', () => {
   assert.equal(mnGraphHoldNode(null, 'a', 1, 1), null);
 });
 
+test('a node stays where it was dropped, and pins survive a rebuilt node list', () => {
+  const { mnGraphPin, mnGraphUnpin, mnGraphApplyPins, mnGraphIsPinned } = view();
+  const pinned = mnGraphPin({}, 'a', 240, 160);
+  assert.deepEqual(pinned, { a: { x: 240, y: 160 } });
+  assert.equal(mnGraphIsPinned(pinned, 'a'), true);
+  assert.equal(mnGraphIsPinned(pinned, 'b'), false);
+
+  // The node list is rebuilt whenever a note changes or the pane resizes, so
+  // an arrangement that only lived on the nodes would not survive an autosave.
+  const rebuilt = [
+    { id: 'a', x: 999, y: 999, vx: 4, vy: 4, r: 8, hx: null, hy: null },
+    { id: 'b', x: 100, y: 100, vx: 1, vy: 1, r: 8, hx: null, hy: null },
+  ];
+  const applied = mnGraphApplyPins(rebuilt, pinned, 900, 600);
+  assert.deepEqual(
+    { x: applied[0].x, y: applied[0].y, hx: applied[0].hx, vx: applied[0].vx },
+    { x: 240, y: 160, hx: 240, vx: 0 }
+  );
+  assert.deepEqual(applied[1], rebuilt[1], 'an unpinned node is left to the layout');
+
+  // A pin made before the pane shrank must not strand the node off screen,
+  // where it could be neither seen nor released.
+  const tight = mnGraphApplyPins(rebuilt, mnGraphPin({}, 'a', 5000, 5000), 400, 300);
+  assert.ok(tight[0].x <= 400 && tight[0].y <= 300);
+
+  assert.deepEqual(mnGraphUnpin(pinned, 'a'), {});
+  assert.deepEqual(mnGraphUnpin(pinned, 'missing'), pinned, 'unpinning what is not pinned changes nothing');
+  assert.deepEqual(mnGraphPin({}, 'a', Number.NaN, 10), {}, 'a position that is not a number pins nothing');
+});
+
 test('a press that never moved is a click, not a zero-length drag', () => {
   const { mnGraphPassedSlop, MN_GRAPH_DRAG_SLOP } = view();
   assert.equal(mnGraphPassedSlop(0, 0), false, 'an exact press opens the inspector');
@@ -145,4 +175,5 @@ test('the graph canvas gestures have regression coverage that drives them', () =
   assert.match(harness, /the wheel zooms the graph canvas/);
   assert.match(harness, /dragging the canvas pans the graph/);
   assert.match(harness, /clicking a graph node still opens the inspector/);
+  assert.match(harness, /a dropped graph node stays where it was put/);
 });
