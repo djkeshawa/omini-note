@@ -20,6 +20,31 @@ async function withIsolatedStore(fn) {
   }
 }
 
+async function withIsolatedIndex(fn) {
+  const previousVispnoteHome = process.env.VISPNOTE_HOME;
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-index-'));
+  const storePath = require.resolve('../../lib/store');
+  const indexPath = require.resolve('../../lib/index');
+  delete require.cache[storePath];
+  delete require.cache[indexPath];
+  process.env.VISPNOTE_HOME = tmpHome;
+  try {
+    const store = require('../../lib/store');
+    await store.loadConfig();
+    const idx = require('../../lib/index');
+    return await fn(idx, store);
+  } finally {
+    try {
+      require('../../lib/index').close();
+    } catch { /* index may never have opened */ }
+    delete require.cache[indexPath];
+    delete require.cache[storePath];
+    if (previousVispnoteHome === undefined) delete process.env.VISPNOTE_HOME;
+    else process.env.VISPNOTE_HOME = previousVispnoteHome;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }
+}
+
 function loadOutlineForTest() {
   return loadRendererModule('src/editor/outline.jsx');
 }
@@ -47,5 +72,6 @@ module.exports = {
   deferred,
   flushMicrotasks,
   loadOutlineForTest,
+  withIsolatedIndex,
   withIsolatedStore,
 };

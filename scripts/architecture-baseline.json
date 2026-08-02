@@ -34,7 +34,7 @@
     "lib/ai/providers.js": 536,
     "lib/ai/research.js": 728,
     "lib/ai.js": 719,
-    "lib/index.js": 693,
+    "lib/index.js": 673,
     "lib/integrations/memory/client.js": 648,
     "lib/store.js": 717
   }
