@@ -351,6 +351,10 @@ test('Smart View helpers normalize definitions and query notes without mutation'
       // matched all-of, so it keeps meaning exactly what it meant.
       properties: [{ key: 'priority', values: ['high'], op: 'is' }],
       propertiesMatch: 'all',
+      // Scope defaults the other way: two tags mean "either", because
+      // requiring both silently emptied the very list scope is meant to narrow.
+      tagsMatch: 'any',
+      linkedNotesMatch: 'any',
       workflowStatuses: ['DOING'],
       linkedNotes: ['Research AI'],
       actionStatuses: [],
@@ -1591,10 +1595,63 @@ test('the renderer and the main process allow exactly the same filter keys', () 
     return [...block.matchAll(/'([a-zA-Z]+)'/g)].map(hit => hit[1]).sort();
   };
   const ipc = readList('lib/connectors/ipc/preferenceValidation.js', 'const SMART_VIEW_FILTER_KEYS = new Set([', ']);');
-  const renderer = readList('src/app/helpers/smartViewHelpers.js', "smartViewAssertAllowedKeys(filters, [", "], 'Smart View filters');");
+  // The renderer list moved to its own module so the contract is a contract
+  // rather than a literal buried in a validator; the parity rule is unchanged.
+  const renderer = readList('src/app/helpers/smartViewFilters.js', 'const SMART_VIEW_FILTER_KEYS = [', '];');
   assert.ok(ipc.length > 20, `expected a real filter allowlist, got ${ipc.length}`);
   assert.deepEqual(renderer, ipc);
   assert.ok(ipc.includes('propertiesMatch'));
+});
+
+test('two scoped tags match either tag, and can be switched to demand both', () => {
+  const helpers = appHelpers;
+  const sc = loadRendererModule('src/features/views/viewsScope.js');
+  const notes = [
+    { id: 'n1', title: 'Only work', tags: ['work'], body: '', date: '2026-01-01', modifiedAt: '2026-01-01' },
+    { id: 'n2', title: 'Only home', tags: ['home'], body: '', date: '2026-01-02', modifiedAt: '2026-01-02' },
+    { id: 'n3', title: 'Both', tags: ['work', 'home'], body: '', date: '2026-01-03', modifiedAt: '2026-01-03' },
+    { id: 'n4', title: 'Neither', tags: ['idle'], body: '', date: '2026-01-04', modifiedAt: '2026-01-04' },
+  ];
+  const run = (filters) => helpers
+    .smartViewQuery(notes, { type: 'notes', filters, sort: { field: 'created', direction: 'asc' }, limit: 50 })
+    .map(row => row.title);
+
+  // The reported bug: picking a second tag emptied the view, because a note
+  // had to carry every tag picked and almost none carries two.
+  assert.deepEqual(run({ tags: ['work', 'home'] }), ['Only work', 'Only home', 'Both'],
+    'two tags mean either of them');
+  assert.deepEqual(run({ tags: ['work', 'home'], tagsMatch: 'all' }), ['Both'],
+    'all is still available for the stricter reading');
+  assert.deepEqual(run({ tags: ['work'] }), ['Only work', 'Both'], 'one tag is unaffected either way');
+
+  // Switching mode is a filter edit like any other and leaves the rest alone.
+  const base = { filters: { tags: ['work', 'home'], actionStatus: 'open' } };
+  const strict = sc.mnViewsSetScopeMatch(base, 'tags', 'all');
+  assert.deepEqual(strict.filters, { tags: ['work', 'home'], actionStatus: 'open', tagsMatch: 'all' });
+  // 'any' is the default, so it is not written back into the definition.
+  assert.deepEqual(sc.mnViewsSetScopeMatch(strict, 'tags', 'any').filters,
+    { tags: ['work', 'home'], actionStatus: 'open' });
+  assert.equal(sc.mnViewsScopeMatch(strict, 'tags'), 'all');
+  assert.equal(sc.mnViewsScopeMatch(base, 'tags'), 'any');
+  // Clearing scope takes the match modes with it rather than leaving a rule
+  // behind for a list that no longer exists.
+  assert.deepEqual(sc.mnViewsClearScope(strict).filters, { actionStatus: 'open' });
+});
+
+test('scoped links match any of the notes picked unless all is asked for', () => {
+  const helpers = appHelpers;
+  const notes = [
+    { id: 'a', title: 'Alpha', tags: [], body: '', date: '2026-01-01', modifiedAt: '2026-01-01' },
+    { id: 'b', title: 'Beta', tags: [], body: '', date: '2026-01-02', modifiedAt: '2026-01-02' },
+    { id: 'one', title: 'Links one', tags: [], body: 'see [[Alpha]]', date: '2026-01-03', modifiedAt: '2026-01-03' },
+    { id: 'two', title: 'Links both', tags: [], body: '[[Alpha]] and [[Beta]]', date: '2026-01-04', modifiedAt: '2026-01-04' },
+  ];
+  const run = (filters) => helpers
+    .smartViewQuery(notes, { type: 'notes', filters, sort: { field: 'created', direction: 'asc' }, limit: 50 })
+    .map(row => row.title);
+
+  assert.deepEqual(run({ linkedNotes: ['Alpha', 'Beta'] }), ['Links one', 'Links both']);
+  assert.deepEqual(run({ linkedNotes: ['Alpha', 'Beta'], linkedNotesMatch: 'all' }), ['Links both']);
 });
 
 test('scope narrows a view without losing the filters it already had', async () => {
@@ -1631,7 +1688,11 @@ test('scope narrows a view without losing the filters it already had', async () 
   // The chip has to say why you are not seeing everything.
   assert.equal(sc.mnViewsScopeSummary(base), 'Whole vault');
   assert.equal(sc.mnViewsScopeSummary({ filters: tagged.filters }), '#Work');
-  assert.equal(sc.mnViewsScopeSummary({ filters: { tags: ['a', 'b'] } }), '2 tags');
+  // The summary names the rule, not just the count: with two tags the
+  // difference between any and all is the difference between a full list and
+  // an empty one, so the chip cannot leave it unsaid.
+  assert.equal(sc.mnViewsScopeSummary({ filters: { tags: ['a', 'b'] } }), '2 any tags');
+  assert.equal(sc.mnViewsScopeSummary({ filters: { tags: ['a', 'b'], tagsMatch: 'all' } }), '2 all tags');
   assert.equal(sc.mnViewsScopeSummary({ filters: linked.filters }), '#Work + links to Project Atlas');
   assert.equal(sc.mnViewsScopeIsSet({ filters: linked.filters }), true);
   assert.equal(sc.mnViewsScopeIsSet(base), false);

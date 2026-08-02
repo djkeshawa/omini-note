@@ -4,9 +4,12 @@
 // keeps every note in the vault root — there are no folders — so folders are
 // not offered here rather than shown as a control that can never do anything.
 //
-// Both scopes are ALL, not ANY: the query requires a note to carry every tag
-// listed and to link to every note listed. That is the engine's behaviour, so
-// it is what the menu has to say.
+// Each scope carries its own match mode, and both default to ANY. Picking two
+// tags reads as "either of these" to anyone who has used a multi-select filter
+// anywhere else; requiring both meant a two-tag scope almost always returned
+// nothing, which looks like the view is broken rather than narrow. ALL is
+// still one click away for the stricter reading. The two scopes are ANDed
+// with each other — tags say which notes, links say which of those.
 
 import { mnViewsPick } from './viewsManage.js';
 
@@ -68,6 +71,23 @@ function mnViewsClearScope(definition = {}) {
   const filters = { ...(definition.filters || {}) };
   delete filters.tags;
   delete filters.linkedNotes;
+  delete filters.tagsMatch;
+  delete filters.linkedNotesMatch;
+  return { ok: true, filters };
+}
+
+// 'any' is the default, so it is stored only when it is not — a definition
+// carrying every default would be noise in the file and in the diff.
+function mnViewsScopeMatch(definition = {}, field) {
+  const key = field === 'tags' ? 'tagsMatch' : 'linkedNotesMatch';
+  return String(definition?.filters?.[key] || '').toLowerCase() === 'all' ? 'all' : 'any';
+}
+
+function mnViewsSetScopeMatch(definition = {}, field, match) {
+  const key = field === 'tags' ? 'tagsMatch' : 'linkedNotesMatch';
+  const filters = { ...(definition.filters || {}) };
+  if (match === 'all') filters[key] = 'all';
+  else delete filters[key];
   return { ok: true, filters };
 }
 
@@ -82,8 +102,11 @@ function mnViewsScopeSummary(definition = {}) {
   const links = mnViewsScopeLinks(definition);
   if (!tags.length && !links.length) return 'Whole vault';
   const parts = [];
-  if (tags.length) parts.push(tags.length === 1 ? `#${tags[0]}` : `${tags.length} tags`);
-  if (links.length) parts.push(links.length === 1 ? `links to ${links[0]}` : `${links.length} links`);
+  // A count alone would not say whether the view wants any of them or all of
+  // them, which is the difference between a full list and an empty one.
+  const joined = (count, field) => `${count} ${mnViewsScopeMatch(definition, field) === 'all' ? 'all' : 'any'}`;
+  if (tags.length) parts.push(tags.length === 1 ? `#${tags[0]}` : `${joined(tags.length, 'tags')} tags`);
+  if (links.length) parts.push(links.length === 1 ? `links to ${links[0]}` : `${joined(links.length, 'links')} links`);
   return parts.join(' + ');
 }
 
@@ -97,5 +120,6 @@ export {
   MN_VIEW_SCOPE_MAX,
   mnViewsScopeTags, mnViewsScopeLinks, mnViewsScopeList,
   mnViewsToggleScope, mnViewsClearScope, mnViewsScopeIsSet, mnViewsScopeTagChoices,
+  mnViewsScopeMatch, mnViewsSetScopeMatch,
   mnViewsScopeSummary, mnViewsApplyScope,
 };
