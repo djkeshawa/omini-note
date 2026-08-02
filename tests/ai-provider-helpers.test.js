@@ -63,9 +63,11 @@ test('only real user and assistant turns are forwarded', () => {
 test('message helpers do not throw on junk input', () => {
   const d = makeDomain();
   for (const input of [[], [null], [undefined], [{}], [{ role: 'user', content: 42 }]]) {
-    assert.doesNotThrow(() => d.collectSystem(input), `collectSystem threw on ${JSON.stringify(input)}`);
-    assert.doesNotThrow(() => d.nonSystemMessages(input), `nonSystemMessages threw on ${JSON.stringify(input)}`);
+    assert.equal(typeof d.collectSystem(input), 'string', `collectSystem(${JSON.stringify(input)})`);
+    assert.ok(Array.isArray(d.nonSystemMessages(input)), `nonSystemMessages(${JSON.stringify(input)})`);
   }
+  // Junk entries are dropped, not forwarded to the provider.
+  assert.deepEqual(d.nonSystemMessages([null, {}, { role: 'tool', content: 'x' }]), []);
 });
 
 test('a tool schema that is not an object degrades to a safe empty object', () => {

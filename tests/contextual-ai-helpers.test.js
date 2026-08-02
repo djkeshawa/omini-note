@@ -84,9 +84,11 @@ test('completing a task is not counted as deleting it', () => {
 
 test('the guard copes with empty and missing input', () => {
   for (const [a, b] of [['', ''], [null, null], [undefined, 'text'], ['text', undefined]]) {
-    assert.doesNotThrow(() => h.contextualAiCompareMarkdownMarkers(a, b),
-      `threw on ${JSON.stringify([a, b])}`);
+    const result = h.contextualAiCompareMarkdownMarkers(a, b);
+    assert.equal(typeof result.ok, 'boolean', `no verdict for ${JSON.stringify([a, b])}`);
   }
+  // Nothing before means nothing can be lost.
+  assert.equal(h.contextualAiCompareMarkdownMarkers(null, null).ok, true);
 });
 
 test('a markdown section is extracted and stops at the next section', () => {
@@ -136,8 +138,9 @@ test('action items respect the limit and the exclusion list', () => {
 
 test('action item helpers tolerate junk', () => {
   for (const input of [null, undefined, [], [null], [undefined], 'string']) {
-    assert.doesNotThrow(() => h.digestUniqueActionItems(input), `threw on ${JSON.stringify(input)}`);
+    assert.ok(Array.isArray(h.digestUniqueActionItems(input)), `not an array for ${JSON.stringify(input)}`);
   }
-  assert.doesNotThrow(() => h.digestActionItemKey(null));
-  assert.doesNotThrow(() => h.digestActionItemKey({}));
+  assert.deepEqual(h.digestUniqueActionItems([null, undefined]), [], 'junk entries should be skipped');
+  assert.equal(typeof h.digestActionItemKey(null), 'string');
+  assert.equal(typeof h.digestActionItemKey({}), 'string');
 });
