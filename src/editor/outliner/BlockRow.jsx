@@ -635,7 +635,7 @@ function MnBlockRow({
       // Convert block kind and strip the slash text in one mutation. Splitting
       // this into onChangeKind() then onChange() can lose the kind update when
       // the parent supplies a non-React setBlocks wrapper.
-      onChangeKind(block.id, {
+      const patch = {
         kind: cmd.kind,
         level: cmd.level || 0,
         checked: cmd.checked != null ? cmd.checked : null,
@@ -646,7 +646,13 @@ function MnBlockRow({
         beats: cmd.beats || block.beats || [],
         contexts: cmd.contexts || block.contexts || [],
         collapsed: collapseByDefault && cmd.kind === 'heading',
-      });
+      };
+      onChangeKind(block.id, patch);
+      // The textarea now shows the block's structural prefix ("> ", "# ",
+      // "- [ ] ") ahead of the content, but newPos was measured against the
+      // pre-conversion text. Without this offset the caret lands at 0 -- in
+      // front of the marker -- and the next keystroke un-converts the block.
+      newPos += MN_MARKDOWN_INPUT_RULES.editableMarkdownForBlock?.({ ...patch, content: '' }).length || 0;
     } else if (cmd.workflow !== undefined) {
       // Set workflow marker and strip the slash text atomically.
       onChangeKind(block.id, { workflow: cmd.workflow, content: cleanContent });

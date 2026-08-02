@@ -19,7 +19,7 @@
     "src/editor/blockFeatures.jsx": 539,
     "src/editor/editor.jsx": 657,
     "src/editor/markdownInputRules.js": 519,
-    "src/editor/outliner/BlockRow.jsx": 772,
+    "src/editor/outliner/BlockRow.jsx": 778,
     "src/editor/outliner/BlockRowView.jsx": 586,
     "src/editor/outliner/EmbeddedBlocks.jsx": 656,
     "src/editor/outliner.jsx": 679,

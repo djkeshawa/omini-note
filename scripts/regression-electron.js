@@ -2516,6 +2516,25 @@ async function runMarkdownPredictabilityScenario(win) {
   await pressAccelerator(win, 'Escape');
 }
 
+async function runSlashCommandCaretScenario(win) {
+  await seedEditorNote(win, {
+    id: 'qe_editor_slash_caret',
+    title: 'QE Editor Slash Caret',
+    body: 'Parent',
+  });
+  await focusEditorRow(win, 0);
+  await pressAccelerator(win, 'End');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'slash caret paragraph ready', rows => rows.length === 2 && rows[1].kind === 'paragraph' && rows[1].editing);
+  await typeActiveEditorText(win, '/quote');
+  await pressAccelerator(win, 'Enter');
+  await waitForEditorLayout(win, 'quote command converts the block', rows => rows[1]?.kind === 'quote' && rows[1]?.value === '> ');
+  // The caret must sit after the marker: with it at 0, this text lands in
+  // front of ">" and un-converts the block.
+  await typeActiveEditorText(win, 'quoted text');
+  await waitForEditorLayout(win, 'typing lands after the quote marker', rows => rows[1]?.kind === 'quote' && rows[1]?.value === '> quoted text');
+}
+
 async function runNoteCreateEditPersistenceScenario(win) {
   const title = 'QE User Scenario Note';
   const body = 'A user can create, edit, and persist this note.';
@@ -3796,6 +3815,9 @@ async function runRegression() {
   });
   await runScenario(win, 'Editor', 'literal markers and slash commands remain predictable after markdown rules', async () => {
     await runMarkdownPredictabilityScenario(win);
+  });
+  await runScenario(win, 'Editor', 'slash menu commands keep the caret after the marker', async () => {
+    await runSlashCommandCaretScenario(win);
   });
   await runScenario(win, 'Editor', 'large scrolled block ranges delete completely and undo once', async () => {
     await runLargeBlockSelectionDeleteScenario(win);
