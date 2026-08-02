@@ -490,7 +490,7 @@ function createNovelistHelpers(scope = {}) {
   }
   
   function normalizeTagName(name) {
-    return String(name || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/^-+|-+$/g, '');
+    return String(name || '').trim().toLowerCase().replace(/^#+/, '').replace(/\s+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
   }
   
   function parseDefaultTags(value) {
