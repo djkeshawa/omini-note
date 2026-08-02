@@ -62,10 +62,16 @@
     const sourceTitle = cleanSourceTitle(sourceNote.title);
     const content = cleanMarkdown(text);
     if (!content) throw new Error('Assistance returned no Markdown');
+    // Link resolution splits the target on '|' and '#' (mnLinkTargetsForNote in
+    // src/shared/data.jsx), so a title containing either cannot be addressed by
+    // a wiki link -- "[[Bug #42 triage]]" resolves to a note called "Bug". Name
+    // the source in plain text instead: no link is better than a link that
+    // silently points somewhere else.
+    const sourceLine = /[|#]/.test(sourceTitle) ? sourceTitle : `[[${sourceTitle}]]`;
     return {
       actionId: action.id,
       title: `${sourceTitle} - ${action.suffix}`,
-      body: `${content}\n\n## Source\n- [[${sourceTitle}]]\n`,
+      body: `${content}\n\n## Source\n- ${sourceLine}\n`,
       source: {
         id: String(sourceNote.id || ''),
         title: sourceTitle,
