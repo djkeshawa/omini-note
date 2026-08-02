@@ -32,7 +32,7 @@ import {
   mnViewsDiscoverProperties,
 } from './viewsColumns.js';
 import { ViewsControlStrip } from './ViewsControlStrip.jsx';
-import { mnViewsToggleScope, mnViewsClearScope } from './viewsScope.js';
+import { mnViewsToggleScope, mnViewsClearScope, mnViewsSetScopeMatch } from './viewsScope.js';
 import {
   mnViewsAddCondition, mnViewsUpdateCondition, mnViewsRemoveCondition,
   mnViewsSetConditionsMatch, mnViewsClearConditions,
@@ -411,6 +411,7 @@ function MnViewsPanel({
         onClearConditions={() => editConditions(mnViewsClearConditions(queryDefinition))}
         onToggleTag={tag => editScope(mnViewsToggleScope(queryDefinition, 'tags', tag))}
         onToggleLink={title => editScope(mnViewsToggleScope(queryDefinition, 'linkedNotes', title))}
+        onScopeMatch={(field, value) => editScope(mnViewsSetScopeMatch(queryDefinition, field, value))}
         onClearScope={() => editScope(mnViewsClearScope(queryDefinition))}
         onToggleColumn={key => editColumns(mnViewsToggleColumn(queryDefinition, key))}
         onMoveColumn={(key, delta) => editColumns(mnViewsMoveColumn(queryDefinition, key, delta))}

@@ -5,13 +5,41 @@
 // prototype's folder scope is left out: every note lives in the vault root, so
 // a folder control would be a permanently empty list.
 //
-// Both are ALL, not ANY. Pick two tags and a note has to have both. That is
-// what the query does, so the menu says it rather than letting you find out.
+// Each list carries its own any/all switch, defaulting to any. Two tags used
+// to mean a note had to carry both, which almost always matched nothing and
+// read as a broken view rather than a narrow one. The switch sits beside the
+// heading so the rule is visible at the moment you pick the second tag.
 
 import { DS_RADIUS, dsMachineStyle } from '../../shared/designSystem.js';
 import {
   mnViewsScopeTags, mnViewsScopeLinks, mnViewsScopeSummary, mnViewsScopeIsSet, mnViewsScopeTagChoices,
+  mnViewsScopeMatch,
 } from './viewsScope.js';
+
+// Two words, so the rule reads as a sentence with the heading above it:
+// "Tags — any of these".
+function ScopeMatch({ match, onChange, T }) {
+  return (
+    <span role="tablist" aria-label="Match" style={{ display: 'inline-flex', gap: 2 }}>
+      {['any', 'all'].map(value => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={match === value}
+          onClick={() => onChange?.(value)}
+          style={{
+            height: 20, padding: '0 7px', borderRadius: 5,
+            border: `1px solid ${match === value ? T.selLine : 'transparent'}`,
+            background: match === value ? T.selBg : 'transparent',
+            color: match === value ? T.ink : T.inkDim,
+            fontFamily: 'var(--mn-ui)', fontSize: 11,
+            fontWeight: match === value ? 600 : 400, cursor: 'pointer',
+          }}>{value}</button>
+      ))}
+    </span>
+  );
+}
 
 function ScopeRow({ label, machine, on, onToggle, T }) {
   return (
@@ -47,7 +75,7 @@ function ScopeRow({ label, machine, on, onToggle, T }) {
   );
 }
 
-function ViewsScopeMenu({ definition = {}, tags = [], notes = [], onToggleTag, onToggleLink, onClear, T }) {
+function ViewsScopeMenu({ definition = {}, tags = [], notes = [], onToggleTag, onToggleLink, onScopeMatch, onClear, T }) {
   const chosenTags = mnViewsScopeTags(definition).map(tag => tag.toLowerCase());
   const chosenLinks = mnViewsScopeLinks(definition).map(title => title.toLowerCase());
   // Notes already picked stay listed even if they fall out of the shortlist,
@@ -56,12 +84,22 @@ function ViewsScopeMenu({ definition = {}, tags = [], notes = [], onToggleTag, o
   const linkable = notes.slice(0, 12).map(note => note.title).filter(Boolean);
   const linkTitles = [...new Set(mnViewsScopeLinks(definition).concat(linkable))];
 
-  const section = (label, hint) => (
+  const section = (label, hint, field) => (
     <div style={{ padding: '9px 9px 5px' }}>
-      <div style={{
-        fontFamily: 'var(--mn-ui)', fontSize: 10.5, fontWeight: 600,
-        letterSpacing: '0.04em', textTransform: 'uppercase', color: T.inkDim,
-      }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          flex: 1, minWidth: 0,
+          fontFamily: 'var(--mn-ui)', fontSize: 10.5, fontWeight: 600,
+          letterSpacing: '0.04em', textTransform: 'uppercase', color: T.inkDim,
+        }}>{label}</div>
+        {field && (
+          <ScopeMatch
+            match={mnViewsScopeMatch(definition, field)}
+            onChange={value => onScopeMatch?.(field, value)}
+            T={T}
+          />
+        )}
+      </div>
       {hint && <div style={{ marginTop: 3, fontSize: 11, color: T.inkDim, lineHeight: 1.4 }}>{hint}</div>}
     </div>
   );
@@ -88,7 +126,13 @@ function ViewsScopeMenu({ definition = {}, tags = [], notes = [], onToggleTag, o
         Scope picks notes. Everything else picks rows inside them.
       </div>
 
-      {section('Tags', 'A note has to carry every tag you pick.')}
+      {section(
+        'Tags',
+        mnViewsScopeMatch(definition, 'tags') === 'all'
+          ? 'A note has to carry every tag you pick.'
+          : 'A note has to carry any one of the tags you pick.',
+        'tags'
+      )}
       {tagNames.length ? tagNames.map(tag => (
         <ScopeRow
           key={tag}
@@ -104,7 +148,13 @@ function ViewsScopeMenu({ definition = {}, tags = [], notes = [], onToggleTag, o
         </div>
       )}
 
-      {section('Links', 'A note has to link to every note you pick.')}
+      {section(
+        'Links',
+        mnViewsScopeMatch(definition, 'links') === 'all'
+          ? 'A note has to link to every note you pick.'
+          : 'A note has to link to any one of the notes you pick.',
+        'links'
+      )}
       {linkTitles.length ? linkTitles.map(title => (
         <ScopeRow
           key={title}

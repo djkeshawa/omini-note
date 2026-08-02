@@ -1,4 +1,5 @@
 const { createSmartViewYamlHelpers } = require('./smartViewYaml.js');
+const { SMART_VIEW_FILTER_KEYS, smartViewMatchMode, smartViewMatchList } = require('./smartViewFilters.js');
 
 function createSmartViewHelpers(scope = {}) {
   const SMART_VIEW_FORMAT = scope.SMART_VIEW_FORMAT;
@@ -114,6 +115,8 @@ function createSmartViewHelpers(scope = {}) {
       modifiedTo: smartViewDateKey(source.modifiedTo || source.modifiedBefore),
       properties: smartViewNormalizePropertyFilters(source),
       propertiesMatch: smartViewCleanText(source.propertiesMatch).toLowerCase() === 'any' ? 'any' : 'all',
+      tagsMatch: smartViewMatchMode(source.tagsMatch),
+      linkedNotesMatch: smartViewMatchMode(source.linkedNotesMatch),
       workflowStatuses: smartViewCleanList(source.workflowStatuses || source.workflowStatus)
         .map(smartViewWorkflowKey)
         .filter(Boolean),
@@ -267,13 +270,11 @@ function createSmartViewHelpers(scope = {}) {
     return out;
   }
   
-  function smartViewMatchesLinkedNotes(note, linkedNotes = [], options = {}) {
+  function smartViewMatchesLinkedNotes(note, linkedNotes = [], options = {}, match = 'any') {
     if (!linkedNotes.length) return true;
     const noteLinks = new Set(novelWikiTitles(note?.body || '').map(novelTitleKey).filter(Boolean));
-    return linkedNotes.every(target => {
-      const targetKeys = smartViewLinkedTargetKeys(target, options);
-      return [...targetKeys].some(key => noteLinks.has(key));
-    });
+    return smartViewMatchList(linkedNotes, match, target =>
+      [...smartViewLinkedTargetKeys(target, options)].some(key => noteLinks.has(key)));
   }
   
   function smartViewNoteDateInRange(note, field, from = '', to = '') {
@@ -293,7 +294,7 @@ function createSmartViewHelpers(scope = {}) {
   
     if (filters.tags.length) {
       const noteTags = new Set((note.tags || []).map(normalizeTagName).filter(Boolean));
-      if (!filters.tags.every(tag => noteTags.has(tag))) return false;
+      if (!smartViewMatchList(filters.tags, filters.tagsMatch, tag => noteTags.has(tag))) return false;
     }
   
     if (!smartViewNoteDateInRange(note, 'created', filters.createdFrom, filters.createdTo)) return false;
@@ -305,7 +306,7 @@ function createSmartViewHelpers(scope = {}) {
       if (!filters.workflowStatuses.includes(workflow)) return false;
     }
   
-    return smartViewMatchesLinkedNotes(note, filters.linkedNotes, options);
+    return smartViewMatchesLinkedNotes(note, filters.linkedNotes, options, filters.linkedNotesMatch);
   }
   
   function smartViewMatchesNote(note, definition = {}, options = {}) {
@@ -597,40 +598,7 @@ function createSmartViewHelpers(scope = {}) {
     if (definition.type && !SMART_VIEW_TYPES.includes(definition.type)) throw new Error('Invalid Smart View type');
     const filters = definition.filters == null ? {} : definition.filters;
     if (!smartViewIsPlainObject(filters)) throw new Error('Smart View filters must be an object');
-    smartViewAssertAllowedKeys(filters, [
-      'title',
-      'titleContains',
-      'tag',
-      'tags',
-      'createdFrom',
-      'createdTo',
-      'createdAfter',
-      'createdBefore',
-      'modifiedFrom',
-      'modifiedTo',
-      'modifiedAfter',
-      'modifiedBefore',
-      'property',
-      'properties',
-      'propertiesMatch',
-      'propertyKey',
-      'propertyValue',
-      'workflowStatus',
-      'workflowStatuses',
-      'linkedNote',
-      'linkedNotes',
-      'actionStatus',
-      'actionStatuses',
-      'taskStatus',
-      'actionType',
-      'actionTypes',
-      'reminderFrom',
-      'reminderTo',
-      'remindFrom',
-      'remindTo',
-      'dueFrom',
-      'dueTo',
-    ], 'Smart View filters');
+    smartViewAssertAllowedKeys(filters, SMART_VIEW_FILTER_KEYS, 'Smart View filters');
     smartViewValidateDateFilters(filters);
     smartViewValidateActionFilters(filters);
   

@@ -27,7 +27,7 @@ function ViewsControlStrip({
   conditionKeys = [],
   scopeOpen, columnsOpen, conditionsOpen,
   onToggleScopeMenu, onToggleColumnsMenu, onToggleConditionsMenu,
-  onToggleTag, onToggleLink, onClearScope, onToggleColumn, onMoveColumn,
+  onToggleTag, onToggleLink, onScopeMatch, onClearScope, onToggleColumn, onMoveColumn,
   onAddCondition, onUpdateCondition, onRemoveCondition, onConditionsMatch, onClearConditions,
   onLayout, T,
 }) {
@@ -64,6 +64,7 @@ function ViewsControlStrip({
             notes={notes}
             onToggleTag={tag => onToggleTag?.(tag)}
             onToggleLink={title => onToggleLink?.(title)}
+            onScopeMatch={(field, value) => onScopeMatch?.(field, value)}
             onClear={() => onClearScope?.()}
             T={T}
           />

@@ -977,9 +977,11 @@ async function runViewsPanelScenario(win) {
         const menu = document.querySelector('[data-mn-views-scope]');
         if (!menu) return { menu: false };
         const rows = [...menu.querySelectorAll('[role="menuitemcheckbox"]')].map(el => (el.textContent || '').trim());
-        return { menu: true, rows, every: /every tag you pick/.test(menu.textContent || '') };
+        return { menu: true, rows, any: /any one of the tags you pick/.test(menu.textContent || '') };
       })()`);
-      return { ok: current.menu && current.rows.includes('#qe-regression') && current.every, current };
+      // Two tags mean "either" by default; the menu has to say which rule is
+      // in force, because it is the difference between a list and no list.
+      return { ok: current.menu && current.rows.includes('#qe-regression') && current.any, current };
     });
 
     const scopedFrom = await viewsRowCount(win);
@@ -995,6 +997,35 @@ async function runViewsPanelScenario(win) {
       })()`);
       return { ok: /qe-regression/.test(current.chip) && current.rows === 1 && current.rows < scopedFrom, current, scopedFrom };
     });
+    // A second tag must widen the view, not empty it. This is the bug the
+    // any/all switch fixes: every note carrying either tag has to come back.
+    await clickVisibleText(win, '#welcome');
+    await waitFor(win, 'a second scoped tag widens the view rather than emptying it', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('button[aria-label="Scope"]');
+        const table = document.querySelector('[data-mn-views-table]');
+        return {
+          chip: strip ? (strip.textContent || '').trim() : '',
+          rows: table ? table.querySelectorAll('[data-mn-view-row]').length : -1,
+        };
+      })()`);
+      return { ok: current.rows > 1 && /2 any tags/.test(current.chip), current };
+    });
+    // Switching to all is the stricter reading, and no note carries both.
+    await clickButton(win, { text: 'all' });
+    await waitFor(win, 'switching scope to all demands every tag', async () => {
+      const current = await evaluate(win, `(() => {
+        const strip = document.querySelector('button[aria-label="Scope"]');
+        const body = document.querySelector('[data-mn-views-body]');
+        return {
+          chip: strip ? (strip.textContent || '').trim() : '',
+          rows: body ? body.querySelectorAll('[data-mn-view-row]').length : -1,
+        };
+      })()`);
+      return { ok: /2 all tags/.test(current.chip) && current.rows === 0, current };
+    });
+    await clickButton(win, { text: 'any' });
+    await clickVisibleText(win, '#welcome');
     await clickVisibleText(win, 'Whole vault');
     await waitFor(win, 'clearing scope brings the rest back', async () => {
       const current = await evaluate(win, `(() => {
