@@ -5,6 +5,10 @@ import { DS_HEIGHT, DS_RADIUS, dsGroupLabelStyle, dsMachineStyle } from '../shar
 
 const { useEffect, useRef, useState, useMemo } = React;
 
+// Zoomed in this far, names are legible and worth drawing. Below it a large
+// graph is shape rather than text, which is the point of being zoomed out.
+const MN_GRAPH_LABEL_ZOOM = 1.5;
+
 // The three arrangements the simulation already supports.
 const MN_GRAPH_LAYOUTS = [
   { id: 'force', label: 'Force' },
@@ -158,7 +162,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
       });
     }
 
-    setNodes(mnGraphApplyPins(ns, pins, W, H));
+    setNodes(mnGraphApplyPins(ns, pins));
     setEdges(visibleEdges);
   }, [notes, visibleEdges, style, W, H, layoutSeed, pins, opts.sizeByContent]);
 
@@ -266,7 +270,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
   const setOpt = (key, value) => setOpts(prev => ({ ...prev, [key]: value }));
 
   return (
-    <div ref={frameRef} style={{
+    <div ref={frameRef} data-mn-graph-frame="true" style={{
       flex: 1, minWidth: 0, height: '100%',
       background: T.bg,
       display: 'flex', flexDirection: 'column',
@@ -527,11 +531,10 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
               if (!a || !b) return null;
               const active = connectedToHover(a.id) && connectedToHover(b.id);
               return (
-                <path key={`${e.source}:${e.target}:${i}`}
-                  d={mnGraphCurve(a, b)}
-                  fill="none"
+                <line key={`${e.source}:${e.target}:${i}`}
+                  x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                   stroke={active ? T.inkDim : T.line}
-                  strokeWidth={active ? 1.25 : 0.75}
+                  strokeWidth={(active ? 1.25 : 0.75) / view.k}
                   strokeLinecap="round"
                   opacity={active ? 0.46 : 0.18} />
               );
@@ -550,7 +553,9 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
                 ? `color-mix(in oklab, ${raw} 48%, ${T.inkDim} 52%)`
                 : T.inkDim;
               const label = n.title.length > 34 ? n.title.slice(0, 32) + '…' : n.title;
-              const showLabel = active && (opts.labels || notes.length <= 6 || focus || hoverId === n.id);
+              const showLabel = active && (
+                opts.labels || view.k >= MN_GRAPH_LABEL_ZOOM || notes.length <= 6 || focus || hoverId === n.id
+              );
               return (
                 <g key={n.id}
                   data-mn-graph-node={n.id}
@@ -618,6 +623,7 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
           setOpt={setOpt}
           notesCount={notes.length}
           edgesCount={edges.length}
+          onFit={() => setView(mnGraphFitView(nodes, W, H))}
           pinnedCount={Object.keys(pins).length}
           onUnpinAll={() => { setPins({}); warmLayout(); }}
           onReset={() => {
@@ -634,23 +640,11 @@ function MnGraph({ notes, links, style, onStyleChange, focusId, onOpen, T, tags,
   );
 }
 
-function mnGraphCurve(a, b) {
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2;
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const bend = Math.min(36, len * 0.1);
-  const cx = mx - (dy / len) * bend;
-  const cy = my + (dx / len) * bend;
-  return `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`;
-}
-
 export { MnGraph };
 import { MN_THEMES, mnGetTagColor, mnTagHueMap } from '../shared/theme.jsx';
 import {
   MN_GRAPH_VIEW, mnGraphPin, mnGraphUnpin, mnGraphApplyPins,
-  mnGraphIsPinned, mnGraphReleaseNode,
+  mnGraphIsPinned, mnGraphReleaseNode, mnGraphFitView,
 } from './graphView.js';
 import { mnGraphTick, MN_GRAPH_MAX_TICKS } from './graphForces.js';
 import { useGraphGestures } from './useGraphGestures.js';

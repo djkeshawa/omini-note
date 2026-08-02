@@ -80,7 +80,7 @@ function Range({ label, min, max, step, value, onChange, T }) {
 }
 
 function MnGraphControls({
-  pinnedCount = 0, onUnpinAll,
+  pinnedCount = 0, onUnpinAll, onFit,
   T, open, setOpen, opts, setOpt,
   notesCount, edgesCount, onReset, onExportSvg,
 }) {
@@ -110,6 +110,14 @@ function MnGraphControls({
         <Range label="Link distance" min="70" max="180" step="1" value={opts.linkDistance} onChange={(v) => setOpt('linkDistance', v)} T={T} />
         <Range label="Repulsion" min="20" max="60" step="1" value={opts.repulsion} onChange={(v) => setOpt('repulsion', v)} T={T} />
         <Range label="Center pull" min="0" max="0.02" step="0.001" value={opts.center} onChange={(v) => setOpt('center', v)} T={T} />
+        {/* Without walls a graph can settle past the edges of the pane, so
+            there has to be one control that says "show me everything". */}
+        <button onClick={onFit} style={{
+          marginTop: 6, width: '100%',
+          padding: '5px 8px', borderRadius: 5,
+          border: `1px solid ${T.line}`, background: T.bg, color: T.inkMed,
+          fontFamily: 'var(--mn-ui)', fontSize: 12, cursor: 'pointer',
+        }}>Fit to view</button>
         {pinnedCount > 0 && (
           <button onClick={onUnpinAll} style={{
             marginTop: 6, width: '100%',
