@@ -75,7 +75,10 @@ function createNovelistHelpers(scope = {}) {
   function bodyPropertyTitle(body = '', key = '') {
     const value = bodyPropertyValue(body, key);
     const wiki = value.match(/^\[\[([^\]]+)\]\]/);
-    return String(wiki ? wiki[1] : value).replace(/#[^\]]+$/, '').trim();
+    // Strip the alias as well as the anchor, matching novelTitleKey below: a
+    // hand-edited "act:: [[Act One|Act I]]" must still resolve to Act One, or
+    // the chapter silently falls out of its act.
+    return String(wiki ? wiki[1] : value).split('|')[0].replace(/#[^\]]+$/, '').trim();
   }
   
   function bodyPropertyInsertIndex(lines = []) {
