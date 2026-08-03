@@ -131,3 +131,51 @@ test('a spreadsheet paste still drops its trailing blank rows', () => {
   const rows = tableOps.markdownTableToRows(md);
   assert.equal(rows.length, 2, `pasted blank rows should not become table rows: ${JSON.stringify(rows)}`);
 });
+
+// ── Editing a rendered cell ──────────────────────────────────────────────
+// Typing into a rendered table cell rewrites the block's markdown, so the
+// note on disk stays plain markdown that any other editor can read.
+
+const { loadRendererModule } = require('./helpers/rendererModule.js');
+const tableBlock = loadRendererModule('src/editor/outliner/MarkdownTableBlock.jsx');
+const withCell = tableBlock.mnTableMarkdownWithCell;
+
+test('typing in a cell rewrites only that cell', () => {
+  const starter = '| Column 1 | Column 2 |\n| --- | --- |\n|  |  |';
+  const filled = withCell(starter, 1, 0, 'Ada');
+  const rows = tableOps.markdownTableToRows(filled);
+  assert.deepEqual(rows[0], ['Column 1', 'Column 2'], 'the header must be untouched');
+  assert.deepEqual(rows[1], ['Ada', ''], 'only the edited cell changes');
+  const both = withCell(filled, 1, 1, 'Engineer');
+  assert.deepEqual(tableOps.markdownTableToRows(both)[1], ['Ada', 'Engineer']);
+});
+
+test('a header cell is editable too', () => {
+  const renamed = withCell('| A | B |\n| --- | --- |\n| x | y |', 0, 1, 'Role');
+  assert.deepEqual(tableOps.markdownTableToRows(renamed)[0], ['A', 'Role']);
+});
+
+test('a cell edit cannot break the table syntax', () => {
+  // A pipe or a newline typed into a cell must not split it into two cells
+  // or terminate the row.
+  const hostile = withCell('| A | B |\n| --- | --- |\n| x | y |', 1, 0, 'has | pipe');
+  const rows = tableOps.markdownTableToRows(hostile);
+  assert.equal(rows[1].length, 2, `a typed pipe split the row: ${JSON.stringify(rows[1])}`);
+  assert.equal(rows[1][0], 'has | pipe', 'the pipe survives as text');
+  const multiline = withCell('| A | B |\n| --- | --- |\n| x | y |', 1, 0, 'line one\nline two');
+  const mlRows = tableOps.markdownTableToRows(multiline);
+  assert.equal(mlRows.length, 2, 'a pasted newline must not create a second row');
+  assert.equal(mlRows[1][0], 'line one line two', 'the newline collapses to a space');
+});
+
+test('editing a cell that does not exist leaves the table alone', () => {
+  const md = '| A | B |\n| --- | --- |\n| x | y |';
+  assert.equal(withCell(md, 9, 0, 'nope'), md, 'an out-of-range row is a no-op');
+});
+
+test('clearing a cell keeps the row rather than deleting it', () => {
+  const cleared = withCell('| A | B |\n| --- | --- |\n| x | y |', 1, 0, '');
+  const rows = tableOps.markdownTableToRows(cleared);
+  assert.equal(rows.length, 2, 'emptying a cell must not drop its row');
+  assert.deepEqual(rows[1], ['', 'y']);
+});

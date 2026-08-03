@@ -43,6 +43,7 @@ import MN_EDITOR_OPS from '../editorOps.js';
 import MN_MARKDOWN_INPUT_RULES from '../markdownInputRules.js';
 import MN_APP_HELPERS from '../../app/appHelpers.js';
 import MN_TABLE_OPS from '../tableOps.js';
+import { MnMarkdownTable, mnTableMarkdownWithCell } from './MarkdownTableBlock.jsx';
 import { createEditorHistory as mnCreateEditorHistory, shareBlockTree as mnShareBlockTree } from '../outlinerHistory.js';
 import { MN_REMIND } from '../../shared/markdown.jsx';
 import {
@@ -63,9 +64,11 @@ const {
 } = MN_EDITOR_OPS;
 const {
   clipboardEventToMarkdownTable: mnClipboardEventToMarkdownTable,
-  markdownTableToRows: mnMarkdownTableToRows,
+  
   markdownTableToHtml: mnMarkdownTableToHtml,
+  
 } = MN_TABLE_OPS;
+
 
 const mnSpellWords = spellWords;
 const mnRenderSpellCheckedText = renderSpellCheckedText;
@@ -517,65 +520,6 @@ function MnSmartViewEmbed({ embed, allNotes = [], T, onOpen }) {
   );
 }
 
-function MnMarkdownTable({ markdown, T }) {
-  const rows = mnMarkdownTableToRows ? mnMarkdownTableToRows(markdown || '') : [];
-  if (!rows.length) {
-    return <span style={{ color: T.inkDim, fontStyle: 'italic' }}>Empty table</span>;
-  }
-  const cellBase = {
-    padding: '6px 9px',
-    border: `1px solid ${T.lineSub}`,
-    textAlign: 'left',
-    verticalAlign: 'top',
-    whiteSpace: 'pre-wrap',
-  };
-  return (
-    <div style={{
-      overflowX: 'auto',
-      maxWidth: '100%',
-      padding: '2px 0',
-    }}>
-      <table style={{
-        borderCollapse: 'collapse',
-        minWidth: 280,
-        maxWidth: '100%',
-        fontFamily: 'var(--mn-ui)',
-        fontSize: 12.5,
-        lineHeight: 1.45,
-        color: T.ink,
-        background: T.bg,
-      }}>
-        <thead>
-          <tr>
-            {rows[0].map((cell, i) => (
-              <th key={i} style={{
-                ...cellBase,
-                background: T.bgSub,
-                fontWeight: 650,
-                color: T.ink,
-              }}>{cell || '\u00a0'}</th>
-            ))}
-          </tr>
-        </thead>
-        {rows.length > 1 && (
-          <tbody>
-            {rows.slice(1).map((row, r) => (
-              <tr key={r}>
-                {row.map((cell, c) => (
-                  <td key={c} style={{
-                    ...cellBase,
-                    background: r % 2 ? T.bgSub : T.bg,
-                    color: T.inkMed,
-                  }}>{cell || '\u00a0'}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        )}
-      </table>
-    </div>
-  );
-}
 
 // ── Style helpers ──────────────────────────────────────────────────────
 function mnEditorFontScale(size) {
@@ -652,4 +596,6 @@ function mnPlaceholder(block) {
 
 // ── Popover primitives ─────────────────────────────────────────────────
 
-export { MnPlotPointsBlock, MnInlineAiButton, MnSmartViewEmbedFallback, MnSmartViewEmbed, MnMarkdownTable, mnEditorFontScale, mnGetFontStyle, mnAffordancePadTop, mnGripPadTop, mnPlaceholder };
+export {
+  MnMarkdownTable, mnTableMarkdownWithCell,
+  MnPlotPointsBlock, MnInlineAiButton, MnSmartViewEmbedFallback, MnSmartViewEmbed, mnEditorFontScale, mnGetFontStyle, mnAffordancePadTop, mnGripPadTop, mnPlaceholder };
