@@ -63,7 +63,10 @@ function createNovelistHelpers(scope = {}) {
   
   function bodyPropertyLineRe(key = '') {
     const safeKey = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`^\\s*(?:-\\s*)?${safeKey}::\\s*(.*)$`, 'im');
+    // Horizontal whitespace only after the "::" -- \s also matches the
+    // newline, so a blank "status::" line swallowed the NEXT line as its
+    // value and a user's prose became their workflow status.
+    return new RegExp(`^\\s*(?:-\\s*)?${safeKey}::[^\\S\\n]*(.*)$`, 'im');
   }
   
   function bodyPropertyValue(body = '', key = '') {
