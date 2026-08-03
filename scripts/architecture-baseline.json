@@ -27,7 +27,7 @@
     "src/features/today/components/TodayPanel.jsx": 625,
     "src/features/writer/NovelistPanel.jsx": 697,
     "src/features/writer/NovelistPanelView.jsx": 531,
-    "src/features/writer/novelistHelpers.js": 521,
+    "src/features/writer/novelistHelpers.js": 524,
     "src/panels/calendarPanel.jsx": 674,
     "src/panels/graph.jsx": 757,
     "src/panels/notelist.jsx": 759,
