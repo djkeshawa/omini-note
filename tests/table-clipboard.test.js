@@ -95,3 +95,39 @@ test('a markdown table renders to HTML for copying back out', () => {
   assert.match(html, /<table/i);
   assert.match(html, /<td[^>]*>1<\/td>/i);
 });
+
+// ── Authored tables keep their empty rows ────────────────────────────────
+// A pasted spreadsheet's trailing blank rows are noise and get dropped. A
+// table the user is writing is different: the empty row is where they type.
+// The /table command inserts exactly that, so dropping it renders a
+// header-only table with nothing to fill in.
+
+test('the /table starter renders with its empty row intact', () => {
+  const starter = '| Column 1 | Column 2 |\n| --- | --- |\n|  |  |';
+  const rows = tableOps.markdownTableToRows(starter);
+  assert.equal(rows.length, 2, `the empty data row was dropped: ${JSON.stringify(rows)}`);
+  assert.deepEqual(rows[0], ['Column 1', 'Column 2']);
+  assert.deepEqual(rows[1], ['', ''], 'the empty row must survive so there is somewhere to type');
+});
+
+test('an empty row between filled rows is not silently removed', () => {
+  const md = '| A | B |\n| --- | --- |\n| x | y |\n|  |  |\n| p | q |';
+  const rows = tableOps.markdownTableToRows(md);
+  assert.equal(rows.length, 4, `a deliberate blank row vanished: ${JSON.stringify(rows)}`);
+  assert.deepEqual(rows[2], ['', '']);
+});
+
+test('an authored table round-trips through markdown without losing rows', () => {
+  const starter = '| Column 1 | Column 2 |\n| --- | --- |\n|  |  |';
+  const once = tableOps.normalizeMarkdownTable(starter);
+  assert.equal(tableOps.markdownTableToRows(once).length, 2, 'normalising must not eat the empty row');
+  const twice = tableOps.normalizeMarkdownTable(once);
+  assert.equal(twice, once, 'the canonical form must be a fixed point');
+});
+
+test('a spreadsheet paste still drops its trailing blank rows', () => {
+  // The other half of the contract: ingest is noisy, authoring is deliberate.
+  const md = tableOps.clipboardToMarkdownTable({ text: 'A\tB\nx\ty\n\t\n\t' });
+  const rows = tableOps.markdownTableToRows(md);
+  assert.equal(rows.length, 2, `pasted blank rows should not become table rows: ${JSON.stringify(rows)}`);
+});
