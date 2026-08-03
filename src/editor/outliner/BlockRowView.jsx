@@ -511,7 +511,8 @@ function MnBlockRowView({ model }) {
                     return <MnSmartViewEmbed embed={smartViewEmbed} allNotes={allNotes} T={T} onOpen={onOpen} />;
                   }
                   if (block.kind === 'table') {
-                    return <MnMarkdownTable markdown={content} T={T} />;
+                    return <MnMarkdownTable markdown={content} T={T}
+                      onEditCell={(nextMarkdown) => onChange(block.id, nextMarkdown)} />;
                   }
                   if (block.kind === 'code') {
                     if (!content) {
