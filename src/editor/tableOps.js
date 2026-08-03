@@ -19,7 +19,11 @@
     return cleanCell(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
   }
 
-  function normalizeRows(rows) {
+  // `dropEmptyRows` separates the two callers. Ingesting a paste, a row of
+  // blanks is noise -- spreadsheets hand over trailing empties. In a table the
+  // user is authoring, an empty row is the row they are about to fill in, and
+  // dropping it renders the /table starter as a header with nothing under it.
+  function normalizeRows(rows, { dropEmptyRows = false } = {}) {
     const sourceRows = Array.isArray(rows) ? rows : [];
     if (sourceRows.length > MAX_TABLE_ROWS) return [];
     const cleanRows = [];
@@ -33,7 +37,7 @@
         if (cell.length > MAX_TABLE_CELL_CHARS) return [];
         clean.push(cell);
       }
-      if (!clean.some(cell => cell.length > 0)) continue;
+      if (dropEmptyRows && !clean.some(cell => cell.length > 0)) continue;
       cleanRows.push(clean);
       if (cleanRows.length > MAX_TABLE_ROWS) return [];
       if (clean.length > width) width = clean.length;
@@ -128,7 +132,7 @@
     if (raw.length > MAX_TABLE_SOURCE_CHARS) return [];
     if (!raw || !raw.includes('\t')) return [];
     const rows = raw.split(/\r?\n/).map(line => line.split('\t'));
-    const normalized = normalizeRows(rows);
+    const normalized = normalizeRows(rows, { dropEmptyRows: true });
     return normalized.length && normalized[0].length >= 2 ? normalized : [];
   }
 
@@ -142,7 +146,7 @@
       if (!table) return [];
       return normalizeRows([...table.querySelectorAll('tr')].map(tr =>
         [...tr.querySelectorAll('th,td')].map(cell => cell.textContent || '')
-      ));
+      ), { dropEmptyRows: true });
     }
     const tableMatch = source.match(/<table[\s\S]*?<\/table>/i);
     if (!tableMatch) return [];
@@ -150,7 +154,7 @@
     return normalizeRows(rowMatches.map(row => {
       const cells = row.match(/<t[dh][\s\S]*?<\/t[dh]>/gi) || [];
       return cells.map(cell => cleanCell(cell.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')));
-    }));
+    }), { dropEmptyRows: true });
   }
 
   function clipboardToMarkdownTable({ html, text } = {}) {
