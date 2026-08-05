@@ -1,6 +1,10 @@
 const { isValidDateKey, localDateKey, shiftDateKey } = require('../../shared/dateUtils.js');
 
 function createWorkflowHelpers(scope = {}) {
+  // One definition of a property line. The board's column reader and its row
+  // preview each had their own pattern and had drifted: a two-word key like
+  // `due date::` became a column and stayed in the preview as prose beside it.
+  const PROPERTY_LINE_RE = /^\s*(?:-\s*)?([A-Za-z][A-Za-z0-9 _-]{0,40})::\s*(.*)$/;
   const ZOTERO_ITEM_KEY_RE = scope.ZOTERO_ITEM_KEY_RE;
   const ZOTERO_SOURCE_TAGS = scope.ZOTERO_SOURCE_TAGS;
   const bodyPropertyValue = (...args) => scope.bodyPropertyValue(...args);
@@ -224,7 +228,7 @@ function createWorkflowHelpers(scope = {}) {
   function workflowNotePreview(note) {
     return String(note?.body || '')
       .split('\n')
-      .filter(line => !/^\s*-?\s*[a-zA-Z][a-zA-Z0-9_-]*::\s*/.test(line))
+      .filter(line => !PROPERTY_LINE_RE.test(line))
       .join('\n')
       .replace(/^#{1,4}\s+.*/gm, '')
       .replace(/\[\[([^\]]+)\]\]/g, '$1')
@@ -262,7 +266,7 @@ function createWorkflowHelpers(scope = {}) {
     const readProperties = (body = '') => {
       const out = Object.create(null);
       String(body || '').split('\n').forEach(line => {
-        const match = line.match(/^\s*(?:-\s*)?([A-Za-z][A-Za-z0-9 _-]{0,40})::\s*(.*)$/);
+        const match = line.match(PROPERTY_LINE_RE);
         if (!match) return;
         const key = match[1].trim();
         const value = match[2].trim();
@@ -405,9 +409,12 @@ function createWorkflowHelpers(scope = {}) {
   }
   
   function agendaIsDeferred(item = {}, now = new Date()) {
-    const parsed = item.deferUntil || agendaParseDeferMarker(item.text || item.label || '')?.date || '';
+    // A default parameter only fires for undefined, so a null item reached the
+    // field reads below and threw instead of answering "not deferred".
+    const source = item || {};
+    const parsed = source.deferUntil || agendaParseDeferMarker(source.text || source.label || '')?.date || '';
     const deferUntil = String(parsed || '').trim();
-    if (!rollupIsValidIsoDateKey(deferUntil) || item.checked) return false;
+    if (!rollupIsValidIsoDateKey(deferUntil) || source.checked) return false;
     return deferUntil > todayIsoDate(now);
   }
   
