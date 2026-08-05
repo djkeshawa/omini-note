@@ -106,6 +106,10 @@
       enabled,
       hidden: !!action.hidden,
       aiHidden: !!action.aiHidden,
+      // describeForAi reads these off this shape, so leaving them out described
+      // a read-only or idempotent action to the model as neither.
+      readOnly: !!action.readOnly,
+      idempotent: !!action.idempotent,
     };
   }
 

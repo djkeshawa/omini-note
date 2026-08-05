@@ -8,6 +8,7 @@ function createRollupHelpers(scope = {}) {
   const rollupNormalizeRange = (...args) => scope.rollupNormalizeRange(...args);
   const rollupNoteDateKey = (...args) => scope.rollupNoteDateKey(...args);
   const rollupNoteSortTime = (...args) => scope.rollupNoteSortTime(...args);
+  const rollupShiftDateKey = (...args) => scope.rollupShiftDateKey(...args);
   const rollupTitleDateKey = (...args) => scope.rollupTitleDateKey(...args);
   const todayIsoDate = (...args) => scope.todayIsoDate(...args);
   function rollupIsOlderGroup(dateKey, now = new Date()) {
@@ -66,8 +67,11 @@ function createRollupHelpers(scope = {}) {
     const weekStart = options.weekStart || 'monday';
     return (items || [])
       .filter(item => {
-        if (agendaIsDeferred(item, now)) return false;
+        // The emptiness check has to come first: agendaIsDeferred reads the
+        // item's own fields, so testing it before this guard threw on a null
+        // entry rather than skipping it.
         if (!item || item.checked || item.isReminderOnly || item.type === 'reminder') return false;
+        if (agendaIsDeferred(item, now)) return false;
         const note = noteById.get(item.noteId) || { date: item.noteDate, title: item.noteTitle };
         const key = rollupNoteDateKey(note, groupBy) || rollupDateKey(item.noteDate);
         return rollupDateKeyInRange(key, range, now, weekStart);
@@ -81,11 +85,33 @@ function createRollupHelpers(scope = {}) {
       : rollupDateKey(item?.remindAt?.at);
   }
   
+  function rollupMonthEndDateKey(dateKey) {
+    const [year, month] = String(dateKey || '').split('-').map(Number);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return dateKey;
+    // Day 0 of the next month is the last day of this one.
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  }
+
+  // A note range looks backwards: a note was created or edited in the past, so
+  // it ends at today. A reminder's date is a DUE date, so its range has to look
+  // forward instead. Reusing the note bounds meant every reminder dated later
+  // than today was computed as "upcoming" and then filtered straight back out,
+  // so no range could ever contain tomorrow.
+  function rollupReminderRangeBounds(range = 'today', now = new Date(), weekStart = 'monday') {
+    const bounds = rollupDateRangeBounds(range, now, weekStart);
+    const normalized = rollupNormalizeRange(range);
+    if (normalized === 'week') return { ...bounds, end: rollupShiftDateKey(bounds.start, 6) };
+    if (normalized === 'month') return { ...bounds, end: rollupMonthEndDateKey(bounds.today) };
+    return bounds;
+  }
+
   function rollupFilterReminderItems(items = [], _notes = [], options = {}) {
     const range = rollupNormalizeRange(options.range);
     const now = options.now || new Date();
     const weekStart = options.weekStart || 'monday';
-    const today = rollupDateRangeBounds('today', now, weekStart).today;
+    const bounds = rollupReminderRangeBounds(range, now, weekStart);
+    const today = bounds.today;
     return (items || [])
       .map(item => {
         const key = rollupReminderDateKey(item);
@@ -95,7 +121,9 @@ function createRollupHelpers(scope = {}) {
       .filter(item => {
         if (agendaIsDeferred(item, now)) return false;
         if (!rollupIsValidIsoDateKey(item.rollupDateKey)) return false;
-        return item.rollupDateKey < today || rollupDateKeyInRange(item.rollupDateKey, range, now, weekStart);
+        // An overdue reminder always shows, whatever range was asked for.
+        return item.rollupDateKey < today
+          || (item.rollupDateKey >= bounds.start && item.rollupDateKey <= bounds.end);
       })
       .sort((a, b) => String(a.rollupDateKey).localeCompare(String(b.rollupDateKey)) || ((a.remindAt?.at || 0) - (b.remindAt?.at || 0)));
   }
@@ -350,7 +378,7 @@ function createRollupHelpers(scope = {}) {
     if (lines.length) return lines.slice(0, limit);
     return [`- Review notes from ${today} for decisions to keep.`];
   }
-  return { rollupIsOlderGroup, rollupGroupNotes, rollupPreviewLine, rollupNotePreview, rollupFilterTaskItems, rollupReminderDateKey, rollupFilterReminderItems, rollupFindDailyNote, rollupTaskReasonLabel, rollupReminderReasonLabel, agendaActionStatus, agendaActionReasonLabel, agendaActionDetail, agendaDecorateActionItems, agendaFilterActionItems, agendaLocalDateKey, agendaLocalTimeKey, agendaAddDays, agendaParseClock, agendaParseScheduleInput, rollupQuickTaskLine, rollupAppendQuickTask, rollupAppendMarkdownSection, rollupAppendReflection, rollupItemLabel, rollupSourceLine, rollupNoteLine, rollupDecisionLines };
+  return { rollupIsOlderGroup, rollupGroupNotes, rollupPreviewLine, rollupNotePreview, rollupFilterTaskItems, rollupReminderDateKey, rollupMonthEndDateKey, rollupReminderRangeBounds, rollupFilterReminderItems, rollupFindDailyNote, rollupTaskReasonLabel, rollupReminderReasonLabel, agendaActionStatus, agendaActionReasonLabel, agendaActionDetail, agendaDecorateActionItems, agendaFilterActionItems, agendaLocalDateKey, agendaLocalTimeKey, agendaAddDays, agendaParseClock, agendaParseScheduleInput, rollupQuickTaskLine, rollupAppendQuickTask, rollupAppendMarkdownSection, rollupAppendReflection, rollupItemLabel, rollupSourceLine, rollupNoteLine, rollupDecisionLines };
 }
 
 module.exports = { createRollupHelpers };

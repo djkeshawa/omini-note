@@ -385,7 +385,11 @@ function createContextualAiHelpers(scope = {}) {
     const openTasks = (tasks || [])
       .filter(item => item && !item.checked && !item.isReminderOnly && item.type !== 'reminder')
       .slice(0, limit);
-    const visibleReminders = rollupFilterReminderItems(reminders, notes, { range: 'today', now }).slice(0, limit);
+    // This list only feeds "Tomorrow candidates", which wants reminders that
+    // have not come due yet -- so it has to ask for a range that can contain
+    // them. With 'today' every reminder here was overdue or due today, and the
+    // upcoming filter below always came back empty.
+    const visibleReminders = rollupFilterReminderItems(reminders, notes, { range: 'week', now }).slice(0, limit);
     const tomorrowCandidates = [
       ...openTasks.slice(0, Math.ceil(limit / 2)),
       ...visibleReminders.filter(item => item.rollupStatus === 'upcoming').slice(0, Math.floor(limit / 2)),
