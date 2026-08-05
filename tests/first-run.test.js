@@ -1,9 +1,48 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { loadRendererModule } = require('./helpers/rendererModule.js');
 const seed = require('../lib/seed.js');
+
+// Deliberately unlike the shared store helper: that one mkdtemps the data root
+// before loading the store, which is exactly the condition a fresh install does
+// not have. Here the root -- and its parent -- must not exist yet.
+async function withMissingDataRoot(fn) {
+  const previous = process.env.VISPNOTE_HOME;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'vispnote-fresh-'));
+  const home = path.join(parent, 'nested', 'VispNote');
+  const storePath = require.resolve('../lib/store');
+  delete require.cache[storePath];
+  process.env.VISPNOTE_HOME = home;
+  try {
+    return await fn(require('../lib/store'), home);
+  } finally {
+    delete require.cache[storePath];
+    if (previous === undefined) delete process.env.VISPNOTE_HOME;
+    else process.env.VISPNOTE_HOME = previous;
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+}
+
+test('the first run seeds into a data root that does not exist yet', async () => {
+  await withMissingDataRoot(async (store, home) => {
+    assert.equal(fs.existsSync(home), false, 'the data root must be missing before the first load');
+
+    const cfg = await store.loadConfig();
+
+    assert.ok(cfg.vaults.length > 0, 'the seed creates at least one vault');
+    assert.equal(cfg.activeVaultId, cfg.vaults[0].id);
+    for (const vault of cfg.vaults) {
+      assert.ok(fs.existsSync(path.join(home, vault.slug, '.meta.json')), `${vault.slug} was written to disk`);
+    }
+    assert.ok(fs.existsSync(path.join(home, '.config.json')), 'the config was written to the new root');
+
+    const loaded = await store.loadVault(cfg.vaults[0].id);
+    assert.ok(loaded.notes.length > 0, 'the seeded vault has its welcome note on disk');
+  });
+});
 
 test('first-run seed uses the installation timestamp, valid blocks, and an unpinned welcome', () => {
   const now = '2026-07-12T09:30:00.000Z';
