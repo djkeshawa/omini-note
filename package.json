@@ -1,6 +1,6 @@
 {
   "name": "vispnote",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "desktopName": "vispnote.desktop",
   "description": "VispNote \u2014 a local-first, block-based note-taking desktop app",
   "license": "Apache-2.0",
