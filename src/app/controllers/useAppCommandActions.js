@@ -212,7 +212,7 @@ function useAppCommandActions({ HAS_DISK, MN_APP_ACTIONS_FACTORY, MN_APP_HELPERS
         if (matchesShortcut(e, 'quickCapture')) {
           e.preventDefault(); setCaptureOpen(true);
         } else if (matchesShortcut(e, 'newNote')) {
-          e.preventDefault(); createNote();
+          e.preventDefault(); createNote(undefined, { focusTitle: true });
         } else if (matchesShortcut(e, 'graph') && (!MN_FEATURES.isActionAvailable || MN_FEATURES.isActionAvailable('graph', featureState))) {
           e.preventDefault();
           navigateView(view === 'graph' ? 'notes' : 'graph');

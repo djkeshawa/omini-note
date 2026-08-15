@@ -1,8 +1,8 @@
 // Middle pane: list of notes (filtered). Click to select.
 import { MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES } from '../editor/blockFeatures.jsx';
 import { mnGetTagColor, mnTagHueMap } from '../shared/theme.jsx';
-import { DS_RADIUS, dsButtonStyle, dsGroupLabelStyle, dsMachineStyle, dsPaneWidth } from '../shared/designSystem.js';
-import { DsEmptyState } from '../shared/components/DesignPrimitives.jsx';
+import { DS_RADIUS, dsGroupLabelStyle, dsMachineStyle, dsPaneWidth, dsStatusDotStyle } from '../shared/designSystem.js';
+import { NoteListEmptyState } from '../features/search/index.js';
 
 const { useMemo: useMemoL, useState: useStateL, useEffect: useEffectL } = React;
 
@@ -279,7 +279,7 @@ function NoteRow({ n, depth = 0, compact = false, meta = '', ctx }) {
 
 function MnNoteList({
   notes, selectedId, onSelect, title, subtitle,
-  query, onQueryChange,
+  query, onQueryChange, searchStatus = 'idle',
   novelistStructure = null,
   allNotes = null,
   onRenameNote,
@@ -598,38 +598,26 @@ function MnNoteList({
         flex: 1, overflow: 'auto', padding: '0 8px 12px',
         display: 'flex', flexDirection: 'column', gap: 2,
       }}>
-        {notes.length === 0 && (query ? (
-          <DsEmptyState
-            T={T}
-            icon={(
-              <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true">
-                <circle cx="7" cy="7" r="4.2" /><path d="M10.2 10.2L13.5 13.5" strokeLinecap="round" />
-              </svg>
-            )}
-            headline={`No notes match “${query}”`}
-            body="Search covers titles, body text and tags in this vault only."
-            action={(
-              <button onClick={() => onQueryChange('')} style={dsButtonStyle(T)}>Clear search</button>
-            )}
+        {/* Only when there are rows to read: with none, the empty state below says it. */}
+        {notes.length > 0 && searchStatus === 'index-unavailable' && (
+          <div data-mn-search-degraded="true" role="status" style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            margin: '6px 8px 4px', padding: '8px 10px',
+            borderRadius: DS_RADIUS.control,
+            border: `1px solid color-mix(in oklab, ${T.warn} 24%, ${T.lineSub})`,
+            background: `color-mix(in oklab, ${T.warn} 8%, ${T.bg})`,
+            fontFamily: 'var(--mn-ui)', fontSize: 11.5, color: T.inkMed,
+          }}>
+            <span style={dsStatusDotStyle(T, 'warn')} />
+            <span>Search index unavailable — showing matches from open notes.</span>
+          </div>
+        )}
+        {notes.length === 0 && (
+          <NoteListEmptyState
+            T={T} query={query} searchStatus={searchStatus}
+            onQueryChange={onQueryChange} onCreateNote={onCreateNote}
           />
-        ) : (
-          <DsEmptyState
-            T={T}
-            icon={(
-              <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true">
-                <rect x="3" y="2.5" width="10" height="11" rx="1.5" /><path d="M5.5 6h5M5.5 8.5h5M5.5 11h3" strokeLinecap="round" />
-              </svg>
-            )}
-            headline="No notes yet"
-            body="Notes are markdown files on disk. Anything you write here stays readable without the app."
-            action={onCreateNote ? (
-              <button onClick={() => onCreateNote()} style={{
-                ...dsButtonStyle(T, 'default', { height: 30 }),
-                background: T.accentSoft, borderColor: T.selLine, color: T.accent,
-              }}>New note</button>
-            ) : null}
-          />
-        ))}
+        )}
         {novelistList ? (
           <>
             {novelistList.acts.map(act => {

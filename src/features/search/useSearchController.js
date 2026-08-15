@@ -1,7 +1,7 @@
 import searchModel from './searchModel.js';
 
 const { useEffect, useMemo, useRef, useState } = React;
-const { filterAndSortNotes } = searchModel;
+const { filterAndSortNotes, localSearchIds, searchOutcome } = searchModel;
 
 // Lowercased searchable text, cached per note object. Note identities are
 // stable across keystrokes — only the edited note is a new object — so an
@@ -19,6 +19,7 @@ function mnSearchTextForNote(note) {
 export function useSearchController({ query, activeVaultId, notes, dirtyNotes, hasDisk, search, view, selectedTag, selectedWorkflow, workflowData, tweaks, decorate }) {
   const [hits, setHits] = useState(null);
   const [details, setDetails] = useState(new Map());
+  const [searchStatus, setSearchStatus] = useState('idle');
   const sequence = useRef(0);
 
   useEffect(() => {
@@ -27,16 +28,17 @@ export function useSearchController({ query, activeVaultId, notes, dirtyNotes, h
     if (!cleanQuery) {
       setHits(null);
       setDetails(new Map());
+      setSearchStatus('idle');
       return;
     }
     const hasUnsavedNotes = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
     if (!hasDisk || !activeVaultId || hasUnsavedNotes) {
       const handle = setTimeout(() => {
-        const lowerQuery = cleanQuery.toLowerCase();
-        const ids = notes.filter(note => mnSearchTextForNote(note).includes(lowerQuery)).map(note => note.id);
+        const ids = localSearchIds(notes, cleanQuery, mnSearchTextForNote);
         if (requestId === sequence.current) {
           setHits({ vaultId: activeVaultId || '', query: cleanQuery, ids });
           setDetails(new Map());
+          setSearchStatus('ok');
         }
       }, 150);
       return () => clearTimeout(handle);
@@ -45,19 +47,24 @@ export function useSearchController({ query, activeVaultId, notes, dirtyNotes, h
       try {
         const response = await search(activeVaultId, cleanQuery, 100);
         if (requestId !== sequence.current) return;
-        if (response.ok) {
+        if (searchOutcome(response) === 'ok') {
           const rows = response.value || [];
           setHits({ vaultId: activeVaultId || '', query: cleanQuery, ids: rows.map(row => row.id) });
           setDetails(new Map(rows.map(row => [row.id, row])));
+          setSearchStatus('ok');
         } else {
-          setHits({ vaultId: activeVaultId || '', query: cleanQuery, ids: [] });
+          // The index is broken, not empty. An empty list here told the user
+          // they had nothing matching, which was a lie the fallback removes.
+          setHits({ vaultId: activeVaultId || '', query: cleanQuery, ids: localSearchIds(notes, cleanQuery, mnSearchTextForNote) });
           setDetails(new Map());
-          console.error('search failed', response.error);
+          setSearchStatus('index-unavailable');
+          console.error('search failed', response?.error);
         }
       } catch (error) {
         if (requestId === sequence.current) {
-          setHits({ vaultId: activeVaultId || '', query: cleanQuery, ids: [] });
+          setHits({ vaultId: activeVaultId || '', query: cleanQuery, ids: localSearchIds(notes, cleanQuery, mnSearchTextForNote) });
           setDetails(new Map());
+          setSearchStatus('index-unavailable');
         }
         console.error('search failed', error);
       }
@@ -74,5 +81,5 @@ export function useSearchController({ query, activeVaultId, notes, dirtyNotes, h
   const hitIds = hits?.vaultId === activeVaultId && hits.query === query.trim() ? hits.ids : null;
   const filteredNotes = useMemo(() => filterAndSortNotes({ notes, view, selectedTag, selectedWorkflow, workflowData, hitIds, details, tweaks, decorate }),
     [decorate, details, hitIds, notes, selectedTag, selectedWorkflow, tweaks, view, workflowData]);
-  return { filteredNotes };
+  return { filteredNotes, searchStatus };
 }

@@ -116,6 +116,28 @@ function MnMathBlock({ source, T }) {
   );
 }
 
+// Mermaid is a 3.5 MB bundle and most vaults contain no diagram at all, so it
+// is no longer a <script> in vispnote.html — the first Mermaid block to render
+// injects it. The promise is memoized at module scope, so N diagrams on a page
+// (or across notes) cost exactly one injection, and a failure stays failed
+// rather than re-injecting a bundle that is not there.
+const MN_MERMAID_SRC = 'node_modules/mermaid/dist/mermaid.min.js';
+let mnMermaidLoadPromise = null;
+function mnLoadMermaid() {
+  return mnMermaidLoadPromise ??= new Promise((resolve, reject) => {
+    if (window.mermaid) { resolve(window.mermaid); return; }
+    const script = document.createElement('script');
+    script.src = MN_MERMAID_SRC;
+    script.async = true;
+    script.onload = () => {
+      if (window.mermaid) resolve(window.mermaid);
+      else reject(new Error('Mermaid renderer unavailable'));
+    };
+    script.onerror = () => reject(new Error('Mermaid renderer unavailable'));
+    document.head.appendChild(script);
+  });
+}
+
 // Mermaid block renderer. Mermaid is async — renderToString creates a fresh
 // SVG keyed by id. We dedupe on (source, T.bg) so the diagram only
 // re-renders when content or theme changes, not on every keystroke elsewhere.
@@ -163,23 +185,40 @@ function MnMermaidBlock({ source, T }) {
     let cancelled = false;
     const code = String(source || '').trim();
     if (!code) { setDoc(''); setHeight(0); setError(null); return; }
-    if (!mnMermaidInit(themeMode)) {
-      setDoc('');
-      setHeight(0);
-      setError('Mermaid renderer unavailable');
-      return;
-    }
     setError(null);
-    window.mermaid.render(idRef.current, code).then(({ svg }) => {
+    // Until the bundle resolves the block renders its zero-height placeholder,
+    // the same thing it shows before `doc` is set. A local file resolves in
+    // tens of ms, so a spinner would only ever be seen as a flicker.
+    (async () => {
+      const unavailable = () => {
+        setDoc('');
+        setHeight(0);
+        setError('Mermaid renderer unavailable');
+      };
+      try {
+        await mnLoadMermaid();
+      } catch {
+        if (cancelled) return;
+        unavailable();
+        return;
+      }
       if (cancelled) return;
-      setHeight(mnMermaidSvgHeight(svg));
-      setDoc(`<!doctype html><html><head><style>html,body{margin:0;background:transparent;}body{display:flex;justify-content:center;align-items:flex-start;overflow:visible;padding:4px 0;}svg{max-width:100%;height:auto;font-family:inherit;}</style></head><body>${svg}</body></html>`);
-    }).catch(err => {
-      if (cancelled) return;
-      setDoc('');
-      setHeight(0);
-      setError(err?.message || String(err));
-    });
+      if (!mnMermaidInit(themeMode)) {
+        unavailable();
+        return;
+      }
+      try {
+        const { svg } = await window.mermaid.render(idRef.current, code);
+        if (cancelled) return;
+        setHeight(mnMermaidSvgHeight(svg));
+        setDoc(`<!doctype html><html><head><style>html,body{margin:0;background:transparent;}body{display:flex;justify-content:center;align-items:flex-start;overflow:visible;padding:4px 0;}svg{max-width:100%;height:auto;font-family:inherit;}</style></head><body>${svg}</body></html>`);
+      } catch (err) {
+        if (cancelled) return;
+        setDoc('');
+        setHeight(0);
+        setError(err?.message || String(err));
+      }
+    })();
     return () => { cancelled = true; };
   }, [source, themeMode]);
   if (error) {

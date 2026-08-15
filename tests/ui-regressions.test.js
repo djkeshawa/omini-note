@@ -306,16 +306,18 @@ test('the sidebar More disclosure expands above its control', () => {
   assert.match(harness, /sidebar More returns to its collapsed separator position/);
 });
 
-test('optional sidebar destinations have visibility-toggle regression coverage', () => {
+// Round 2 removed the four "More menu items" toggles (SIDEBAR_MORE_DESTINATIONS)
+// and the regression scenario that drove them: settings about which shortcuts
+// appear inside a collapsed menu are exactly the configuration this product
+// promises not to ask for. What replaced the coverage: Today is now an
+// unconditional primary row, asserted by the fresh-vault navigation scenario,
+// and the tweak keys are still preserved on disk so no user loses a setting —
+// tests/store-safety.test.js covers that round trip.
+test('the removed More-destination toggles stay removed', () => {
   const harness = fs.readFileSync(path.join(__dirname, '../scripts/regression-electron.js'), 'utf8');
-  assert.match(harness, /optional More destinations follow visibility toggles/);
-  assert.match(harness, /runSidebarDestinationVisibilityScenario/);
-  assert.match(harness, /setSidebarDestinationsForRegression/);
-  assert.match(harness, /available sidebar destinations stay hidden until enabled/);
-  assert.match(harness, /enabled optional sidebar destinations appear inside More/);
-  assert.match(harness, /disabled optional sidebar destinations leave More/);
-  assert.match(harness, /runCommandPaletteCommand\(win, 'open today', 'Open today'\)/);
-  assert.match(harness, /openQuickCaptureFromAppBar\(win\)/);
+  assert.doesNotMatch(harness, /runSidebarDestinationVisibilityScenario/);
+  const settings = fs.readFileSync(path.join(__dirname, '../src/settings/sections/GeneralSections.jsx'), 'utf8');
+  assert.doesNotMatch(settings, /SIDEBAR_MORE_DESTINATIONS/);
 });
 
 test('smart view embeds do not re-query the vault on every render', () => {

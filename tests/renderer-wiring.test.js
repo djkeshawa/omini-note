@@ -1297,7 +1297,7 @@ test('Focused product shell and private usage controls are wired end to end', ()
   assert.match(sidebar, /label="Pinned"/);
   assert.match(sidebar, /data-mn-sidebar-primary/);
   assert.match(sidebar, /data-mn-sidebar-more/);
-  assert.match(app, /const \[enabledPacks, setEnabledPacks\] = useStateA\(\['views'\]\)/);
+  assert.match(app, /const \[enabledPacks, setEnabledPacks\] = useStateA\(\[\]\)/);
   assert.match(sidebar, /label="Tags"/);
   assert.match(sidebar, /featureState\.showAgenda/);
   assert.match(sidebar, /featureState\.showWorkflow/);
@@ -1305,33 +1305,35 @@ test('Focused product shell and private usage controls are wired end to end', ()
   assert.match(sidebar, /featureState\.showAskAi/);
   assert.match(sidebar, /featureState\.showLabs/);
   assert.match(sidebar, /sidebarVisibility = \{\}/);
-  assert.match(sidebar, /sidebarVisibility\.today/);
+  // Today is primary chrome now, not a More destination behind a tweak: it has
+  // to sit inside the primary group and never below the More group's marker.
+  assert.ok(
+    sidebar.indexOf('label="Today"') > sidebar.indexOf('data-mn-sidebar-primary')
+      && sidebar.indexOf('label="Today"') < sidebar.indexOf('data-mn-sidebar-more'),
+    'Today must render inside the primary sidebar group',
+  );
   assert.match(sidebar, /featureState\.showCanvas && sidebarVisibility\.thinkingBoard/);
   assert.match(sidebar, /featureState\.showWorkflow && sidebarVisibility\.workflow/);
   assert.match(sidebar, /sidebarVisibility\.quickCapture && onOpenQuickCapture/);
   assert.match(sidebar, /label="More"/);
   const primaryStart = sidebar.indexOf('data-mn-sidebar-primary');
   const moreStart = sidebar.indexOf('data-mn-sidebar-more');
-  const primaryLabels = ['label="All notes"', 'label="Pinned"', 'label="Views"', 'label="Ask AI"'];
+  const primaryLabels = ['label="All notes"', 'label="Today"', 'label="Pinned"', 'label="Views"', 'label="Ask AI"'];
   let previousPrimary = primaryStart;
   for (const label of primaryLabels) {
     const index = sidebar.indexOf(label);
     assert.ok(index > previousPrimary && index < moreStart, `${label} must remain in primary sidebar order`);
     previousPrimary = index;
   }
-  for (const label of ['label="Today"', 'label="Agenda"', 'label="Workflow"', 'label="Thinking Board"', 'label="Recently deleted"']) {
+  for (const label of ['label="Agenda"', 'label="Workflow"', 'label="Thinking Board"', 'label="Recently deleted"']) {
     assert.ok(sidebar.indexOf(label) > moreStart, `${label} must remain inside More`);
   }
-  assert.match(app, /today: tweaks\.showTodayInSidebar === true/);
   assert.match(app, /thinkingBoard: tweaks\.showThinkingBoardInSidebar === true/);
   assert.match(app, /workflow: tweaks\.showWorkflowInSidebar === true/);
   assert.match(app, /quickCapture: tweaks\.showQuickCaptureInSidebar === true/);
-  assert.match(settings, /label="More menu items"/);
-  assert.match(settings, /key: 'showTodayInSidebar'/);
-  assert.match(settings, /key: 'showThinkingBoardInSidebar'/);
-  assert.match(settings, /key: 'showWorkflowInSidebar'/);
-  assert.match(settings, /key: 'showQuickCaptureInSidebar'/);
-  assert.match(settings, /setTweak\(item\.key, value\)/);
+  // The four More-menu toggles are gone from settings. The tweak keys stay
+  // persisted and validated, so nothing on an existing user's disk changes.
+  assert.doesNotMatch(settings, /More menu items/);
   assert.match(app, /MN_FEATURES\.deriveFeatureState/);
   assert.match(app, /featureState\.showAgenda && view === 'todos'/);
   assert.match(settings, /label: 'Data & Privacy'/);
@@ -1875,7 +1877,9 @@ test('Stabilization wiring avoids stale UI and native dialogs', () => {
   assert.match(store, /novelistAiConfig/);
   assert.match(main, /function flushDirtyNotes/);
   assert.match(preload, /onFlushDirtyNotes/);
-  assert.match(app, /onNew=\{\(\) => \{ createNote\(\); if \(overlayNoteList\) setNoteListHidden\(true\); \}\}/);
+  // `{ focusTitle: true }` is required, not incidental: focus is opt-in so no
+  // creation path steals the caret by omission, and this IS a "New note" path.
+  assert.match(app, /onNew=\{\(\) => \{ createNote\(undefined, \{ focusTitle: true \}\); if \(overlayNoteList\) setNoteListHidden\(true\); \}\}/);
   assert.match(app, /const baseThemeMap = MN_THEMES/);
   assert.match(app, /const themeMap = useMemoA\(\(\) => \{/);
   assert.match(panels, /initialAiConfig = null/);

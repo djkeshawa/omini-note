@@ -12,6 +12,28 @@
     });
   }
 
+  function noteSearchText(note) {
+    return `${note.title}\n${note.body || ''}\n${(note.tags || []).join('\n')}`.toLowerCase();
+  }
+
+  // The one in-memory search predicate. Both the offline path and the
+  // index-failure fallback go through this, so a note that matches with the
+  // index down matches exactly what it would have matched with it up.
+  // textForNote is injectable so the renderer can put its per-note cache
+  // behind it without forking the predicate.
+  function localSearchIds(notes, query, textForNote = noteSearchText) {
+    const lowerQuery = String(query || '').toLowerCase();
+    const ids = [];
+    for (const note of notes || []) {
+      if (textForNote(note).includes(lowerQuery)) ids.push(note.id);
+    }
+    return ids;
+  }
+
+  function searchOutcome(response) {
+    return response && response.ok ? 'ok' : 'index-unavailable';
+  }
+
   function filterAndSortNotes({ notes, view, selectedTag, selectedWorkflow, workflowData, hitIds, details, tweaks, decorate }) {
     let next = [...notes];
     if (view === 'pinned') next = next.filter(note => note.pinned);
@@ -38,5 +60,5 @@
     return next;
   }
 
-  return { decorateSearchResults, filterAndSortNotes };
+  return { decorateSearchResults, filterAndSortNotes, localSearchIds, noteSearchText, searchOutcome };
 });

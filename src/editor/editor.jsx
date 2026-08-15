@@ -361,7 +361,7 @@ function MnEditor({
                 // Focus first block in outliner
                 const first = document.querySelector('.mn-block-row');
                 if (first) {
-                  const editArea = first.querySelector('div[style*="cursor: text"]');
+                  const editArea = first.querySelector('[data-mn-block-content="display"]');
                   if (editArea) editArea.click();
                   setTimeout(() => {
                     const ta = first.querySelector('textarea');

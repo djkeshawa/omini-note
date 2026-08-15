@@ -46,6 +46,7 @@ test('the first run seeds into a data root that does not exist yet', async () =>
 
 test('first-run seed uses the installation timestamp, valid blocks, and an unpinned welcome', () => {
   const now = '2026-07-12T09:30:00.000Z';
+  const model = loadRendererModule('src/features/onboarding/onboardingModel.js');
   const [vault] = seed.buildFirstRunSeed({ now });
   const welcome = vault.notes[0];
 
@@ -53,7 +54,36 @@ test('first-run seed uses the installation timestamp, valid blocks, and an unpin
   assert.equal(welcome.pinned, false);
   assert.match(welcome.body, /Write · Connect · Act\./);
   assert.doesNotMatch(welcome.body, /^\d+\.\s/m);
-  assert.match(welcome.body, /^[-*]\s+\*\*Write:/m);
+  // The copy teaches links and checkboxes by naming them, never by containing
+  // one: either would make the classifier below read the seed as the reader's
+  // own work on first launch.
+  assert.match(welcome.body, /\[\[/);
+  assert.match(welcome.body, /\[ \]/);
+  assert.doesNotMatch(welcome.body, /^\s*[-*]\s+\[[ xX]\]/m);
+  assert.doesNotMatch(welcome.body, /\[\[[^\]\n]+\]\]/);
+  assert.doesNotMatch(welcome.body, /Cmd/);
+  assert.ok(welcome.body.split('\n').length <= 15, 'the welcome note stays short enough to read');
+  assert.equal(model.isOnboardingNote({ id: 'n1', title: welcome.title, body: welcome.body }), true);
+});
+
+test('editing the seeded welcome hands it back to the reader and to Today', () => {
+  const model = loadRendererModule('src/features/onboarding/onboardingModel.js');
+  const [vault] = seed.buildFirstRunSeed({ now: '2026-07-12T09:30:00.000Z' });
+  const seeded = vault.notes[0];
+  const shipped = { id: 'n1', title: seeded.title, body: seeded.body };
+  const edited = { ...shipped, body: `${seeded.body}\n- [ ] ship something` };
+
+  // Guard: a copy edit that puts a real checkbox or link in the seed would make
+  // the shipped note look user-authored on first launch, and this fails loudly.
+  assert.equal(model.isOnboardingNote(shipped), true);
+  assert.equal(model.isOnboardingNote(edited), false);
+
+  const result = model.excludeOnboardingFromToday({
+    notes: [edited],
+    tasks: [{ noteId: 'n1' }],
+  });
+  assert.deepEqual(result.notes.map(note => note.id), ['n1']);
+  assert.deepEqual(result.tasks, [{ noteId: 'n1' }]);
 });
 
 test('optional onboarding modes leave welcome notes unpinned and timestamp generated notes', () => {

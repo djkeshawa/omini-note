@@ -17,7 +17,8 @@
   input:focus-visible,
   textarea:focus-visible,
   select:focus-visible,
-  [role="button"]:focus-visible {
+  [role="button"]:focus-visible,
+  [role="option"]:focus-visible {
     outline: 2px solid var(--mn-focus, #4f6fd5) !important;
     outline-offset: 2px;
   }
@@ -39,9 +40,6 @@
   .mn-view-row:hover .mn-view-mark,
   .mn-view-row:focus-within .mn-view-mark,
   .mn-view-mark:focus-visible { opacity: 1; }
-  @media (prefers-reduced-motion: reduce) {
-    .mn-view-card-bar, .mn-view-mark { transition: none; }
-  }
   /* Graph: the canvas and its nodes are things you take hold of, so the
      cursor closes while the button is down. Pure CSS — a React state for
      this would re-render every node on every press. */
@@ -54,10 +52,17 @@
     }
     .mn-contextual-assistance-trigger-label { display: none; }
   }
+  /* Scrollbar COLOUR is deliberately not set here. The theme effect sets
+     `color-scheme` from the theme's own background lightness, which gives the
+     native scrollbar — and <select> popups, and form controls — the right
+     family. Hand-written light greys stayed light under a dark theme.
+     Width still is: dropping the sizing with the colours put a ~15px classic
+     Chromium scrollbar back on every scroll surface, eating layout width in
+     the sidebar, note list and editor. `scrollbar-width` respects
+     `color-scheme` on its own, so the thumb colour stays native. */
+  * { scrollbar-width: thin; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: oklch(0.85 0.01 250 / 0.5); border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: oklch(0.7 0.01 250 / 0.6); }
 
   @keyframes mnFadeIn { from { opacity: 0 } to { opacity: 1 } }
   @keyframes mnSlideUp {
@@ -291,15 +296,17 @@
     text-align: center;
     animation: mnSlideUp 420ms cubic-bezier(.2,.8,.2,1);
   }
+  /* Reduced motion is honoured app-wide, not only on the boot splash. Anything
+     whose entire signal lives in a keyframe carries a static fallback in its
+     own component stylesheet (see .mn-ask-ai-shimmer, .mn-ai-text-working,
+     .mn-ai-live-dots). */
   @media (prefers-reduced-motion: reduce) {
-    .mn-boot-core,
-    .mn-boot-brand,
-    .mn-boot-light-field::before,
-    .mn-light-bloom,
-    .mn-boot-status,
-    .mn-boot-progress div {
-      animation-duration: 1ms !important;
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
       animation-iteration-count: 1 !important;
+      animation-delay: 0ms !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
     }
   }
 </style>
@@ -328,7 +335,6 @@
 <script src="node_modules/react/umd/react.production.min.js"></script>
 <script src="node_modules/react-dom/umd/react-dom.production.min.js"></script>
 <script src="node_modules/katex/dist/katex.min.js"></script>
-<script src="node_modules/mermaid/dist/mermaid.min.js"></script>
 <script src="build/renderer/app.js"></script>
 </body>
 </html>

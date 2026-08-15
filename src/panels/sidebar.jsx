@@ -236,11 +236,13 @@ function MnSidebar({
           <SidebarNavRow T={T} height={navRowHeight} icon={iconInbox} label="All notes" count={notes.length}
                active={!selectedTag && !selectedWorkflow && !todayActive && !pinnedActive && !agendaActive && !graphActive && !viewsActive && !workflowActive && !novelistActive && !canvasActive && !trashActive && !calendarActive && !aiActive}
                onClick={() => onSelectTag(null)} />
+          <SidebarNavRow T={T} height={navRowHeight} icon={iconToday} label="Today" count={rollupCount}
+               active={todayActive} onClick={onOpenToday} />
           <SidebarNavRow T={T} height={navRowHeight} icon={iconInbox} label="Pinned" count={pinnedCount}
                active={pinnedActive} onClick={onOpenPinned} />
           {featureState.showViews && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconViews} label="Views" count={viewsCount}
-                 active={viewsActive} onClick={onOpenViews} accent={T.accent} />
+                 active={viewsActive} onClick={onOpenViews} />
           )}
           {featureState.showAskAi && onOpenAskAI && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconAI} label="Ask AI" active={aiActive} onClick={onOpenAskAI} />
@@ -250,10 +252,6 @@ function MnSidebar({
 
       {openSections.more && (
         <div data-mn-sidebar-more style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {sidebarVisibility.today && (
-            <SidebarNavRow T={T} height={navRowHeight} icon={iconToday} label="Today" count={rollupCount}
-                 active={todayActive} onClick={onOpenToday} />
-          )}
           {featureState.showAgenda && (
             <SidebarNavRow T={T} height={navRowHeight} icon={iconAgenda} label="Agenda" count={agendaCount}
                  active={agendaActive || calendarActive}

@@ -40,6 +40,20 @@ function MnOutlinerView({ model }) {
           }
           .mn-ai-live-dots span:nth-child(2) { animation-delay: 130ms; }
           .mn-ai-live-dots span:nth-child(3) { animation-delay: 260ms; }
+          /* These four say "AI is working" entirely inside their keyframes, so
+             with motion off they would go blank or ambiguous. Each keeps a
+             static form of the same signal. */
+          @media (prefers-reduced-motion: reduce) {
+            .mn-ai-working-glow { opacity: 0.62; }
+            .mn-ai-page-working {
+              box-shadow: inset 0 0 0 1px color-mix(in oklab, ${T.accent || T.ink} 16%, transparent);
+            }
+            .mn-ai-text-working {
+              background-image: linear-gradient(100deg, transparent, color-mix(in oklab, ${T.accent || T.ink} 8%, transparent) 50%, transparent);
+              background-position: 50% 0;
+            }
+            .mn-ai-live-dots span { opacity: 0.85; }
+          }
           @keyframes mnAiPulse {
             0%, 100% { opacity: 0.34; transform: scale(0.998); }
             50% { opacity: 0.72; transform: scale(1.001); }

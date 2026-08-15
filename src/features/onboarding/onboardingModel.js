@@ -1,13 +1,21 @@
 const ONBOARDING_TIP_IDS = Object.freeze(['new-note', 'linking', 'checkboxes']);
 const ONBOARDING_TIP_ID_SET = new Set(ONBOARDING_TIP_IDS);
 
+// The shipped welcome note teaches checkboxes and links by naming them inside
+// inline code spans, so it never contains either. Once the reader actually
+// writes one, the note stopped being ours and its tasks belong in Today.
+function hasUserAuthoredAction(body) {
+  return /^\s*[-*]\s+\[[ xX]\]/m.test(body) || /\[\[[^\]\n]+\]\]/.test(body);
+}
+
 function isOnboardingNote(note = {}) {
   const id = String(note.id || '');
   const title = String(note.title || '');
   const body = String(note.body || '');
   const firstRunWelcome = id === 'n1'
     && title === 'Welcome to VispNote'
-    && (body.includes('Write · Connect · Act.') || body.includes('write, connect, and act'));
+    && (body.includes('Write · Connect · Act.') || body.includes('write, connect, and act'))
+    && !hasUserAuthoredAction(body);
   const vaultWelcome = title.startsWith('Welcome to ') && body.includes('This is your new vault');
   return firstRunWelcome
     || vaultWelcome

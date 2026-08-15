@@ -1,5 +1,11 @@
 // Browser fallback seed data. Keep this aligned with lib/seed.js.
 
+import { shortcutLabel } from '../platform/shortcutFormat.js';
+
+// shortcutLabel defaults to sniffing navigator, which is exactly right here:
+// this seed only ever runs in a browser. lib/seed.js passes process.platform.
+const seedShortcut = (id) => shortcutLabel(id, undefined, { compact: true });
+
 const SEED_TAGS = [
   { name: 'welcome', hue: 200 },
 ];
@@ -15,14 +21,15 @@ const SEED_NOTES = [
     body:
 `# Welcome to VispNote
 
-**Write · Connect · Act.** Start without setting up a system first.
+**Write · Connect · Act.** Nothing to set up first.
 
-## Start here
-- **Write:** create a note and put one useful thought in it.
-- **Connect:** type double square brackets to link that thought to another note.
-- **Act:** add one Markdown checkbox as a next action, then review it in Today.
+- New note — ${seedShortcut('newNote')}. The title is selected, so type over it.
+- Connect — type \`[[\` in a block to point at another note.
+- Act — start a line with \`- \` then \`[ ]\` to make a checkbox. Open ones show up in Today.
+- Capture without leaving what you are doing — ${seedShortcut('quickCapture')}.
+- Find any note or action — ${seedShortcut('commandPalette')}.
 
-That is enough to begin. Everything else can stay out of the way until you need it.`
+This note is a Markdown file on disk. Edit it, or delete it — nothing depends on it.`
   },
 ];
 

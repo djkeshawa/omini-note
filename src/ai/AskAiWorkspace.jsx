@@ -215,18 +215,15 @@ function AskAiWorkspace({ model }) {
   
           <div ref={scrollRef} onScroll={rememberScrollPosition} style={{ order: 2, flex: 1, overflow: 'auto', padding: '18px 18px', position: 'relative', background: T.bg }}>
             <style>{`
-              .mn-ask-ai-shimmer {
-                animation: mnAskAiShimmer 1.5s ease-in-out infinite;
+              .mn-ask-ai-shimmer { animation: mnAskAiShimmer 1.5s ease-in-out infinite; }
+              /* With motion off the pulse is neutralised, so the card has to
+                 read as pending while standing still. */
+              @media (prefers-reduced-motion: reduce) {
+                .mn-ask-ai-shimmer { opacity: 1; box-shadow: inset 0 0 0 1px color-mix(in oklab, ${T.accent || T.ink} 18%, transparent); background: color-mix(in oklab, ${T.accent || T.ink} 6%, ${T.bgSub}); }
               }
               @keyframes mnAskAiShimmer {
-                0%, 100% {
-                  opacity: 0.44;
-                  box-shadow: inset 0 0 0 1px color-mix(in oklab, ${T.accent || T.ink} 8%, transparent);
-                }
-                50% {
-                  opacity: 0.78;
-                  box-shadow: inset 0 0 0 1px color-mix(in oklab, ${T.accent || T.ink} 18%, transparent), 0 8px 28px color-mix(in oklab, ${T.accent || T.ink} 8%, transparent);
-                }
+                0%, 100% { opacity: 0.44; box-shadow: inset 0 0 0 1px color-mix(in oklab, ${T.accent || T.ink} 8%, transparent); }
+                50% { opacity: 0.78; box-shadow: inset 0 0 0 1px color-mix(in oklab, ${T.accent || T.ink} 18%, transparent), 0 8px 28px color-mix(in oklab, ${T.accent || T.ink} 8%, transparent); }
               }
             `}</style>
             {error && (
@@ -590,7 +587,7 @@ function AskAiWorkspace({ model }) {
               </div>
             );})}
             {pending && !messages.some(m => m.streaming) && (
-              <div className="mn-ask-ai-shimmer" data-mn-pending-response="true" style={{
+              <div className="mn-ask-ai-shimmer" role="status" data-mn-pending-response="true" style={{
                 padding: '10px 12px',
                 borderRadius: 8,
                 background: T.bgSub,

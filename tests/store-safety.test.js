@@ -90,7 +90,7 @@ test('First-run seed creates one focused Personal vault', async () => {
     assert.equal(personal.notes.length, 1);
     assert.deepEqual(personal.notes.map(note => note.title), ['Welcome to VispNote']);
     assert.match(personal.notes[0].body, /Write · Connect · Act\./);
-    assert.match(personal.notes[0].body, /review it in Today/);
+    assert.match(personal.notes[0].body, /Open ones show up in Today\./);
     assert.equal(personal.notes[0].pinned, false);
     assert.ok(Math.abs(Date.now() - Date.parse(personal.notes[0].date)) < 60_000);
     assert.doesNotMatch(personal.notes[0].body, /^\d+\.\s/m);
@@ -481,6 +481,10 @@ test('Feature packs and private usage controls persist without arbitrary event d
     const loaded = await store.loadVault(vault.id);
     const notePath = path.join(store.ROOT, vault.slug, `${loaded.notes[0].id}.md`);
     const noteBeforePreferences = fs.readFileSync(notePath, 'utf8');
+    assert.deepEqual((await store.getPrefs()).enabledPacks, []);
+    // A fresh install no longer enables Views, but a vault that already listed
+    // it must keep it: the default changed, the validation on load did not.
+    await store.setPrefs({ enabledPacks: ['views'] });
     assert.deepEqual((await store.getPrefs()).enabledPacks, ['views']);
     await store.setPrefs({ enabledPacks: [] });
     assert.deepEqual((await store.getPrefs()).enabledPacks, []);

@@ -1442,53 +1442,6 @@ async function runSidebarMoreDisclosureScenario(win) {
   });
 }
 
-async function runSidebarDestinationVisibilityScenario(win) {
-  const settingsLabels = ['Today', 'Thinking Board', 'Workflow', 'Quick Capture'];
-  const sidebarLabels = ['Today', 'Thinking Board', 'Workflow', 'Quick capture'];
-  const readRows = () => evaluate(win, `
-    [...(document.querySelector('[data-mn-sidebar-more]')?.querySelectorAll('[role="button"]') || [])]
-      .map(row => (row.getAttribute('aria-label') || '').split(',')[0])
-  `);
-  const assertHidden = async (label) => {
-    await setSidebarMoreExpanded(win, true);
-    await waitFor(win, label, async () => {
-      const rows = await readRows();
-      return {
-        ok: sidebarLabels.every(item => !rows.includes(item))
-          && rows.at(-1) === 'Recently deleted',
-        rows,
-      };
-    });
-  };
-
-  await assertHidden('optional sidebar destinations hidden by default');
-  await setPackEnabledForRegression(win, 'planning', true);
-  await setPackEnabledForRegression(win, 'canvas', true);
-  await assertHidden('available sidebar destinations stay hidden until enabled');
-
-  await setSidebarDestinationsForRegression(
-    win,
-    Object.fromEntries(settingsLabels.map(label => [label, true]))
-  );
-  await setSidebarMoreExpanded(win, true);
-  await waitFor(win, 'enabled optional sidebar destinations appear inside More', async () => {
-    const rows = await readRows();
-    return {
-      ok: sidebarLabels.every(label => rows.includes(label))
-        && rows.at(-1) === 'Recently deleted',
-      rows,
-    };
-  });
-
-  await setSidebarDestinationsForRegression(
-    win,
-    Object.fromEntries(settingsLabels.map(label => [label, false]))
-  );
-  await assertHidden('disabled optional sidebar destinations leave More');
-  await setPackEnabledForRegression(win, 'planning', false);
-  await setPackEnabledForRegression(win, 'canvas', false);
-}
-
 async function activeVaultId(win) {
   return await evaluate(win, `
     (async () => {
@@ -3603,9 +3556,14 @@ async function runRegression() {
         };
       })()`);
       return {
-        ok: JSON.stringify(current.labels) === JSON.stringify(['All notes', 'Pinned', 'Views'])
+        // Round 2 moved Today into the primary group and took Views out of the
+        // first-run seed: Today is the product's third pillar and three pieces
+        // of first-run copy already pointed at it, while Views is a specialist
+        // pack that held the only accented row above it. Hidden, not deleted —
+        // the scenario at the enable-pack path below still covers Views.
+        ok: JSON.stringify(current.labels) === JSON.stringify(['All notes', 'Today', 'Pinned'])
           && current.sidebarText.includes('Tags')
-          && !current.sidebarText.includes('Today')
+          && !current.sidebarText.includes('Views')
           && !current.sidebarText.includes('Smart Views')
           && !current.sidebarText.includes('Thinking Board')
           && !current.sidebarText.includes('Ask AI')
@@ -3628,8 +3586,10 @@ async function runRegression() {
       }
     }
     const ids = await availableCommandIds(win);
-    if (!ids.includes('views')) throw new Error(`default command surface omitted views: ${JSON.stringify(ids)}`);
+    // `views` moved to the gated list with the pack: ACTION_REQUIREMENTS.views
+    // checks enabledPacks, and the first-run seed no longer sets it.
     for (const commandId of [
+      'views',
       'graph', 'calendar', 'set-workflow-status', 'canvas',
       'create-canvas', 'template-reading', 'template-novel-scene', 'memory-import', 'ask-ai',
     ]) {
@@ -3643,7 +3603,9 @@ async function runRegression() {
           .map(row => (row.getAttribute('aria-label') || '').split(',')[0])
       `);
       return {
-        ok: JSON.stringify(labels) === JSON.stringify(['All notes', 'Pinned', 'Views', 'Ask AI']),
+        // Same round-2 first-run change as the check above: Today is in, Views
+        // is out of the seed. Ask AI still appends after the core rows.
+        ok: JSON.stringify(labels) === JSON.stringify(['All notes', 'Today', 'Pinned', 'Ask AI']),
         labels,
       };
     });
@@ -3654,9 +3616,11 @@ async function runRegression() {
     await runSidebarMoreDisclosureScenario(win);
   });
 
-  await runScenario(win, 'Navigation', 'optional More destinations follow visibility toggles', async () => {
-    await runSidebarDestinationVisibilityScenario(win);
-  });
+  // Round 2 removed the four "More menu items" toggles (SIDEBAR_MORE_DESTINATIONS):
+  // settings about which shortcuts appear inside a collapsed menu, in the one
+  // app whose promise is not making people configure things. The scenario that
+  // drove them went with them. Existing tweak values are still preserved on
+  // disk — tests/store-safety.test.js covers that — the app just stops asking.
 
   await runScenario(win, 'Today', 'fresh vault shows only calm capture actions', async () => {
     await runEmptyTodayScenario(win);

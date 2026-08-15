@@ -1,4 +1,4 @@
-function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES, aiNoteBodyRestoreRef, calendarTaskItems, cloneNoteForMetadataHistory, markDirty, markTagsDirty, mkBlock, mnBlocksToMd, mnEnsureScenePlotPoints, mnMdToBlocks, mnNormalizeNoteBody, mnNoteOrderValue, mnParseDefaultTags, navigateView, normalizeTagName, noteMetadataHistoryRef, notes, notesWithBody, novelistStructure, recordFeatureUsage, recordNoteMetadataHistory, recordPhase5Metric, reminderCenterItems, selectedNote, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, showAppNotice, tags, tweaks, useCallbackA }) {
+function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES, aiNoteBodyRestoreRef, calendarTaskItems, cloneNoteForMetadataHistory, markDirty, markTagsDirty, mkBlock, mnBlocksToMd, mnEnsureScenePlotPoints, mnMdToBlocks, mnNormalizeNoteBody, mnNoteOrderValue, mnParseDefaultTags, navigateView, normalizeTagName, noteMetadataHistoryRef, notes, notesRef, notesWithBody, novelistStructure, recordFeatureUsage, recordNoteMetadataHistory, recordPhase5Metric, reminderCenterItems, selectedNote, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setTags, showAppNotice, tags, tweaks, useCallbackA }) {
   const nextStoryOrder = useCallbackA((kind, parentId = null) => {
       const noteById = new Map(notesWithBody.map(note => [note.id, note]));
       const values = (items, step, base) => {
@@ -29,11 +29,13 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
   
     const createRuntimeNoteId = () => `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   
-    const createNote = useCallbackA(({ title = 'Untitled', body = '', tags: noteTags = [] } = {}, options = {}) => {
+    const createNote = useCallbackA(({ title = '', body = '', tags: noteTags = [] } = {}, options = {}) => {
       const id = createRuntimeNoteId();
+      // Read the live note list through the ref: adding `notes` to the deps
+      // below would rebuild createNote on every edit and churn every consumer.
       const { note: newNote, missingTags } = MN_APP_MUTATIONS.createNoteDraft({
         id,
-        title,
+        title: title || MN_APP_MUTATIONS.uniqueNoteTitle(notesRef.current, 'Untitled'),
         body,
         tags: noteTags,
         defaultTags: tweaks.defaultTags,
@@ -55,6 +57,15 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
       if (options.open !== false) {
         setSelectedId(id);
         navigateView(options.view || 'notes');
+        // Opt IN, never opt out. Every other creation path supplies a title
+        // the user did not type: a template name, a captured line, or a daily
+        // note's ISO date, which createDailyNote, addQuickTodayTask and
+        // appendToTodayDailyNote all match on. Selecting one of those means the
+        // next keystroke replaces it and the matcher then builds a second,
+        // orphaned note. Only the empty "New note" paths ask for the caret.
+        // Two frames: one for React to commit the selection, one for the
+        // editor to mount the title input the caret is going into.
+        if (options.focusTitle === true) requestAnimationFrame(() => requestAnimationFrame(() => focusNoteTitleInput(document)));
       }
       markDirty(id);
       recordFeatureUsage('first_note', 'created');
@@ -392,3 +403,4 @@ function useAppNoteActions({ MN_APP_HELPERS, MN_APP_MUTATIONS, MN_NOTE_TEMPLATES
 
 export { useAppNoteActions };
 import connectionsModel from '../../editor/connectionsModel.js';
+import { focusNoteTitleInput } from '../../features/editor/index.js';

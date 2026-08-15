@@ -15,14 +15,14 @@ const MN_THEMES = {
     lineStrong: 'oklch(0.78 0.018 248)',
     ink:     'oklch(0.20 0.016 252)',
     inkMed:  'oklch(0.43 0.016 252)',
-    inkDim:  'oklch(0.59 0.014 252)',
+    inkDim:  'oklch(0.54 0.014 252)',
     accent:  'oklch(0.52 0.14 258)',       // indigo
     accentSoft: 'oklch(0.93 0.04 258)',
     danger:  'oklch(0.58 0.18 25)',
     dangerSoft: 'oklch(0.96 0.035 25)',
-    success: 'oklch(0.60 0.13 160)',
+    success: 'oklch(0.526 0.119 160)',
     successSoft: 'oklch(0.95 0.035 160)',
-    warn:    'oklch(0.72 0.14 70)',
+    warn:    'oklch(0.547 0.119 70)',
     warnSoft: 'oklch(0.965 0.045 72)',
     selBg:   'oklch(0.955 0.012 258)',
     selLine: 'oklch(0.88 0.03 258)',
@@ -73,14 +73,14 @@ const MN_THEMES = {
     lineStrong: 'oklch(0.760 0.045 286)',
     ink:     'oklch(0.245 0.030 278)',
     inkMed:  'oklch(0.455 0.032 278)',
-    inkDim:  'oklch(0.615 0.028 278)',
+    inkDim:  'oklch(0.538 0.028 278)',
     accent:  'oklch(0.570 0.140 286)',
     accentSoft: 'oklch(0.930 0.055 292)',
     danger:  'oklch(0.60 0.16 18)',
     dangerSoft: 'oklch(0.955 0.052 18)',
-    success: 'oklch(0.58 0.12 158)',
+    success: 'oklch(0.523 0.12 158)',
     successSoft: 'oklch(0.94 0.050 158)',
-    warn:    'oklch(0.72 0.13 55)',
+    warn:    'oklch(0.547 0.13 55)',
     warnSoft: 'oklch(0.955 0.052 55)',
     selBg:   'oklch(0.940 0.045 330)',
     selLine: 'oklch(0.820 0.065 300)',
@@ -90,6 +90,33 @@ const MN_THEMES = {
     shadowElevated: 'color-mix(in oklab, oklch(0.34 0.050 300) 22%, transparent)',
   }
 };
+
+// Which family of native controls a theme wants: scrollbars, <select> popups,
+// form widgets. Derived from the lightness of the theme's own canvas rather
+// than from identity against MN_THEMES.dark, so an imported custom theme gets
+// the right answer too. Unparseable backgrounds fall back to 'light', which is
+// what the platform default already is.
+// Hex is handled as well as oklch because imported custom themes are authored
+// by hand: lib/themes.js's themeColorLightness already reads both, and dropping
+// the hex branch here gave a hex-authored dark theme light scrollbars and light
+// <select> popups on its own dark canvas.
+function mnThemeColorScheme(T) {
+  const value = String(T?.bg || '').trim();
+  const oklch = /oklch\(\s*([\d.]+%?)/i.exec(value);
+  if (oklch) {
+    const raw = oklch[1];
+    const lightness = raw.endsWith('%') ? Number(raw.slice(0, -1)) / 100 : Number(raw);
+    return Number.isFinite(lightness) && lightness < 0.5 ? 'dark' : 'light';
+  }
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value);
+  if (!hex) return 'light';
+  const digits = hex[1].length === 3 ? hex[1].split('').map(d => d + d).join('') : hex[1];
+  const channel = (offset) => parseInt(digits.slice(offset, offset + 2), 16) / 255;
+  // sRGB relative luminance, the same measure the oklch branch approximates.
+  const linear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * linear(channel(0)) + 0.7152 * linear(channel(2)) + 0.0722 * linear(channel(4));
+  return luminance < 0.18 ? 'dark' : 'light';
+}
 
 const MN_FONTS = {
   'Editorial (Newsreader + Inter)': {
@@ -152,4 +179,4 @@ function mnIconButtonStyle(T, active = false, size = 28) {
   };
 }
 
-export { MN_FONTS, MN_THEMES, mnGetTagBg, mnGetTagColor, mnIconButtonStyle, mnShadow, mnTagHueMap };
+export { MN_FONTS, MN_THEMES, mnGetTagBg, mnGetTagColor, mnIconButtonStyle, mnShadow, mnTagHueMap, mnThemeColorScheme };
