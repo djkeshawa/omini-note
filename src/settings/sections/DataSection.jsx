@@ -137,7 +137,7 @@ function SectionData({
         <Row T={T} label="Sync backend" sub="Keep notes in sync across devices.">
           <StaticValue T={T}>Local only</StaticValue>
         </Row>
-        <Row T={T} label="Backup and restore" sub="Export all vaults or restore a backup into new vaults.">
+        <Row T={T} label="Backup and restore" sub="Export every vault's notes and canvases as one file, or restore a backup into new vaults. Attachments are not included yet.">
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <BtnOutline T={T} disabled={!onExportBackup} onClick={onExportBackup}>Export backup</BtnOutline>
             <BtnOutline T={T} disabled={!onImportBackup} onClick={onImportBackup}>Import backup</BtnOutline>

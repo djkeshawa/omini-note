@@ -196,6 +196,45 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
       });
     }, [bootState, dirtyNotes, activeVaultId, refreshVaultRegistry, showAppNotice]);
   
+    // A corrupt settings file makes the main process rebuild the vault list
+    // from the folders on disk. Say so once, over the real app with the
+    // recovered vaults already visible behind it — not on the launch screen,
+    // which is the failure state. The marker lives in main-process memory, so
+    // the next boot reads a valid config and reports nothing.
+    const configRecoveryNoticedRef = useRefA(false);
+
+    useEffectA(() => {
+      if (!HAS_DISK || bootState !== 'ready' || configRecoveryNoticedRef.current) return;
+      configRecoveryNoticedRef.current = true;
+      (async () => {
+        try {
+          const res = await desktopBridge.preferences.getPrefs();
+          const recovery = (res?.ok ? res.value : res)?.configRecovery;
+          if (!recovery) return;
+          const count = recovery.vaultCount || 0;
+          // One string with a swapped opening clause, so the three reasons stay
+          // visually identical and cannot drift apart. 'empty' means nothing was
+          // damaged and nothing was set aside, so it must claim neither.
+          const clause = recovery.reason === 'missing' ? 'was missing'
+            : recovery.reason === 'empty' ? 'listed no vaults'
+            : 'could not be read';
+          // The basename, not the absolute path: the notice shell is a fixed
+          // 400px with no scroll, and a screen reader reads every path segment.
+          const brokenName = recovery.brokenFileName || String(recovery.brokenFile || '').split(/[\\/]/).pop();
+          const setAside = recovery.brokenFile
+            ? `\n\nThe damaged file was set aside as ${brokenName}.`
+            : '';
+          showAppNotice(
+            'Your vaults were recovered',
+            `VispNote's settings file ${clause}. It rebuilt the vault list from the folders on your disk, so all ${count} vault${count === 1 ? '' : 's'} and your notes are here.${setAside}`,
+            'warn'
+          );
+        } catch (e) {
+          console.warn('config recovery notice failed', e);
+        }
+      })();
+    }, [bootState, showAppNotice]);
+
     // Listen for host tweak-mode messages (still supported)
     useEffectA(() => {
       const handler = (e) => {

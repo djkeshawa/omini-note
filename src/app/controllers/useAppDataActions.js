@@ -47,7 +47,10 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
       });
       if (HAS_DISK && activeVaultId) {
         try {
-          const noteSnapshot = { ...noteForDisk(n, mnBlocksToMd), diskRevision: deleteRevision };
+          // The two-argument default migrates 'arc::' to 'act::'. This snapshot is
+          // what lands in the trash and comes back on restore, so a plain vault's
+          // note must be snapshotted exactly as the user wrote it.
+          const noteSnapshot = { ...noteForDisk(n, mnBlocksToMd, { novelistMode: !!activeVault?.novelistMode }), diskRevision: deleteRevision };
           const res = await MN_NOTES_VAULTS_SERVICE.deleteNote(
             desktopBridge,
             activeVaultId,
@@ -244,12 +247,11 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
       try {
         const res = await desktopBridge.maintenance.exportBackup({});
         if (!res.ok) throw new Error(res.error);
-        if (!res.value?.canceled) {
-          setLastBackupAt?.(res.value.exportedAt || new Date().toISOString());
-          showAppNotice('Backup exported', `${res.value.vaultCount || 0} vault${res.value.vaultCount === 1 ? '' : 's'} saved.`, 'info');
-          return true;
-        }
-        return false;
+        if (res.value?.canceled) return false;
+        const outcome = mnBackupExportOutcome(res.value);
+        if (outcome.recordBackup) setLastBackupAt?.(res.value.exportedAt || new Date().toISOString());
+        showAppNotice(outcome.title, outcome.message, outcome.tone);
+        return true;
       } catch (e) {
         showAppNotice('Could not export backup', e.message || String(e));
         return false;
@@ -458,3 +460,4 @@ function useAppDataActions({ HAS_DISK, MN_APP_CANVAS_ACTIONS, MN_APP_MUTATIONS, 
 export { useAppDataActions };
 import MN_CANVAS_MODEL from '../../canvas/canvasModel.js';
 import MN_IMPORT_PREVIEW from '../../shared/importPreviewModel.js';
+import { mnBackupExportOutcome } from '../helpers/backupNoticeCopy.js';

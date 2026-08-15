@@ -175,3 +175,60 @@ test('a plot-points block still closes correctly when it is the last thing in a 
   assert.match(html, /<li>final beat<\/li>/);
   assert.ok(!/:::/.test(html), 'export still contains ::: markers');
 });
+
+// The editor writes a Shift+Enter break as a marker backslash on the broken
+// line, after doubling that line's own trailing backslash run. The exporter is
+// the second reader of that rule (the first is mnMdToBlocks in
+// src/editor/outline.jsx) and must not print the marker as text.
+test('a soft break inside a paragraph exports as a line break, not a backslash', async () => {
+  const html = await exportHtml.renderNoteHtml({
+    title: 'Letter',
+    body: 'Dear Ana,\\\nThanks for the note.',
+  });
+  assert.match(html, /<p>Dear Ana,<br>Thanks for the note\.<\/p>/);
+  assert.ok(!html.includes('\\'), `a literal backslash survived into the export: ${html}`);
+  // The two lines must not be glued together the way a wrapped line is.
+  assert.ok(!/Dear Ana, Thanks/.test(html), 'the soft break was joined with a space');
+});
+
+test('an ordinary wrapped paragraph still joins with a space, not a line break', async () => {
+  const html = await exportHtml.renderNoteHtml({
+    title: 'Wrapped',
+    body: 'One long sentence that\nhappens to be wrapped.',
+  });
+  assert.match(html, /<p>One long sentence that happens to be wrapped\.<\/p>/);
+  assert.ok(!html.includes('<br>'), 'a wrapped line became a hard break');
+});
+
+test('a paragraph genuinely ending in backslashes prints them and does not join', async () => {
+  // On disk the writer doubles the content's own run, so one backslash of
+  // content is two on disk and two are four. Each must print as typed, and
+  // neither may fold the block that follows into the paragraph.
+  const html = await exportHtml.renderNoteHtml({
+    title: 'Paths',
+    body: 'see C:\\\\\n- item one\n\nends in two \\\\\\\\\n\n---',
+  });
+  assert.match(html, /<p>see C:\\<\/p>/);
+  assert.match(html, /<li style="margin-left:0px">item one<\/li>/);
+  assert.match(html, /<p>ends in two \\\\<\/p>/);
+  assert.match(html, /<hr>/);
+  assert.ok(!html.includes('<br>'), 'a literal backslash was read as a soft break');
+});
+
+test('bytes written before the soft-break marker existed still print their backslash', async () => {
+  // 0.2.5 wrote the user's own trailing backslash undoubled. An odd run with
+  // nothing foldable after it is that case, and stays exactly as written.
+  const html = await exportHtml.renderNoteHtml({ title: 'Legacy', body: 'para\\\n\n---' });
+  assert.match(html, /<p>para\\<\/p>/);
+  assert.match(html, /<hr>/);
+});
+
+test('a continuation line that reads as a list item is unescaped, not printed with its escape', async () => {
+  const html = await exportHtml.renderNoteHtml({
+    title: 'Escaped continuation',
+    body: 'intro:\\\n\\- not a bullet',
+  });
+  assert.match(html, /<p>intro:<br>- not a bullet<\/p>/);
+  assert.ok(!html.includes('\\'), 'the writer escape leaked into the export');
+  assert.ok(!/<li/.test(html), 'the continuation line became a real list item');
+});

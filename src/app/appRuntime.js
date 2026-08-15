@@ -100,9 +100,11 @@ function normalizeNotes(notes, mnMdToBlocks) {
   return MN_APP_HELPERS.normalizeNotes(notes, mnMdToBlocks);
 }
 
-// Strip in-memory-only fields before persisting to disk.
-function noteForDisk(n, mnBlocksToMd) {
-  return MN_APP_HELPERS.noteForDisk(n, mnBlocksToMd);
+// Strip in-memory-only fields before persisting to disk. `options` carries
+// the vault's novelistMode so the legacy arc -> act rewrite only runs where
+// the vocabulary actually applies.
+function noteForDisk(n, mnBlocksToMd, options) {
+  return MN_APP_HELPERS.noteForDisk(n, mnBlocksToMd, options);
 }
 
 function mnNormalizeNoteStatus(raw, states = []) {

@@ -42,6 +42,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
     // different vaults cannot overwrite each other's pending saves.
     const [dirtyNotes, setDirtyNotes] = useStateA(() => new Map());
     const dirtyNotesRef = useRefA(dirtyNotes);
+    const [saveRetries, saveRetryRef] = MN_SAVE_RETRY.useSaveRetries({ useStateA, useRefA, useEffectA });
     const updateDirtyNotes = useCallbackA((updater) => {
       const current = dirtyNotesRef.current;
       const next = typeof updater === 'function' ? updater(current) : updater;
@@ -458,6 +459,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
             }
             console.warn('dirty note could not be matched for autosave', { vaultId, id });
             result.failures.push({ kind: 'note', id, message: 'Dirty note could not be matched to its vault.' });
+            saveRetryRef.current.clear(dirtyKey); // else the pill pins on 'Retrying' with no timer armed
             continue;
           }
           dirtyMissingWarnedRef.current.delete(dirtyKey);
@@ -471,7 +473,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
             const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
               desktopBridge,
               vaultId,
-              noteForDisk(n, mnBlocksToMd),
+              noteForDisk(n, mnBlocksToMd, { novelistMode: !!(currentVaults || []).find(v => v.id === vaultId)?.novelistMode }),
               saveOptions
             );
             if (res && res.ok === false) {
@@ -485,7 +487,7 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
                   currentModifiedAt: res.currentModifiedAt || null,
                   expectedModifiedAt: res.expectedModifiedAt || saveOptions.expectedModifiedAt,
                 });
-                result.failures.push({ kind: 'note', id, code: 'NOTE_CONFLICT', message: res.error || 'The note changed on disk.' });
+                saveRetryRef.current.clear(dirtyKey); result.failures.push({ kind: 'note', id, code: 'NOTE_CONFLICT', message: res.error || 'The note changed on disk.' });
                 continue;
               }
               throw new Error(res.error || 'Save failed');
@@ -515,12 +517,10 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
               next.delete(dirtyKey);
               return next;
             });
-            result.saved++;
-            result.savedEntries.push({ vaultId, id, note: saved || null });
+            saveRetryRef.current.clear(dirtyKey); result.saved++; result.savedEntries.push({ vaultId, id, note: saved || null });
           } catch (e) {
-            console.error('saveNote failed', id, e);
-            showAppNotice('Could not save note', e.message || String(e));
             result.failures.push({ kind: 'note', id, code: e.code || null, message: e.message || String(e) });
+            saveRetryRef.current.fail(dirtyKey, { error: e, id, vaultId, revision, title: n.title || 'Untitled', notify: showAppNotice, retry: () => { const pending = dirtyNotesRef.current.get(dirtyKey); return pending ? saveDirtyNotesNowImpl([pending], notesRef.current, vaultsRef.current) : saveRetryRef.current.clear(dirtyKey); } });
           }
         } finally {
           savingDirtyKeysRef.current.delete(dirtyKey);
@@ -546,11 +546,10 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       }
       const maxWaitRemaining = Math.max(0, MN_AUTOSAVE_MAX_WAIT_MS - (now - firstDirtyAt));
       const delay = Math.min(MN_AUTOSAVE_DEBOUNCE_MS, maxWaitRemaining);
-      const handle = setTimeout(async () => {
-        await saveDirtyNotesNow([...dirtyNotes.values()]);
-      }, delay);
+      const handle = setTimeout(async () => { await saveDirtyNotesNow([...dirtyNotes.values()]); }, delay);
       return () => clearTimeout(handle);
     }, [dirtyNotes, saveDirtyNotesNow]);
+    useEffectA(() => { saveRetryRef.current.prune(dirtyNotes); }, [dirtyNotes]); // a note that has left the dirty map — deleted, say — must not keep a retry entry: the sidebar takes the worst status across every vault, so one dead entry pins the whole app on "Not saved"
   
     useEffectA(() => {
       if (!HAS_DISK || !desktopBridge.events?.onFlushDirtyNotes) return undefined;
@@ -588,9 +587,10 @@ function useAppPersistenceController({ HAS_DISK, MN_APP_HELPERS, MN_APP_MUTATION
       }, 1000);
       return () => clearTimeout(t);
     }, [selectedId, activeVaultId, tags, saveVaultMetaNow]);
-  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, updateAskAiSessionById, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, recordFeatureUsage, setPackEnabled, saveSmartViewDefinitions, searchUsageActiveRef, noteDiskStampRef, noteDiskRevisionRef, clearNoteDiskState, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, retryBoot, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
+  return { recordPhase5Metric, askAiSeed, askAiSessions, activeAskAiSession, aiNotice, setAiNotice, setActiveAskAiSessionId, openAskAi, setActiveAskAiSession, updateAskAiSessionById, createAskAiChat, deleteAskAiChat, renameAskAiChat, archiveAskAiChat, notifyAskAiComplete, dirtyNotes, setDirtyNotes, dirtyNotesRef, updateDirtyNotes, saveRetries, recordFeatureUsage, setPackEnabled, saveSmartViewDefinitions, searchUsageActiveRef, noteDiskStampRef, noteDiskRevisionRef, clearNoteDiskState, savingDirtyKeysRef, pendingDirtyKeysRef, notesRef, vaultsRef, dirtyRevisionRef, dirtyMissingWarnedRef, vaultActivationSeq, noteMetadataHistoryRef, aiNoteBodyRestoreRef, cloneNoteForMetadataHistory, recordNoteMetadataHistory, endNoteMetadataEdit, markDirty, tagsDirty, markTagsDirty, saveVaultMetaNow, loadVaultBundle, normalizeFeaturePacks, applyWorkflowStates, bootState, bootError, retryBoot, tweakInitialized, findNotesForVault, applyLinkedNoteUpdates, saveDirtyNotesNow };
 }
 
 export { useAppPersistenceController };
 import { mnSetWorkflowStates } from '../../editor/blockFeatures.jsx';
 import { mnViewsCheckSavable } from '../../features/views/index.js';
+import MN_SAVE_RETRY from '../../shared/saveRetryPolicy.js';

@@ -481,17 +481,17 @@ function createNovelistHelpers(scope = {}) {
     });
   }
   
-  function noteForDisk(note, blocksToMd) {
+  function noteForDisk(note, blocksToMd, options = {}) { // novelistMode defaults to true so two-argument callers keep migrating; false skips the legacy arc -> act rewrite so a plain vault's note is written back byte-identical.
     const sourceBody = Array.isArray(note.blocks) ? blocksToMd(note.blocks || []) : (note.body || '');
     return {
       id: note.id,
       title: note.title || 'Untitled',
       date: note.date || new Date().toISOString(),
-      tags: normalizeNovelistLegacyTags(Array.isArray(note.tags) ? note.tags : []),
+      tags: options.novelistMode === false ? (Array.isArray(note.tags) ? note.tags : []) : normalizeNovelistLegacyTags(Array.isArray(note.tags) ? note.tags : []),
       pinned: !!note.pinned,
       workflowArchived: !!note.workflowArchived,
       frontMatter: note.frontMatter || '',
-      body: normalizeNoteBody(ensureScenePlotPoints(normalizeNovelistLegacyBody(sourceBody), note.tags || []), note.title || 'Untitled'),
+      body: normalizeNoteBody(ensureScenePlotPoints(options.novelistMode === false ? sourceBody : normalizeNovelistLegacyBody(sourceBody), note.tags || []), note.title || 'Untitled'),
     };
   }
   

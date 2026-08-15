@@ -9,6 +9,7 @@ module.exports = [
       'dist/**',
       'node_modules/**',
       'coverage/**',
+      '.claude/**',
       'VispNote/**',
       'OminiNote/**',
       'MyNote/**',

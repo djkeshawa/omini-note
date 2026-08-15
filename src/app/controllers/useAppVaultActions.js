@@ -90,7 +90,7 @@ function useAppVaultActions({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, MN_NOVELIST_WOR
           const res = await MN_NOTES_VAULTS_SERVICE.saveNote(
             desktopBridge,
             vaultId,
-            noteForDisk(note, mnBlocksToMd),
+            noteForDisk(note, mnBlocksToMd, { novelistMode: true }),
             { expectedRevision: note.diskRevision ?? null }
           );
           if (!res.ok) throw new Error(res.error);

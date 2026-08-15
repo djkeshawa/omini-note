@@ -896,7 +896,7 @@ test('Saving known fields preserves unknown front matter, comments, and block li
     assert.match(trashRestored, /aliases:\n  - First alias\n  - Second alias/);
     assert.doesNotMatch(trashRestored, /^(?:trashId|deletedAt|originalId|originalTitle):/m);
 
-    const backup = await store.exportBackup({ vaultId: vault.id });
+    const { payload: backup } = await store.exportBackup({ vaultId: vault.id });
     const imported = await store.importBackup(backup, { activate: false, keepNames: false });
     const importedVault = await store.loadVault(imported.importedVaults[0].id);
     assert.match(importedVault.notes.find(note => note.id === 'n_portable').frontMatter, /aliases:\n  - First alias\n  - Second alias/);
@@ -920,7 +920,8 @@ test('Vault loading and export ignore symlinked note and canvas files', async ()
     await assert.rejects(() => store.getCanvas(vault.id, 'c_linked'), /symlink/);
 
     const backup = await store.exportBackup({ vaultId: vault.id });
-    assert.equal(JSON.stringify(backup).includes('outside secret'), false);
+    assert.equal(JSON.stringify(backup.payload).includes('outside secret'), false);
+    assert.equal(backup.text.includes('outside secret'), false);
   });
 });
 
@@ -1648,5 +1649,324 @@ test('vaultStamp reports change cheaply and saveNote reports the previous title'
     const after = await store.vaultStamp(vault.id);
     assert.equal(after.count, before.count);
     assert.ok(after.maxMtimeMs > before.maxMtimeMs, 'a save moves the fingerprint');
+  });
+});
+
+// A corrupt .config.json used to be quarantined and replaced by a first-run
+// seed, so a user with notes in personal/ booted into an empty personal-2/ and
+// believed the vaults were gone. Every vault folder carries its own .meta.json,
+// so the vault list can always be rebuilt from disk.
+test('a corrupt config rebuilds the vault list from the folders on disk', async () => {
+  await withIsolatedStore(async (store, home) => {
+    fs.writeFileSync(path.join(home, '.config.json'), '{ "vaults": [ this is not json');
+    for (const [slug, title] of [['personal', 'Kept personal note'], ['work', 'Kept work note']]) {
+      fs.mkdirSync(path.join(home, slug), { recursive: true });
+      fs.writeFileSync(
+        path.join(home, slug, '.meta.json'),
+        JSON.stringify({ id: `v_${slug}`, slug, tags: [], lastSelectedId: null })
+      );
+      fs.writeFileSync(
+        path.join(home, slug, `n_${slug}.md`),
+        `---\nid: n_${slug}\ntitle: ${title}\n---\n\nBody of ${slug}\n`
+      );
+    }
+
+    const cfg = await store.loadConfig();
+    assert.deepEqual(cfg.vaults.map(v => v.slug), ['personal', 'work']);
+    // No name in the meta: the folder slug is title-cased rather than invented.
+    assert.deepEqual(cfg.vaults.map(v => v.name), ['Personal', 'Work']);
+    assert.equal(cfg.activeVaultId, 'v_personal');
+
+    assert.equal(fs.existsSync(path.join(home, 'personal-2')), false, 'booted into a fresh empty vault beside the real one');
+    assert.equal(fs.existsSync(path.join(home, 'work-2')), false);
+
+    const personal = await store.loadVault('v_personal');
+    assert.deepEqual(personal.notes.map(note => note.title), ['Kept personal note']);
+    const work = await store.loadVault('v_work');
+    assert.deepEqual(work.notes.map(note => note.title), ['Kept work note']);
+
+    const prefs = await store.getPrefs();
+    assert.equal(prefs.configRecovery.vaultCount, 2);
+    assert.match(prefs.configRecovery.brokenFile, /\.config\.json\.broken\./);
+    assert.ok(fs.existsSync(prefs.configRecovery.brokenFile), 'the damaged file was named but not kept');
+
+    // The rebuilt config is on disk, so the next boot is an ordinary boot.
+    const written = JSON.parse(fs.readFileSync(path.join(home, '.config.json'), 'utf8'));
+    assert.deepEqual(written.vaults.map(v => v.id), ['v_personal', 'v_work']);
+  });
+});
+
+test('the boot after a recovery reads the rebuilt config and reports nothing', async () => {
+  // The recovery marker lives in main-process memory only. If it leaked into
+  // the config, the "your vaults were recovered" notice would greet the user
+  // on every launch forever.
+  await withIsolatedStore(async (store, home) => {
+    fs.writeFileSync(path.join(home, '.config.json'), 'not json');
+    fs.mkdirSync(path.join(home, 'personal'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'personal', '.meta.json'), JSON.stringify({ id: 'v_personal', slug: 'personal' }));
+    fs.writeFileSync(path.join(home, 'personal', 'n_kept.md'), '---\nid: n_kept\ntitle: Kept\n---\n\nBody\n');
+
+    const first = await store.getPrefs();
+    assert.equal(first.configRecovery?.vaultCount, 1, 'the recovery boot did not set the marker');
+
+    // Same home, fresh main process: the ordinary next launch.
+    const storePath = require.resolve('../lib/store');
+    delete require.cache[storePath];
+    const rebooted = require('../lib/store');
+    const prefs = await rebooted.getPrefs();
+    assert.equal(prefs.configRecovery, null, 'the recovery notice would reappear on every boot');
+    const vaults = await rebooted.listVaults();
+    assert.deepEqual(vaults.map(v => v.id), ['v_personal'], 'the adopted vault did not survive the next boot');
+    delete require.cache[storePath];
+  });
+});
+
+test('an empty root still seeds one Personal vault and reports no recovery', async () => {
+  await withIsolatedStore(async (store) => {
+    const vaults = await store.listVaults();
+    assert.deepEqual(vaults.map(v => v.name), ['Personal']);
+    const personal = await store.loadVault(vaults[0].id);
+    assert.equal(personal.notes.length, 1);
+
+    const prefs = await store.getPrefs();
+    assert.equal(prefs.configRecovery, null, 'a fresh install was told its vaults had been recovered');
+  });
+});
+
+// An unreadable note file used to be dropped silently between loadVault and the
+// backup payload, so an incomplete backup looked complete.
+test('exportBackup names the note files it could not read', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    await store.loadVault(vault.id);
+    // A directory where a note file belongs is unreadable in the same way a
+    // permission-denied or symlinked note file is.
+    fs.mkdirSync(path.join(store.ROOT, vault.slug, 'n_broken.md'), { recursive: true });
+
+    const { payload } = await store.exportBackup({});
+    const warning = payload.warnings.find(item => item.file === 'n_broken.md');
+    assert.ok(warning, `no warning named the unreadable file: ${JSON.stringify(payload.warnings)}`);
+    assert.equal(warning.vaultId, vault.id, 'the warning did not say which vault lost a note');
+    assert.equal(payload.vaults.length, 1, 'the backup was withheld instead of being returned with its warning');
+  });
+});
+
+// exportBackup is driven directly here so the limit arithmetic can be exercised
+// without building a vault big enough to breach it.
+function makeBackupRepository(overrides = {}) {
+  const { createBackupRepository } = require('../lib/storage/repositories/backupRepository.js');
+  const vaults = overrides.vaults || [{ id: 'v1', name: 'Personal', slug: 'personal' }];
+  const notes = overrides.notes || [{ id: 'n_1', title: 'One', body: 'a' }, { id: 'n_2', title: 'Two', body: 'b' }];
+  const loaded = { loadedVaults: [] };
+  const repository = createBackupRepository({
+    loadConfig: async () => ({ activeVaultId: vaults[0]?.id || null, vaults }),
+    loadVault: async id => { loaded.loadedVaults.push(id); return { notes, tags: [], warnings: [] }; },
+    listCanvases: async () => [],
+    readJsonSafe: async () => ({}),
+    vaultMetaFile: slug => `/tmp/${slug}/.meta.json`,
+    validateEntityId: value => value,
+    backupFormat: 'vispnote.backup.v1',
+    appName: 'VispNote',
+    isPlainObject: value => !!value && typeof value === 'object' && !Array.isArray(value),
+    assertArrayLimit: (items, maxItems, message) => { if (Array.isArray(items) && items.length > maxItems) throw new Error(message); },
+    maxImportBytes: overrides.maxImportBytes ?? 50 * 1024 * 1024,
+    limits: overrides.limits || { vaults: 50, notes: 1, canvases: 1000 },
+  });
+  return { repository, loaded };
+}
+
+test('exportBackup warns when the payload breaches the limits importBackup enforces', async () => {
+  const { repository } = makeBackupRepository();
+
+  const { payload } = await repository.exportBackup({});
+  const warning = payload.warnings.find(item => item.type === 'backup-too-large');
+  assert.ok(warning, 'a backup that cannot be restored was reported as fine');
+  assert.equal(warning.breached, 'notes');
+  assert.equal(warning.noteCount, 2, 'the warning did not carry the real note count');
+  assert.equal(warning.limit, 1);
+  assert.equal(warning.sizeLimitMb, 50);
+  assert.equal(typeof warning.sizeMb, 'number');
+  assert.equal(payload.vaults[0].notes.length, 2, 'the backup was withheld instead of being written with its warning');
+});
+
+// The vault cap is the one breach importBackup refuses outright, so an export
+// over it is a hard failure rather than a warning: the user hears about it now
+// instead of hours later at restore.
+test('exportBackup refuses a payload with more vaults than importBackup would accept', async () => {
+  const vaults = Array.from({ length: 51 }, (_, i) => ({ id: `v${i}`, name: `Vault ${i}`, slug: `vault-${i}` }));
+  const { repository, loaded } = makeBackupRepository({ vaults, limits: { vaults: 50, notes: 1000, canvases: 1000 } });
+
+  await assert.rejects(
+    () => repository.exportBackup({}),
+    { message: 'Backup has too many vaults; maximum is 50' },
+    'the export did not give the message importBackup gives for the same file'
+  );
+  assert.deepEqual(loaded.loadedVaults, [], 'the vaults were read before the cap was checked');
+});
+
+test('exportBackup accepts a payload exactly at the vault cap', async () => {
+  const vaults = Array.from({ length: 50 }, (_, i) => ({ id: `v${i}`, name: `Vault ${i}`, slug: `vault-${i}` }));
+  const { repository } = makeBackupRepository({ vaults, limits: { vaults: 50, notes: 1000, canvases: 1000 } });
+  const { payload } = await repository.exportBackup({});
+  assert.equal(payload.vaults.length, 50, 'the cap was off by one and refused a backup it should have written');
+});
+
+// The size the notice quotes has to be the size of the file on disk. Measuring
+// before the oversize warning was appended under-reported the bytes written.
+test('exportBackup measures the bytes it actually hands back, warnings included', async () => {
+  const { repository } = makeBackupRepository();
+  const result = await repository.exportBackup({});
+
+  assert.equal(result.sizeBytes, Buffer.byteLength(result.text, 'utf8'),
+    'the reported size is not the size of the string the caller writes');
+  const warning = result.payload.warnings.find(item => item.type === 'backup-too-large');
+  assert.ok(result.text.includes('backup-too-large'), 'the warning is not in the bytes that get written');
+  assert.equal(warning.sizeBytes, result.sizeBytes, 'the warning quotes a size the file does not have');
+  assert.equal(warning.sizeMb, Math.round((result.sizeBytes / (1024 * 1024)) * 10) / 10);
+  assert.equal(result.noteCount, 2);
+  assert.equal(result.canvasCount, 0);
+});
+
+test('a clean export still serializes the payload it returns', async () => {
+  const { repository } = makeBackupRepository({ limits: { vaults: 50, notes: 1000, canvases: 1000 } });
+  const result = await repository.exportBackup({});
+  assert.deepEqual(result.payload.warnings, [], 'a backup within every limit was warned about');
+  assert.equal(result.text, JSON.stringify(result.payload));
+  assert.equal(result.sizeBytes, Buffer.byteLength(result.text, 'utf8'));
+});
+
+// The recovery scan reads every vault's .meta.json. It used to read them with
+// readJsonSafe, which renames an unreadable file to `<file>.broken.<stamp>` —
+// correct for our own config, catastrophic here: a recovery pass quarantined
+// the user's own vault metadata while trying to rescue it.
+function snapshotDir(dir) {
+  const names = fs.readdirSync(dir).sort();
+  return names.map(name => {
+    const target = path.join(dir, name);
+    const stat = fs.lstatSync(target);
+    return { name, size: stat.size, bytes: stat.isFile() ? fs.readFileSync(target).toString('base64') : null };
+  });
+}
+
+test('a recovery scan never renames or rewrites a vault meta file it cannot read', async () => {
+  await withIsolatedStore(async (store, home) => {
+    fs.writeFileSync(path.join(home, '.config.json'), 'not json at all');
+
+    // Two ways readJsonSafe would have quarantined the file: unparseable, and
+    // bigger than the 1 MB JSON read cap.
+    const corrupt = path.join(home, 'corrupt');
+    fs.mkdirSync(corrupt, { recursive: true });
+    fs.writeFileSync(path.join(corrupt, '.meta.json'), '{ "id": "v_corrupt", broken');
+    const huge = path.join(home, 'huge');
+    fs.mkdirSync(huge, { recursive: true });
+    fs.writeFileSync(path.join(huge, '.meta.json'), `{"id":"v_huge","slug":"huge","pad":"${'x'.repeat(1024 * 1024 + 64)}"}`);
+    // One readable vault, so the scan adopts something and does not fall back
+    // to the first-run seed before it ever reaches the broken folders.
+    const good = path.join(home, 'good');
+    fs.mkdirSync(good, { recursive: true });
+    fs.writeFileSync(path.join(good, '.meta.json'), JSON.stringify({ id: 'v_good', slug: 'good' }));
+
+    const before = { corrupt: snapshotDir(corrupt), huge: snapshotDir(huge) };
+
+    const cfg = await store.loadConfig();
+    assert.deepEqual(cfg.vaults.map(v => v.slug), ['good'], 'a vault whose meta cannot be read was adopted anyway');
+
+    assert.deepEqual(snapshotDir(corrupt), before.corrupt, 'the unreadable meta file was renamed or rewritten');
+    assert.deepEqual(snapshotDir(huge), before.huge, 'the oversized meta file was renamed or rewritten');
+    for (const dir of [corrupt, huge]) {
+      assert.equal(fs.readdirSync(dir).some(name => name.includes('.broken.')), false,
+        `the scan quarantined a user meta file in ${path.basename(dir)}`);
+    }
+  });
+});
+
+test('the recovery marker says the settings file could not be read', async () => {
+  await withIsolatedStore(async (store, home) => {
+    fs.writeFileSync(path.join(home, '.config.json'), 'not json');
+    fs.mkdirSync(path.join(home, 'personal'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'personal', '.meta.json'), JSON.stringify({ id: 'v_personal', slug: 'personal' }));
+
+    const prefs = await store.getPrefs();
+    assert.equal(prefs.configRecovery.reason, 'unreadable');
+    assert.match(prefs.configRecovery.brokenFileName, /^\.config\.json\.broken\./);
+    assert.equal(/[\\/]/.test(prefs.configRecovery.brokenFileName), false,
+      'the notice would read an absolute path aloud instead of a filename');
+    assert.ok(fs.existsSync(prefs.configRecovery.brokenFile), 'brokenFile stopped being the path to the file');
+  });
+});
+
+test('the recovery marker says the settings file was missing', async () => {
+  await withIsolatedStore(async (store, home) => {
+    // No .config.json at all: nothing was damaged, so nothing was set aside.
+    fs.mkdirSync(path.join(home, 'personal'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'personal', '.meta.json'), JSON.stringify({ id: 'v_personal', slug: 'personal' }));
+
+    const prefs = await store.getPrefs();
+    assert.equal(prefs.configRecovery.reason, 'missing');
+    assert.equal(prefs.configRecovery.brokenFile, null);
+    assert.equal(prefs.configRecovery.brokenFileName, null);
+    assert.equal(prefs.configRecovery.vaultCount, 1);
+  });
+});
+
+test('the recovery marker says the settings file listed no vaults', async () => {
+  await withIsolatedStore(async (store, home) => {
+    // Valid JSON, parsed fine, simply empty. Claiming damage here would be a lie.
+    fs.writeFileSync(path.join(home, '.config.json'), JSON.stringify({ vaults: [], activeVaultId: null }));
+    fs.mkdirSync(path.join(home, 'personal'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'personal', '.meta.json'), JSON.stringify({ id: 'v_personal', slug: 'personal' }));
+
+    const prefs = await store.getPrefs();
+    assert.equal(prefs.configRecovery.reason, 'empty');
+    assert.equal(prefs.configRecovery.brokenFile, null, 'an empty vault list set a file aside that was never damaged');
+    assert.equal(prefs.configRecovery.brokenFileName, null);
+  });
+});
+
+test('the recovery notice states the reason it fired and names the file in prose', () => {
+  const controller = fs.readFileSync(path.join(__dirname, '../src/app/controllers/useAppLifecycleController.js'), 'utf8');
+  assert.match(controller, /recovery\.reason === 'missing' \? 'was missing'/);
+  assert.match(controller, /recovery\.reason === 'empty' \? 'listed no vaults'/);
+  assert.match(controller, /VispNote's settings file \$\{clause\}\./);
+  assert.match(controller, /The damaged file was set aside as \$\{brokenName\}\./);
+  // The set-aside line is gated on brokenFile, which the 'empty' reason never
+  // has, so that reason cannot claim damage.
+  assert.match(controller, /recovery\.brokenFile\s*\n\s*\? `\\n\\nThe damaged file was set aside as/);
+  assert.doesNotMatch(controller, /set aside as:\\n\$\{recovery\.brokenFile\}/,
+    'the notice still prints the absolute path');
+});
+
+// QE addition (Lane B / B2): the snapshot body only reaches the trash when the
+// note has no file on disk yet — a new note deleted before its first flush.
+// That is exactly where the two-argument noteForDisk default used to rewrite
+// arc:: to act:: on the way into the trash, so the restore returned a note the
+// user never wrote. This drives the real renderer snapshot through the real
+// store delete + restore.
+test('a never-flushed plain-vault note goes through trash and restore with arc:: intact', async () => {
+  await withIsolatedStore(async (store) => {
+    const [vault] = await store.listVaults();
+    const { createNovelistHelpers } = require('../src/features/writer/novelistHelpers.js');
+    const { noteForDisk } = createNovelistHelpers({});
+    const note = {
+      id: 'n_unflushed',
+      title: 'Onboarding',
+      date: '2026-05-06T00:00:00.000Z',
+      tags: [],
+      body: 'arc:: onboarding\n\n## Arcs\n\n- first beat\n',
+    };
+    const snapshot = noteForDisk(note, () => '', { novelistMode: false });
+    const deleted = await store.deleteNote(vault.id, note.id, snapshot, { expectedRevision: null });
+    assert.ok(deleted.trashId, 'the unflushed note was not trashed from its snapshot');
+
+    const trashText = fs.readFileSync(
+      path.join(store.ROOT, vault.slug, '.trash', 'notes', `${deleted.trashId}.md`), 'utf8');
+    assert.match(trashText, /arc:: onboarding/, 'the trash snapshot was migrated to act::');
+    assert.match(trashText, /## Arcs/);
+    assert.doesNotMatch(trashText, /act:: onboarding/);
+
+    const restored = await store.restoreDeletedNote(vault.id, deleted.trashId);
+    assert.match(restored.body, /arc:: onboarding/, 'the restored note is not what the user wrote');
+    assert.match(restored.body, /## Arcs/);
+    assert.doesNotMatch(restored.body, /act:: onboarding/);
   });
 });

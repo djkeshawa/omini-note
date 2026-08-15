@@ -1,5 +1,12 @@
-import { DS_RADIUS, dsGroupLabelStyle, dsMachineStyle } from '../shared/designSystem.js';
+import { DS_RADIUS, dsGroupLabelStyle, dsMachineStyle, dsToneColor } from '../shared/designSystem.js';
 const { useEffect, useRef, useState } = React;
+
+// Mirrors SAVE_TONES in the editor header. It used to be a ternary chain that
+// fell through to T.success, so "Not saved" would have shown a green dot.
+const SAVE_TONES = {
+  Saved: 'success', Saving: 'warn', Retrying: 'warn',
+  'Not saved': 'danger', Conflict: 'danger', Offline: 'warn',
+};
 
 function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = null, onOpenVaultHealth, onExportBackup, T }) {
   const [open, setOpen] = useState(false);
@@ -28,9 +35,7 @@ function LocalStatusPopover({ activeVault, saveStatus = 'Saved', lastBackupAt = 
     };
   }, [open]);
 
-  const statusColor = saveStatus === 'Conflict'
-    ? (T.danger || T.warn)
-    : saveStatus === 'Saving' ? (T.warn || T.accent) : T.success;
+  const statusColor = dsToneColor(T, SAVE_TONES[saveStatus] || 'neutral');
   const backupLabel = lastBackupAt && Number.isFinite(new Date(lastBackupAt).getTime())
     ? new Date(lastBackupAt).toLocaleString()
     : 'No backup recorded';

@@ -4,9 +4,13 @@ import { DsStatusPill } from '../shared/components/DesignPrimitives.jsx';
 
 const { useEffect, useRef, useState } = React;
 
-// The editor reports these four; anything else stays neutral rather than
-// inventing a state the app can't actually observe.
-const SAVE_TONES = { Saved: 'success', Saving: 'warn', Conflict: 'danger', Offline: 'warn' };
+// The editor reports these six; anything else stays neutral rather than
+// inventing a state the app can't actually observe. Warn means the app is
+// still working on it; danger means it has stopped and it is the user's move.
+const SAVE_TONES = {
+  Saved: 'success', Saving: 'warn', Retrying: 'warn',
+  'Not saved': 'danger', Conflict: 'danger', Offline: 'warn',
+};
 
 function HeaderButton({ active = false, children, label, onClick, T, iconOnly = false, popup = false }) {
   return (

@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { registerBackupHandlers } = require('../lib/connectors/ipc/backupHandlers.js');
 
@@ -7,6 +9,24 @@ const { registerBackupHandlers } = require('../lib/connectors/ipc/backupHandlers
 // a mistake here loses or leaks everything at once. It sat at 53.85% branch
 // coverage. Two guards matter most: the file must not be a symlink, and an
 // oversized import must be refused before it is read into memory.
+
+// exportBackup serializes the payload and measures it once, and the handler
+// writes that exact string. `serialized` counts every serialization of the
+// payload, so a second one inside the handler shows up as a count of 2.
+function exportResult(payload, serialized = { count: 0 }) {
+  Object.defineProperty(payload, 'toJSON', {
+    enumerable: false,
+    value() { serialized.count += 1; return { ...this }; },
+  });
+  const text = JSON.stringify(payload);
+  return {
+    payload,
+    text,
+    sizeBytes: Buffer.byteLength(text, 'utf8'),
+    noteCount: payload.vaults.reduce((total, vault) => total + (vault.notes?.length || 0), 0),
+    canvasCount: payload.vaults.reduce((total, vault) => total + (vault.canvases?.length || 0), 0),
+  };
+}
 
 function setup({
   saveDialog = { canceled: false, filePath: '/tmp/backup.json' },
@@ -23,7 +43,7 @@ function setup({
   const handlers = {};
   const ipcMain = { handle: (channel, fn) => { handlers[channel] = fn; } };
   const store = {
-    exportBackup: async () => { calls.exported += 1; return { exportedAt: 'T0', vaults: [{ id: 'v1' }], warnings: [] }; },
+    exportBackup: async () => { calls.exported += 1; return exportResult({ exportedAt: 'T0', vaults: [{ id: 'v1' }], warnings: [] }); },
     atomicWriteFile: async (p, data) => calls.written.push([p, data.length]),
     importBackup: async () => ({ importedVaults, noteCount: 3 }),
     loadVault: async id => ({ id, notes: [] }),
@@ -103,6 +123,87 @@ test('a failure to record the export does not discard the backup', async () => {
   assert.equal(calls.written.length, 1, 'the backup was not written');
   assert.ok(res.warnings.some(w => /status write failed/.test(w.message)),
     'the failure was swallowed instead of being surfaced as a warning');
+});
+
+test('an export with warnings is written but never recorded as a good backup', async () => {
+  // A backup missing notes must not move the last-backup date: a green
+  // "backed up" indicator over an incomplete file is a lie.
+  const recorded = [];
+  const { handlers, calls } = setup({
+    recordBackupExport: async at => { recorded.push(at); },
+    storeOverrides: {
+      exportBackup: async () => exportResult({
+        exportedAt: 'T0',
+        vaults: [{ id: 'v1', notes: [{ id: 'n_1' }] }],
+        warnings: [{ type: 'note-read', vaultId: 'v1', file: 'n_broken.md', message: 'unreadable' }],
+      }),
+    },
+  });
+  const res = await handlers['mn:exportBackup']({});
+  assert.equal(res.canceled, false);
+  assert.equal(calls.written.length, 1, 'the incomplete backup was withheld instead of written');
+  assert.deepEqual(recorded, [], 'an incomplete export still updated the last-backup date');
+  assert.equal(res.noteCount, 1);
+  assert.ok(res.warnings.some(w => w.file === 'n_broken.md'), 'the warning did not reach the renderer');
+});
+
+test('a clean export records the backup and writes compact JSON', async () => {
+  const recorded = [];
+  const written = [];
+  const serialized = { count: 0 };
+  const result = exportResult({ exportedAt: 'T0', vaults: [{ id: 'v1', notes: [{ id: 'n_1' }, { id: 'n_2' }] }], warnings: [] }, serialized);
+  const { handlers } = setup({
+    recordBackupExport: async at => { recorded.push(at); },
+    storeOverrides: {
+      exportBackup: async () => result,
+      atomicWriteFile: async (p, data) => written.push(data),
+    },
+  });
+  const res = await handlers['mn:exportBackup']({});
+  assert.deepEqual(recorded, ['T0'], 'a clean export did not update the last-backup date');
+  assert.equal(written[0], result.text, 'the file was not written as compact single-line JSON');
+  assert.equal(res.noteCount, 2);
+  assert.equal(res.sizeBytes, Buffer.byteLength(result.text, 'utf8'));
+});
+
+// On a 10k-note vault a second stringify puts a second multi-megabyte string in
+// memory beside the first, and reports a size the file on disk does not have.
+test('the handler writes the string exportBackup already made instead of making its own', async () => {
+  const serialized = { count: 0 };
+  const written = [];
+  const result = exportResult({ exportedAt: 'T0', vaults: [{ id: 'v1', notes: [{ id: 'n_1' }] }], warnings: [] }, serialized);
+  assert.equal(serialized.count, 1, 'the repository stub did not serialize the payload exactly once');
+  const { handlers } = setup({
+    storeOverrides: { exportBackup: async () => result, atomicWriteFile: async (p, data) => written.push(data) },
+  });
+  const res = await handlers['mn:exportBackup']({});
+  assert.equal(serialized.count, 1, 'the handler serialized the payload a second time');
+  assert.equal(written[0], result.text, 'the bytes written are not the bytes that were measured');
+  assert.equal(res.sizeBytes, result.sizeBytes, 'the reported size is not the size of the file on disk');
+
+  const source = fs.readFileSync(path.join(__dirname, '../lib/connectors/ipc/backupHandlers.js'), 'utf8');
+  assert.doesNotMatch(source, /JSON\.stringify\(payload\)/, 'the handler still stringifies the payload itself');
+});
+
+// An unreadable canvas used to be counted into the notes denominator, so the
+// notice named the wrong thing and got the total wrong at the same time.
+test('the export result counts canvases separately from notes', async () => {
+  const { handlers } = setup({
+    storeOverrides: {
+      exportBackup: async () => exportResult({
+        exportedAt: 'T0',
+        vaults: [
+          { id: 'v1', notes: [{ id: 'n_1' }, { id: 'n_2' }], canvases: [{ id: 'c_1' }] },
+          { id: 'v2', notes: [{ id: 'n_3' }], canvases: [{ id: 'c_2' }, { id: 'c_3' }] },
+        ],
+        warnings: [],
+      }),
+    },
+  });
+  const res = await handlers['mn:exportBackup']({});
+  assert.equal(res.noteCount, 3, 'the notes denominator still includes canvases');
+  assert.equal(res.canvasCount, 3, 'the renderer has no denominator for the canvases it lost');
+  assert.equal(res.vaultCount, 2);
 });
 
 test('cancelling the import dialog reads nothing', async () => {
