@@ -1,3 +1,4 @@
+import { TaskCheckbox } from '../shared/TaskCheckbox.jsx';
 import { dsMachineStyle } from '../shared/designSystem.js';
 import { mnGetTagColor } from '../shared/theme.jsx';
 import { mnCalendarTimeText } from './calendarDates.js';
@@ -150,34 +151,8 @@ function MnItemCard({ item, compact = false, ctx }) {
             {mnCalendarIcon('bell', T)}
           </span>
         ) : (
-          <button
-            type="button"
-            aria-label={`${item.checked ? 'Reopen' : 'Complete'} ${label}`}
-            title={item.checked ? 'Reopen todo' : 'Complete todo'}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleCheck?.(item);
-            }}
-            style={{
-              width: 15,
-              height: 15,
-              marginTop: 2,
-              flexShrink: 0,
-              border: `1.5px solid ${item.checked ? T.accent : T.line}`,
-              background: item.checked ? T.accent : 'transparent',
-              borderRadius: 4,
-              cursor: 'pointer',
-              padding: 0,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-            {item.checked && (
-              <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </button>
+          <TaskCheckbox checked={item.checked} label={`${item.checked ? 'Reopen' : 'Complete'} ${label}`}
+            onToggle={onToggleCheck ? () => onToggleCheck(item) : null} T={T} style={{ marginTop: compact ? -3 : -2 }} />
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{

@@ -1,3 +1,4 @@
+import { TaskCheckbox } from '../shared/TaskCheckbox.jsx';
 // Aggregated todo and reminder panel.
 
 import MN_APP_HELPERS from '../app/appHelpers.js';
@@ -40,24 +41,8 @@ function Card({ it, idx, ctx }) {
           </svg>
         </span>
       ) : (
-        <button
-          type="button"
-          aria-label={`${it.checked ? 'Reopen' : 'Complete'} ${label || it.text || 'todo'}`}
-          title={it.checked ? 'Reopen todo' : 'Complete todo'}
-          onClick={(e) => { e.stopPropagation(); onToggleCheck(it); }}
-          style={{
-          width: 15, height: 15, marginTop: 2, flexShrink: 0,
-          border: `1.5px solid ${it.checked ? T.accent : T.line}`,
-          background: it.checked ? T.accent : 'transparent',
-          borderRadius: 4, cursor: 'pointer', padding: 0,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {it.checked && (
-            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-              <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          )}
-        </button>
+        <TaskCheckbox checked={it.checked} label={`${it.checked ? 'Reopen' : 'Complete'} ${label || it.text || 'todo'}`}
+          onToggle={onToggleCheck ? () => onToggleCheck(it) : null} T={T} />
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{

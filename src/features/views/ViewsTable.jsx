@@ -15,7 +15,7 @@ import {
   mnViewsCachedCellValue, mnViewsColumns, mnViewsCellValue, mnViewsSortResults, mnViewsSortIsStorable,
 } from './viewsColumns.js';
 import { mnViewsRowHue } from './viewsHue.js';
-import { ViewsOpenMark } from './ViewsCardParts.jsx';
+import { ViewsCheck, ViewsOpenMark } from './ViewsCardParts.jsx';
 
 function mnViewsGridColumns(columns) {
   return `30px ${columns.map(column => column.width).join(' ')} 40px`;
@@ -178,17 +178,7 @@ function mnViewsRenderTable({ results = [], definition = {}, sort, onSort, onOpe
           }}>
           <span role="cell">
             {actionable(row) && onToggleCheck ? (
-              <button
-                type="button"
-                aria-label={row.checked ? 'Reopen task' : 'Complete task'}
-                onClick={(event) => { event.stopPropagation(); onToggleCheck(row); }}
-                style={{
-                  width: 15, height: 15, padding: 0, borderRadius: 4,
-                  border: `1.5px solid ${row.checked ? T.accent : T.line}`,
-                  background: row.checked ? T.accent : 'transparent',
-                  cursor: 'pointer',
-                }}
-              />
+              <ViewsCheck checked={row.checked} onToggle={() => onToggleCheck(row)} T={T} />
             ) : null}
           </span>
           {columns.map(column => (

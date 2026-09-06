@@ -274,7 +274,7 @@ function mnMdToBlocks(md) {
     // other list kind, and ordered markers retain their number and delimiter.
     // Indent is `[^\S\n]*` for the same reason as the property line above; the
     // item's own text is `[\s\S]*` so a folded soft break stays in it.
-    const bm = line.match(/^([^\S\n]*)(?:(-)\s+(\[([ xX])\]\s+)?|(\d+)([.)])\s+)([\s\S]*)$/);
+    const bm = line.match(/^([^\S\n]*)(?:(-)\s+(\[([ xX])\](?:\s+|$))?|(\d+)([.)])\s+)([\s\S]*)$/);
     if (bm) {
       flushPara();
       const indent = bm[1].length;

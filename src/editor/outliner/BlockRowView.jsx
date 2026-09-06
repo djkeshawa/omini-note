@@ -1,3 +1,5 @@
+import { MnBlockMarker } from './BlockMarker.jsx';
+
 function MnBlockRowView({ model }) {
   const { MN_APP_HELPERS, MN_BLOCK_LABEL_COLORS, MN_CODE_LANGUAGES, MN_LOGSEQ, MnBlockEmbed, MnCanvasEmbed, MnCanvasPicker, MnDisclosure, MnInlineAiButton, MnMarkdownTable, MnMathBlock, MnMermaidBlock, MnPageEmbed, MnPopover, MnPopoverHeader, MnPopoverItem, MnPropertyRow, MnSmartViewEmbed, MnSpellSuggestionMenu, MnWorkflowPill, T, addBlockLabel, aiActive, aiEnabled, aiTarget, allCanvases, allNotes, applyEditorValue, applySlashCmd, applySpellSuggestion, attachmentFiles, autoIdx, autoLink, autoQ, block, blockAcceptsAttachmentDrops, blockLabels, canvasPicker, collapseByDefault, depth, displayAnnotations, displayBlock, displaySourceOffset, displayTextRef, dropPos, editing, editingLabelId, editorFontSize, editorValue, focusId, fontStyle, handleCopy, handleCut, handleEnter, handleInput, handleKey, handlePaste, handleSelect, hasChildren, ignoreSpellWord, ignoredSpellWords, indentGuides, indentPx, inputRef, insertAttachmentMarkdown, isList, labelMenu, latestContentRef, markdownDisplayProjection, mnAffordancePadTop, mnBlockLabelPalette, mnCodeLanguageLabel, mnGripPadTop, mnIsPropertyLine, mnNormalizeCodeLanguage, mnParseProperty, mnPlaceholder, mnRenderAnnotated, mnRenderCode, mnRenderSpellCheckedText, mnWorkflow, novelistMode, onAiAction, onBeginContentEdit, onBlockMouseDown, onBlockMouseEnter, onChange, onChangeKind, onClearAnnotation, onContextMenu, onCreateCanvas, onDelete, onEndContentEdit, onFocusNext, onFocusPrev, onIndent, onInsertBlocksAt, onMergePrev, onMove, onOpen, onOpenCanvas, onOutdent, onSelectionChange, onSetAnnotation, onSplit, onTagClick, onToggleCheck, onToggleCollapse, onZoom, parseClipboardBlocks, pendingCaretRef, pickSuggestion, removeBlockLabel, selectedAsArea, selectedBlockIds, setAutoIdx, setAutoQ, setBlockLabels, setCanvasPicker, setDropPos, setEditing, setEditingLabelId, setFocusId, setIgnoredSpellWords, setLabelMenu, setSlashIdx, setSlashQ, setSpellIssues, setSpellMenu, slashIdx, slashMatches, slashQ, spellCheck, spellIssues, spellMenu, startEdit, textOffsetFromPoint, updateBlockLabel, vaultId, wikiSuggestions, workflowEnabled } = model;
     return (
@@ -82,108 +84,8 @@ function MnBlockRowView({ model }) {
           />
         )}
   
-        {/* Block-kind affordance: bullet dot + drag handle */}
-        <div
-          title="Drag to move · Click to zoom · Right-click for menu"
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData('text/mn-block', block.id);
-            e.dataTransfer.effectAllowed = 'move';
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            if (onContextMenu) onContextMenu(block.id, e.clientX, e.clientY);
-          }}
-          onClick={(e) => {
-            // Click on bullet (not drag) zooms into the block.
-            // Only fire on plain left click without modifiers.
-            if (e.button === 0 && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
-              if (onZoom) { e.stopPropagation(); onZoom(block.id); }
-            }
-          }}
-          style={{
-            flexShrink: 0,
-            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-            paddingTop: mnAffordancePadTop(displayBlock),
-            // A list marker is content — a bullet, a number, a checkbox — and
-            // earns its indent. For heading, paragraph, quote and code this
-            // slot holds only the hover-revealed grip, so it joins the
-            // disclosure in the gutter and prose starts where the title does.
-            ...(['todo', 'ordered', 'bullet'].includes(block.kind)
-              ? { marginRight: 8, minWidth: 18 }
-              : { position: 'absolute', left: indentPx - 36, top: 0, marginRight: 0, minWidth: 18 }),
-            cursor: 'grab',
-          }}>
-          {block.kind === 'todo' ? (
-            <button
-              type="button"
-              aria-label={block.checked ? 'Reopen todo' : 'Complete todo'}
-              title={block.checked ? 'Reopen todo' : 'Complete todo'}
-              onClick={(e) => { e.stopPropagation(); onToggleCheck(block.id); }}
-              style={{
-                width: 15, height: 15,
-                border: `1.5px solid ${block.checked ? T.accent : T.line}`,
-                background: block.checked ? T.accent : 'transparent',
-                borderRadius: 3, cursor: 'pointer', padding: 0, marginTop: 1,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-              {block.checked && (
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                  <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6"
-                    strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </button>
-          ) : block.kind === 'ordered' ? (
-            <span style={{
-              minWidth: 18,
-              color: T.inkMed,
-              fontFamily: 'var(--mn-mono)',
-              fontSize: 11.5,
-              lineHeight: '14px',
-              textAlign: 'right',
-            }}>
-              {Math.max(1, Number(block.listNumber) || 1)}{block.listDelimiter === ')' ? ')' : '.'}
-            </span>
-          ) : block.kind === 'bullet' ? (
-            // Real bullet — a small filled dot. Becomes filled-with-halo when collapsed.
-            <span style={{
-              width: 14, height: 14, borderRadius: '50%',
-              background: hasChildren && block.collapsed ? T.bgActive : 'transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              marginTop: 0,
-              transition: 'background 120ms',
-            }}>
-              <span style={{
-                width: 5, height: 5, borderRadius: '50%',
-                background: T.ink,
-              }} />
-            </span>
-          ) : block.kind === 'divider' ? (
-            <span style={{ width: 0 }} />
-          ) : (
-            // Heading, paragraph, quote, code — no visible dot in default state.
-            // Hover-revealed 6-dot grip handle for drag + zoom + right-click context.
-            <span className="mn-grip" style={{
-              width: 14, height: 14, borderRadius: 3,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              marginTop: mnGripPadTop(displayBlock),
-              opacity: 0,
-              transition: 'opacity 100ms, background 100ms',
-              color: T.inkDim,
-            }}>
-              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-                <circle cx="2.5" cy="3"  r="1"/>
-                <circle cx="7.5" cy="3"  r="1"/>
-                <circle cx="2.5" cy="7"  r="1"/>
-                <circle cx="7.5" cy="7"  r="1"/>
-                <circle cx="2.5" cy="11" r="1"/>
-                <circle cx="7.5" cy="11" r="1"/>
-              </svg>
-            </span>
-          )}
-        </div>
-  
+        <MnBlockMarker model={model} />
+
         {/* Content */}
         <div className={aiActive ? 'mn-ai-text-working' : ''} style={{
           flex: 1,
@@ -229,10 +131,6 @@ function MnBlockRowView({ model }) {
                   <option key={lang.value || 'plain'} value={lang.value}>{lang.label}</option>
                 ))}
               </select>
-              <span style={{
-                fontFamily: 'var(--mn-mono)', fontSize: 10,
-                color: T.inkDim,
-              }}>{mnCodeLanguageLabel(block.language)}</span>
             </div>
           )}
           {(blockLabels.length > 0 || labelMenu) && (
@@ -387,7 +285,7 @@ function MnBlockRowView({ model }) {
                 placeholder={mnPlaceholder(block)}
                 style={{
                   width: '100%', border: 'none', outline: 'none',
-                  background: 'transparent', resize: 'none', padding: 0,
+                  background: 'transparent', resize: 'none', padding: '1px 2px',
                   ...fontStyle,
                   lineHeight: fontStyle.lineHeight || 1.55,
                   overflow: 'hidden',

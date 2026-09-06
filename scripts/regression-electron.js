@@ -3817,6 +3817,14 @@ async function runRegression() {
   await runScenario(win, 'Editor', 'large scrolled block ranges delete completely and undo once', async () => {
     await runLargeBlockSelectionDeleteScenario(win);
   });
+  await runScenario(win, 'Storage', 'typing during an external refresh survives in the editor and on disk', async () => {
+    await require('./regression-vault-refresh').runVaultRefreshScenario(win, {
+      seedEditorNote, focusEditorRow, typeActiveEditorText, waitFor, editorRows,
+    });
+  });
+  await runScenario(win, 'Editor', 'checkboxes align, toggle by keyboard, and survive reload in both themes', async () => {
+    await require('./regression-checkbox-rendering').runCheckboxRenderingScenario(win, { seedEditorNote, evaluate, waitFor });
+  });
 
   const finalState = await state(win);
   if (finalState.launchError) throw new Error(`Launch error screen appeared: ${finalState.text}`);

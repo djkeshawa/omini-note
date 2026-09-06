@@ -995,8 +995,8 @@ test('Review fixes wire settings, rollup, reminders, and safe note paths', () =>
   assert.match(calendarPanel, /Add item on/);
   assert.match(calendarPanel, />\+ New<\/button>/);
   assert.match(calendarPanel, /onUpdateItem/);
-  assert.match(calendarPanel, /aria-label=\{`\$\{item\.checked \? 'Reopen' : 'Complete'\} \$\{label\}`\}/);
-  assert.match(todosPanel, /aria-label=\{`\$\{it\.checked \? 'Reopen' : 'Complete'\}/);
+  assert.match(calendarPanel, /label=\{`\$\{item\.checked \? 'Reopen' : 'Complete'\} \$\{label\}`\}/);
+  assert.match(todosPanel, /label=\{`\$\{it\.checked \? 'Reopen' : 'Complete'\}/);
   assert.match(calendarPanel, /onSnoozeItem/);
   assert.doesNotMatch(appShell, /function MnAppTopToolbar/);
   assert.match(editor, /onOpenCalendar/);
@@ -1815,8 +1815,9 @@ test('Workflow notes can be archived from workflow boards only', () => {
   assert.match(ollama, /const CHAT_TIMEOUT_MS = 180000/);
   assert.match(outline, /import \{ MN_DEFAULT_WORKFLOW_STATES, MN_WORKFLOW_STATES \} from '\.\/blockFeatures\.jsx'/);
   assert.doesNotMatch(outline, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
-  assert.match(notelist, /const workflowPattern = states/);
-  assert.doesNotMatch(notelist, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
+  const noteListPresentation = fs.readFileSync(path.join(__dirname, '../src/panels/noteListPresentation.jsx'), 'utf8');
+  assert.match(noteListPresentation, /const workflowPattern = states/);
+  assert.doesNotMatch(noteListPresentation, /\^\(TODO\|DOING\|DONE\|LATER\|NOW\|WAIT\|CANCELLED\)/);
   assert.match(appShell, /function MnReminderCenter\(\{ open, items, dueCount, onToggle, onClose, onOpenNote, topOffset = 14, T \}\)/);
   assert.match(appShell, /position: 'fixed'/);
   assert.match(appShell, /top: topOffset/);

@@ -1,5 +1,6 @@
+import { TodayHeader } from './TodayHeader.jsx';
 import { mnGetTagColor, mnTagHueMap } from '../../../shared/theme.jsx';
-import { DS_TYPE, dsGroupLabelStyle, mnSentenceCase } from '../../../shared/designSystem.js';
+import { dsGroupLabelStyle, mnSentenceCase } from '../../../shared/designSystem.js';
 
 const { useEffect, useMemo, useState } = React;
 
@@ -14,17 +15,6 @@ function sectionStyle(T) {
     padding: 12,
     marginBottom: 16,
   };
-}
-
-// A single number and what it counts. Numbers are set in the writing voice —
-// they are the sentence the page is making.
-function TodayStat({ value, label, tone, T }) {
-  return (
-    <div>
-      <div style={{ ...DS_TYPE.sectionHead, fontSize: 24, color: tone || T.ink }}>{value}</div>
-      <div style={{ fontFamily: 'var(--mn-ui)', fontSize: 11, color: T.inkDim }}>{label}</div>
-    </div>
-  );
 }
 
 function TodaySection({ title, count, action = null, name, children, T }) {
@@ -331,13 +321,6 @@ function MnTodayPanel({
     if (text && onAddQuickTask?.(text) !== false) setQuickTask('');
   };
 
-  const overdueCount = todayReminders.filter(item => item.rollupStatus === 'overdue').length;
-  const openLoopCount = todayReminders.length;
-  const notesWrittenCount = todayGroups.reduce((total, group) => total + group.notes.length, 0);
-  // Say what the numbers mean, and only mention overdue when there is some.
-  const todaySummaryLine = openLoopCount
-    ? `${openLoopCount} thing${openLoopCount === 1 ? '' : 's'} want your attention.${overdueCount ? ` ${overdueCount} ${overdueCount === 1 ? 'is' : 'are'} overdue.` : ''}`
-    : 'Nothing is waiting on you today.';
 
   return (
     <main
@@ -345,25 +328,8 @@ function MnTodayPanel({
       data-mn-today-empty={emptyToday ? 'true' : 'false'}
       style={{ flex: 1, height: '100%', background: T.bg, padding: '32px 24px 28px', overflow: 'auto' }}>
       <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-        {/* The date is the heading; the counts stand beside it so the day's
-            shape reads before any control does. */}
-        <div style={{
-          display: 'flex', alignItems: 'flex-end', gap: 20, flexWrap: 'wrap', marginBottom: 22,
-        }}>
-          <div style={{ flex: 1, minWidth: 260 }}>
-            <h1 style={{
-              margin: 0, ...DS_TYPE.sectionHead, fontSize: 32, lineHeight: 1.1, color: T.ink,
-            }}>{formattedToday}</h1>
-            <div style={{ marginTop: 6, fontFamily: 'var(--mn-ui)', fontSize: 13, color: T.inkMed }}>
-              {todaySummaryLine}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 22, paddingBottom: 4 }}>
-            <TodayStat value={openLoopCount} label="open loops" T={T} />
-            <TodayStat value={overdueCount} label="overdue" tone={overdueCount ? T.danger : undefined} T={T} />
-            <TodayStat value={notesWrittenCount} label="notes written" T={T} />
-          </div>
-        </div>
+        <TodayHeader formattedToday={formattedToday} tasks={todayTasks} reminders={todayReminders}
+          agendaItems={visibleAgendaItems} groups={todayGroups} helpers={helpers} T={T} />
 
         <section aria-label="Today actions" style={{ ...sectionStyle(T), padding: 14 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

@@ -1,23 +1,30 @@
-function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVaultId, bootState, canvases, desktopBridge, dirtyNotes, loadVaultBundle, mnNormalizeCustomThemesForApp, navigateView, notes, recordPhase5Metric, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setCustomThemes, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setTags, setTweaks, setVaults, showAppNotice, tags, tagsDirty, updateDirtyNotes, useCallbackA, useEffectA, useRefA, vaultActivationSeq }) {
+function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVaultId, bootState, canvases, desktopBridge, dirtyNotes, dirtyNotesRef, dirtyRevisionRef, loadVaultBundle, mnNormalizeCustomThemesForApp, navigateView, notes, recordPhase5Metric, selectedId, setActiveCanvas, setActiveVaultId, setCanvases, setCustomThemes, setNotes, setQuery, setSelectedId, setSelectedTag, setSelectedWorkflow, setSettingsOpen, setTags, setTweaks, setVaults, showAppNotice, tags, tagsDirty, tagsRevisionRef, updateDirtyNotes, useCallbackA, useEffectA, useRefA, vaultActivationSeq }) {
   const refreshVaultRegistry = useCallbackA(async ({ reloadActive = false, reason = '', isCurrent = null } = {}) => {
       if (!HAS_DISK) return { ok: true };
+      const noteRevision = dirtyRevisionRef.current;
+      const tagRevision = tagsRevisionRef.current;
+      const activationAtStart = vaultActivationSeq.current;
+      // A refresh can span typing and even a completed autosave. Revisions
+      // protect those edits after the dirty flags have already been cleared.
+      const editsChanged = () => noteRevision !== dirtyRevisionRef.current
+        || tagRevision !== tagsRevisionRef.current;
       try {
         const res = await MN_NOTES_VAULTS_SERVICE.listVaults(desktopBridge);
         if (!res.ok) throw new Error(res.error);
-        if (isCurrent?.() === false) return { ok: false, stale: true };
+        if (isCurrent?.() === false || editsChanged() || activationAtStart !== vaultActivationSeq.current) return { ok: false, stale: true };
         const metas = res.value || res.data?.vaults || [];
         if (!metas.length) throw new Error('No vaults found');
         const validIds = new Set(metas.map(v => v.id));
         const nextActiveId = validIds.has(activeVaultId) ? activeVaultId : metas[0].id;
         const activeChanged = nextActiveId !== activeVaultId;
-        const activeHasDirtyNotes = [...dirtyNotes.values()].some(entry => entry.vaultId === activeVaultId);
+        const activeHasDirtyNotes = [...dirtyNotesRef.current.values()].some(entry => entry.vaultId === activeVaultId);
         const activeHasUnsavedChanges = activeHasDirtyNotes || tagsDirty.current;
         let activeBundle = null;
   
         if (activeChanged || (reloadActive && nextActiveId && !activeHasUnsavedChanges)) {
           const activationSeq = ++vaultActivationSeq.current;
           activeBundle = await loadVaultBundle(nextActiveId);
-          if (activationSeq !== vaultActivationSeq.current || isCurrent?.() === false) {
+          if (activationSeq !== vaultActivationSeq.current || isCurrent?.() === false || editsChanged()) {
             return { ok: false, stale: true };
           }
         }
@@ -99,12 +106,12 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
         console.error('refreshVaultRegistry failed', reason, e);
         return { ok: false, error: e.message || String(e) };
       }
-    }, [activeVaultId, dirtyNotes, loadVaultBundle, notes, tags, selectedId, canvases, navigateView]);
+    }, [activeVaultId, dirtyNotes, dirtyNotesRef, dirtyRevisionRef, tagsRevisionRef, loadVaultBundle, notes, tags, selectedId, canvases, navigateView]);
   
     // Coming back to the window used to re-read every note body in the vault,
     // ship them all over IPC and re-parse them — on every alt-tab, and twice,
     // because focus and visibilitychange both fired. Now leaving the window
-    // takes a cheap fingerprint (file count + newest mtime, no bodies), and
+    // takes a cheap fingerprint (per-file metadata, no bodies), and
     // returning compares against it. Nothing moved, nothing reloads. Our own
     // saves happen while focused, so they never trip the comparison.
     const awayStampRef = useRefA(null);
@@ -148,7 +155,8 @@ function useAppLifecycleController({ HAS_DISK, MN_NOTES_VAULTS_SERVICE, activeVa
           if (!isCurrent()) return;
           const unchanged = away && now
             && now.count === away.count
-            && now.maxMtimeMs === away.maxMtimeMs;
+            && now.maxMtimeMs === away.maxMtimeMs
+            && typeof now.fingerprint === 'string' && now.fingerprint === away.fingerprint;
           // The vault list itself (names, counts) stays cheap to refresh; the
           // full reload of note bodies only happens when the stamp moved or
           // when there is no stamp to compare against.

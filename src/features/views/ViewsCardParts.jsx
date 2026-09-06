@@ -1,3 +1,4 @@
+import { TaskCheckbox } from '../../shared/TaskCheckbox.jsx';
 // The pieces a Views card is built from.
 //
 // Three ideas live here, and they are what make a card in Views behave unlike
@@ -114,28 +115,9 @@ function ViewsInlineTitle({ value, onChange, onCommit, onCancel, T, label = 'Row
 }
 
 // The task tick, shared by every layout that can complete something.
-function ViewsCheck({ checked, onToggle, T, size = 15 }) {
+function ViewsCheck({ checked, onToggle, T, size = 16 }) {
   if (!onToggle) return null;
-  return (
-    <button
-      type="button"
-      aria-label={checked ? 'Reopen task' : 'Complete task'}
-      title={checked ? 'Reopen task' : 'Complete task'}
-      onClick={(event) => { event.stopPropagation(); onToggle(); }}
-      style={{
-        width: size, height: size, marginTop: 2, padding: 0, flexShrink: 0,
-        border: `1.5px solid ${checked ? T.accent : T.line}`,
-        background: checked ? T.accent : 'transparent',
-        borderRadius: 4, cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-      {checked && (
-        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </button>
-  );
+  return <TaskCheckbox checked={checked} onToggle={onToggle} T={T} size={size} />;
 }
 
 // Where a row came from — but only when that is news. A task row was cut out of
